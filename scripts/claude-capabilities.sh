@@ -154,9 +154,7 @@ extract_model_associations() {
   LC_ALL=C grep -aoE 'modelReasoningEfforts:\{"[^"[:cntrl:]]+":\["[^"[:cntrl:]]+"(,"[^"[:cntrl:]]+")*\](,"[^"[:cntrl:]]+":\["[^"[:cntrl:]]+"(,"[^"[:cntrl:]]+")*\])*\}' "$binary" \
     | sed 's/^modelReasoningEfforts://' > "$matches" 2>/dev/null || true
   if [ ! -s "$matches" ]; then
-    # As of Claude Code 2.1.227 this literal no longer occurs in the binary at
-    # all, so this is the only live path today, not a rare fallback. See
-    # FOLLOW_UP.md "Finish the dynamic routing surface" for the tracked gap.
+    # Claude Code 2.1.227 dropped the literal, so this branch is the live path.
     printf '{}\n' > "$output"
     rm -f "$matches"
     return 0
@@ -178,59 +176,7 @@ extract_model_associations() {
 }
 
 validate_catalog_json() {
-  jq -e '
-    . as $catalog
-    | type == "object"
-    and .schema_version == 1
-    and (.source | type == "object")
-    and (.source.binary_path | type == "string" and startswith("/"))
-    and (.source.version | type == "string" and length > 0)
-    and (.source.sha256 | type == "string" and test("^[[:xdigit:]]{64}$"))
-    and (.source.detected_at | type == "string" and length > 0)
-    and (.models | type == "array" and length > 0)
-    and (all(.models[];
-      type == "object"
-      and (keys | sort) == ["description", "label", "selector"]
-      and (.selector | type == "string" and length > 0)
-      and (
-        ((.label | type == "string" and length > 0) and (.description | type == "string" and length > 0))
-        or (.label == null and .description == null)
-      )
-    ))
-    and ([.models[].selector] | length == (unique | length))
-    and (.reasoning | type == "object")
-    and (.reasoning.scope | IN("global", "model_associated"))
-    and (.reasoning.accepted_values | type == "array" and length > 0)
-    and (all(.reasoning.accepted_values[]; type == "string" and length > 0))
-    and (.reasoning.accepted_values | length == (unique | length))
-    and (.reasoning.model_associations | type == "object")
-    and (all(.reasoning.model_associations | to_entries[];
-      (.key as $selector | [$catalog.models[].selector] | index($selector) != null)
-      and (.value | type == "array" and length > 0)
-      and (all(.value[]; type == "string" and length > 0))
-      and (.value | length == (unique | length))
-      and (all(.value[]; . as $effort | $catalog.reasoning.accepted_values | index($effort) != null))
-    ))
-    and (
-      (has("host_agent_enum") | not)
-      or (
-        (.host_agent_enum | type == "array")
-        and (all(.host_agent_enum[]; type == "string" and length > 0))
-        and (.host_agent_enum | length == (unique | length))
-      )
-    )
-    and (
-      (has("agent_model_ids") | not)
-      or (
-        has("host_agent_enum")
-        and (.agent_model_ids | type == "object")
-        and (all(.agent_model_ids | to_entries[];
-          (.value | type == "string" and length > 0)
-          and (.value as $host_id | $catalog.host_agent_enum | index($host_id) != null)
-        ))
-      )
-    )
-  ' "$1" >/dev/null 2>&1
+  jq -e -f "$SCRIPT_DIR/lib/claude-capabilities-catalog-valid.jq" "$1" >/dev/null 2>&1
 }
 
 build_catalog() {
@@ -298,26 +244,22 @@ catalog_planning_directory() {
   resolve_planning_directory "$parent"
 }
 
-main() {
-  local command="${1:-}" target="${2:-}" state_planning selector mapped
-  require_tools
-  if [ "$command" = map-agent-model ]; then
-    selector="${3:-}"
-    [ -n "$target" ] && [ -n "$selector" ] && [ "$#" -eq 3 ] || {
-      usage
-      exit 1
-    }
-    umask 077
-    trap cleanup EXIT
-    mapped=$(lbwc_map_agent_model "$target" "$selector") \
-      || fail "model selector is not present in the live host Agent enum: $selector"
-    printf '%s\n' "$mapped"
-    return 0
-  fi
-  [ -n "$command" ] && [ -n "$target" ] && [ "$#" -eq 2 ] || {
+run_map_agent_model() {
+  local target="${2:-}" selector mapped
+  selector="${3:-}"
+  [ -n "$target" ] && [ -n "$selector" ] && [ "$#" -eq 3 ] || {
     usage
     exit 1
   }
+  umask 077
+  trap cleanup EXIT
+  mapped=$(lbwc_map_agent_model "$target" "$selector") \
+    || fail "model selector is not present in the live host Agent enum: $selector"
+  printf '%s\n' "$mapped"
+}
+
+enter_transaction() {
+  local command="${1:-}" target="${2:-}" state_planning
   if [ "$command" = refresh ]; then
     [ -f "$ROUTING_PATH" ] || fail "routing transaction script is unavailable: $ROUTING_PATH"
     if [ "${LBWC_CONFIG_TRANSACTION_ACTIVE:-0}" != 1 ]; then
@@ -336,6 +278,20 @@ main() {
     fi
     bash "$ROUTING_PATH" assert-transaction "$state_planning" >/dev/null
   fi
+}
+
+main() {
+  local command="${1:-}" target="${2:-}"
+  require_tools
+  if [ "$command" = map-agent-model ]; then
+    run_map_agent_model "$@"
+    return 0
+  fi
+  [ -n "$command" ] && [ -n "$target" ] && [ "$#" -eq 2 ] || {
+    usage
+    exit 1
+  }
+  enter_transaction "$@"
   umask 077
   trap cleanup EXIT
   case "$command" in
