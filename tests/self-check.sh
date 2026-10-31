@@ -1,33 +1,29 @@
 #!/usr/bin/env bash
-# Self-check for lbwc agent-spawn-guard.sh and agent-lifecycle.sh.
-# Run directly: bash tests/self-check.sh
 set -u
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 LBWC_ROOT="$(cd "$HERE/.." && pwd)"
 FAIL=0
+BATS_TEST_DIRNAME="$HERE"
+. "$HERE/test_helper.bash"
 
 pass() { printf 'ok - %s\n' "$1"; }
 fail() { printf 'FAIL - %s\n' "$1"; FAIL=1; }
 
 setup_fixture() {
   local work="$1"
+  local script
   mkdir -p "$work/scripts/lib" "$work/.lbwc-planning" "$work/templates/agent-roles"
-  cp "$LBWC_ROOT/scripts/agent-spawn-guard.sh" "$work/scripts/agent-spawn-guard.sh"
-  cp "$LBWC_ROOT/scripts/agent-lifecycle.sh" "$work/scripts/agent-lifecycle.sh"
-  cp "$LBWC_ROOT/scripts/task-contract.sh" "$work/scripts/task-contract.sh"
-  cp "$LBWC_ROOT/scripts/claude-capabilities.sh" "$work/scripts/claude-capabilities.sh"
-  cp "$LBWC_ROOT/scripts/lib/lbwc-control-root.sh" "$work/scripts/lib/lbwc-control-root.sh"
-  cp "$LBWC_ROOT/scripts/lib/compose-model-catalog.sh" "$work/scripts/lib/compose-model-catalog.sh"
-  cp "$LBWC_ROOT/scripts/lib/compose-model-catalog.jq" "$work/scripts/lib/compose-model-catalog.jq"
-  cp "$LBWC_ROOT/scripts/lib/capability-catalog.jq" "$work/scripts/lib/capability-catalog.jq"
+  for script in agent-spawn-guard agent-lifecycle task-contract claude-capabilities; do
+    copy_script_with_libs "$SCRIPTS_DIR/$script.sh" "$work/scripts/$script.sh"
+  done
   cp "$LBWC_ROOT/templates/agent-roles/defaults.json" "$work/templates/agent-roles/defaults.json"
   cp "$HERE/fixture-agent-manifest.sh" "$work/scripts/lib/agent-manifest.sh"
   chmod +x "$work/scripts/agent-spawn-guard.sh" "$work/scripts/agent-lifecycle.sh" "$work/scripts/task-contract.sh"
 }
 
 test_pairing_block_and_allow() {
-  local work rc state outfile errfile pair_contract pair_id pair_digest solo_contract solo_id solo_digest
+  local work exit_code state outfile errfile pair_contract pair_id pair_digest solo_contract solo_id solo_digest
   work=$(mktemp -d) || { fail "pairing: mktemp"; return; }
   work=$(cd "$work" && pwd -P)
   outfile=$(mktemp) errfile=$(mktemp)
@@ -51,19 +47,19 @@ test_pairing_block_and_allow() {
   }' > "$work/.lbwc-planning/.agent-manifest.json"
 
   ( cd "$work" && echo '{"tool_name":"Agent","tool_input":{"subagent_type":"lbwc-scout-x"}}' | bash scripts/agent-spawn-guard.sh > "$outfile" 2> "$errfile" )
-  rc=$?
-  if [ "$rc" -eq 2 ]; then
+  exit_code=$?
+  if [ "$exit_code" -eq 2 ]; then
     pass "spawn guard blocks unrelated role while pair is open"
   else
-    fail "spawn guard should block unrelated role while pair open (rc=$rc)"
+    fail "spawn guard should block unrelated role while pair open (exit=$exit_code)"
   fi
 
   ( cd "$work" && echo '{"tool_name":"Agent","tool_input":{"subagent_type":"lbwc-dev-a"}}' | bash scripts/agent-spawn-guard.sh > "$outfile" 2> "$errfile" )
-  rc=$?
-  if [ "$rc" -eq 0 ]; then
+  exit_code=$?
+  if [ "$exit_code" -eq 0 ]; then
     pass "spawn guard allows the paired name itself"
   else
-    fail "spawn guard should allow paired name (rc=$rc)"
+    fail "spawn guard should allow paired name (exit=$exit_code)"
   fi
 
   state=$(jq -r '.agents["lbwc-dev-a"].state' "$work/.lbwc-planning/.agent-manifest.json")
