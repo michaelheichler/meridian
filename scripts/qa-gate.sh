@@ -28,7 +28,12 @@ for _qg_dependency in \
   lib/qa-result-gate-git-evidence.sh \
   lib/qa-result-gate-fail-classifications.sh \
   lib/qa-result-gate-known-issues.sh \
-  lib/qa-result-gate-summary-deviations.sh; do
+  lib/qa-result-gate-summary-deviations.sh \
+  lib/qa-result-gate-scope.sh \
+  lib/qa-result-gate-verification.sh \
+  lib/qa-result-gate-round-evidence.sh \
+  lib/qa-result-gate-round-contract.sh \
+  lib/qa-result-gate-routing.sh; do
   [ -r "$_QG_SCRIPT_DIR/$_qg_dependency" ] || _QG_SUPPORT_READY=false
 done
 
