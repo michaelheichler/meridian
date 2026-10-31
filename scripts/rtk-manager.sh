@@ -220,17 +220,21 @@ receipt_json() {
 }
 
 install_release() {
-  local action="$1" dry_run="$2" metadata staged backup smoke_state receipt_tmp binary_hash had_binary=false had_receipt=false
+  local action="$1" dry_run="$2" metadata
   if [ "$action" = update ] && [ ! -x "$RTK_BINARY" ]; then
     die 'update requires an existing project-local RTK install'
   fi
   metadata="$(fetch_release)"
   stage_release "$metadata"
-  staged="$STAGED_BINARY"
   if [ "$dry_run" = true ]; then
     printf 'dry-run: %s RTK %s for %s at %s\n' "$action" "$(printf '%s' "$metadata" | jq -r '.tag')" "$(printf '%s' "$metadata" | jq -r '.target')" "$RTK_BINARY"
     return 0
   fi
+  apply_release "$action" "$metadata" "$STAGED_BINARY"
+}
+
+apply_release() {
+  local action="$1" metadata="$2" staged="$3" backup smoke_state receipt_tmp binary_hash had_binary=false had_receipt=false
   ensure_state_dir
   [ ! -e "$RTK_BINARY" ] || had_binary=true
   [ ! -e "$RECEIPT_FILE" ] || had_receipt=true
