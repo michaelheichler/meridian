@@ -27,6 +27,14 @@ CATALOG_WAS_PRESENT=0
 IDENTITY_STAT_STYLE=""
 IDENTITY_STAT_TOOL=""
 REFRESH_COMMITTED=0
+RESTORE_CONFIG_TMP=""
+RESTORE_CONFIG_BINDING=""
+RESTORE_CATALOG_TMP=""
+RESTORE_CATALOG_BINDING=""
+COMMIT_CONFIG_TMP=""
+COMMIT_CONFIG_BINDING=""
+COMMIT_CATALOG_TMP=""
+COMMIT_CATALOG_BINDING=""
 
 fail() {
   printf 'Error: %s\n' "$1" >&2
@@ -46,8 +54,7 @@ usage() {
 
 require_files() {
   local tool
-  for tool in awk cp jq mkdir mktemp mv rm shasum tr
-  do
+  for tool in awk cp jq mkdir mktemp mv rm shasum tr; do
     command -v "$tool" >/dev/null 2>&1 || fail "$tool is required"
   done
   configure_identity_tool
@@ -56,67 +63,64 @@ require_files() {
   [ -f "$ROLE_DEFAULTS" ] || fail "role catalog is unavailable: $ROLE_DEFAULTS"
 }
 
+configure_linux_stat() {
+  if [ -x /usr/bin/stat ]; then
+    IDENTITY_STAT_TOOL=/usr/bin/stat
+  elif [ -x /bin/stat ]; then
+    IDENTITY_STAT_TOOL=/bin/stat
+  else
+    fail 'stat is required on Linux'
+  fi
+  IDENTITY_STAT_STYLE=gnu
+}
+
 configure_identity_tool() {
   local platform
-  if [ -x /usr/bin/uname ]
-  then
+  if [ -x /usr/bin/uname ]; then
     platform=$(/usr/bin/uname -s)
-  elif [ -x /bin/uname ]
-  then
+  elif [ -x /bin/uname ]; then
     platform=$(/bin/uname -s)
   else
     fail 'could not identify the operating system'
   fi
-  if [ "$platform" = Darwin ]
-  then
+  if [ "$platform" = Darwin ]; then
     [ -x /usr/bin/stat ] || fail '/usr/bin/stat is required on macOS'
     IDENTITY_STAT_TOOL=/usr/bin/stat
     IDENTITY_STAT_STYLE=bsd
-  elif [ "$platform" = Linux ]
-  then
-    if [ -x /usr/bin/stat ]
-    then
-      IDENTITY_STAT_TOOL=/usr/bin/stat
-    elif [ -x /bin/stat ]
-    then
-      IDENTITY_STAT_TOOL=/bin/stat
-    else
-      fail 'stat is required on Linux'
-    fi
-    IDENTITY_STAT_STYLE=gnu
+  elif [ "$platform" = Linux ]; then
+    configure_linux_stat
   else
     fail "unsupported operating system for model refresh transactions: $platform"
   fi
 }
 
+path_has_type() {
+  local path="$1" expected_type="$2"
+  [ ! -L "$path" ] || return 1
+  if [ "$expected_type" = directory ]; then
+    [ -d "$path" ] || return 1
+  elif [ "$expected_type" = file ]; then
+    [ -f "$path" ] || return 1
+  else
+    return 1
+  fi
+}
+
+stat_identity() {
+  if [ "$IDENTITY_STAT_STYLE" = bsd ]; then
+    "$IDENTITY_STAT_TOOL" -f '%d:%i' -- "$1" 2>/dev/null
+  elif [ "$IDENTITY_STAT_STYLE" = gnu ]; then
+    "$IDENTITY_STAT_TOOL" -c '%d:%i' -- "$1" 2>/dev/null
+  else
+    return 1
+  fi
+}
+
 path_identity() {
   local path="$1" expected_type="$2" identity
-  [ ! -L "$path" ] || return 1
-  if [ "$expected_type" = directory ]
-  then
-    [ -d "$path" ] || return 1
-  elif [ "$expected_type" = file ]
-  then
-    [ -f "$path" ] || return 1
-  else
-    return 1
-  fi
-  if [ "$IDENTITY_STAT_STYLE" = bsd ]
-  then
-    identity=$("$IDENTITY_STAT_TOOL" -f '%d:%i' -- "$path" 2>/dev/null) || return 1
-  elif [ "$IDENTITY_STAT_STYLE" = gnu ]
-  then
-    identity=$("$IDENTITY_STAT_TOOL" -c '%d:%i' -- "$path" 2>/dev/null) || return 1
-  else
-    return 1
-  fi
-  [ ! -L "$path" ] || return 1
-  if [ "$expected_type" = directory ]
-  then
-    [ -d "$path" ] || return 1
-  else
-    [ -f "$path" ] || return 1
-  fi
+  path_has_type "$path" "$expected_type" || return 1
+  identity=$(stat_identity "$path") || return 1
+  path_has_type "$path" "$expected_type" || return 1
   [[ "$identity" =~ ^[0-9]+:[0-9]+$ ]] || return 1
   printf '%s\n' "$identity"
 }
@@ -137,18 +141,19 @@ verify_image() {
   [ "$binding" = "$expected_identity"$'\t'"$expected_sha" ]
 }
 
+bind_image_into() {
+  local identity_var="$1" sha_var="$2" path="$3" message="$4" binding
+  binding=$(image_binding "$path") || fail "$message"
+  printf -v "$identity_var" '%s' "${binding%%$'\t'*}"
+  printf -v "$sha_var" '%s' "${binding#*$'\t'}"
+}
+
 bind_rollback_images() {
-  local binding
-  binding=$(image_binding "$ROLLBACK_ROOT/config.before") \
-    || fail 'could not bind rollback configuration image'
-  ROLLBACK_CONFIG_IDENTITY=${binding%%$'\t'*}
-  ROLLBACK_CONFIG_SHA=${binding#*$'\t'}
-  if [ "$CATALOG_WAS_PRESENT" -eq 1 ]
-  then
-    binding=$(image_binding "$ROLLBACK_ROOT/catalog.before") \
-      || fail 'could not bind rollback catalog image'
-    ROLLBACK_CATALOG_IDENTITY=${binding%%$'\t'*}
-    ROLLBACK_CATALOG_SHA=${binding#*$'\t'}
+  bind_image_into ROLLBACK_CONFIG_IDENTITY ROLLBACK_CONFIG_SHA \
+    "$ROLLBACK_ROOT/config.before" 'could not bind rollback configuration image'
+  if [ "$CATALOG_WAS_PRESENT" -eq 1 ]; then
+    bind_image_into ROLLBACK_CATALOG_IDENTITY ROLLBACK_CATALOG_SHA \
+      "$ROLLBACK_ROOT/catalog.before" 'could not bind rollback catalog image'
   fi
 }
 
@@ -158,8 +163,7 @@ verify_rollback_images() {
     "$ROLLBACK_CONFIG_IDENTITY" \
     "$ROLLBACK_CONFIG_SHA" \
     || return 1
-  if [ "$CATALOG_WAS_PRESENT" -eq 1 ]
-  then
+  if [ "$CATALOG_WAS_PRESENT" -eq 1 ]; then
     verify_image \
       "$ROLLBACK_ROOT/catalog.before" \
       "$ROLLBACK_CATALOG_IDENTITY" \
@@ -169,28 +173,19 @@ verify_rollback_images() {
 }
 
 bind_pending_refresh() {
-  local binding identity_after
+  local identity_after
   PENDING_REFRESH_IDENTITY=$(path_identity "$PENDING_REFRESH" directory) \
     || fail 'could not bind published model refresh journal'
-  binding=$(image_binding "$PENDING_REFRESH/config.before") \
-    || fail 'could not bind model refresh configuration before image'
-  PENDING_CONFIG_BEFORE_IDENTITY=${binding%%$'\t'*}
-  PENDING_CONFIG_BEFORE_SHA=${binding#*$'\t'}
-  if [ "$CATALOG_WAS_PRESENT" -eq 1 ]
-  then
-    binding=$(image_binding "$PENDING_REFRESH/catalog.before") \
-      || fail 'could not bind model refresh catalog before image'
-    PENDING_CATALOG_BEFORE_IDENTITY=${binding%%$'\t'*}
-    PENDING_CATALOG_BEFORE_SHA=${binding#*$'\t'}
+  bind_image_into PENDING_CONFIG_BEFORE_IDENTITY PENDING_CONFIG_BEFORE_SHA \
+    "$PENDING_REFRESH/config.before" 'could not bind model refresh configuration before image'
+  if [ "$CATALOG_WAS_PRESENT" -eq 1 ]; then
+    bind_image_into PENDING_CATALOG_BEFORE_IDENTITY PENDING_CATALOG_BEFORE_SHA \
+      "$PENDING_REFRESH/catalog.before" 'could not bind model refresh catalog before image'
   fi
-  binding=$(image_binding "$PENDING_REFRESH/config.after") \
-    || fail 'could not bind model refresh configuration after image'
-  PENDING_CONFIG_AFTER_IDENTITY=${binding%%$'\t'*}
-  PENDING_CONFIG_AFTER_SHA=${binding#*$'\t'}
-  binding=$(image_binding "$PENDING_REFRESH/catalog.after") \
-    || fail 'could not bind model refresh catalog after image'
-  PENDING_CATALOG_AFTER_IDENTITY=${binding%%$'\t'*}
-  PENDING_CATALOG_AFTER_SHA=${binding#*$'\t'}
+  bind_image_into PENDING_CONFIG_AFTER_IDENTITY PENDING_CONFIG_AFTER_SHA \
+    "$PENDING_REFRESH/config.after" 'could not bind model refresh configuration after image'
+  bind_image_into PENDING_CATALOG_AFTER_IDENTITY PENDING_CATALOG_AFTER_SHA \
+    "$PENDING_REFRESH/catalog.after" 'could not bind model refresh catalog after image'
   identity_after=$(path_identity "$PENDING_REFRESH" directory) \
     || fail 'published model refresh journal changed while binding images'
   [ "$identity_after" = "$PENDING_REFRESH_IDENTITY" ] \
@@ -210,8 +205,7 @@ verify_pending_before_images() {
     "$PENDING_CONFIG_BEFORE_IDENTITY" \
     "$PENDING_CONFIG_BEFORE_SHA" \
     || return 1
-  if [ "$CATALOG_WAS_PRESENT" -eq 1 ]
-  then
+  if [ "$CATALOG_WAS_PRESENT" -eq 1 ]; then
     verify_image \
       "$PENDING_REFRESH/catalog.before" \
       "$PENDING_CATALOG_BEFORE_IDENTITY" \
@@ -236,6 +230,18 @@ verify_pending_after_images() {
   verify_pending_refresh_directory
 }
 
+remove_refresh_directory() {
+  local path="$1" expected_prefix="$2" expected_identity="${3:-}" identity name
+  [ -d "$path" ] && [ ! -L "$path" ] || return 1
+  name=${path##*/}
+  [[ "$name" == "$expected_prefix"* ]] || return 1
+  if [ -n "$expected_identity" ]; then
+    identity=$(path_identity "$path" directory) || return 1
+    [ "$identity" = "$expected_identity" ] || return 1
+  fi
+  rm -rf -- "$path"
+}
+
 emit_result() {
   local human="$1" json="$2"
   if [ "$JSON_OUTPUT" -eq 1 ]; then
@@ -258,10 +264,8 @@ escape_cell() {
 
 cleanup_preflight() {
   local cleanup_status=0 preserve_preflight=0 restore_status=0
-  if [ "$REFRESH_COMMITTED" -eq 0 ] && [ -n "$PENDING_REFRESH" ]
-  then
-    if restore_pending_refresh
-    then
+  if [ "$REFRESH_COMMITTED" -eq 0 ] && [ -n "$PENDING_REFRESH" ]; then
+    if restore_pending_refresh; then
       :
     else
       restore_status=$?
@@ -269,15 +273,12 @@ cleanup_preflight() {
       [ "$restore_status" -eq 2 ] || preserve_preflight=1
     fi
   fi
-  if [ -n "$PENDING_PREPARE" ] && [ -d "$PENDING_PREPARE" ]
-  then
+  if [ -n "$PENDING_PREPARE" ] && [ -d "$PENDING_PREPARE" ]; then
     remove_refresh_directory "$PENDING_PREPARE" '.lbwc-model-refresh.pending.prepare.' || cleanup_status=1
     PENDING_PREPARE=""
   fi
-  if [ "$preserve_preflight" -eq 0 ] && [ -n "$PREFLIGHT_ROOT" ] && [ -d "$PREFLIGHT_ROOT" ]
-  then
-    if [[ "${PREFLIGHT_ROOT##*/}" != lbwc-model-preflight.* ]]
-    then
+  if [ "$preserve_preflight" -eq 0 ] && [ -n "$PREFLIGHT_ROOT" ] && [ -d "$PREFLIGHT_ROOT" ]; then
+    if [[ "${PREFLIGHT_ROOT##*/}" != lbwc-model-preflight.* ]]; then
       return 1
     fi
     rm -rf -- "$PREFLIGHT_ROOT"
@@ -312,13 +313,11 @@ preflight_refresh() {
   mkdir "$ROLLBACK_ROOT" || fail 'could not create model refresh rollback state'
   cp "$planning_dir/config.json" "$ROLLBACK_ROOT/config.before" \
     || fail 'could not preserve rollback configuration image'
-  if [ -f "$planning_dir/claude-capabilities.json" ] && [ ! -L "$planning_dir/claude-capabilities.json" ]
-  then
+  if [ -f "$planning_dir/claude-capabilities.json" ] && [ ! -L "$planning_dir/claude-capabilities.json" ]; then
     CATALOG_WAS_PRESENT=1
     cp "$planning_dir/claude-capabilities.json" "$ROLLBACK_ROOT/catalog.before" \
       || fail 'could not preserve rollback catalog image'
-  elif [ -e "$planning_dir/claude-capabilities.json" ] || [ -L "$planning_dir/claude-capabilities.json" ]
-  then
+  elif [ -e "$planning_dir/claude-capabilities.json" ] || [ -L "$planning_dir/claude-capabilities.json" ]; then
     fail "capability catalog is not a regular file: $planning_dir/claude-capabilities.json"
   fi
   bind_rollback_images
@@ -331,23 +330,8 @@ preflight_refresh() {
   run_outside_transaction bash "$ROUTING" validate "$staged" >/dev/null
 }
 
-remove_refresh_directory() {
-  local path="$1" expected_prefix="$2" expected_identity="${3:-}" identity name
-  [ -d "$path" ] && [ ! -L "$path" ] || return 1
-  name=${path##*/}
-  [[ "$name" == "$expected_prefix"* ]] || return 1
-  if [ -n "$expected_identity" ]
-  then
-    identity=$(path_identity "$path" directory) || return 1
-    [ "$identity" = "$expected_identity" ] || return 1
-  fi
-  rm -rf -- "$path"
-}
-
-prepare_pending_refresh() {
-  local planning_dir="$1" staged pending live_binding
-  staged="$PREFLIGHT_ROOT/.lbwc-planning"
-  pending="$planning_dir/.lbwc-model-refresh.pending"
+assert_refresh_ready() {
+  local planning_dir="$1" staged="$2" pending="$3" live_binding
   [ ! -e "$pending" ] && [ ! -L "$pending" ] \
     || fail "pending model refresh requires recovery: $pending"
   [ -f "$planning_dir/config.json" ] && [ ! -L "$planning_dir/config.json" ] \
@@ -361,12 +345,11 @@ prepare_pending_refresh() {
     || fail 'staged configuration is not readable'
   [ -f "$staged/claude-capabilities.json" ] && [ ! -L "$staged/claude-capabilities.json" ] \
     || fail 'staged capability catalog is not readable'
-  PENDING_PREPARE=$(mktemp -d "$planning_dir/.lbwc-model-refresh.pending.prepare.XXXXXX") \
-    || fail 'could not create model refresh journal'
-  cp "$ROLLBACK_ROOT/config.before" "$PENDING_PREPARE/config.before" \
-    || fail 'could not preserve configuration before model refresh'
-  if [ "$CATALOG_WAS_PRESENT" -eq 1 ]
-  then
+}
+
+journal_catalog_before() {
+  local planning_dir="$1" live_binding
+  if [ "$CATALOG_WAS_PRESENT" -eq 1 ]; then
     live_binding=$(image_binding "$planning_dir/claude-capabilities.json") \
       || fail 'capability catalog changed before model refresh journal preparation'
     [ "${live_binding#*$'\t'}" = "$ROLLBACK_CATALOG_SHA" ] \
@@ -374,10 +357,20 @@ prepare_pending_refresh() {
     cp "$ROLLBACK_ROOT/catalog.before" "$PENDING_PREPARE/catalog.before" \
       || fail 'could not preserve capability catalog before model refresh'
     : > "$PENDING_PREPARE/catalog.was-present"
-  elif [ -e "$planning_dir/claude-capabilities.json" ] || [ -L "$planning_dir/claude-capabilities.json" ]
-  then
+  elif [ -e "$planning_dir/claude-capabilities.json" ] || [ -L "$planning_dir/claude-capabilities.json" ]; then
     fail "capability catalog is not a regular file: $planning_dir/claude-capabilities.json"
   fi
+}
+
+prepare_pending_refresh() {
+  local planning_dir="$1" staged pending
+  staged="$PREFLIGHT_ROOT/.lbwc-planning"
+  pending="$planning_dir/.lbwc-model-refresh.pending"
+  assert_refresh_ready "$planning_dir" "$staged" "$pending"
+  PENDING_PREPARE=$(mktemp -d "$planning_dir/.lbwc-model-refresh.pending.prepare.XXXXXX") || fail 'could not create model refresh journal'
+  cp "$ROLLBACK_ROOT/config.before" "$PENDING_PREPARE/config.before" \
+    || fail 'could not preserve configuration before model refresh'
+  journal_catalog_before "$planning_dir"
   cp "$staged/config.json" "$PENDING_PREPARE/config.after" \
     || fail 'could not stage refreshed configuration'
   cp "$staged/claude-capabilities.json" "$PENDING_PREPARE/catalog.after" \
@@ -388,81 +381,51 @@ prepare_pending_refresh() {
   bind_pending_refresh
 }
 
-restore_pending_refresh() {
-  local planning_dir config_temporary catalog_temporary="" config_binding catalog_binding=""
-  local journal_valid=1
-  [ -n "$PENDING_REFRESH" ] || return 1
-  planning_dir=${PENDING_REFRESH%/*}
-  verify_pending_before_images || journal_valid=0
-  verify_rollback_images || return 1
-  config_temporary=$(mktemp "$planning_dir/.config.json.restore.XXXXXX") || return 1
+stage_config_restore() {
+  RESTORE_CONFIG_TMP=$(mktemp "$1/.config.json.restore.XXXXXX") || return 1
   verify_image \
     "$ROLLBACK_ROOT/config.before" \
     "$ROLLBACK_CONFIG_IDENTITY" \
     "$ROLLBACK_CONFIG_SHA" \
     || return 1
-  cp "$ROLLBACK_ROOT/config.before" "$config_temporary" || {
-    rm -f "$config_temporary"
-    return 1
-  }
-  config_binding=$(image_binding "$config_temporary") || {
-    rm -f "$config_temporary"
-    return 1
-  }
-  [ "${config_binding#*$'\t'}" = "$ROLLBACK_CONFIG_SHA" ] || {
-    rm -f "$config_temporary"
-    return 1
-  }
-  if [ "$CATALOG_WAS_PRESENT" -eq 1 ]
-  then
-    catalog_temporary=$(mktemp "$planning_dir/.claude-capabilities.json.restore.XXXXXX") || return 1
-    verify_image \
-      "$ROLLBACK_ROOT/catalog.before" \
-      "$ROLLBACK_CATALOG_IDENTITY" \
-      "$ROLLBACK_CATALOG_SHA" \
-      || return 1
-    cp "$ROLLBACK_ROOT/catalog.before" "$catalog_temporary" || {
-      rm -f "$config_temporary" "$catalog_temporary"
-      return 1
-    }
-    catalog_binding=$(image_binding "$catalog_temporary") || {
-      rm -f "$config_temporary" "$catalog_temporary"
-      return 1
-    }
-    [ "${catalog_binding#*$'\t'}" = "$ROLLBACK_CATALOG_SHA" ] || {
-      rm -f "$config_temporary" "$catalog_temporary"
-      return 1
-    }
-  fi
-  verify_rollback_images || return 1
-  verify_pending_before_images || journal_valid=0
+  cp "$ROLLBACK_ROOT/config.before" "$RESTORE_CONFIG_TMP" || { rm -f "$RESTORE_CONFIG_TMP"; return 1; }
+  RESTORE_CONFIG_BINDING=$(image_binding "$RESTORE_CONFIG_TMP") || { rm -f "$RESTORE_CONFIG_TMP"; return 1; }
+  [ "${RESTORE_CONFIG_BINDING#*$'\t'}" = "$ROLLBACK_CONFIG_SHA" ] || { rm -f "$RESTORE_CONFIG_TMP"; return 1; }
+}
+
+stage_catalog_restore() {
+  RESTORE_CATALOG_TMP=$(mktemp "$1/.claude-capabilities.json.restore.XXXXXX") || return 1
   verify_image \
-    "$config_temporary" \
-    "${config_binding%%$'\t'*}" \
+    "$ROLLBACK_ROOT/catalog.before" \
+    "$ROLLBACK_CATALOG_IDENTITY" \
+    "$ROLLBACK_CATALOG_SHA" \
+    || return 1
+  cp "$ROLLBACK_ROOT/catalog.before" "$RESTORE_CATALOG_TMP" || { rm -f "$RESTORE_CONFIG_TMP" "$RESTORE_CATALOG_TMP"; return 1; }
+  RESTORE_CATALOG_BINDING=$(image_binding "$RESTORE_CATALOG_TMP") || { rm -f "$RESTORE_CONFIG_TMP" "$RESTORE_CATALOG_TMP"; return 1; }
+  [ "${RESTORE_CATALOG_BINDING#*$'\t'}" = "$ROLLBACK_CATALOG_SHA" ] || { rm -f "$RESTORE_CONFIG_TMP" "$RESTORE_CATALOG_TMP"; return 1; }
+}
+
+publish_restored_config() {
+  verify_image \
+    "$RESTORE_CONFIG_TMP" \
+    "${RESTORE_CONFIG_BINDING%%$'\t'*}" \
     "$ROLLBACK_CONFIG_SHA" \
     || return 1
-  mv -f "$config_temporary" "$planning_dir/config.json" || {
-    rm -f "$config_temporary" "$catalog_temporary"
-    return 1
-  }
-  if [ "$CATALOG_WAS_PRESENT" -eq 1 ]
-  then
-    verify_rollback_images || return 1
-    verify_pending_before_images || journal_valid=0
-    verify_image \
-      "$catalog_temporary" \
-      "${catalog_binding%%$'\t'*}" \
-      "$ROLLBACK_CATALOG_SHA" \
-      || return 1
-    mv -f "$catalog_temporary" "$planning_dir/claude-capabilities.json" || {
-      rm -f "$catalog_temporary"
-      return 1
-    }
-  else
-    rm -f "$planning_dir/claude-capabilities.json" || return 1
-  fi
-  if [ "$journal_valid" -eq 0 ]
-  then
+  mv -f "$RESTORE_CONFIG_TMP" "$1/config.json" || { rm -f "$RESTORE_CONFIG_TMP" "$RESTORE_CATALOG_TMP"; return 1; }
+}
+
+publish_restored_catalog() {
+  verify_image \
+    "$RESTORE_CATALOG_TMP" \
+    "${RESTORE_CATALOG_BINDING%%$'\t'*}" \
+    "$ROLLBACK_CATALOG_SHA" \
+    || return 1
+  mv -f "$RESTORE_CATALOG_TMP" "$1/claude-capabilities.json" || { rm -f "$RESTORE_CATALOG_TMP"; return 1; }
+}
+
+finish_restored_journal() {
+  local journal_valid="$1"
+  if [ "$journal_valid" -eq 0 ]; then
     return 2
   fi
   verify_pending_before_images || return 2
@@ -475,55 +438,80 @@ restore_pending_refresh() {
   PENDING_REFRESH=""
 }
 
+restore_pending_refresh() {
+  local planning_dir journal_valid=1
+  [ -n "$PENDING_REFRESH" ] || return 1
+  planning_dir=$(dirname "$PENDING_REFRESH")
+  RESTORE_CATALOG_TMP=""
+  verify_pending_before_images || journal_valid=0
+  verify_rollback_images || return 1
+  stage_config_restore "$planning_dir" || return 1
+  if [ "$CATALOG_WAS_PRESENT" -eq 1 ]; then
+    stage_catalog_restore "$planning_dir" || return 1
+  fi
+  verify_rollback_images || return 1
+  verify_pending_before_images || journal_valid=0
+  publish_restored_config "$planning_dir" || return 1
+  if [ "$CATALOG_WAS_PRESENT" -eq 1 ]; then
+    verify_rollback_images || return 1
+    verify_pending_before_images || journal_valid=0
+    publish_restored_catalog "$planning_dir" || return 1
+  else
+    rm -f "$planning_dir/claude-capabilities.json" || return 1
+  fi
+  finish_restored_journal "$journal_valid"
+}
+
+stage_commit_config() {
+  cp "$PENDING_REFRESH/config.after" "$COMMIT_CONFIG_TMP" || { rm -f "$COMMIT_CONFIG_TMP" "$COMMIT_CATALOG_TMP"; fail 'could not prepare refreshed configuration'; }
+  COMMIT_CONFIG_BINDING=$(image_binding "$COMMIT_CONFIG_TMP") \
+    || fail 'could not bind refreshed configuration temporary file'
+  [ "${COMMIT_CONFIG_BINDING#*$'\t'}" = "$PENDING_CONFIG_AFTER_SHA" ] \
+    || fail 'refreshed configuration temporary file changed'
+}
+
+stage_commit_catalog() {
+  cp "$PENDING_REFRESH/catalog.after" "$COMMIT_CATALOG_TMP" || { rm -f "$COMMIT_CONFIG_TMP" "$COMMIT_CATALOG_TMP"; fail 'could not prepare refreshed capability catalog'; }
+  COMMIT_CATALOG_BINDING=$(image_binding "$COMMIT_CATALOG_TMP") \
+    || fail 'could not bind refreshed catalog temporary file'
+  [ "${COMMIT_CATALOG_BINDING#*$'\t'}" = "$PENDING_CATALOG_AFTER_SHA" ] \
+    || fail 'refreshed catalog temporary file changed'
+}
+
+persist_commit_images() {
+  local planning_dir="$1"
+  verify_image \
+    "$COMMIT_CATALOG_TMP" \
+    "${COMMIT_CATALOG_BINDING%%$'\t'*}" \
+    "$PENDING_CATALOG_AFTER_SHA" \
+    || fail 'refreshed catalog temporary file changed before commit'
+  mv -f "$COMMIT_CATALOG_TMP" "$planning_dir/claude-capabilities.json" || { rm -f "$COMMIT_CONFIG_TMP" "$COMMIT_CATALOG_TMP"; fail 'could not persist refreshed capability catalog'; }
+  verify_pending_after_images || fail 'published model refresh journal changed during commit'
+  verify_image \
+    "$COMMIT_CONFIG_TMP" \
+    "${COMMIT_CONFIG_BINDING%%$'\t'*}" \
+    "$PENDING_CONFIG_AFTER_SHA" \
+    || fail 'refreshed configuration temporary file changed before commit'
+  mv -f "$COMMIT_CONFIG_TMP" "$planning_dir/config.json" || { rm -f "$COMMIT_CONFIG_TMP"; fail 'could not persist refreshed configuration'; }
+}
+
 commit_pending_refresh() {
-  local planning_dir="$1" config_temporary catalog_temporary config_binding catalog_binding
+  local planning_dir="$1"
   [ -n "$PENDING_REFRESH" ] \
     && [ "$PENDING_REFRESH" = "$planning_dir/.lbwc-model-refresh.pending" ] \
     || fail 'model refresh journal is unavailable'
-  config_temporary=$(mktemp "$planning_dir/.config.json.model-refresh.XXXXXX") \
+  COMMIT_CONFIG_TMP=$(mktemp "$planning_dir/.config.json.model-refresh.XXXXXX") \
     || fail 'could not create refreshed configuration temporary file'
-  catalog_temporary=$(mktemp "$planning_dir/.claude-capabilities.json.model-refresh.XXXXXX") || {
-    rm -f "$config_temporary"
+  COMMIT_CATALOG_TMP=$(mktemp "$planning_dir/.claude-capabilities.json.model-refresh.XXXXXX") || {
+    rm -f "$COMMIT_CONFIG_TMP"
     fail 'could not create refreshed catalog temporary file'
   }
   verify_pending_after_images || fail 'published model refresh journal changed before commit'
-  cp "$PENDING_REFRESH/config.after" "$config_temporary" || {
-    rm -f "$config_temporary" "$catalog_temporary"
-    fail 'could not prepare refreshed configuration'
-  }
-  config_binding=$(image_binding "$config_temporary") \
-    || fail 'could not bind refreshed configuration temporary file'
-  [ "${config_binding#*$'\t'}" = "$PENDING_CONFIG_AFTER_SHA" ] \
-    || fail 'refreshed configuration temporary file changed'
+  stage_commit_config
   verify_pending_after_images || fail 'published model refresh journal changed before commit'
-  cp "$PENDING_REFRESH/catalog.after" "$catalog_temporary" || {
-    rm -f "$config_temporary" "$catalog_temporary"
-    fail 'could not prepare refreshed capability catalog'
-  }
-  catalog_binding=$(image_binding "$catalog_temporary") \
-    || fail 'could not bind refreshed catalog temporary file'
-  [ "${catalog_binding#*$'\t'}" = "$PENDING_CATALOG_AFTER_SHA" ] \
-    || fail 'refreshed catalog temporary file changed'
+  stage_commit_catalog
   verify_pending_after_images || fail 'published model refresh journal changed before commit'
-  verify_image \
-    "$catalog_temporary" \
-    "${catalog_binding%%$'\t'*}" \
-    "$PENDING_CATALOG_AFTER_SHA" \
-    || fail 'refreshed catalog temporary file changed before commit'
-  mv -f "$catalog_temporary" "$planning_dir/claude-capabilities.json" || {
-    rm -f "$config_temporary" "$catalog_temporary"
-    fail 'could not persist refreshed capability catalog'
-  }
-  verify_pending_after_images || fail 'published model refresh journal changed during commit'
-  verify_image \
-    "$config_temporary" \
-    "${config_binding%%$'\t'*}" \
-    "$PENDING_CONFIG_AFTER_SHA" \
-    || fail 'refreshed configuration temporary file changed before commit'
-  mv -f "$config_temporary" "$planning_dir/config.json" || {
-    rm -f "$config_temporary"
-    fail 'could not persist refreshed configuration'
-  }
+  persist_commit_images "$planning_dir"
   validate_state "$planning_dir"
   verify_pending_before_images || fail 'published model refresh journal changed after commit'
   verify_pending_after_images || fail 'published model refresh journal changed after commit'
@@ -692,6 +680,21 @@ catalog_command() {
   fi
 }
 
+dispatch_command() {
+  local command="$1" planning_dir="$2"
+  shift 2
+  case "$command" in
+    refresh) [ "$#" -eq 1 ] || { usage; exit 1; }; refresh_command "$planning_dir" ;;
+    show) [ "$#" -eq 1 ] || { usage; exit 1; }; show_command "$planning_dir" ;;
+    activate) [ "$#" -eq 2 ] || { usage; exit 1; }; activate_command "$planning_dir" "$2" ;;
+    set) [ "$#" -eq 5 ] || { usage; exit 1; }; set_command "$planning_dir" "$2" "$3" "$4" "$5" ;;
+    copy) [ "$#" -eq 3 ] || { usage; exit 1; }; copy_command "$planning_dir" "$2" "$3" ;;
+    validate) [ "$#" -eq 1 ] || { usage; exit 1; }; validate_command "$planning_dir" ;;
+    catalog) [ "$#" -eq 1 ] || { usage; exit 1; }; catalog_command "$planning_dir" ;;
+    *) usage; exit 1 ;;
+  esac
+}
+
 main() {
   local command planning_dir
   local -a original_args=("$@")
@@ -715,16 +718,7 @@ main() {
   fi
   bash "$ROUTING" assert-transaction "$planning_dir" >/dev/null
   planning_dir="${LBWC_CONFIG_TRANSACTION_PLANNING_DIR}"
-  case "$command" in
-    refresh) [ "$#" -eq 1 ] || { usage; exit 1; }; refresh_command "$planning_dir" ;;
-    show) [ "$#" -eq 1 ] || { usage; exit 1; }; show_command "$planning_dir" ;;
-    activate) [ "$#" -eq 2 ] || { usage; exit 1; }; activate_command "$planning_dir" "$2" ;;
-    set) [ "$#" -eq 5 ] || { usage; exit 1; }; set_command "$planning_dir" "$2" "$3" "$4" "$5" ;;
-    copy) [ "$#" -eq 3 ] || { usage; exit 1; }; copy_command "$planning_dir" "$2" "$3" ;;
-    validate) [ "$#" -eq 1 ] || { usage; exit 1; }; validate_command "$planning_dir" ;;
-    catalog) [ "$#" -eq 1 ] || { usage; exit 1; }; catalog_command "$planning_dir" ;;
-    *) usage; exit 1 ;;
-  esac
+  dispatch_command "$command" "$planning_dir" "$@"
 }
 
 main "$@"
