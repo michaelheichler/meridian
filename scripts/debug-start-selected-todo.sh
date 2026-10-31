@@ -5,6 +5,7 @@ set -euo pipefail
 SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ARCHIVED_STATE_MESSAGE="This todo came from archived milestone state. Restore the writable root STATE.md first by restarting so session-start.sh can run migration, or run 'bash scripts/migrate-orphaned-state.sh .lbwc-planning'."
 AUTO_PICKUP_NOTE="Selected todo was already picked up automatically."
+. "$SCRIPT_DIR/lib/debug-start-todo-match.sh"
 
 json_error() {
   local code="$1"
@@ -27,36 +28,6 @@ state_path_is_archived() {
 
 json_is_valid() {
   printf '%s' "$1" | jq empty >/dev/null 2>&1
-}
-
-read_frontmatter_field() {
-  local file="$1"
-  local field="$2"
-  awk -v field="$field" '
-    /^---$/ { if (!started) { started=1; in_fm=1; next } if (in_fm) exit }
-    in_fm && index($0, field ":") == 1 {
-      val = substr($0, length(field) + 2)
-      sub(/^[[:space:]]*/, "", val)
-      print val
-      exit
-    }
-  ' "$file"
-}
-
-read_source_todo_field() {
-  local file="$1"
-  local label="$2"
-  awk -v label="$label" '
-    $0 == "## Source Todo" { in_source = 1; next }
-    in_source && /^## / { exit }
-    in_source {
-      prefix = "- **" label ":** "
-      if (index($0, prefix) == 1) {
-        print substr($0, length(prefix) + 1)
-        exit
-      }
-    }
-  ' "$file"
 }
 
 normalize_planning_dir() {
@@ -125,99 +96,6 @@ extract_markers_json() {
         (if any_string("Accepted UAT summary deviation") then "Accepted UAT summary deviation" else empty end)
       ] | unique
   '
-}
-
-live_ref_count() {
-  local ref="$1"
-  local list_json list_status
-
-  if [ -z "$ref" ] || [ "$ref" = "null" ]; then
-    printf '0\n'
-    return 0
-  fi
-
-  list_json=$(LBWC_PLANNING_DIR="$PLANNING_DIR" bash "$SCRIPT_DIR/list-todos.sh" 2>/dev/null || true)
-  list_status=$(printf '%s' "$list_json" | jq -r '.status // "error"' 2>/dev/null || echo "error")
-  if [ "$list_status" != "ok" ]; then
-    printf '0\n'
-    return 0
-  fi
-
-  printf '%s' "$list_json" | jq -r --arg ref "$ref" '[.items[] | select((.ref // "") == $ref)] | length' 2>/dev/null || printf '0\n'
-}
-
-MATCH_FOUND=false
-MATCH_SESSION_ID=""
-MATCH_SESSION_FILE=""
-MATCH_SESSION_STATUS=""
-
-canonicalize_debug_sessions() {
-  LBWC_PLANNING_DIR="$PLANNING_DIR" bash "$SCRIPT_DIR/debug-session-state.sh" list "$PLANNING_DIR" >/dev/null 2>&1 || true
-}
-
-find_completed_source_todo_match() {
-  local selected_json="$1"
-  local selected_ref selected_raw_line selected_identity_total completed_dir debugging_dir file
-  local source_ref source_raw_line session_status ref_count_loaded ref_count_cached
-
-  MATCH_FOUND=false
-  MATCH_SESSION_ID=""
-  MATCH_SESSION_FILE=""
-  MATCH_SESSION_STATUS=""
-
-  selected_ref=$(printf '%s' "$selected_json" | jq -r '.ref // empty')
-  selected_raw_line=$(printf '%s' "$selected_json" | jq -r '.line // .raw_line // .text // empty')
-  selected_identity_total=$(printf '%s' "$selected_json" | jq -r '.identity_total // 0')
-  debugging_dir="${PLANNING_DIR%/}/debugging"
-  completed_dir="${PLANNING_DIR%/}/debugging/completed"
-  ref_count_loaded=false
-  ref_count_cached=0
-
-  [ -d "$debugging_dir" ] || return 0
-
-  canonicalize_debug_sessions
-
-  for file in "$completed_dir"/*.md "$debugging_dir"/*.md; do
-    [ -f "$file" ] && [ ! -L "$file" ] || continue
-    session_status=$(read_frontmatter_field "$file" "status")
-    [ "$session_status" = "complete" ] || continue
-
-    source_ref=$(read_source_todo_field "$file" "Ref")
-    source_raw_line=$(read_source_todo_field "$file" "Raw Line")
-    case "$source_ref" in
-      none|null) source_ref="" ;;
-    esac
-
-    if [ -n "$selected_ref" ] && [ "$selected_ref" != "null" ]; then
-      [ "$source_ref" = "$selected_ref" ] || continue
-      if [ "$source_raw_line" = "$selected_raw_line" ]; then
-        MATCH_FOUND=true
-      else
-        if [ "$ref_count_loaded" != "true" ]; then
-          ref_count_cached=$(live_ref_count "$selected_ref")
-          case "$ref_count_cached" in
-            ''|*[!0-9]*) ref_count_cached=0 ;;
-          esac
-          ref_count_loaded=true
-        fi
-      fi
-      if [ "$ref_count_cached" = "1" ]; then
-        MATCH_FOUND=true
-      fi
-    else
-      [ -z "$source_ref" ] || continue
-      if [ "$source_raw_line" = "$selected_raw_line" ] && [ "${selected_identity_total:-0}" = "1" ]; then
-        MATCH_FOUND=true
-      fi
-    fi
-
-    if [ "$MATCH_FOUND" = "true" ]; then
-      MATCH_SESSION_FILE="$file"
-      MATCH_SESSION_ID="$(basename "$file" .md)"
-      MATCH_SESSION_STATUS="$session_status"
-      return 0
-    fi
-  done
 }
 
 session_json() {
@@ -431,11 +309,14 @@ else
   }
 fi
 
-if ! eval "$SESSION_OUTPUT"; then
+SESSION_ID_REGEX='^session_id=([0-9A-Za-z_-]+)$'
+if ! [[ "${SESSION_OUTPUT%%$'\n'*}" =~ $SESSION_ID_REGEX ]]; then
   json_error "session_start_failed" "Debug session helper returned unparseable metadata."
   exit 0
 fi
-SESSION_JSON=$(session_json "${session_id:-}" "${session_file:-}" "investigating")
+SESSION_ID_VALUE="${BASH_REMATCH[1]}"
+SESSION_FILE_VALUE="$PLANNING_DIR/debugging/active/${SESSION_ID_VALUE}.md"
+SESSION_JSON=$(session_json "$SESSION_ID_VALUE" "$SESSION_FILE_VALUE" "investigating")
 
 PICKUP_JSON=$(pickup_selected_todo "$SELECTED_JSON" "$DETAIL_STATUS" "$CLEANUP_POLICY")
 if ! json_is_valid "$PICKUP_JSON"; then
