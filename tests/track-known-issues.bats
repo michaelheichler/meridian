@@ -1,5 +1,7 @@
 #!/usr/bin/env bats
 
+bats_require_minimum_version 1.5.0
+
 setup() {
   REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/.." && pwd)"
   SCRIPT="$REPO_ROOT/scripts/track-known-issues.sh"
@@ -56,6 +58,53 @@ STATE
 
   [ "$status" -eq 0 ]
   [[ "$output" == *"already_tracked_count=1"* ]]
+}
+
+write_second_summary() {
+  cat > "$PHASE_DIR/03-02-SUMMARY.md" <<'SUMMARY'
+---
+phase: 03
+pre_existing_issues:
+  - '{"test":"BetaTests","file":"tests/beta.sh","error":"crash"}'
+---
+SUMMARY
+}
+
+write_backslash_summary() {
+  cat > "$PHASE_DIR/03-03-SUMMARY.md" <<'SUMMARY'
+---
+phase: 03
+pre_existing_issues:
+  - '{"test":"GammaTests","file":"tests/gamma.sh","error":"path C:\\temp\\new"}'
+---
+SUMMARY
+}
+
+@test "promote-todos promotes several issues in one pass and keeps backslashes literal" {
+  write_summary
+  write_second_summary
+  bash "$SCRIPT" sync-summaries "$PHASE_DIR" >/dev/null
+  printf '## Todos\nNone.\n' > "$PLANNING_DIR/STATE.md"
+
+  run --separate-stderr bash "$SCRIPT" promote-todos "$PHASE_DIR"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"promoted_count=2"* ]]
+  [[ "$output" == *"promote_status=promoted"* ]]
+  [[ "$stderr" != *"newline in string"* ]]
+  [ "$(sed -n '/^## Todos$/,$p' "$PLANNING_DIR/STATE.md" | grep -c '\[KNOWN-ISSUE\]')" -eq 2 ]
+  ! grep -q '^None\.$' "$PLANNING_DIR/STATE.md"
+
+  run bash "$SCRIPT" promote-todos "$PHASE_DIR"
+
+  [[ "$output" == *"promoted_count=0"* ]]
+  [[ "$output" == *"already_tracked_count=2"* ]]
+
+  write_backslash_summary
+  bash "$SCRIPT" sync-summaries "$PHASE_DIR" >/dev/null
+  bash "$SCRIPT" promote-todos "$PHASE_DIR" >/dev/null
+
+  grep -qF 'C:\temp\new' "$PLANNING_DIR/STATE.md"
 }
 
 @test "promote-todos fails closed without root STATE.md" {
