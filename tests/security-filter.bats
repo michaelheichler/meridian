@@ -2,6 +2,8 @@
 
 load test_helper
 
+bats_require_minimum_version 1.5.0
+
 setup() {
   setup_temp_dir
   cd "$TEST_TEMP_DIR"
@@ -69,4 +71,37 @@ run_filter() {
   json=$(payload "tool_input.pattern=dist/|build/" "tool_input.path=src")
   run bash -c "printf '%s' '$json' | bash '$SCRIPTS_DIR/security-filter.sh'"
   [ "$status" -eq 0 ]
+}
+
+run_tool_filter() {
+  local tool_name="$1" path_key="$2" target="$3"
+  payload "tool_name=$tool_name" "tool_input.$path_key=$target" | bash "$SCRIPTS_DIR/security-filter.sh"
+}
+
+assert_tool_exit() {
+  local expected="$1" tool_name="$2" path_key="$3" target="$4"
+  run run_tool_filter "$tool_name" "$path_key" "$target"
+  [ "$status" -eq "$expected" ]
+}
+
+for target in build/x dist/y; do
+  bats_test_function --description "Read of $target is allowed" -- assert_tool_exit 0 Read file_path "$target"
+  bats_test_function --description "Grep of $target is allowed" -- assert_tool_exit 0 Grep path "$target"
+  bats_test_function --description "Write of $target is blocked" -- assert_tool_exit 2 Write file_path "$target"
+  bats_test_function --description "Edit of $target is blocked" -- assert_tool_exit 2 Edit file_path "$target"
+done
+
+bats_test_function --description "Read of .env stays blocked" -- assert_tool_exit 2 Read file_path .env
+bats_test_function --description "Grep of .env stays blocked" -- assert_tool_exit 2 Grep path .env
+
+@test "allows the call and warns on stderr when jq is missing" {
+  local no_jq_bin="$TEST_TEMP_DIR/no-jq-bin"
+  mkdir -p "$no_jq_bin"
+  local json
+  json=$(payload "tool_name=Write" "tool_input.file_path=.env")
+
+  run --separate-stderr env PATH="$no_jq_bin" "$BASH" -c 'printf "%s" "$1" | "$BASH" "$2"' _ "$json" "$SCRIPTS_DIR/security-filter.sh"
+
+  [ "$status" -eq 0 ]
+  [ "$stderr" = "meridian hook warning: security-filter jq not available, call allowed" ]
 }
