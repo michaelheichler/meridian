@@ -8,10 +8,12 @@ setup() {
   TEST_ROOT="$(mktemp -d)"
   TEST_ROOT="$(cd "$TEST_ROOT" && pwd -P)"
   PLANNING_DIR="$TEST_ROOT/.lbwc-planning"
+  START_EVENT='{"hook_event_name":"SubagentStart","agent_type":"lbwc-python-engineer-calm-fox"}'
   mkdir -p "$PLANNING_DIR/.contracts/tasks"
 }
 
 teardown() {
+  chmod 755 "$PLANNING_DIR" 2>/dev/null || true
   rm -rf "$TEST_ROOT"
 }
 
@@ -60,6 +62,43 @@ bats_test_function --description "agent-lifecycle: touch stop without a planning
 
   [ "$status" -ne 0 ]
   [ "$output" = "agent_manifest_status=unavailable" ]
+}
+
+@test "agent-lifecycle: a dangling manifest symlink fails as unavailable" {
+  ln -s "$TEST_ROOT/nowhere.json" "$PLANNING_DIR/.agent-manifest.json"
+
+  run --separate-stderr env LBWC_PLANNING_DIR="$PLANNING_DIR" bash "$SCRIPT" sweep
+
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+  [ "$stderr" = "agent_manifest_status=unavailable" ]
+}
+
+@test "agent-lifecycle: an unreadable planning dir fails as unavailable" {
+  [ "$(id -u)" -ne 0 ] || skip "root ignores directory permissions"
+  chmod 000 "$PLANNING_DIR"
+
+  run --separate-stderr env LBWC_PLANNING_DIR="$PLANNING_DIR" bash "$SCRIPT" sweep
+
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+  [ "$stderr" = "agent_manifest_status=unavailable" ]
+}
+
+@test "agent-lifecycle: a missing planning dir is a silent no-op" {
+  run --separate-stderr env LBWC_PLANNING_DIR="$TEST_ROOT/absent" bash "$SCRIPT" touch start <<< "$START_EVENT"
+
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  [ -z "$stderr" ]
+}
+
+@test "agent-lifecycle: a planning dir without a manifest is a silent no-op" {
+  run --separate-stderr env LBWC_PLANNING_DIR="$PLANNING_DIR" bash "$SCRIPT" touch start <<< "$START_EVENT"
+
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  [ -z "$stderr" ]
 }
 
 @test "agent-lifecycle: ignores a touch for an unknown agent" {
