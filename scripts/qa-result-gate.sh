@@ -17,6 +17,8 @@ TRACK_UAT_DEVIATIONS_SCRIPT="$SCRIPT_DIR/track-uat-deviations.sh"
 : "$TRACK_UAT_DEVIATIONS_SCRIPT"
 
 . "$SCRIPT_DIR/lib/qa-result-gate-path-evidence.sh"
+. "$SCRIPT_DIR/lib/qa-result-gate-path-resolve.sh"
+. "$SCRIPT_DIR/lib/qa-result-gate-git-evidence.sh"
 . "$SCRIPT_DIR/lib/qa-result-gate-fail-classifications.sh"
 . "$SCRIPT_DIR/lib/qa-result-gate-known-issues.sh"
 . "$SCRIPT_DIR/lib/qa-result-gate-summary-deviations.sh"
