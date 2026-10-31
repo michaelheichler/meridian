@@ -5,7 +5,7 @@ set -euo pipefail
 CMD="${1:-}"
 PHASE_DIR="${2:-}"
 REQUESTED_STAGE="${3:-}"
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd)"
 OUTPUT_PHASE_DIR="${QA_REMEDIATION_OUTPUT_PHASE_DIR:-$PHASE_DIR}"
 OUTPUT_PHASE_DIR="${OUTPUT_PHASE_DIR%/}"
 
@@ -24,7 +24,7 @@ esac
 if [[ "$PHASE_DIR" != /* ]]; then
   PHASE_DIR="$(pwd -P)/$PHASE_DIR"
 fi
-PHASE_DIR="$(cd "$PHASE_DIR" 2>/dev/null && pwd -P)"
+PHASE_DIR="$(CDPATH='' cd -- "$PHASE_DIR" 2>/dev/null && pwd -P)"
 case "$PHASE_DIR" in
   */.lbwc-planning/phases/*) ;;
   *)

@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OPEN_FILTER="$SCRIPT_DIR/deviq-open-blocks.jq"
-PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$SCRIPT_DIR/../.." && pwd)}"
+PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(CDPATH='' cd -- "$SCRIPT_DIR/../.." && pwd)}"
 NUDGES_FILE="$PLUGIN_ROOT/config/deviq-nudges.json"
 
 ROOT=".lbwc-planning/deviq"

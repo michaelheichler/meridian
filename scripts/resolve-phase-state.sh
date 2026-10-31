@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd)"
 SESSION_KEY="${CLAUDE_SESSION_ID:-default}"
 L="/tmp/.lbwc-plugin-root-link-${SESSION_KEY}"
 P="/tmp/.lbwc-phase-detect-${SESSION_KEY}.txt"

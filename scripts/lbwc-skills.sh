@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DETECTOR="$SCRIPT_DIR/detect-stack.sh"
 JSON_OUTPUT=0
 
@@ -27,7 +27,7 @@ require_tools() {
 resolve_project_root() {
   local requested="$1" resolved
   [ -d "$requested" ] || fail "project directory is not readable: $requested"
-  resolved=$(cd -P -- "$requested" 2>/dev/null && pwd -P) \
+  resolved=$(CDPATH='' cd -P -- "$requested" 2>/dev/null && pwd -P) \
     || fail "could not resolve project directory: $requested"
   printf '%s\n' "$resolved"
 }

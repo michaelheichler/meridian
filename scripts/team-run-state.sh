@@ -85,7 +85,7 @@ canonical_project_root() {
   local candidate="$1"
   [ -d "$candidate" ] || fail "project root does not exist: $candidate"
   [ ! -L "$candidate" ] || fail 'project root must not be a symbolic link'
-  (cd -P "$candidate" && pwd -P) || fail "project root is not readable: $candidate"
+  (CDPATH='' cd -P -- "$candidate" && pwd -P) || fail "project root is not readable: $candidate"
 }
 
 PROJECT_ROOT=""
@@ -109,7 +109,7 @@ scope_path() {
     esac
     [ -d "$candidate" ] || fail "scope directory does not exist: $requested"
     [ ! -L "$candidate" ] || fail "scope must not be a symbolic link: $requested"
-    canonical=$(cd -P "$candidate" && pwd -P) || fail "scope is not readable: $requested"
+    canonical=$(CDPATH='' cd -P -- "$candidate" && pwd -P) || fail "scope is not readable: $requested"
   fi
   case "$canonical" in
     "$PROJECT_ROOT") printf '.\n' ;;
@@ -150,7 +150,7 @@ run_root_is_valid() {
 RUN_ROOT=""
 if [ -n "$RUN_ROOT_ARG" ]; then
   [ -n "$PROJECT_ROOT" ] || PROJECT_ROOT=$(canonical_project_root "$(dirname "$(dirname "$(dirname "$RUN_ROOT_ARG")")")")
-  RUN_ROOT=$(cd -P "$RUN_ROOT_ARG" 2>/dev/null && pwd -P) || fail "run root is not readable: $RUN_ROOT_ARG"
+  RUN_ROOT=$(CDPATH='' cd -P -- "$RUN_ROOT_ARG" 2>/dev/null && pwd -P) || fail "run root is not readable: $RUN_ROOT_ARG"
   run_root_is_valid "$RUN_ROOT" || fail 'run root is outside the project temporary run directory'
 fi
 

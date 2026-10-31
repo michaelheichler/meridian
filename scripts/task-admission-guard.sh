@@ -2,7 +2,7 @@
 set -u
 
 command -v jq >/dev/null 2>&1 || { echo "Blocked: jq not available, cannot validate native task" >&2; exit 2; }
-SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd -P)
+SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname "$0")" && pwd -P)
 . "$SCRIPT_DIR/lib/agent-manifest.sh" 2>/dev/null || { echo "Blocked: agent manifest library unavailable" >&2; exit 2; }
 . "$SCRIPT_DIR/lib/lbwc-control-root.sh" 2>/dev/null || { echo "Blocked: control root resolver unavailable" >&2; exit 2; }
 

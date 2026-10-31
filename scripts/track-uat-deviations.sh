@@ -244,7 +244,7 @@ phase_number() {
 planning_root_for_phase() {
   local phase_dir="${1:-}" dir
   [ -n "$phase_dir" ] || return 1
-  dir=$(cd "$phase_dir" 2>/dev/null && pwd -P) || return 1
+  dir=$(CDPATH='' cd -- "$phase_dir" 2>/dev/null && pwd -P) || return 1
   while [ "$dir" != "/" ] && [ -n "$dir" ]; do
     if [ "$(basename "$dir")" = ".lbwc-planning" ]; then
       printf '%s\n' "$dir"
@@ -455,7 +455,7 @@ upsert_uat_deviation_detail() {
   local signature="$7" source_plan="$8" source_path="$9" text="${10}"
   local detail_script details_path detail_json detail_out detail_status detail_message today uat_rel phase_id
 
-  detail_script="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/todo-details.sh"
+  detail_script="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/todo-details.sh"
   if [ ! -f "$detail_script" ]; then
     printf 'unavailable\ttodo-details.sh not found'
     return 0

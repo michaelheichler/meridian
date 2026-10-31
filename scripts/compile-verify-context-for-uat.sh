@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PHASE_DIR="${1:?Usage: compile-verify-context-for-uat.sh <phase-dir>}"
 
 normalize_uat_stage() {

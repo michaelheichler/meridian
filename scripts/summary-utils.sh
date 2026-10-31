@@ -2,7 +2,7 @@
 
 : 'The status-counting hot path stays in bash without external process dependencies. Deviation extraction helpers intentionally use awk, find plus path filters, and sort/sort -V.'
 
-SUMMARY_UTILS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SUMMARY_UTILS_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 trim_summary_value() {
   local value="$1"

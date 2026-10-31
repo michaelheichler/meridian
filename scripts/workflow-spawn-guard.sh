@@ -17,7 +17,7 @@ INPUT=$(cat 2>/dev/null) || fail "workflow spawn guard could not read tool call 
 TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // ""' 2>/dev/null) || fail "workflow spawn guard could not parse tool call input"
 [ "$TOOL_NAME" = "Workflow" ] || exit 0
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd)"
 [ -f "$SCRIPT_DIR/lib/workflow-manifest.sh" ] || fail "workflow manifest library is unavailable"
 . "$SCRIPT_DIR/lib/workflow-manifest.sh" || fail "workflow manifest library failed to load"
 [ -f "$SCRIPT_DIR/lib/lbwc-control-root.sh" ] || fail "control root library is unavailable"
@@ -35,7 +35,7 @@ case "$SCRIPT_PATH" in
   *) fail "scriptPath must be an absolute path: $SCRIPT_PATH" ;;
 esac
 [ -f "$SCRIPT_PATH" ] || fail "scriptPath does not resolve to a file on disk: $SCRIPT_PATH"
-CANONICAL_SCRIPT_PATH=$(cd "$(dirname "$SCRIPT_PATH")" 2>/dev/null && printf '%s/%s' "$(pwd -P)" "$(basename "$SCRIPT_PATH")") \
+CANONICAL_SCRIPT_PATH=$(CDPATH='' cd -- "$(dirname "$SCRIPT_PATH")" 2>/dev/null && printf '%s/%s' "$(pwd -P)" "$(basename "$SCRIPT_PATH")") \
   || fail "scriptPath is unavailable"
 
 CONTROL_ROOT=$(lbwc_resolve_control_root "" "" "$PWD" 2>/dev/null || true)

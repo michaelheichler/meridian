@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -u
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd)"
 READ_JSON_LITERAL_AWK="$SCRIPT_DIR/lib/resolve-uat-round-limit-read-json.awk"
 
 usage() {

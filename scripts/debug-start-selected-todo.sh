@@ -2,7 +2,7 @@
 set -euo pipefail
 
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ARCHIVED_STATE_MESSAGE="This todo came from archived milestone state. Restore the writable root STATE.md first by restarting so session-start.sh can run migration, or run 'bash scripts/migrate-orphaned-state.sh .lbwc-planning'."
 AUTO_PICKUP_NOTE="Selected todo was already picked up automatically."
 
@@ -83,7 +83,7 @@ normalize_planning_dir() {
   fi
 
   (
-    cd "$parent_dir/$base_dir" && pwd -P
+    CDPATH='' cd -- "$parent_dir/$base_dir" && pwd -P
   )
 }
 
@@ -335,8 +335,8 @@ if ! PLANNING_DIR=$(normalize_planning_dir "$PLANNING_ARG"); then
   json_error "planning_dir_missing" "Planning directory not found: ${PLANNING_ARG}"
   exit 0
 fi
-PROJECT_ROOT=$(cd "${PLANNING_DIR%/}/.." && pwd -P)
-cd "$PROJECT_ROOT"
+PROJECT_ROOT=$(CDPATH='' cd -- "${PLANNING_DIR%/}/.." && pwd -P)
+CDPATH='' cd -- "$PROJECT_ROOT"
 export LBWC_PLANNING_DIR="$PLANNING_DIR"
 
 ROUTING_FLAGS_JSON=$(routing_flags_json_from_args "${ROUTING_FLAGS[@]}")

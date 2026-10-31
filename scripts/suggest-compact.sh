@@ -6,7 +6,7 @@ MODE="${1:-execute}"
 PLANNING_DIR="${LBWC_PLANNING_DIR:-.lbwc-planning}"
 USAGE_FILE="$PLANNING_DIR/.context-usage"
 
-_SC_SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+_SC_SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd)"
 if [ -f "$_SC_SCRIPT_DIR/summary-utils.sh" ]; then
   . "$_SC_SCRIPT_DIR/summary-utils.sh"
 else
@@ -20,7 +20,7 @@ if [ -z "$PLUGIN_ROOT" ]; then
   PLUGIN_ROOT=$(find "${CLAUDE_DIR:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}}/plugins/cache/lbwc-marketplace/lbwc" -maxdepth 1 -mindepth 1 -type d 2>/dev/null | (sort -V 2>/dev/null || sort -t. -k1,1n -k2,2n -k3,3n) | tail -1 || true)
 fi
 if [ -z "$PLUGIN_ROOT" ] || [ ! -d "$PLUGIN_ROOT" ]; then
-  PLUGIN_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+  PLUGIN_ROOT="$(CDPATH='' cd -- "$(dirname "$0")/.." && pwd)"
 fi
 
 AUTONOMY="standard"

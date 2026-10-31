@@ -2,7 +2,7 @@
 
 set -u
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd -P 2>/dev/null || pwd)"
+SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd -P 2>/dev/null || pwd)"
 JSON_OUTPUT=false
 MODE="planning"
 TARGET=""
@@ -72,7 +72,7 @@ done
 physical_dir() {
   local dir="$1"
   if [ -d "$dir" ]; then
-    (cd "$dir" 2>/dev/null && pwd -P 2>/dev/null) || printf '%s\n' "$dir"
+    (CDPATH='' cd -- "$dir" 2>/dev/null && pwd -P 2>/dev/null) || printf '%s\n' "$dir"
   else
     printf '%s\n' "$dir"
   fi

@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd)"
 if [ -f "$SCRIPT_DIR/uat-utils.sh" ]; then
   source "$SCRIPT_DIR/uat-utils.sh"
 fi
@@ -32,13 +32,13 @@ canonicalize_existing_or_parent() {
   local path="$1" parent base parent_real
 
   if [ -d "$path" ]; then
-    (cd "$path" && pwd -P)
+    (CDPATH='' cd -- "$path" && pwd -P)
     return 0
   fi
 
   parent=$(dirname "$path")
   base=$(basename "$path")
-  if parent_real=$(cd "$parent" 2>/dev/null && pwd -P); then
+  if parent_real=$(CDPATH='' cd -- "$parent" 2>/dev/null && pwd -P); then
     printf '%s/%s\n' "$parent_real" "$base"
   else
     printf '%s\n' "$path"

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd -P)"
+SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd -P)"
 PROJECT_ROOT=""
 SOURCE=""
 OUTPUT=""
@@ -40,14 +40,14 @@ canonical_directory() {
   local path="$1"
   [ -d "$path" ] || die "directory does not exist: $path"
   [ ! -L "$path" ] || die "directory must not be a symbolic link: $path"
-  (cd -P "$path" && pwd -P)
+  (CDPATH='' cd -P -- "$path" && pwd -P)
 }
 
 canonical_file() {
   local path="$1"
   [ -f "$path" ] || die "file does not exist: $path"
   [ ! -L "$path" ] || die "file must not be a symbolic link: $path"
-  (cd -P "$(dirname "$path")" && printf '%s/%s\n' "$(pwd -P)" "$(basename "$path")")
+  (CDPATH='' cd -P -- "$(dirname "$path")" && printf '%s/%s\n' "$(pwd -P)" "$(basename "$path")")
 }
 
 import_file_size() {
@@ -144,7 +144,7 @@ normalize_source() {
   local adapter="$1" source="$2" output="$3"
   source=$(canonical_source "$source")
   mkdir -p "$(dirname "$output")"
-  output="$(cd -P "$(dirname "$output")" && pwd -P)/$(basename "$output")"
+  output="$(CDPATH='' cd -P -- "$(dirname "$output")" && pwd -P)/$(basename "$output")"
   source_adapter "$adapter"
   import_source_metadata "$source"
   case "$adapter" in
@@ -676,7 +676,7 @@ promote_import() {
     validation_output=$(LBWC_PLANNING_DIR="$planning_dir" "$SCRIPT_DIR/lbwc-config.sh" validate-config-json < "$planning_dir/config.json" 2>&1) \
       || validation_failed="post-promotion validation failed: lbwc-config.sh validate-config-json: $validation_output"
     if [ -z "$validation_failed" ]; then
-      validation_output=$(cd "$project_root" && LBWC_PLANNING_DIR="$planning_dir" bash "$SCRIPT_DIR/verify-state-consistency.sh" 2>&1) \
+      validation_output=$(CDPATH='' cd -- "$project_root" && LBWC_PLANNING_DIR="$planning_dir" bash "$SCRIPT_DIR/verify-state-consistency.sh" 2>&1) \
         || validation_failed="post-promotion validation failed: verify-state-consistency.sh: $validation_output"
     fi
   fi

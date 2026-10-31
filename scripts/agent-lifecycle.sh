@@ -178,8 +178,8 @@ lifecycle_resolve_contract_path() {
   local entry="$1" contract_path root
   contract_path=$(jq -r '.contract_path // empty' <<< "$entry" 2>/dev/null) || return 1
   [ -n "$contract_path" ] && [ -f "$contract_path" ] && [ ! -L "$contract_path" ] || return 1
-  contract_path=$(cd "$(dirname "$contract_path")" 2>/dev/null && printf '%s/%s' "$(pwd -P)" "$(basename "$contract_path")") || return 1
-  root=$(cd "$PLANNING_DIR" 2>/dev/null && pwd -P) || return 1
+  contract_path=$(CDPATH='' cd -- "$(dirname "$contract_path")" 2>/dev/null && printf '%s/%s' "$(pwd -P)" "$(basename "$contract_path")") || return 1
+  root=$(CDPATH='' cd -- "$PLANNING_DIR" 2>/dev/null && pwd -P) || return 1
   case "$(basename "$root")" in
     .lbwc-planning) case "$contract_path" in "$root/.contracts/"*) ;; *) return 1 ;; esac ;;
     *) case "$contract_path" in "$root/contracts/"*) ;; *) return 1 ;; esac ;;
@@ -214,7 +214,7 @@ lifecycle_contract_is_valid() {
   local entry="$1" contract_path contract root expected_root
   jq -e '.contract_enabled == true' <<< "$entry" >/dev/null 2>&1 || return 1
   contract_path=$(lifecycle_resolve_contract_path "$entry") || return 1
-  root=$(cd "$PLANNING_DIR" 2>/dev/null && pwd -P) || return 1
+  root=$(CDPATH='' cd -- "$PLANNING_DIR" 2>/dev/null && pwd -P) || return 1
   expected_root=$(lbwc_control_root_project_root "$root") || return 1
   contract=$(bash "$SCRIPT_DIR/task-contract.sh" verify "$contract_path" "$expected_root" 2>/dev/null) || return 1
   lifecycle_contract_matches_entry "$entry" "$contract" || return 1
@@ -251,7 +251,11 @@ expire_if_still_idle_locked() {
 
 lifecycle_has_no_project() {
   local manifest_path
-  manifest_path=$(agent_manifest_path "$PLANNING_DIR" 2>/dev/null) || return 0
+  [ -d "$PLANNING_DIR" ] || return 0
+  manifest_path=$(agent_manifest_path "$PLANNING_DIR" 2>/dev/null) || lifecycle_manifest_error unavailable
+  if [ -L "$manifest_path" ] && [ ! -e "$manifest_path" ]; then
+    lifecycle_manifest_error unavailable
+  fi
   [ ! -e "$manifest_path" ]
 }
 

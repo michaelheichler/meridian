@@ -4,7 +4,7 @@ set -u
 # post-archive-hook.sh <milestone-slug> <archive-path> <tag> [config-path]
 # Fail-open dispatcher for user-configured post-archive hooks.
 
-SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd -P 2>/dev/null || dirname "$0")
+SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname "$0")" && pwd -P 2>/dev/null || dirname "$0")
 ROOT_HELPER="$SCRIPT_DIR/lib/lbwc-config-root.sh"
 
 if [ -f "$ROOT_HELPER" ]; then
@@ -36,7 +36,7 @@ DEFAULT_CONFIG_PATH="${LBWC_PLANNING_DIR:-$BASE_ROOT/.lbwc-planning}/config.json
 CONFIG_PATH="${4:-$DEFAULT_CONFIG_PATH}"
 CONFIG_PATH=$(resolve_from_base "$CONFIG_PATH" "$BASE_ROOT")
 
-if CONFIG_DIR=$(cd "$(dirname "$CONFIG_PATH")" 2>/dev/null && pwd -P 2>/dev/null); then
+if CONFIG_DIR=$(CDPATH='' cd -- "$(dirname "$CONFIG_PATH")" 2>/dev/null && pwd -P 2>/dev/null); then
   CONFIG_PATH="$CONFIG_DIR/$(basename "$CONFIG_PATH")"
   PLANNING_DIR="$CONFIG_DIR"
 else
@@ -86,7 +86,7 @@ if [ ! -f "$HOOK_PATH" ]; then
 fi
 
 if ! (
-  cd "$PROJECT_ROOT" 2>/dev/null &&
+  CDPATH='' cd -- "$PROJECT_ROOT" 2>/dev/null &&
     bash "$HOOK_PATH" "$MILESTONE_SLUG" "$ARCHIVE_PATH" "$TAG"
 ); then
   warn "configured post_archive hook failed at $HOOK_PATH; continuing archive"

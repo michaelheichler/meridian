@@ -1,6 +1,6 @@
 #!/bin/bash
 set -u
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd -P)"
+SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd -P)"
 PLANNING_DIR_OVERRIDE="${LBWC_PLANNING_DIR:-}"
 
 command -v jq >/dev/null 2>&1 || {
@@ -25,7 +25,7 @@ esac
 
 HOOK_CWD=$(printf '%s' "$INPUT" | jq -r '.cwd // ""' 2>/dev/null) || HOOK_CWD=""
 [ -n "$HOOK_CWD" ] || HOOK_CWD="$PWD"
-HOOK_CWD=$(cd "$HOOK_CWD" 2>/dev/null && pwd -P || printf '%s' "$HOOK_CWD")
+HOOK_CWD=$(CDPATH='' cd -- "$HOOK_CWD" 2>/dev/null && pwd -P || printf '%s' "$HOOK_CWD")
 case "$FILE_PATH" in
   [/]*) RESOLVED_PATH="$FILE_PATH" ;;
   *) RESOLVED_PATH="$HOOK_CWD/$FILE_PATH" ;;
@@ -58,7 +58,7 @@ resolve_agent_entry() {
 }
 
 canonical_directory() {
-  cd "$1" 2>/dev/null && pwd -P
+  CDPATH='' cd -- "$1" 2>/dev/null && pwd -P
 }
 
 canonical_existing_parent() {

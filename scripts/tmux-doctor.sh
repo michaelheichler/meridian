@@ -3,7 +3,7 @@ set -euo pipefail
 set -E
 umask 077
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 source "$SCRIPT_DIR/lib/lbwc-control-root.sh"
 source "$SCRIPT_DIR/lib/tmux-runtime.sh"
 
@@ -73,7 +73,7 @@ done
 [ -d "$project_root" ] || usage
 command -v jq >/dev/null 2>&1 || usage
 
-project_root=$(cd "$project_root" && pwd -P)
+project_root=$(CDPATH='' cd -- "$project_root" && pwd -P)
 
 if [ ! -d "$requested_control_root" ]; then
   emit PASS 'no tmux runtime'

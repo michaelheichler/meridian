@@ -3,7 +3,7 @@ set -euo pipefail
 
 command -v jq >/dev/null 2>&1 || { echo '{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"jq is required but not installed"}}'; exit 0; }
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(pwd)"
 PLANNING_DIR="${LBWC_PLANNING_DIR:-.lbwc-planning}"
 
@@ -60,7 +60,7 @@ CODEBASE_MAP_DIGEST=""
 CODEBASE_MAP_FRESHNESS="unavailable"
 CODEBASE_MAP_META="$PLANNING_DIR/codebase/META.md"
 if [[ -f "$CODEBASE_MAP_META" ]]; then
-  CODEBASE_MAP_PATH=$(cd "$(dirname "$CODEBASE_MAP_META")" && pwd -P)/$(basename "$CODEBASE_MAP_META")
+  CODEBASE_MAP_PATH=$(CDPATH='' cd -- "$(dirname "$CODEBASE_MAP_META")" && pwd -P)/$(basename "$CODEBASE_MAP_META")
   if command -v shasum >/dev/null 2>&1; then
     CODEBASE_MAP_DIGEST=$(shasum -a 256 "$CODEBASE_MAP_META" | awk '{print "sha256:" $1}')
   elif command -v sha256sum >/dev/null 2>&1; then

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -uo pipefail
 
-TESTS_DIR=$(cd "$(dirname "$0")" && pwd)
-SCRIPTS_DIR=$(cd "$TESTS_DIR/.." && pwd)
+TESTS_DIR=$(CDPATH='' cd -- "$(dirname "$0")" && pwd)
+SCRIPTS_DIR=$(CDPATH='' cd -- "$TESTS_DIR/.." && pwd)
 RECORDER="$SCRIPTS_DIR/lib/deviq-record.py"
 
 PASS=0

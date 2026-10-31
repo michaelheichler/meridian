@@ -2,7 +2,7 @@
 set -u
 
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd)"
 PHASE_DETECT_OUT=$(bash "$SCRIPT_DIR/phase-detect.sh" 2>/dev/null || true)
 
 PHASE_DETECT_COMPLETE=$(printf '%s\n' "$PHASE_DETECT_OUT" | awk -F= '/^phase_detect_complete=/{print $2; exit}')

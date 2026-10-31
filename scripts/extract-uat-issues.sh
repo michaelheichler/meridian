@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ISSUE_PARSER="$SCRIPT_DIR/parse-uat-issues.awk"
 ROUND_ID_PARSER="$SCRIPT_DIR/extract-round-issue-ids.awk"
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
+SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 PLANNING_DIR="${1:-}"
 DETAIL_STATUS="${DETAIL_STATUS:-none}"
 DETAIL_RESULT_JSON="${DETAIL_RESULT_JSON:-}"

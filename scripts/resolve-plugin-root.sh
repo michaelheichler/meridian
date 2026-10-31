@@ -71,7 +71,7 @@ if [ -z "$resolved_root" ] && valid_root "$session_link"; then
 fi
 
 [ -n "$resolved_root" ] || fail_resolution
-canonical_root=$(cd "$resolved_root" 2>/dev/null && pwd -P) || fail_resolution
+canonical_root=$(CDPATH='' cd -- "$resolved_root" 2>/dev/null && pwd -P) || fail_resolution
 
 if ! bash "$canonical_root/scripts/ensure-plugin-root-link.sh" \
   "$session_link" "$canonical_root" >/dev/null 2>&1; then

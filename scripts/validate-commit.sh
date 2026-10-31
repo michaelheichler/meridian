@@ -14,11 +14,44 @@ fi
 
 VALID_TYPES="feat|fix|test|refactor|perf|docs|style|chore"
 
-first_message_subject() {
-  local re='-m[[:space:]]*("([^"]*)"|'"'"'([^'"'"']*)'"'"'|([^[:space:]]+))' subject=""
-  if [[ "$1" =~ $re ]]; then
-    subject="${BASH_REMATCH[2]}${BASH_REMATCH[3]}${BASH_REMATCH[4]}"
+DQUOTE='"'
+SQUOTE="'"
+BSLASH=$'\\'
+MESSAGE_VALUE_RE="(${DQUOTE}([^${DQUOTE}]*)${DQUOTE}|${SQUOTE}([^${SQUOTE}]*)${SQUOTE}|([^[:space:]]+))"
+
+message_flag_subject() {
+  local short_re="^-[a-ln-zA-Z]*m[[:space:]]*$MESSAGE_VALUE_RE"
+  local long_re="^--message(=|[[:space:]]+)$MESSAGE_VALUE_RE"
+  if [[ "$1" =~ $short_re ]]; then
+    printf '%s%s%s' "${BASH_REMATCH[2]}" "${BASH_REMATCH[3]}" "${BASH_REMATCH[4]}"
+  elif [[ "$1" =~ $long_re ]]; then
+    printf '%s%s%s' "${BASH_REMATCH[3]}" "${BASH_REMATCH[4]}" "${BASH_REMATCH[5]}"
   fi
+}
+
+is_escape_in_double_quotes() {
+  [ "$1" = "$BSLASH" ] && [ "$2" = "$DQUOTE" ]
+}
+
+# Quoted text is skipped because a "-m" inside it is not a flag.
+first_message_subject() {
+  local command_text="$1" idx=0 char quote="" at_token_start=1 subject=""
+  while [ "$idx" -lt "${#command_text}" ]; do
+    char="${command_text:idx:1}"
+    if [ -n "$quote" ]; then
+      ! is_escape_in_double_quotes "$char" "$quote" || idx=$((idx + 1))
+      [ "$char" = "$quote" ] && quote=""
+    elif [ "$at_token_start" -eq 1 ] && subject=$(message_flag_subject "${command_text:idx}") && [ -n "$subject" ]; then
+      break
+    else
+      at_token_start=0
+      case "$char" in
+        "$DQUOTE"|"$SQUOTE") quote="$char" ;;
+        [[:space:]]) at_token_start=1 ;;
+      esac
+    fi
+    idx=$((idx + 1))
+  done
   printf '%s\n' "${subject%%$'\n'*}"
 }
 

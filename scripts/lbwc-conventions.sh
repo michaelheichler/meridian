@@ -76,7 +76,7 @@ resolve_planning_dir() {
     */*) parent=${trimmed%/*}; [ -n "$parent" ] || parent=/ ;;
     *) parent=. ;;
   esac
-  physical_parent=$(cd -P -- "$parent" 2>/dev/null && pwd -P) \
+  physical_parent=$(CDPATH='' cd -P -- "$parent" 2>/dev/null && pwd -P) \
     || fail "could not resolve planning directory: $input"
   assert_no_symbolic_links "$physical_parent"
   printf '%s/.lbwc-planning\n' "$physical_parent"

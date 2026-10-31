@@ -2,9 +2,9 @@
 set -u
 unset CDPATH
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd)"
 PLANNING_DIR="${LBWC_PLANNING_DIR:-.lbwc-planning}"
-CANONICAL_ROOT="$(cd "$SCRIPT_DIR/.." && pwd -P)"
+CANONICAL_ROOT="$(CDPATH='' cd -- "$SCRIPT_DIR/.." && pwd -P)"
 
 TMUX_BIND_JSON=""
 
@@ -12,6 +12,7 @@ TMUX_BIND_JSON=""
 persist_cdpath_unset() {
   local env_file="${CLAUDE_ENV_FILE:-}"
   [ -n "$env_file" ] && [ -w "$env_file" ] || return 0
+  # Unset because a CDPATH cd prints the path and breaks $(cd && pwd) captures.
   grep -qxF 'unset CDPATH' "$env_file" 2>/dev/null || echo 'unset CDPATH' >> "$env_file" 2>/dev/null
   return 0
 }

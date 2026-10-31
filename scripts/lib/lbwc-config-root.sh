@@ -58,7 +58,7 @@ find_lbwc_root() {
   if [ -n "${1:-}" ]; then
     _prefer_claude_sidechain_host_root "$_cwd_dir" && return 0
     _walk_up_for_lbwc_root "$_cwd_dir" && return 0
-    if _start_dir=$(cd "$1" 2>/dev/null && pwd -P 2>/dev/null); then
+    if _start_dir=$(CDPATH='' cd -- "$1" 2>/dev/null && pwd -P 2>/dev/null); then
       _walk_up_for_lbwc_root "$_start_dir" && return 0
     else
       _walk_up_for_lbwc_root "$_cwd_dir" && return 0

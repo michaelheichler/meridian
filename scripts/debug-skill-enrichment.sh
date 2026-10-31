@@ -84,7 +84,7 @@ if [ -z "$QUERY" ]; then
 fi
 
 ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd -P 2>/dev/null || pwd)
-if ! cd "$ROOT" 2>/dev/null; then
+if ! CDPATH='' cd -- "$ROOT" 2>/dev/null; then
   emit_json "error" false "" "Unable to enter repository root"
   exit 0
 fi

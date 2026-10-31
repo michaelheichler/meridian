@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -uo pipefail
 
-TESTS_DIR=$(cd "$(dirname "$0")" && pwd)
-SCRIPTS_DIR=$(cd "$TESTS_DIR/.." && pwd)
-PLUGIN_ROOT=$(cd "$SCRIPTS_DIR/.." && pwd)
+TESTS_DIR=$(CDPATH='' cd -- "$(dirname "$0")" && pwd)
+SCRIPTS_DIR=$(CDPATH='' cd -- "$TESTS_DIR/.." && pwd)
+PLUGIN_ROOT=$(CDPATH='' cd -- "$SCRIPTS_DIR/.." && pwd)
 WORK_ROOT=$(mktemp -d)
 PLUGIN_FIXTURE="$WORK_ROOT/plugin"
 
@@ -113,7 +113,7 @@ run_generator() {
   esac
   generator_args+=("$role" --job "$job" \
     --contract "$contract" --task-id "$(basename "$contract" .json)" "$@")
-  RUN_OUTPUT=$(cd "$project" && PATH="$(dirname "$GENERATOR_BASH"):$PATH" \
+  RUN_OUTPUT=$(CDPATH='' cd -- "$project" && PATH="$(dirname "$GENERATOR_BASH"):$PATH" \
     LBWC_AGENT_RANDOM_SEED="$CONTRACT_SEQUENCE" \
     "$GENERATOR_BASH" "$GENERATOR" "${generator_args[@]}" 2>&1)
   RUN_RC=$?
@@ -230,7 +230,7 @@ CONTRACT_H=$(bash "$TASK_CONTRACT" issue "$PROJECT_H" core-tmux-selection \
   --command integration-test --role web-engineer --team solo --job "run in tmux" \
   --control-root "$CONTROL_ROOT_H" --requested-backend tmux --resolved-backend tmux \
   --write-capability directory:src/web)
-RUN_OUTPUT=$(cd "$PROJECT_H" && PATH="$(dirname "$GENERATOR_BASH"):$PATH" \
+RUN_OUTPUT=$(CDPATH='' cd -- "$PROJECT_H" && PATH="$(dirname "$GENERATOR_BASH"):$PATH" \
   LBWC_AGENT_RANDOM_SEED=42 \
   "$GENERATOR_BASH" "$GENERATOR" web-engineer --job "run in tmux" \
     --contract "$CONTRACT_H" --task-id "$(basename "$CONTRACT_H" .json)" \
@@ -264,7 +264,7 @@ CONTRACT_I=$(bash "$TASK_CONTRACT" issue "$PROJECT_I" core-workflow-selection \
   --command integration-test --role web-engineer --team solo --job "run in workflow" \
   --control-root "$CONTROL_ROOT_I" --requested-backend workflow --resolved-backend workflow \
   --write-capability directory:src/web)
-RUN_OUTPUT=$(cd "$PROJECT_I" && PATH="$(dirname "$GENERATOR_BASH"):$PATH" \
+RUN_OUTPUT=$(CDPATH='' cd -- "$PROJECT_I" && PATH="$(dirname "$GENERATOR_BASH"):$PATH" \
   LBWC_AGENT_RANDOM_SEED=43 \
   "$GENERATOR_BASH" "$GENERATOR" web-engineer --job "run in workflow" \
     --contract "$CONTRACT_I" --task-id "$(basename "$CONTRACT_I" .json)" \

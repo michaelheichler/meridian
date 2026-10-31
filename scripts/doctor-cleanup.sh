@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ACTION="${1:-scan}"
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd)"
 PLANNING_DIR="${LBWC_PLANNING_DIR:-.lbwc-planning}"
 LOG_FILE="$PLANNING_DIR/.hook-errors.log"
 

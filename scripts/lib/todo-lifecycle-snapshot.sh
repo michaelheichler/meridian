@@ -294,8 +294,8 @@ validate_item_against_live_payload() {
     return 0
   fi
   local state_dir planning_dir
-  state_dir=$(cd -P "$(dirname "$state_path")" 2>/dev/null && pwd) || state_dir=""
-  planning_dir=$(cd -P "${PLANNING_DIR%/}" 2>/dev/null && pwd) || planning_dir=""
+  state_dir=$(CDPATH='' cd -P -- "$(dirname "$state_path")" 2>/dev/null && pwd) || state_dir=""
+  planning_dir=$(CDPATH='' cd -P -- "${PLANNING_DIR%/}" 2>/dev/null && pwd) || planning_dir=""
   if [ "$(basename "$state_path")" != "STATE.md" ] || [ "$state_dir" != "$planning_dir" ] || [ ! -f "$state_path" ] || [ -L "$state_path" ]; then
     error_json "state_missing" "Todo selection no longer matches the writable root backlog. Rerun /lbwc:list-todos."
     return 0

@@ -5,7 +5,7 @@ lbwc_control_root_canonical_path() {
   [ -n "$candidate" ] || return 1
   [ -d "$candidate" ] || return 1
   [ ! -L "$candidate" ] || return 1
-  (cd "$candidate" 2>/dev/null && pwd -P 2>/dev/null) || return 1
+  (CDPATH='' cd -- "$candidate" 2>/dev/null && pwd -P 2>/dev/null) || return 1
 }
 
 lbwc_control_root_is_valid_json() {
@@ -121,7 +121,7 @@ lbwc_control_root_generated_agents_dir() {
 
 lbwc_control_root_find_from_start() {
   local start="$1" current candidate run_candidate selected_run
-  current=$(cd "$start" 2>/dev/null && pwd -P) || return 1
+  current=$(CDPATH='' cd -- "$start" 2>/dev/null && pwd -P) || return 1
   while :; do
     candidate="$current/.lbwc-planning"
     if [ -d "$candidate" ] && lbwc_control_root_validate "$candidate" 1 >/dev/null 2>&1; then
@@ -167,7 +167,7 @@ lbwc_resolve_control_root() {
     return $?
   fi
   if [ -n "$requested_project" ]; then
-    candidate=$(cd "$requested_project" 2>/dev/null && pwd -P)/.lbwc-planning || return 1
+    candidate=$(CDPATH='' cd -- "$requested_project" 2>/dev/null && pwd -P)/.lbwc-planning || return 1
     lbwc_control_root_validate "$candidate" 0
     return $?
   fi

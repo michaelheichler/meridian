@@ -2,7 +2,7 @@
 set -u
 
 PLANNING_DIR="${LBWC_PLANNING_DIR:-.lbwc-planning}"
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd)"
 DRIFT_COUNT=0
 
 drift() {

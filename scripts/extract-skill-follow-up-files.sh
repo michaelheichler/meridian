@@ -59,7 +59,7 @@ done
 
 [ "${#SKILLS[@]}" -gt 0 ] || exit 0
 
-PROJECT_DIR=$(cd "$PROJECT_DIR" && pwd -P)
+PROJECT_DIR=$(CDPATH='' cd -- "$PROJECT_DIR" && pwd -P)
 
 for raw_skill in "${SKILLS[@]}"; do
   while IFS= read -r parsed_skill; do
@@ -97,7 +97,7 @@ normalize_path() {
 
   dir=$(dirname "$path")
   base=$(basename "$path")
-  dir=$(cd "$dir" && pwd -P 2>/dev/null) || return 1
+  dir=$(CDPATH='' cd -- "$dir" && pwd -P 2>/dev/null) || return 1
   printf '%s/%s\n' "$dir" "$base"
 }
 

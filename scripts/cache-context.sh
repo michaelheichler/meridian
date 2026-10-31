@@ -12,7 +12,7 @@ ROLE="$2"
 CONFIG_PATH_INPUT="${3:-}"
 PLAN_PATH_INPUT="${4:-}"
 TARGET_SCOPE_EXPLICIT=0
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 . "${SCRIPT_DIR}/lib/lbwc-target-root.sh"
 . "${SCRIPT_DIR}/lib/lbwc-settings.sh"
@@ -42,7 +42,7 @@ resolve_existing_dir() {
   local path="$1"
   if [ -d "$path" ]; then
     (
-      cd "$path" 2>/dev/null && pwd -P 2>/dev/null
+      CDPATH='' cd -- "$path" 2>/dev/null && pwd -P 2>/dev/null
     ) || printf '%s\n' "$path"
   else
     printf '%s\n' "$path"
@@ -54,7 +54,7 @@ resolve_existing_file() {
   if [ -f "$path" ]; then
     dir=$(dirname "$path")
     base=$(basename "$path")
-    if dir=$(cd "$dir" 2>/dev/null && pwd -P 2>/dev/null); then
+    if dir=$(CDPATH='' cd -- "$dir" 2>/dev/null && pwd -P 2>/dev/null); then
       printf '%s/%s\n' "$dir" "$base"
     else
       printf '%s\n' "$path"

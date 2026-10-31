@@ -2,7 +2,7 @@
 set -u
 
 PLANNING_DIR="${LBWC_PLANNING_DIR:-.lbwc-planning}"
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd)"
 
 INPUT=$(cat)
 NATIVE_AGENT_TYPE=$(echo "$INPUT" | jq -r '.agent_type // ""' 2>/dev/null)

@@ -4,7 +4,7 @@ set -euo pipefail
 
 ARTIFACT_TYPE="${1:-}"
 ARTIFACT_PATH="${2:-}"
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd)"
 EXPECTED_ARTIFACT_ROUND=""
 REMEDIATION_KIND=""
 
@@ -61,7 +61,7 @@ canonicalize_artifact_path() {
   parent=$(dirname "$raw_path")
   base=$(basename "$raw_path")
   [ -d "$parent" ] || return 1
-  parent_physical=$(cd "$parent" 2>/dev/null && pwd -P) || return 1
+  parent_physical=$(CDPATH='' cd -- "$parent" 2>/dev/null && pwd -P) || return 1
   current="$parent_physical/$base"
 
   depth=0
@@ -81,7 +81,7 @@ canonicalize_artifact_path() {
     parent=$(dirname "$current")
     base=$(basename "$current")
     [ -d "$parent" ] || return 1
-    parent_physical=$(cd "$parent" 2>/dev/null && pwd -P) || return 1
+    parent_physical=$(CDPATH='' cd -- "$parent" 2>/dev/null && pwd -P) || return 1
     current="$parent_physical/$base"
     depth=$((depth + 1))
   done

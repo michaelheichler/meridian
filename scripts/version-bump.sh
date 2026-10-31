@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+ROOT="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 VERSION_FILE="$ROOT/VERSION"
 CHANGELOG_FILE="$ROOT/CHANGELOG.md"
 PLUGIN_FILE="$ROOT/.claude-plugin/plugin.json"

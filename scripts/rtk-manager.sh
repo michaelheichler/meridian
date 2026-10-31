@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+ROOT="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 STATE_DIR="${LBWC_RTK_DIR:-$ROOT/.lbwc-planning/tools/rtk}"
 RTK_BINARY="${LBWC_RTK_BINARY:-$STATE_DIR/rtk}"
 RECEIPT_FILE="${LBWC_RTK_RECEIPT:-$STATE_DIR/rtk-install.json}"
@@ -77,7 +77,7 @@ assert_safe_state() {
   reject_symlink_components "$BACKUP_DIR"
   if [ -e "$STATE_DIR" ]; then
     [ -d "$STATE_DIR" ] || die 'RTK state path is not a directory'
-    physical_state="$(cd "$STATE_DIR" && pwd -P)" || die 'RTK state directory cannot be resolved'
+    physical_state="$(CDPATH='' cd -- "$STATE_DIR" && pwd -P)" || die 'RTK state directory cannot be resolved'
     path_is_within "$physical_state" "$ROOT" || die 'RTK state resolves outside this project'
   fi
   [ ! -L "$RTK_BINARY" ] || die 'RTK binary may not be a symbolic link'

@@ -49,4 +49,13 @@ if [ -L "$link_path" ] && [ "$current_target" = "$target_dir" ]; then
 fi
 
 cleanup_existing
-ln -sn "$target_dir" "$link_path"
+if ln -sn "$target_dir" "$link_path" 2>/dev/null; then
+  exit 0
+fi
+
+current_target="$(readlink "$link_path" 2>/dev/null || true)"
+if [ -L "$link_path" ] && [ "$current_target" = "$target_dir" ]; then
+  exit 0
+fi
+echo "Error: could not link $link_path to $target_dir" >&2
+exit 1

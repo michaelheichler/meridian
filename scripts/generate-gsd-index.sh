@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd -P)"
+SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd -P)"
 SOURCE="${1:-}"
 OUTPUT="${2:-}"
 if [ -z "$SOURCE" ]; then
@@ -14,7 +14,7 @@ if [ -z "$SOURCE" ]; then
 fi
 [ -n "$SOURCE" ] || exit 0
 
-SOURCE=$(cd -P "$SOURCE" && pwd -P)
+SOURCE=$(CDPATH='' cd -P -- "$SOURCE" && pwd -P)
 temporary=$(mktemp "${TMPDIR:-/tmp}/lbwc-gsd-index.XXXXXX")
 trap 'rm -f "$temporary"' EXIT
 bash "$SCRIPT_DIR/plan-import.sh" normalize --adapter gsd --source "$SOURCE" --output "$temporary"

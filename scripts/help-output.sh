@@ -8,7 +8,7 @@ if [ -z "$PLUGIN_ROOT" ]; then
   PLUGIN_ROOT=$(find "${CLAUDE_DIR:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}}/plugins/cache/lbwc-marketplace/lbwc" -maxdepth 1 -mindepth 1 -type d 2>/dev/null | (sort -V 2>/dev/null || sort -t. -k1,1n -k2,2n -k3,3n) | tail -1 || true)
 fi
 if [ -z "$PLUGIN_ROOT" ] || [ ! -d "$PLUGIN_ROOT" ]; then
-  PLUGIN_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+  PLUGIN_ROOT="$(CDPATH='' cd -- "$(dirname "$0")/.." && pwd)"
 fi
 
 COMMANDS_DIR="$PLUGIN_ROOT/commands"

@@ -8,7 +8,7 @@ plan_source_canonical_file() {
     printf '%s\n' "$canonical"
     return 0
   fi
-  directory=$(cd "$(dirname "$path")" 2>/dev/null && pwd -P) || return 1
+  directory=$(CDPATH='' cd -- "$(dirname "$path")" 2>/dev/null && pwd -P) || return 1
   filename=$(basename "$path")
   printf '%s/%s\n' "$directory" "$filename"
 }

@@ -5,7 +5,7 @@ MD_HASH="#"
 
 CMD="${1:-}"
 PLANNING_DIR="${2:-}"
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 if [ -z "$CMD" ] || [ -z "$PLANNING_DIR" ]; then
   echo "Usage: debug-session-state.sh <command> <planning-dir> [args...]" >&2

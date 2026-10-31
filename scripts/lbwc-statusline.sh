@@ -291,7 +291,7 @@ else
   DIRTY_COLOR="$GREEN"
 fi
 
-SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd -P)
+SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname "$0")" && pwd -P)
 PLANNING_DIR="$PROJECT_ROOT/.lbwc-planning"
 read_orchestration_state
 IN_TMUX='false'

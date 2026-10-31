@@ -30,7 +30,7 @@ while (($# > 0)); do
   esac
 done
 
-PROJECT_ROOT="$(cd "$PROJECT_ROOT" 2>/dev/null && pwd -P)" || {
+PROJECT_ROOT="$(CDPATH='' cd -- "$PROJECT_ROOT" 2>/dev/null && pwd -P)" || {
   printf '%s\n' "Indexer sync: project root is not accessible" >&2
   exit 2
 }
@@ -40,7 +40,7 @@ if ! command -v jq >/dev/null 2>&1 || ! jq -n 'true' >/dev/null 2>&1; then
   exit 2
 fi
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd -P)"
+SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd -P)"
 CONTROL_ROOT_SCRIPT="$SCRIPT_DIR/lib/lbwc-control-root.sh"
 PLANNING_DIR=""
 RUNTIME_DIR=""
@@ -52,7 +52,7 @@ if [[ ! -f "$CONTROL_ROOT_SCRIPT" ]]; then
 fi
 
 # The control-root contract only accepts an initialized planning directory.
-if PLANNING_DIR="$(cd "$PROJECT_ROOT" && . "$CONTROL_ROOT_SCRIPT" && lbwc_resolve_control_root "" "$PROJECT_ROOT" "$PROJECT_ROOT" 2>/dev/null)" &&
+if PLANNING_DIR="$(CDPATH='' cd -- "$PROJECT_ROOT" && . "$CONTROL_ROOT_SCRIPT" && lbwc_resolve_control_root "" "$PROJECT_ROOT" "$PROJECT_ROOT" 2>/dev/null)" &&
    [[ "$(basename "$PLANNING_DIR")" == ".lbwc-planning" ]] &&
    [[ -f "$PLANNING_DIR/config.json" ]]; then
   RUNTIME_DIR="$PLANNING_DIR/.runtime"
@@ -85,13 +85,13 @@ if [[ ! -f "$SCRIPT_DIR/probe-map-tools.sh" ]]; then
 fi
 
 if [[ -n "$PLANNING_DIR" ]]; then
-  PROBE_RAW="$(cd "$PROJECT_ROOT" && LBWC_PLANNING_DIR="$PLANNING_DIR" bash "$SCRIPT_DIR/probe-map-tools.sh" 2>/dev/null)" || {
+  PROBE_RAW="$(CDPATH='' cd -- "$PROJECT_ROOT" && LBWC_PLANNING_DIR="$PLANNING_DIR" bash "$SCRIPT_DIR/probe-map-tools.sh" 2>/dev/null)" || {
     write_sync_record "unknown" "probe-failed" ""
     printf '%s\n' "Indexer sync: map-tools probe failed" >&2
     exit 2
   }
 else
-  PROBE_RAW="$(cd "$PROJECT_ROOT" && LBWC_PLANNING_DIR="$PROJECT_ROOT/.lbwc-planning/.probe-disabled" bash "$SCRIPT_DIR/probe-map-tools.sh" 2>/dev/null)" || {
+  PROBE_RAW="$(CDPATH='' cd -- "$PROJECT_ROOT" && LBWC_PLANNING_DIR="$PROJECT_ROOT/.lbwc-planning/.probe-disabled" bash "$SCRIPT_DIR/probe-map-tools.sh" 2>/dev/null)" || {
     write_sync_record "unknown" "probe-failed" ""
     printf '%s\n' "Indexer sync: map-tools probe failed" >&2
     exit 2
@@ -163,13 +163,13 @@ if ! command -v node >/dev/null 2>&1; then
   exit 2
 fi
 
-if ! (cd "$PROJECT_ROOT" && node .gitnexus/run.cjs analyze); then
+if ! (CDPATH='' cd -- "$PROJECT_ROOT" && node .gitnexus/run.cjs analyze); then
   write_sync_record "$MAP_ROUTE" "analyze-failed" ""
   printf '%s\n' "Indexer sync: GitNexus analyze failed" >&2
   exit 1
 fi
 
-STATUS_OUTPUT="$(cd "$PROJECT_ROOT" && node .gitnexus/run.cjs status)" || {
+STATUS_OUTPUT="$(CDPATH='' cd -- "$PROJECT_ROOT" && node .gitnexus/run.cjs status)" || {
   write_sync_record "$MAP_ROUTE" "status-failed" ""
   printf '%s\n' "Indexer sync: GitNexus status failed" >&2
   exit 1

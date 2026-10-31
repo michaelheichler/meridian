@@ -2,7 +2,7 @@
 set -u
 
 PLANNING_DIR="${LBWC_PLANNING_DIR:-.lbwc-planning}"
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd)"
 
 rm -f "$PLANNING_DIR/.compaction-marker" "$PLANNING_DIR/.context-usage" 2>/dev/null || true
 

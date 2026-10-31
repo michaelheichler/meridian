@@ -6,7 +6,7 @@ CMD="${1:-}"
 RESULT="${2:-}"
 TARGET_PHASE_ARG="${3:-}"
 PLANNING_DIR="${LBWC_PLANNING_DIR:-.lbwc-planning}"
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd)"
 RESOLVE_VERIF_SCRIPT="$SCRIPT_DIR/resolve-verification-path.sh"
 
 . "$SCRIPT_DIR/uat-utils.sh"

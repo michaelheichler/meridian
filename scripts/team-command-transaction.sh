@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd -P)"
+SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd -P)"
 . "$SCRIPT_DIR/lib/lbwc-control-root.sh"
 . "$SCRIPT_DIR/lib/lbwc-settings.sh"
 
@@ -177,13 +177,13 @@ canonical_project_root() {
   [ -n "$candidate" ] || fail '--project-root is required'
   [ -d "$candidate" ] || fail "project root does not exist: $candidate"
   [ ! -L "$candidate" ] || fail 'project root must not be a symbolic link'
-  (cd -P "$candidate" && pwd -P) || fail "project root is not readable: $candidate"
+  (CDPATH='' cd -P -- "$candidate" && pwd -P) || fail "project root is not readable: $candidate"
 }
 
 resolve_run_root() {
   [ -n "$RUN_ROOT_ARG" ] || fail '--run-root is required'
   local canonical
-  canonical=$(cd -P "$RUN_ROOT_ARG" 2>/dev/null && pwd -P) || fail "run root is not readable: $RUN_ROOT_ARG"
+  canonical=$(CDPATH='' cd -P -- "$RUN_ROOT_ARG" 2>/dev/null && pwd -P) || fail "run root is not readable: $RUN_ROOT_ARG"
   [ "$(dirname "$canonical")" = "$PROJECT_ROOT/.temporary-agent-runfiles/runs" ] \
     || fail 'run root is outside the project temporary run directory'
   RUN_ROOT="$canonical"

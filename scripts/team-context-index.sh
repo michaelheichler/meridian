@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd -P)"
+SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd -P)"
 . "$SCRIPT_DIR/lib/plan-source-adapters.sh"
 
 GENERIC_CAP=64
@@ -75,8 +75,8 @@ done
 [ -d "$RUN_ROOT_ARG" ] || fail "run root does not exist: $RUN_ROOT_ARG"
 [ ! -L "$RUN_ROOT_ARG" ] || fail 'run root must not be a symbolic link'
 
-PROJECT_ROOT=$(cd "$PROJECT_ROOT_ARG" && pwd -P)
-RUN_ROOT=$(cd "$RUN_ROOT_ARG" && pwd -P)
+PROJECT_ROOT=$(CDPATH='' cd -- "$PROJECT_ROOT_ARG" && pwd -P)
+RUN_ROOT=$(CDPATH='' cd -- "$RUN_ROOT_ARG" && pwd -P)
 RUN_PARENT=$(dirname "$RUN_ROOT")
 RUN_PARENT_PARENT=$(dirname "$RUN_PARENT")
 [ "$RUN_PARENT" = "$PROJECT_ROOT/.temporary-agent-runfiles/runs" ] || fail 'run root is outside the project temporary run directory'
@@ -84,7 +84,7 @@ RUN_PARENT_PARENT=$(dirname "$RUN_PARENT")
 
 if [ -n "$SETTINGS_ARG" ]; then
   [ -f "$SETTINGS_ARG" ] || fail "settings file does not exist: $SETTINGS_ARG"
-  SETTINGS_PATH=$(cd "$(dirname "$SETTINGS_ARG")" && pwd -P)/$(basename "$SETTINGS_ARG")
+  SETTINGS_PATH=$(CDPATH='' cd -- "$(dirname "$SETTINGS_ARG")" && pwd -P)/$(basename "$SETTINGS_ARG")
 else
   SETTINGS_PATH="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json"
 fi
@@ -114,7 +114,7 @@ claude_plans_dir() {
 
 CLAUDE_PLANS_DIR=$(claude_plans_dir)
 if [ -d "$CLAUDE_PLANS_DIR" ]; then
-  CLAUDE_PLANS_DIR=$(cd "$CLAUDE_PLANS_DIR" && pwd -P)
+  CLAUDE_PLANS_DIR=$(CDPATH='' cd -- "$CLAUDE_PLANS_DIR" && pwd -P)
 fi
 
 add_candidate() {
@@ -287,7 +287,7 @@ PROBE_RAW=''
 PROBE_ROUTE=''
 PROBE_STATUS='unknown'
 if [ -x "$SCRIPT_DIR/probe-map-tools.sh" ] || [ -f "$SCRIPT_DIR/probe-map-tools.sh" ]; then
-  PROBE_RAW=$(cd "$PROJECT_ROOT" && LBWC_PLANNING_DIR="$PROJECT_ROOT/.lbwc-planning" bash "$SCRIPT_DIR/probe-map-tools.sh" 2>/dev/null || true)
+  PROBE_RAW=$(CDPATH='' cd -- "$PROJECT_ROOT" && LBWC_PLANNING_DIR="$PROJECT_ROOT/.lbwc-planning" bash "$SCRIPT_DIR/probe-map-tools.sh" 2>/dev/null || true)
   PROBE_ROUTE=$(printf '%s' "$PROBE_RAW" | jq -r '.hookSpecificOutput.additionalContext | fromjson? | .recommended_route // empty' 2>/dev/null || true)
   [ -n "$PROBE_ROUTE" ] && PROBE_STATUS='detected'
 fi

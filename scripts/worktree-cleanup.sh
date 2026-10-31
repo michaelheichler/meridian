@@ -28,14 +28,14 @@ scan_only() {
 worktree_mapping_state() {
   local worktree_abs map_file mapped_path mapped_abs
 
-  worktree_abs="$(cd "$WORKTREE_DIR" 2>/dev/null && pwd -P)" || return 2
+  worktree_abs="$(CDPATH='' cd -- "$WORKTREE_DIR" 2>/dev/null && pwd -P)" || return 2
   command -v jq >/dev/null 2>&1 || return 2
   [ -d "$AGENT_WORKTREES_DIR" ] || return 2
 
   for map_file in "$AGENT_WORKTREES_DIR"/*.json; do
     [ -f "$map_file" ] || continue
     mapped_path="$(jq -er '.worktree_path | strings | select(length > 0)' "$map_file" 2>/dev/null)" || return 2
-    mapped_abs="$(cd "$mapped_path" 2>/dev/null && pwd -P)" || mapped_abs="$mapped_path"
+    mapped_abs="$(CDPATH='' cd -- "$mapped_path" 2>/dev/null && pwd -P)" || mapped_abs="$mapped_path"
     [ "$mapped_abs" = "$worktree_abs" ] && return 0
   done
 
@@ -45,7 +45,7 @@ worktree_mapping_state() {
 is_owned_lbwc_worktree() {
   local worktree_abs
 
-  worktree_abs="$(cd "$WORKTREE_DIR" 2>/dev/null && pwd -P)" || return 1
+  worktree_abs="$(CDPATH='' cd -- "$WORKTREE_DIR" 2>/dev/null && pwd -P)" || return 1
   git worktree list --porcelain 2>/dev/null | awk -v path="$worktree_abs" -v branch="refs/heads/$BRANCH" '
     $1 == "worktree" {
       if (worktree == path && current_branch == branch) found = 1
@@ -85,7 +85,7 @@ rm -rf "$WORKTREE_DIR" 2>/dev/null || true
 
 GIT_DIR="$(git rev-parse --git-dir 2>/dev/null)" || true
 if [ -n "${GIT_DIR:-}" ] && [ -d "$GIT_DIR/worktrees" ]; then
-  WORKTREE_ABS="$(cd "$(dirname "$WORKTREE_DIR")" 2>/dev/null && pwd)/$(basename "$WORKTREE_DIR")" 2>/dev/null || true
+  WORKTREE_ABS="$(CDPATH='' cd -- "$(dirname "$WORKTREE_DIR")" 2>/dev/null && pwd)/$(basename "$WORKTREE_DIR")" 2>/dev/null || true
   if [ -n "${WORKTREE_ABS:-}" ]; then
     for admin_dir in "$GIT_DIR/worktrees"/*/; do
       [ -d "$admin_dir" ] || continue
@@ -93,7 +93,7 @@ if [ -n "${GIT_DIR:-}" ] && [ -d "$GIT_DIR/worktrees" ]; then
       [ -f "$gitdir_file" ] || continue
       recorded="$(cat "$gitdir_file" 2>/dev/null)" || continue
       recorded_wt="${recorded%/.git}"
-      recorded_wt_abs="$(cd "$recorded_wt" 2>/dev/null && pwd)" 2>/dev/null || recorded_wt_abs=""
+      recorded_wt_abs="$(CDPATH='' cd -- "$recorded_wt" 2>/dev/null && pwd)" 2>/dev/null || recorded_wt_abs=""
       if [ "$recorded_wt_abs" = "$WORKTREE_ABS" ] || [ "$recorded_wt" = "$WORKTREE_DIR" ]; then
         rm -rf "$admin_dir" 2>/dev/null || true
       fi

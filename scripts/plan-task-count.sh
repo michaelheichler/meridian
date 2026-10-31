@@ -12,7 +12,7 @@ fi
 
 plan_path=$1
 project_config=$2
-script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+script_dir=$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 settings_path="$script_dir/../config/settings.json"
 
 [ -r "$plan_path" ] || fail "PLAN is not readable: $plan_path"

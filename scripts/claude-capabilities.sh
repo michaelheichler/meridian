@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROUTING_PATH="$SCRIPT_DIR/lbwc-routing.sh"
 . "$SCRIPT_DIR/lib/compose-model-catalog.sh"
 WORKFLOW_MIN_VERSION='2.1.154'
@@ -85,7 +85,7 @@ resolve_planning_directory() {
       ;;
     *) parent=. ;;
   esac
-  physical_parent=$(cd -P -- "$parent" 2>/dev/null && pwd -P) || fail "could not resolve planning directory: $input"
+  physical_parent=$(CDPATH='' cd -P -- "$parent" 2>/dev/null && pwd -P) || fail "could not resolve planning directory: $input"
   printf '%s/%s\n' "$physical_parent" '.lbwc-planning'
 }
 
@@ -249,7 +249,7 @@ refresh_catalog() {
   physical_planning=$(resolve_planning_directory "$planning_dir")
   reported_path="$planning_dir/claude-capabilities.json"
   binary=$(resolve_claude_binary)
-  cd -P -- "$physical_planning" || fail "could not enter planning directory: $planning_dir"
+  CDPATH='' cd -P -- "$physical_planning" || fail "could not enter planning directory: $planning_dir"
   assert_no_symbolic_links "$(pwd -P)"
   assert_no_symbolic_links 'claude-capabilities.json'
   LOCK_DIR='.claude-capabilities.lock'

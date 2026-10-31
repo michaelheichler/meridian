@@ -2,7 +2,7 @@
 # Cross-file command contracts need this gate because Claude Code validates each Markdown file in isolation.
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "$0")/.." && pwd -P)"
+ROOT="$(CDPATH='' cd -- "$(dirname "$0")/.." && pwd -P)"
 
 if [ "$#" -gt 0 ]; then
   if [ "$#" -ne 2 ] || [ "$1" != "--root" ]; then

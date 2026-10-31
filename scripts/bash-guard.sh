@@ -1,6 +1,6 @@
 #!/bin/bash
 set -u
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd)"
 PLUGIN_ROOT="$(dirname "$SCRIPT_DIR")"
 LBWC_PLANNING_DIR="${LBWC_PLANNING_DIR:-.lbwc-planning}"
 

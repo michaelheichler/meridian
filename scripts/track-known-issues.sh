@@ -33,12 +33,12 @@ case "$CMD" in
   *) usage ;;
 esac
 
-PHASE_DIR="$(cd "$PHASE_DIR" 2>/dev/null && pwd -P)" || { echo "known_issues_status=missing_phase_dir" >&2; exit 1; }
+PHASE_DIR="$(CDPATH='' cd -- "$PHASE_DIR" 2>/dev/null && pwd -P)" || { echo "known_issues_status=missing_phase_dir" >&2; exit 1; }
 case "$PHASE_DIR" in
   */.lbwc-planning/phases/*) ;;
   *) echo "known_issues_status=invalid_phase_dir" >&2; exit 1 ;;
 esac
-PLANNING_DIR="$(cd "$PHASE_DIR/../.." && pwd -P)"
+PLANNING_DIR="$(CDPATH='' cd -- "$PHASE_DIR/../.." && pwd -P)"
 REGISTRY="${PHASE_DIR%/}/known-issues.json"
 
 status_output() {

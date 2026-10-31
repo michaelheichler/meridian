@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 umask 077
 
-SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd -P)
+SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname "$0")" && pwd -P)
 . "$SCRIPT_DIR/lib/lbwc-control-root.sh"
 
 usage() {
@@ -71,7 +71,7 @@ command -v perl >/dev/null 2>&1 || fail 'perl is unavailable; install perl for t
 tmux_version=$(tmux -V 2>/dev/null || true)
 tmux_version_is_supported "$tmux_version" || fail "tmux 3.0 or later is required; found: ${tmux_version:-unreadable}"
 
-project_root=$(cd "$project_root" && pwd -P)
+project_root=$(CDPATH='' cd -- "$project_root" && pwd -P)
 control_root=$(lbwc_resolve_control_root "$requested_control_root" "$project_root" "$project_root" 2>/dev/null || true)
 [ -n "$control_root" ] || fail "control root is invalid: $requested_control_root"
 resolved_project_root=$(lbwc_control_root_project_root "$control_root" 2>/dev/null || true)

@@ -23,7 +23,7 @@ else
   SETTINGS_PATH="${CLAUDE_DIR}/settings.json"
 fi
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd)"
 PLUGIN_ROOT="${SCRIPT_DIR%/scripts}"
 MAPPINGS_PATH="${PLUGIN_ROOT}/config/lsp-mappings.json"
 

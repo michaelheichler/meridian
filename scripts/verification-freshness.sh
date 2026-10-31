@@ -1,3 +1,9 @@
+# Callers branch on the code because 0 is stale, 1 is fresh or missing.
+
+# Callers read VERIFICATION_FRESHNESS_REASON because it names why a file is stale.
+
+# Git errors fail closed to stale because a flaky git must never read as fresh.
+
 # Release bumps touch these, so they must not mark every phase stale.
 FRESHNESS_EXCLUDE_PATHSPEC=(
   ':!.lbwc-planning' ':!CLAUDE.md' ':!VERSION'

@@ -14,7 +14,7 @@ if [ ! -d "$PHASE_DIR" ]; then
   exit 1
 fi
 
-_SCRIPT_DIR_PR="$(cd "$(dirname "$0")" && pwd)"
+_SCRIPT_DIR_PR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd)"
 . "$_SCRIPT_DIR_PR/uat-utils.sh"
 
 reconcile_changed_artifact() {

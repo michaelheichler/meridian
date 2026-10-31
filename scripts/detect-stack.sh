@@ -7,7 +7,7 @@ if ! command -v jq &>/dev/null; then
 fi
 
 PROJECT_DIR="${1:-.}"
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd)"
 MAPPINGS="$SCRIPT_DIR/../config/stack-mappings.json"
 
 if [ ! -f "$MAPPINGS" ]; then

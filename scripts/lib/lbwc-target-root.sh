@@ -9,13 +9,13 @@ lbwc_candidate_dir_for_path() {
 
   if [ -d "$candidate" ]; then
     (
-      cd "$candidate" 2>/dev/null && pwd -P 2>/dev/null
+      CDPATH='' cd -- "$candidate" 2>/dev/null && pwd -P 2>/dev/null
     ) || printf '%s\n' "$candidate"
   else
     local dir
     dir=$(dirname "$candidate")
     (
-      cd "$dir" 2>/dev/null && pwd -P 2>/dev/null
+      CDPATH='' cd -- "$dir" 2>/dev/null && pwd -P 2>/dev/null
     ) || printf '%s\n' "$dir"
   fi
 }

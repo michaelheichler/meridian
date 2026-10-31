@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd)"
 
 if [ "$#" -gt 1 ]; then
   echo "QA-VERIFIED ITEMS (do NOT generate UAT checkpoints for these):"

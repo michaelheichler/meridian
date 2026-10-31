@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-QA_RESULT_GATE_PATH_EVIDENCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+QA_RESULT_GATE_PATH_EVIDENCE_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 extract_frontmatter_array_items() {
   local file_path="${1:-}"
@@ -169,7 +169,7 @@ resolve_existing_path_target() {
     path_dir="${path%/*}"
     path_base="${path##*/}"
     [ -n "$path_dir" ] || path_dir="."
-    path_dir="$(cd "$path_dir" 2>/dev/null && pwd -P || return 1)"
+    path_dir="$(CDPATH='' cd -- "$path_dir" 2>/dev/null && pwd -P || return 1)"
     target="$(readlink "$path_dir/$path_base" 2>/dev/null || true)"
     [ -n "$target" ] || return 1
     case "$target" in
@@ -186,7 +186,7 @@ resolve_existing_path_target() {
   path_dir="${path%/*}"
   path_base="${path##*/}"
   [ -n "$path_dir" ] || path_dir="."
-  path_dir="$(cd "$path_dir" 2>/dev/null && pwd -P || return 1)"
+  path_dir="$(CDPATH='' cd -- "$path_dir" 2>/dev/null && pwd -P || return 1)"
   [ -e "$path_dir/$path_base" ] || return 1
   printf '%s' "$path_dir/$path_base"
 }
@@ -210,7 +210,7 @@ resolve_qa_remediation_round_artifact_path() {
     ../*|*/../*|*/./*) return 1 ;;
   esac
 
-  phase_dir_abs="$(cd "$phase_dir" 2>/dev/null && pwd -P || return 1)"
+  phase_dir_abs="$(CDPATH='' cd -- "$phase_dir" 2>/dev/null && pwd -P || return 1)"
   phase_parent_abs="${phase_dir_abs%/*}"
   phase_basename="${phase_dir_abs##*/}"
   repo_root_abs="$(git -C "$phase_dir" rev-parse --show-toplevel 2>/dev/null || true)"
@@ -259,7 +259,7 @@ resolve_original_plan_artifact_path() {
   [ -n "$path" ] || return 1
   [ -n "$phase_dir" ] || return 1
 
-  phase_dir_abs="$(cd "$phase_dir" 2>/dev/null && pwd -P || printf '%s' "$phase_dir")"
+  phase_dir_abs="$(CDPATH='' cd -- "$phase_dir" 2>/dev/null && pwd -P || printf '%s' "$phase_dir")"
   repo_root_abs="$(git -C "$phase_dir" rev-parse --show-toplevel 2>/dev/null || true)"
   if [ -n "$repo_root_abs" ] && [[ "$phase_dir_abs" == "$repo_root_abs/"* ]]; then
     phase_dir_rel="${phase_dir_abs#"$repo_root_abs"/}"
@@ -283,7 +283,7 @@ resolve_original_plan_artifact_path() {
   candidate_dir="${candidate%/*}"
   candidate_base="${candidate##*/}"
   if [ -d "$candidate_dir" ]; then
-    candidate_dir="$(cd "$candidate_dir" 2>/dev/null && pwd -P || printf '%s' "$candidate_dir")"
+    candidate_dir="$(CDPATH='' cd -- "$candidate_dir" 2>/dev/null && pwd -P || printf '%s' "$candidate_dir")"
     candidate="$candidate_dir/$candidate_base"
   fi
 
@@ -328,19 +328,19 @@ canonicalize_phase_path() {
     path_dir="${path%/*}"
     path_base="${path##*/}"
     if [ -d "$path_dir" ]; then
-      path_dir="$(cd "$path_dir" 2>/dev/null && pwd -P || printf '%s' "$path_dir")"
+      path_dir="$(CDPATH='' cd -- "$path_dir" 2>/dev/null && pwd -P || printf '%s' "$path_dir")"
       path="$path_dir/$path_base"
     fi
   elif [[ "$path" == */* ]] && [ -n "$phase_dir" ]; then
     path_dir="${path%/*}"
     path_base="${path##*/}"
     if [ -d "$phase_dir/$path_dir" ]; then
-      path_dir="$(cd "$phase_dir/$path_dir" 2>/dev/null && pwd -P || printf '%s' "$phase_dir/$path_dir")"
+      path_dir="$(CDPATH='' cd -- "$phase_dir/$path_dir" 2>/dev/null && pwd -P || printf '%s' "$phase_dir/$path_dir")"
       path="$path_dir/$path_base"
     fi
   fi
 
-  phase_dir_abs="$(cd "$phase_dir" 2>/dev/null && pwd -P || printf '%s' "$phase_dir")"
+  phase_dir_abs="$(CDPATH='' cd -- "$phase_dir" 2>/dev/null && pwd -P || printf '%s' "$phase_dir")"
   repo_root_abs="$(git -C "$phase_dir" rev-parse --show-toplevel 2>/dev/null || true)"
   if [ -n "$repo_root_abs" ] && [[ "$phase_dir_abs" == "$repo_root_abs/"* ]]; then
     phase_dir_rel="${phase_dir_abs#"$repo_root_abs"/}"

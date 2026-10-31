@@ -11,7 +11,7 @@ if [ -z "$PLANNING_DIR" ]; then
 fi
 shift
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd)"
 
 EXPLICIT_FILE=""
 DESCRIPTION=""

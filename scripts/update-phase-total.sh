@@ -1,7 +1,7 @@
 #!/bin/bash
 set -u
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd)"
 if [ -f "$SCRIPT_DIR/summary-utils.sh" ]; then
   source "$SCRIPT_DIR/summary-utils.sh"
 else

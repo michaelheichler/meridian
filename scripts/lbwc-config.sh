@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEFAULTS_PATH="$SCRIPT_DIR/../config/settings.json"
 ROLE_DEFAULTS_PATH="$SCRIPT_DIR/../templates/agent-roles/defaults.json"
 ROUTING_PATH="$SCRIPT_DIR/lbwc-routing.sh"
@@ -276,7 +276,7 @@ cleanup_lock() {
 
 enter_planning_dir() {
   local planning_dir="$1" opened_dir
-  cd -P -- "$planning_dir" || fail "could not enter planning directory: $planning_dir"
+  CDPATH='' cd -P -- "$planning_dir" || fail "could not enter planning directory: $planning_dir"
   opened_dir=$(pwd -P) || fail "could not resolve planning directory: $planning_dir"
   assert_no_symbolic_links "$opened_dir"
 }

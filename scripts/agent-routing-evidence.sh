@@ -3,7 +3,7 @@ set -u
 
 command -v jq >/dev/null 2>&1 || exit 0
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd)"
 PLANNING_DIR="${LBWC_PLANNING_DIR:-.lbwc-planning}"
 EVIDENCE_FILE="$PLANNING_DIR/.agent-routing-evidence.jsonl"
 COMMAND="${1:-}"

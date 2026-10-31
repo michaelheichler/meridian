@@ -4,7 +4,7 @@ set -euo pipefail
 
 MODE="${1:-}"
 PHASE_DIR="${2:-}"
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd)"
 STATE_FILE="${PHASE_DIR%/}/remediation/qa/.qa-remediation-stage"
 
 if [ -z "$MODE" ] || [ -z "$PHASE_DIR" ]; then

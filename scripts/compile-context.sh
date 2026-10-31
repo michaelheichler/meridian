@@ -10,7 +10,7 @@ PHASE="$1"
 ROLE="$2"
 PHASES_DIR_INPUT="${3:-}"
 PLAN_PATH="${4:-}"
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 . "${SCRIPT_DIR}/lib/lbwc-target-root.sh"
 . "${SCRIPT_DIR}/lib/lbwc-settings.sh"

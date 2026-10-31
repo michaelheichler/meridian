@@ -58,7 +58,7 @@ tmux_runtime_configure() {
   TMUX_RUNTIME_CONTROL_ROOT="$control_root"
   TMUX_RUNTIME_ROOT="$control_root/.runtime"
   TMUX_RUNTIME_BUS_ROOT="$TMUX_RUNTIME_ROOT/tmux-bus"
-  TMUX_RUNTIME_HELPER="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/tmux-private-fs.py"
+  TMUX_RUNTIME_HELPER="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/tmux-private-fs.py"
   [ -x "$TMUX_RUNTIME_HELPER" ] || { tmux_runtime_fail "private filesystem helper is unavailable: $TMUX_RUNTIME_HELPER"; return 1; }
 }
 

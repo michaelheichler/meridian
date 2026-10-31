@@ -9,7 +9,7 @@ usage() {
     'Exit 0: pass. Exit 1: whitespace violation. Exit 2: invalid invocation or repository setup.' >&2
 }
 
-ROOT="$(cd "$(dirname "$0")/.." && pwd -P)"
+ROOT="$(CDPATH='' cd -- "$(dirname "$0")/.." && pwd -P)"
 
 if [ "$#" -gt 0 ]; then
   if [ "$#" -ne 2 ] || [ "$1" != '--root' ]; then

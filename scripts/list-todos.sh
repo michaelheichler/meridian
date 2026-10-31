@@ -5,7 +5,7 @@ set -euo pipefail
 PLANNING_DIR="${LBWC_PLANNING_DIR:-.lbwc-planning}"
 export FILTER="${1:-}"
 export DETAILS_PATH="${PLANNING_DIR}/todo-details.json"
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export DETAILS_CACHE_JSON=""
 
 . "$SCRIPT_DIR/lib/todo-item-metadata.sh"

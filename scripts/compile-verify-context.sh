@@ -24,7 +24,7 @@ frontmatter_key_present() {
   ' "$file_path" >/dev/null 2>&1
 }
 
-_CVC_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+_CVC_SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [ -f "$_CVC_SCRIPT_DIR/summary-utils.sh" ]; then
   . "$_CVC_SCRIPT_DIR/summary-utils.sh"
 else

@@ -14,7 +14,7 @@ WORKTREE_DIR=".lbwc-worktrees/${PHASE}-${PLAN}"
 BRANCH="lbwc/${PHASE}-${PLAN}"
 
 if [ -d "$WORKTREE_DIR" ]; then
-  ABS_PATH=$(cd "$WORKTREE_DIR" && pwd)
+  ABS_PATH=$(CDPATH='' cd -- "$WORKTREE_DIR" && pwd)
   echo "$ABS_PATH"
   exit 0
 fi
@@ -43,7 +43,7 @@ else
 fi
 
 if [ "$GIT_STATUS" -eq 0 ]; then
-  ABS_PATH=$(cd "$WORKTREE_DIR" && pwd)
+  ABS_PATH=$(CDPATH='' cd -- "$WORKTREE_DIR" && pwd)
   echo "$ABS_PATH"
 fi
 

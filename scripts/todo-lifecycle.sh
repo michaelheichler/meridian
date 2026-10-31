@@ -2,7 +2,7 @@
 set -euo pipefail
 
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PLANNING_DIR="${LBWC_PLANNING_DIR:-.lbwc-planning}"
 export DETAILS_PATH="${PLANNING_DIR}/todo-details.json"
 RAW_SESSION_KEY="${CLAUDE_SESSION_ID:-default}"

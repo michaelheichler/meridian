@@ -17,7 +17,7 @@ if [ -z "$TARGET" ] || [ ! -f "$TARGET" ]; then
 fi
 
 if [ -z "$TARGET" ] || [ ! -f "$TARGET" ]; then
-  SELF_DIR="$(cd "$(dirname "$0")" && pwd)"
+  SELF_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd)"
   [ -f "$SELF_DIR/$SCRIPT" ] && TARGET="$SELF_DIR/$SCRIPT"
 fi
 

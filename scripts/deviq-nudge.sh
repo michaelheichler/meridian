@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -u
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(CDPATH='' cd -- "$SCRIPT_DIR/.." && pwd)}"
 NUDGES_FILE="$PLUGIN_ROOT/config/deviq-nudges.json"
 INDEX_FILE="$PLUGIN_ROOT/references/deviq-corpus/index.json"
 PLANNING_DIR="${LBWC_PLANNING_DIR:-.lbwc-planning}"

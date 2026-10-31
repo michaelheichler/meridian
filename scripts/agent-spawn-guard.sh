@@ -14,7 +14,7 @@ fail() {
 INPUT=$(cat 2>/dev/null) || fail "agent spawn guard could not read tool call input"
 [ -z "$INPUT" ] && exit 0
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd)"
 [ -f "$SCRIPT_DIR/lib/agent-manifest.sh" ] || fail "agent manifest library is unavailable"
 . "$SCRIPT_DIR/lib/agent-manifest.sh" || fail "agent manifest library failed to load"
 [ -f "$SCRIPT_DIR/lib/lbwc-control-root.sh" ] || fail "control root library is unavailable"

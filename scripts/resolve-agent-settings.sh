@@ -24,10 +24,10 @@ if [ "$CONFIG_PATH" = "--routing" ]; then
   [ -n "$PLUGIN_ROOT" ] || { usage; exit 1; }
   shift
   [ -f "$CONFIG_PATH" ] || fail "routing configuration is not readable: $CONFIG_PATH"
-  PLANNING_DIR=$(cd "$(dirname "$CONFIG_PATH")" && pwd -P) || fail "could not resolve routing configuration directory: $CONFIG_PATH"
+  PLANNING_DIR=$(CDPATH='' cd -- "$(dirname "$CONFIG_PATH")" && pwd -P) || fail "could not resolve routing configuration directory: $CONFIG_PATH"
   TEMPORARY_ROUTING_MODE=true
 else
-  PLANNING_DIR=$(cd "$(dirname "$CONFIG_PATH")" 2>/dev/null && pwd -P) || fail "could not resolve project configuration directory: $CONFIG_PATH"
+  PLANNING_DIR=$(CDPATH='' cd -- "$(dirname "$CONFIG_PATH")" 2>/dev/null && pwd -P) || fail "could not resolve project configuration directory: $CONFIG_PATH"
 fi
 
 CLI_MODEL=""

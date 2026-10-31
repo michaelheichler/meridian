@@ -2,7 +2,7 @@
 
 set -u
 
-LBWC_LIB_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+LBWC_LIB_DIR="$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 
 LBWC_CANONICAL_HEADERS=(
   "## Active Context"

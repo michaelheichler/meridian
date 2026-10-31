@@ -32,7 +32,7 @@ fi
   printf 'cleanup-temporary-agent-runfiles: invalid project root: %s\n' "$PROJECT_ROOT_ARG" >&2
   exit 1
 }
-PROJECT_ROOT=$(cd -P "$PROJECT_ROOT_ARG" && pwd -P)
+PROJECT_ROOT=$(CDPATH='' cd -P -- "$PROJECT_ROOT_ARG" && pwd -P)
 RUNS_ROOT="$PROJECT_ROOT/.temporary-agent-runfiles/runs"
 [ -d "$RUNS_ROOT" ] || exit 0
 [ ! -L "$RUNS_ROOT" ] || { printf 'cleanup-temporary-agent-runfiles: runs root is a symbolic link\n' >&2; exit 1; }

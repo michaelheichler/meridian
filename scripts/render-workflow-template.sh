@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
+SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname "$0")" && pwd)
 . "$SCRIPT_DIR/lib/require-bash.sh"
 require_bash_43
 TEMPLATE_DIR="$SCRIPT_DIR/../templates/workflows"

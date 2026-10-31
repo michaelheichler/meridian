@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 umask 077
 
-SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd -P)
+SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname "$0")" && pwd -P)
 source "$SCRIPT_DIR/lib/lbwc-control-root.sh"
 source "$SCRIPT_DIR/lib/tmux-runtime.sh"
 source "$SCRIPT_DIR/lib/agent-manifest.sh"
@@ -26,7 +26,7 @@ require_tmux() {
 
 resolve_context() {
   [ -d "$project_root" ] || fail "project root does not exist: $project_root"
-  PROJECT_ROOT=$(cd "$project_root" && pwd -P)
+  PROJECT_ROOT=$(CDPATH='' cd -- "$project_root" && pwd -P)
   tmux_runtime_configure "$requested_control_root"
 }
 

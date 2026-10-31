@@ -3,7 +3,7 @@
 set -euo pipefail
 
 UAT_FILE="${1:?Usage: finalize-uat-status.sh <uat-file-path>}"
-if ! SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd -P 2>/dev/null)"; then
+if ! SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd -P 2>/dev/null)"; then
   SCRIPT_DIR=$(pwd -P)
 fi
 

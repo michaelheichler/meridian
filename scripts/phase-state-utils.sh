@@ -118,7 +118,7 @@ qa_gate_routing_for_phase() {
     return 0
   fi
   if [ -z "$script_dir" ]; then
-    script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+    script_dir=$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)
   fi
   if [ ! -f "$state_file" ]; then
     if ! verification_file=$(bash "$script_dir/resolve-verification-path.sh" phase "$phase_dir" 2>/dev/null); then

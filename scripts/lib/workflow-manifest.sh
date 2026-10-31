@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -u
 
-WORKFLOW_MANIFEST_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+WORKFLOW_MANIFEST_SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 . "$WORKFLOW_MANIFEST_SCRIPT_DIR/lbwc-control-root.sh" 2>/dev/null || return 1
 . "$WORKFLOW_MANIFEST_SCRIPT_DIR/manifest-lock.sh" 2>/dev/null || return 1
 

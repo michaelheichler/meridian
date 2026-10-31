@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd -P)"
+SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd -P)"
 SOURCE="${1:-}"
 if [ -z "$SOURCE" ] || [ ! -d "$SOURCE" ]; then
   printf '%s\n' '{"latest_milestone":null,"recent_phases":[],"key_decisions":[],"current_work":null}'

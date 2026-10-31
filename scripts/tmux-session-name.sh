@@ -57,7 +57,7 @@ done
 [ -d "$project_root" ] || fail "project root does not exist: $project_root"
 command -v shasum >/dev/null 2>&1 || fail 'shasum is unavailable; cannot derive a collision-resistant session name'
 
-project_root=$(cd "$project_root" && pwd -P)
+project_root=$(CDPATH='' cd -- "$project_root" && pwd -P)
 prefix=$(safe_component "$prefix" 24) || fail 'prefix has no safe characters'
 project_slug=$(safe_component "$(basename "$project_root")" 40) || fail 'project root name has no safe characters'
 main_short=$(safe_component "$main_id" 8) || fail 'main ID has no safe characters'

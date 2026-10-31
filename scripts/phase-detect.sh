@@ -31,7 +31,7 @@ trap '
   exit 0
 ' EXIT
 
-_SCRIPT_DIR_PD="$(cd "$(dirname "$0")" && pwd)"
+_SCRIPT_DIR_PD="$(CDPATH='' cd -- "$(dirname "$0")" && pwd)"
 PLANNING_DIR="${LBWC_PLANNING_DIR:-.lbwc-planning}"
 if ! . "$_SCRIPT_DIR_PD/lib/lbwc-settings.sh"; then
   _pd_error_reason=setup_failed

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd)"
 LIB="$SCRIPT_DIR/lib/claude-md-lbwc-sections.sh"
 PLANNING_DIR="${LBWC_PLANNING_DIR:-.lbwc-planning}"
 CLAUDE_MD="CLAUDE.md"

@@ -2,7 +2,7 @@
 set -u
 
 lbwc_settings_path() {
-  printf '%s\n' "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/config/settings.json"
+  printf '%s\n' "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/config/settings.json"
 }
 
 lbwc_merged_config() {

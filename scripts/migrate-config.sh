@@ -13,7 +13,7 @@ if ! command -v jq &>/dev/null; then
   exit 1
 fi
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd)"
 DEFAULTS_FILE="$SCRIPT_DIR/../config/settings.json"
 CONFIG_FILE="${1:-.lbwc-planning/config.json}"
 SOURCE_CONFIG_FILE="$CONFIG_FILE"

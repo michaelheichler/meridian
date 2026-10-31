@@ -2,8 +2,8 @@
 # Runtime CLI: look up DevIQ corpus articles by keyword, id, or grep.
 set -u
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(CDPATH='' cd -- "$SCRIPT_DIR/.." && pwd)}"
 CORPUS_DIR="$PLUGIN_ROOT/references/deviq-corpus"
 INDEX="$CORPUS_DIR/index.json"
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROLE_DEFAULTS_PATH="$SCRIPT_DIR/../templates/agent-roles/defaults.json"
 ENV_TOOL=""
 LOCK_DIR=""
@@ -162,7 +162,7 @@ resolve_planning_directory() {
       ;;
     *) parent=. ;;
   esac
-  physical_parent=$(cd -P -- "$parent" 2>/dev/null && pwd -P) || fail "could not resolve planning directory: $input"
+  physical_parent=$(CDPATH='' cd -P -- "$parent" 2>/dev/null && pwd -P) || fail "could not resolve planning directory: $input"
   printf '%s/%s\n' "$physical_parent" '.lbwc-planning'
 }
 
