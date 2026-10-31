@@ -54,8 +54,8 @@ route_failed_result() {
     && [ "$UNRESOLVED_FAIL_COUNT" -eq 0 ] 2>/dev/null; then
     echo "qa_gate_classified_fail_exemption=true"
     echo "qa_gate_exempt_fail_count=$EXEMPT_FAIL_COUNT"
-    declare -g CLASSIFIED_FAIL_EXEMPTION_REPORTED=true
-    declare -g RESULT=PASS
+    printf -v CLASSIFIED_FAIL_EXEMPTION_REPORTED '%s' "true"
+    printf -v RESULT '%s' "PASS"
     return 0
   fi
   if gate_in_round_scope && [ "$ROUND_CLASSIFICATIONS_VALID" != "true" ]; then
