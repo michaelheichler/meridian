@@ -1,5 +1,7 @@
 #!/usr/bin/env bats
 
+load test_helper
+
 setup() {
   REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/.." && pwd)"
   SCRIPT="$REPO_ROOT/scripts/lbwc-model"
@@ -66,7 +68,7 @@ config_sha() {
 make_traced_cli() {
   local fixture_root="$TEST_ROOT/traced-plugin"
   mkdir -p "$fixture_root/scripts" "$fixture_root/templates/agent-roles"
-  cp "$SCRIPT" "$fixture_root/scripts/lbwc-model"
+  copy_script_with_libs "$SCRIPT" "$fixture_root/scripts/lbwc-model"
   cp "$REPO_ROOT/templates/agent-roles/defaults.json" "$fixture_root/templates/agent-roles/defaults.json"
   printf '%s\n' \
     '#!/usr/bin/env bash' \

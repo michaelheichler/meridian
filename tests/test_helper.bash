@@ -89,3 +89,30 @@ setup_unrelated_git_repo() {
     git commit -qm "init"
   )
 }
+
+_copy_libs_sourced_by() {
+  local file="$1" libs_dest="$2" name
+  while IFS= read -r name; do
+    [ -n "$name" ] && [ -f "$SCRIPTS_DIR/lib/$name" ] || continue
+    [ -e "$libs_dest/$name" ] && continue
+    cp "$SCRIPTS_DIR/lib/$name" "$libs_dest/$name"
+    _copy_libs_sourced_by "$SCRIPTS_DIR/lib/$name" "$libs_dest"
+  done < <(sed -nE 's/^[[:space:]]*(source|\.)[[:space:]].*lib\/([A-Za-z0-9_.-]+)["[:space:]]*.*$/\2/p' "$file")
+}
+
+copy_script_with_libs() {
+  local src="$1" dest="$2" base prefix dest_dir libs_dest lib
+  base="$(basename "$src")"
+  prefix="${base%.sh}"
+  dest_dir="$(dirname "$dest")"
+  libs_dest="$dest_dir/lib"
+  [ "$(basename "$dest_dir")" = "lib" ] && libs_dest="$dest_dir"
+  mkdir -p "$dest_dir" "$libs_dest"
+  cp "$src" "$dest"
+  for lib in "$SCRIPTS_DIR/lib/$prefix"-*.sh; do
+    [ -f "$lib" ] || continue
+    cp "$lib" "$libs_dest/$(basename "$lib")"
+    _copy_libs_sourced_by "$lib" "$libs_dest"
+  done
+  _copy_libs_sourced_by "$src" "$libs_dest"
+}

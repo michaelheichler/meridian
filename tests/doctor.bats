@@ -1,5 +1,7 @@
 #!/usr/bin/env bats
 
+load test_helper
+
 setup() {
   REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/.." && pwd)"
   DOCTOR="$REPO_ROOT/commands/doctor.md"
@@ -18,7 +20,7 @@ setup() {
   cp "$REPO_ROOT/scripts/resolve-plugin-root.sh" "$PLUGIN_SCRIPTS/resolve-plugin-root.sh"
   cp "$REPO_ROOT/scripts/tmux-preflight.sh" "$PLUGIN_SCRIPTS/tmux-preflight.sh"
   cp "$REPO_ROOT/scripts/tmux-session-name.sh" "$PLUGIN_SCRIPTS/tmux-session-name.sh"
-  cp "$REPO_ROOT/scripts/lib/lbwc-control-root.sh" "$PLUGIN_SCRIPTS/lib/lbwc-control-root.sh"
+  copy_script_with_libs "$REPO_ROOT/scripts/lib/lbwc-control-root.sh" "$PLUGIN_SCRIPTS/lib/lbwc-control-root.sh"
   cp "$REPO_ROOT/scripts/lib/lbwc-target-root.sh" "$PLUGIN_SCRIPTS/lib/lbwc-target-root.sh"
   cp "$REPO_ROOT/scripts/lib/tmux-private-fs.py" "$PLUGIN_SCRIPTS/lib/tmux-private-fs.py"
   cat > "$FAKE_BIN/claude" <<'EOF'

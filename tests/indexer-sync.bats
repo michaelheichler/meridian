@@ -1,5 +1,7 @@
 #!/usr/bin/env bats
 
+load test_helper
+
 setup() {
   REPO_ROOT="$BATS_TEST_DIRNAME/.."
   SCRIPT="$REPO_ROOT/scripts/indexer-sync.sh"
@@ -22,7 +24,7 @@ setup() {
   cp "$SCRIPT" "$PLUGIN_DIR/indexer-sync.sh"
   cp "$REPO_ROOT/scripts/ensure-plugin-root-link.sh" "$PLUGIN_DIR/ensure-plugin-root-link.sh"
   cp "$REPO_ROOT/scripts/resolve-plugin-root.sh" "$PLUGIN_DIR/resolve-plugin-root.sh"
-  cp "$REPO_ROOT/scripts/lib/lbwc-control-root.sh" "$PLUGIN_DIR/lib/lbwc-control-root.sh"
+  copy_script_with_libs "$REPO_ROOT/scripts/lib/lbwc-control-root.sh" "$PLUGIN_DIR/lib/lbwc-control-root.sh"
   cp "$REPO_ROOT/scripts/lib/lbwc-target-root.sh" "$PLUGIN_DIR/lib/lbwc-target-root.sh"
   cat > "$PLUGIN_DIR/probe-map-tools.sh" <<'EOF'
 #!/usr/bin/env bash
