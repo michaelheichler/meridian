@@ -4,6 +4,9 @@ set -euo pipefail
 SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DETECTOR="$SCRIPT_DIR/detect-stack.sh"
 JSON_OUTPUT=0
+PROJECT_ARG=""
+QUERY=""
+CANDIDATE=""
 
 fail() {
   printf 'Error: %s\n' "$1" >&2
@@ -83,47 +86,57 @@ validate_query() {
   ' >/dev/null 2>&1 || fail 'search query must be 1 to 200 printable characters'
 }
 
+result_filter_defs() {
+  cat <<'JQ'
+def strings: map(select(length > 0)) | unique | sort;
+def mode($count; $enabled; $questions):
+  if ($enabled and $questions) | not then "disabled"
+  elif $count == 0 then "none"
+  elif $count == 1 then "single"
+  elif $count <= 4 then "bounded"
+  else "freeform"
+  end;
+JQ
+}
+
+result_filter_body() {
+  cat <<'JQ'
+($detector.suggestions | strings) as $all_candidates
+| (if $config.skill_suggestions then $all_candidates else [] end) as $enabled_candidates
+| (if $operation == "search"
+    then ($query | ascii_downcase) as $needle
+      | [$enabled_candidates[] | select((ascii_downcase | contains($needle)))]
+    else $enabled_candidates
+    end) as $candidates
+| {
+    schema_version: 1,
+    operation: $operation,
+    config: $config,
+    detected_stack: ($detector.detected_stack | strings),
+    installed: {
+      global: ($detector.installed.global | strings),
+      project: ($detector.installed.project | strings)
+    },
+    candidates: $candidates,
+    candidate_count: ($candidates | length),
+    question_mode: mode(
+      ($candidates | length);
+      $config.skill_suggestions;
+      $config.discovery_questions
+    )
+  }
+| if $operation == "search" then . + {query: $query} else . end
+JQ
+}
+
 build_result() {
   local operation="$1" config="$2" detector="$3" query="${4:-}"
   jq -cnS \
     --arg operation "$operation" \
     --arg query "$query" \
     --argjson config "$config" \
-    --argjson detector "$detector" '
-      def strings: map(select(length > 0)) | unique | sort;
-      def mode($count; $enabled; $questions):
-        if ($enabled and $questions) | not then "disabled"
-        elif $count == 0 then "none"
-        elif $count == 1 then "single"
-        elif $count <= 4 then "bounded"
-        else "freeform"
-        end;
-      ($detector.suggestions | strings) as $all_candidates
-      | (if $config.skill_suggestions then $all_candidates else [] end) as $enabled_candidates
-      | (if $operation == "search"
-          then ($query | ascii_downcase) as $needle
-            | [$enabled_candidates[] | select((ascii_downcase | contains($needle)))]
-          else $enabled_candidates
-          end) as $candidates
-      | {
-          schema_version: 1,
-          operation: $operation,
-          config: $config,
-          detected_stack: ($detector.detected_stack | strings),
-          installed: {
-            global: ($detector.installed.global | strings),
-            project: ($detector.installed.project | strings)
-          },
-          candidates: $candidates,
-          candidate_count: ($candidates | length),
-          question_mode: mode(
-            ($candidates | length);
-            $config.skill_suggestions;
-            $config.discovery_questions
-          )
-        }
-      | if $operation == "search" then . + {query: $query} else . end
-  '
+    --argjson detector "$detector" "$(result_filter_defs)
+$(result_filter_body)"
 }
 
 safe_cell() {
@@ -147,28 +160,21 @@ print_rows() {
   fi
 }
 
-print_human() {
-  local result="$1" operation mode enabled questions auto stack stack_json candidates index=0 value value_json
-  operation=$(jq -r '.operation' <<< "$result")
-  mode=$(jq -r '.question_mode' <<< "$result")
-  enabled=$(jq -r '.config.skill_suggestions' <<< "$result")
-  questions=$(jq -r '.config.discovery_questions' <<< "$result")
-  auto=$(jq -r '.config.auto_install_skills' <<< "$result")
+print_settings() {
+  local result="$1" stack stack_json
   stack_json=$(jq -c '.detected_stack | if length == 0 then "None" else join(", ") end' <<< "$result")
   stack=$(safe_cell <<< "$stack_json")
-  candidates=$(jq -c '.candidates' <<< "$result")
-
   printf '%s\n' 'LBWC Skills' ''
   printf '| Setting | Value |\n|---|---|\n'
-  printf '| Operation | %s |\n' "$operation"
-  printf '| Skill suggestions | %s |\n' "$enabled"
-  printf '| Discovery questions | %s |\n' "$questions"
-  printf '| Automatic installation requested | %s |\n' "$auto"
+  printf '| Operation | %s |\n' "$(jq -r '.operation' <<< "$result")"
+  printf '| Skill suggestions | %s |\n' "$(jq -r '.config.skill_suggestions' <<< "$result")"
+  printf '| Discovery questions | %s |\n' "$(jq -r '.config.discovery_questions' <<< "$result")"
+  printf '| Automatic installation requested | %s |\n' "$(jq -r '.config.auto_install_skills' <<< "$result")"
   printf '| Detected stack | %s |\n' "$stack"
-  printf '\n%s\n' 'Installed skills'
-  printf '| Scope | Skill |\n|---|---|\n'
-  print_rows "$(jq -c '.installed.project' <<< "$result")" project
-  print_rows "$(jq -c '.installed.global' <<< "$result")" global
+}
+
+print_candidates() {
+  local candidates="$1" index=0 value value_json
   printf '\n%s\n' 'Discovered candidates'
   printf '| Number | Skill |\n|---:|---|\n'
   while IFS= read -r value_json; do
@@ -180,7 +186,13 @@ print_human() {
   if [ "$index" -eq 0 ]; then
     printf '| 0 | None |\n'
   fi
-  printf '\n'
+}
+
+print_decision() {
+  local result="$1" mode enabled auto
+  mode=$(jq -r '.question_mode' <<< "$result")
+  enabled=$(jq -r '.config.skill_suggestions' <<< "$result")
+  auto=$(jq -r '.config.auto_install_skills' <<< "$result")
   case "$mode" in
     disabled)
       if [ "$enabled" != true ]; then
@@ -189,22 +201,26 @@ print_human() {
         printf '%s\n' 'Discovery questions are disabled. No installation decision is requested.'
       fi
       ;;
-    none)
-      printf '%s\n' 'No installable candidate was discovered. Use search with a stack-related term.'
-      ;;
-    single)
-      printf '%s\n' 'One candidate is ready for a bounded install or skip decision in the main session.'
-      ;;
-    bounded)
-      printf '%s\n' 'Candidates are ready for sequential install or skip decisions in the main session.'
-      ;;
-    freeform)
-      printf '%s\n' 'More than four candidates require a validated numbered selection in the main session.'
-      ;;
+    none) printf '%s\n' 'No installable candidate was discovered. Use search with a stack-related term.' ;;
+    single) printf '%s\n' 'One candidate is ready for a bounded install or skip decision in the main session.' ;;
+    bounded) printf '%s\n' 'Candidates are ready for sequential install or skip decisions in the main session.' ;;
+    freeform) printf '%s\n' 'More than four candidates require a validated numbered selection in the main session.' ;;
   esac
   if [ "$auto" = true ]; then
     printf '%s\n' 'Automatic installation is configured, but LBWC still requires explicit main-session consent.'
   fi
+}
+
+print_human() {
+  local result="$1"
+  print_settings "$result"
+  printf '\n%s\n' 'Installed skills'
+  printf '| Scope | Skill |\n|---|---|\n'
+  print_rows "$(jq -c '.installed.project' <<< "$result")" project
+  print_rows "$(jq -c '.installed.global' <<< "$result")" global
+  print_candidates "$(jq -c '.candidates' <<< "$result")"
+  printf '\n'
+  print_decision "$result"
 }
 
 emit_result() {
@@ -238,60 +254,54 @@ emit_install_block() {
   return 3
 }
 
-main() {
-  local operation project_arg project_root config detector result query candidate
-  if [ "${1:-}" = '--json' ]; then
-    JSON_OUTPUT=1
-    shift
-  fi
-  operation="${1:-}"
-  [ -n "$operation" ] || {
-    usage
-    exit 2
-  }
+parse_operation_args() {
+  local operation="$1"
   shift
   case "$operation" in
     list|refresh)
-      [ "$#" -eq 1 ] || {
-        usage
-        exit 2
-      }
-      project_arg="$1"
+      [ "$#" -eq 1 ] || { usage; exit 2; }
+      PROJECT_ARG="$1"
       ;;
     search)
-      [ "$#" -eq 2 ] || {
-        usage
-        exit 2
-      }
-      project_arg="$1"
-      query="$2"
-      validate_query "$query"
+      [ "$#" -eq 2 ] || { usage; exit 2; }
+      PROJECT_ARG="$1"
+      QUERY="$2"
+      validate_query "$QUERY"
       ;;
     install)
-      [ "$#" -eq 2 ] || {
-        usage
-        exit 2
-      }
-      project_arg="$1"
-      candidate="$2"
+      [ "$#" -eq 2 ] || { usage; exit 2; }
+      PROJECT_ARG="$1"
+      CANDIDATE="$2"
       ;;
     *)
       usage
       exit 2
       ;;
   esac
+}
+
+main() {
+  local operation project_root config detector result
+  if [ "${1:-}" = '--json' ]; then
+    JSON_OUTPUT=1
+    shift
+  fi
+  operation="${1:-}"
+  [ -n "$operation" ] || { usage; exit 2; }
+  shift
+  parse_operation_args "$operation" "$@"
 
   require_tools
-  project_root=$(resolve_project_root "$project_arg")
+  project_root=$(resolve_project_root "$PROJECT_ARG")
   config=$(read_config "$project_root")
   detector=$(read_detector "$project_root")
-  result=$(build_result "$operation" "$config" "$detector" "${query:-}")
+  result=$(build_result "$operation" "$config" "$detector" "$QUERY")
 
   if [ "$operation" = install ]; then
-    jq -e --arg candidate "$candidate" '.candidates | index($candidate) != null' \
+    jq -e --arg candidate "$CANDIDATE" '.candidates | index($candidate) != null' \
       <<< "$result" >/dev/null \
-      || fail "skill is not an exact discovered candidate: $candidate"
-    emit_install_block "$candidate"
+      || fail "skill is not an exact discovered candidate: $CANDIDATE"
+    emit_install_block "$CANDIDATE"
     return $?
   fi
   emit_result "$result"
