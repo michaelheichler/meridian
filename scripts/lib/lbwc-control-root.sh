@@ -14,10 +14,9 @@ lbwc_control_root_is_valid_json() {
 }
 
 lbwc_control_root_export() {
-  LBWC_CONTROL_ROOT_KIND="$1"
-  LBWC_CONTROL_ROOT="$2"
-  LBWC_PROJECT_ROOT="$3"
-  export LBWC_CONTROL_ROOT_KIND LBWC_CONTROL_ROOT LBWC_PROJECT_ROOT
+  export LBWC_CONTROL_ROOT_KIND="$1"
+  export LBWC_CONTROL_ROOT="$2"
+  export LBWC_PROJECT_ROOT="$3"
   printf '%s\n' "$2"
 }
 

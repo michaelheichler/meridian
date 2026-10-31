@@ -1,11 +1,7 @@
-CONV_CONFLICT_ID=""
-CONV_REPLACE_ID=""
-CONV_KEEP_BOTH=0
+# Globals, because a parser cannot return three values.
+declare -g CONV_CONFLICT_ID="" CONV_REPLACE_ID="" CONV_KEEP_BOTH=0
 
 parse_add_options() {
-  CONV_CONFLICT_ID=""
-  CONV_REPLACE_ID=""
-  CONV_KEEP_BOTH=0
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --conflicts-with) [ "$#" -ge 2 ] || usage; CONV_CONFLICT_ID="$2"; shift 2 ;;

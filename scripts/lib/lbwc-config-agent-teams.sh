@@ -1,8 +1,3 @@
-TEAMS_SETTINGS_PATH=""
-TEAMS_PROJECT_ROOT=""
-TEAMS_APPROVED=false
-TEAMS_EXPLICIT=false
-
 default_claude_settings_path() {
   if [ -n "${CLAUDE_CONFIG_DIR:-}" ]; then
     printf '%s\n' "$CLAUDE_CONFIG_DIR/settings.json"
@@ -113,52 +108,35 @@ agent_teams_enable() {
   jq -n --arg path "$settings_path" '{enabled:true,source:"settings",settings_path:$path,restart_required:true,message:"Agent Teams enabled in settings. You must restart Claude Code before running /lbwc:team."}'
 }
 
-parse_agent_teams_options() {
-  while [ "$#" -gt 0 ]; do
-    case "$1" in
-      --settings)
-        [ "$#" -ge 2 ] || fail '--settings requires a path'
-        TEAMS_SETTINGS_PATH="$2"
-        TEAMS_EXPLICIT=true
-        shift 2
-        ;;
-      --project-root)
-        [ "$#" -ge 2 ] || fail '--project-root requires a path'
-        TEAMS_PROJECT_ROOT="$2"
-        shift 2
-        ;;
-      --approved)
-        TEAMS_APPROVED=true
-        shift
-        ;;
-      *)
-        fail "unknown agent teams option: $1"
-        ;;
-    esac
-  done
-}
-
 dispatch_agent_teams() {
-  case "$1" in
+  local command="$1" settings_path="$2" approved="$3" project_root="$4" explicit="$5"
+  case "$command" in
     agent-teams-status)
-      [ "$TEAMS_APPROVED" = false ] || fail '--approved is not valid for status'
-      agent_teams_status "$TEAMS_SETTINGS_PATH" "$TEAMS_PROJECT_ROOT" "$TEAMS_EXPLICIT"
+      [ "$approved" = false ] || fail '--approved is not valid for status'
+      agent_teams_status "$settings_path" "$project_root" "$explicit"
       ;;
     agent-teams-check)
-      [ "$TEAMS_APPROVED" = false ] || fail '--approved is not valid for check'
-      agent_teams_check "$TEAMS_SETTINGS_PATH" "$TEAMS_PROJECT_ROOT" "$TEAMS_EXPLICIT"
+      [ "$approved" = false ] || fail '--approved is not valid for check'
+      agent_teams_check "$settings_path" "$project_root" "$explicit"
       ;;
-    agent-teams-enable) agent_teams_enable "$TEAMS_SETTINGS_PATH" "$TEAMS_APPROVED" ;;
+    agent-teams-enable) agent_teams_enable "$settings_path" "$approved" ;;
     *) return 1 ;;
   esac
 }
 
 global_command() {
-  local command="$1"
+  local command="$1" settings_path="" approved=false project_root="" explicit=false
   shift
-  parse_agent_teams_options "$@"
-  if [ -z "$TEAMS_SETTINGS_PATH" ]; then
-    TEAMS_SETTINGS_PATH=$(default_claude_settings_path)
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --settings) [ "$#" -ge 2 ] || fail '--settings requires a path'; settings_path="$2"; explicit=true; shift 2 ;;
+      --project-root) [ "$#" -ge 2 ] || fail '--project-root requires a path'; project_root="$2"; shift 2 ;;
+      --approved) approved=true; shift ;;
+      *) fail "unknown agent teams option: $1" ;;
+    esac
+  done
+  if [ -z "$settings_path" ]; then
+    settings_path=$(default_claude_settings_path)
   fi
-  dispatch_agent_teams "$command"
+  dispatch_agent_teams "$command" "$settings_path" "$approved" "$project_root" "$explicit"
 }
