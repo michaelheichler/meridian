@@ -1,5 +1,7 @@
 #!/usr/bin/env bats
 
+load test_helper
+
 setup() {
   REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/.." && pwd)"
   REAL_SCRIPT="$REPO_ROOT/scripts/lbwc-skills.sh"
@@ -11,7 +13,7 @@ setup() {
   DETECTOR_TRACE="$TEST_ROOT/detector.trace"
   mkdir -p "$PLUGIN_ROOT/scripts" "$PLANNING_DIR"
   if [ -f "$REAL_SCRIPT" ]; then
-    cp "$REAL_SCRIPT" "$PLUGIN_ROOT/scripts/lbwc-skills.sh"
+    copy_script_with_libs "$REAL_SCRIPT" "$PLUGIN_ROOT/scripts/lbwc-skills.sh"
   fi
   SCRIPT="$PLUGIN_ROOT/scripts/lbwc-skills.sh"
   printf '%s\n' \

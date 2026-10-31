@@ -12,13 +12,25 @@ system_platform() {
   fi
 }
 
+rewrite_fixture_sources() {
+  local fixture="$1" program="$2" lib_dir file
+  shift 2
+  lib_dir="$(dirname "$fixture")/lib"
+  for file in "$fixture" "$lib_dir"/[a-z]*.sh; do
+    [ -f "$file" ] || continue
+    awk "$@" "$program" "$file" > "$file.rewritten"
+    mv "$file.rewritten" "$file"
+  done
+}
+
 create_routing_failure_fixture() {
   local mode="$1"
   local fixture_root="$TEST_TEMP_DIR/routing-$mode"
   local fixture="$fixture_root/scripts/lbwc-routing.sh"
   local denied="$fixture_root/unavailable"
   mkdir -p "$fixture_root/scripts" "$fixture_root/templates/agent-roles"
-  awk -v mode="$mode" -v denied="$denied" '
+  copy_script_with_libs "$ROUTING" "$fixture"
+  rewrite_fixture_sources "$fixture" '
     mode == "entropy" { gsub("/dev/urandom", denied) }
     mode == "unsupported" && /^  platform=\$\(system_name\)/ {
       print "  platform=UnsupportedFixture"
@@ -29,7 +41,7 @@ create_routing_failure_fixture() {
       gsub("/usr/bin/flock /bin/flock", denied " " denied)
     }
     { print }
-  ' "$ROUTING" > "$fixture"
+  ' -v mode="$mode" -v denied="$denied"
   cp "$PROJECT_ROOT/templates/agent-roles/defaults.json" "$fixture_root/templates/agent-roles/defaults.json"
   chmod +x "$fixture"
   printf '%s\n' "$fixture"
@@ -377,13 +389,14 @@ teardown() {
   mkdir -p "$wrapper_dir" "$fixture_root/scripts" "$fixture_root/templates/agent-roles"
   printf '%s\n' '#!/usr/bin/env bash' 'exit 1' > "$wrapper_dir/od"
   chmod +x "$wrapper_dir/od"
-  awk -v od_path="$wrapper_dir/od" '
+  copy_script_with_libs "$ROUTING" "$fixture"
+  rewrite_fixture_sources "$fixture" '
     /^  OD_TOOL=\$\(first_executable \/usr\/bin\/od \/bin\/od\)/ {
       print "  OD_TOOL=$(first_executable \"" od_path "\")"
       next
     }
     { print }
-  ' "$ROUTING" > "$fixture"
+  ' -v od_path="$wrapper_dir/od"
   cp "$PROJECT_ROOT/templates/agent-roles/defaults.json" "$fixture_root/templates/agent-roles/defaults.json"
   chmod +x "$fixture"
   before=$(shasum -a 256 "$TEST_TEMP_DIR/.lbwc-planning/config.json" | awk '{print $1}')
@@ -410,13 +423,14 @@ teardown() {
     "printf '%s\\n' ZZSTDERRZZ >&2" \
     'exit 1' > "$wrapper_dir/od"
   chmod +x "$wrapper_dir/od"
-  awk -v od_path="$wrapper_dir/od" '
+  copy_script_with_libs "$ROUTING" "$fixture"
+  rewrite_fixture_sources "$fixture" '
     /^  OD_TOOL=\$\(first_executable \/usr\/bin\/od \/bin\/od\)/ {
       print "  OD_TOOL=$(first_executable \"" od_path "\")"
       next
     }
     { print }
-  ' "$ROUTING" > "$fixture"
+  ' -v od_path="$wrapper_dir/od"
   cp "$PROJECT_ROOT/templates/agent-roles/defaults.json" "$fixture_root/templates/agent-roles/defaults.json"
   chmod +x "$fixture"
 
