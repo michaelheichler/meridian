@@ -26,10 +26,14 @@ make_support_copy() {
   cp "$source_dir/qa-gate.sh" "$target_dir/"
   cp "$source_dir/lib/qa-gate-decision.sh" "$target_dir/lib/"
   cp "$source_dir/qa-result-gate.sh" "$target_dir/"
-  cp "$source_dir/lib/qa-result-gate-path-evidence.sh" "$target_dir/lib/"
-  cp "$source_dir/lib/qa-result-gate-fail-classifications.sh" "$target_dir/lib/"
-  cp "$source_dir/lib/qa-result-gate-known-issues.sh" "$target_dir/lib/"
-  cp "$source_dir/lib/qa-result-gate-summary-deviations.sh" "$target_dir/lib/"
+  local lib_file
+  for lib_file in "$source_dir"/lib/qa-result-gate-*.sh; do
+    cp "$lib_file" "$target_dir/lib/"
+  done
+  local sourced_lib
+  while IFS= read -r sourced_lib; do
+    cp "$source_dir/lib/$sourced_lib" "$target_dir/lib/"
+  done < <(sed -n 's|^\. "\$SCRIPT_DIR/lib/\(.*\)"$|\1|p' "$source_dir/qa-result-gate.sh")
   cat > "$target_dir/summary-utils.sh" <<'EOF'
 #!/usr/bin/env bash
 extract_summary_status() {
