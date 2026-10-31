@@ -24,11 +24,12 @@ UAT_LANE_BLOCKS_QA=false
 PHASE_DIRS=()
 
 set_next_phase_candidate() {
-  NEXT_PHASE="$1"
-  NEXT_PHASE_SLUG="$2"
-  NEXT_PHASE_STATE="$3"
-  NEXT_PHASE_PLANS="$4"
-  NEXT_PHASE_SUMMARIES="$5"
+  local phase="$1" slug="$2" state="$3" plans="$4" summaries="$5"
+  printf -v NEXT_PHASE '%s' "$phase"
+  printf -v NEXT_PHASE_SLUG '%s' "$slug"
+  printf -v NEXT_PHASE_STATE '%s' "$state"
+  printf -v NEXT_PHASE_PLANS '%s' "$plans"
+  printf -v NEXT_PHASE_SUMMARIES '%s' "$summaries"
 }
 
 route_earlier_phase_candidate() {

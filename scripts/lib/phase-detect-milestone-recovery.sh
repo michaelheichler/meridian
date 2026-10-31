@@ -128,11 +128,11 @@ _PD_ISSUE_PARSER="$_SCRIPT_DIR_PD/parse-uat-issues.awk"
 _PD_ROUND_ID_PARSER="$_SCRIPT_DIR_PD/extract-round-issue-ids.awk"
 
 _pd_reset_uat_extraction() {
-  _PD_EXTRACT_LINES=""
-  _PD_EXTRACT_COUNT=0
-  _PD_EXTRACT_ERROR=""
-  _PD_BASE_ISSUES=""
-  _PD_ROUND_IDS=""
+  local name
+  for name in _PD_EXTRACT_LINES _PD_EXTRACT_ERROR _PD_BASE_ISSUES _PD_ROUND_IDS; do
+    printf -v "$name" '%s' ""
+  done
+  printf -v _PD_EXTRACT_COUNT '%s' 0
 }
 
 _pd_read_base_uat_issues() {

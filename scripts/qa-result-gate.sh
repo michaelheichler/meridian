@@ -9,6 +9,8 @@ if [ -n "$VERIF_NAME" ]; then
   EXPLICIT_VERIF_NAME=true
 fi
 SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd)"
+. "$SCRIPT_DIR/lib/require-bash.sh"
+require_bash_43
 RESOLVE_VERIF_SCRIPT="$SCRIPT_DIR/resolve-verification-path.sh"
 if [ -f "$SCRIPT_DIR/summary-utils.sh" ]; then
   . "$SCRIPT_DIR/summary-utils.sh"

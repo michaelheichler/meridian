@@ -31,26 +31,26 @@ print_known_issues_section() {
 resolve_source_fail_verif() {
   local _cvc_active_round _cvc_prev_round _cvc_expected_source_verif
   # Callers read these flags after the call, so they stay global.
-  _cvc_source_fail_verif_missing=false
-  _cvc_remediation_state_active=false
+  printf -v _cvc_source_fail_verif_missing '%s' false
+  printf -v _cvc_remediation_state_active '%s' false
   [ -f "$PHASE_DIR/remediation/qa/.qa-remediation-stage" ] || {
     if [ -z "$_cvc_source_fail_verif" ] && [ -n "$_cvc_phase_verif" ]; then
-      _cvc_source_fail_verif="$_cvc_phase_verif"
+      printf -v _cvc_source_fail_verif '%s' "$_cvc_phase_verif"
     fi
     return 0
   }
-  _cvc_remediation_state_active=true
+  printf -v _cvc_remediation_state_active '%s' true
   _cvc_active_round=$(grep '^round=' "$PHASE_DIR/remediation/qa/.qa-remediation-stage" 2>/dev/null | head -1 | cut -d= -f2 | tr -d '[:space:]' || true)
   if [[ "${_cvc_active_round:-}" =~ ^[0-9]+$ ]] && [ "$((10#${_cvc_active_round}))" -gt 1 ] 2>/dev/null; then
     _cvc_prev_round=$(printf '%02d' "$((10#${_cvc_active_round} - 1))")
     _cvc_expected_source_verif="$PHASE_DIR/remediation/qa/round-${_cvc_prev_round}/R${_cvc_prev_round}-VERIFICATION.md"
     if [ ! -f "$_cvc_expected_source_verif" ]; then
-      _cvc_source_fail_verif_missing=true
-      _cvc_source_fail_verif=""
+      printf -v _cvc_source_fail_verif_missing '%s' true
+      printf -v _cvc_source_fail_verif '%s' ""
     fi
   fi
   if [[ "${_cvc_active_round:-}" =~ ^[0-9]+$ ]] && [ -z "$_cvc_source_fail_verif" ]; then
-    _cvc_source_fail_verif_missing=true
+    printf -v _cvc_source_fail_verif_missing '%s' true
   fi
 }
 

@@ -48,8 +48,8 @@ fallback_remediation_candidates() {
 }
 
 resolve_remediation_candidates() {
-  _cvc_candidates=()
-  _active_remediation=false
+  read -r -a _cvc_candidates <<< ""
+  printf -v _active_remediation '%s' false
   find_active_qa_remediation_candidate || true
   find_active_uat_remediation_candidate || true
   if [ "$_active_remediation" = false ]; then
