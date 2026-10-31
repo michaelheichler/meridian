@@ -1,13 +1,16 @@
 import json
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from tc_common import (
-    COMMUNICATION_POLICIES, EXECUTION_BACKENDS, RUNTIME_KINDS, fail,
-    protected_worker_path, resolve_control_root, safe_capability_path,
-    safe_path, sha256_text,
+    COMMUNICATION_POLICIES, EXECUTION_BACKENDS, RUNTIME_KINDS, AllowMap,
+    AllowResult, CapMap, JsonMap, Team, fail, protected_worker_path,
+    resolve_control_root, safe_capability_path, safe_path, sha256_text,
 )
 
+CapPairs = list[tuple[str, str]]
+RoleCaps = list[tuple[str, str, str]]
 PASSTHROUGH = (
     "source_kind", "source_path", "source_sha256", "command_name", "phase",
     "task_name", "plan_files", "files", "roles", "role", "action", "verify",
@@ -15,7 +18,23 @@ PASSTHROUGH = (
 )
 
 
-def new_contract(root: Path, core: dict[str, Any]) -> dict[str, Any]:
+@dataclass(frozen=True)
+class AllowanceSpec:
+    team: Team
+    primary_paths: list[str]
+    role_specs: list[str]
+    allowed_paths: Any = None
+
+
+@dataclass(frozen=True)
+class BackendChoice:
+    requested: str
+    resolved: str
+    runtime_kind: str
+    policy: str
+
+
+def new_contract(root: Path, core: JsonMap) -> JsonMap:
     contract = {key: core[key] for key in PASSTHROUGH}
     contract.update({
         "contract_id": core["contract_id"],
@@ -41,7 +60,7 @@ def checked_grant(path: str) -> str:
     return path
 
 
-def grant_role_specs(allowances: dict[str, list[str]], role_specs: list[str]) -> None:
+def grant_role_specs(allowances: AllowMap, role_specs: list[str]) -> None:
     for spec in role_specs:
         if ":" not in spec:
             fail("invalid role write allowance")
@@ -52,7 +71,7 @@ def grant_role_specs(allowances: dict[str, list[str]], role_specs: list[str]) ->
         allowances[role].append(checked_grant(path))
 
 
-def flatten_allowances(roles: list[str], allowances: dict[str, list[str]], allowed_paths: Any) -> list[str]:
+def flatten_allowances(roles: list[str], allowances: AllowMap, allowed_paths: Any) -> list[str]:
     flattened: list[str] = []
     for path in (item for role in roles for item in allowances[role]):
         if path in flattened:
@@ -63,13 +82,14 @@ def flatten_allowances(roles: list[str], allowances: dict[str, list[str]], allow
     return flattened
 
 
-def build_allowances(roles: list[str], primary: str, primary_paths: list[str], role_specs: list[str], allowed_paths: Any = None) -> tuple[dict[str, list[str]], list[str]]:
-    allowances: dict[str, list[str]] = {role: [] for role in roles}
-    for path in primary_paths:
+def build_allowances(spec: AllowanceSpec) -> AllowResult:
+    roles = spec.team.roles
+    allowances: AllowMap = {role: [] for role in roles}
+    for path in spec.primary_paths:
         safe_path(path)
-        allowances[primary].append(checked_grant(path))
-    grant_role_specs(allowances, role_specs)
-    return allowances, flatten_allowances(roles, allowances, allowed_paths)
+        allowances[spec.team.primary].append(checked_grant(path))
+    grant_role_specs(allowances, spec.role_specs)
+    return allowances, flatten_allowances(roles, allowances, spec.allowed_paths)
 
 
 def capability_entry(kind: str, path: str) -> dict[str, str]:
@@ -78,7 +98,7 @@ def capability_entry(kind: str, path: str) -> dict[str, str]:
     return {"access": "write", "kind": kind, "path": path}
 
 
-def reject_duplicate_capabilities(roles: list[str], capabilities: dict[str, list[dict[str, str]]]) -> None:
+def reject_duplicate_capabilities(roles: list[str], capabilities: CapMap) -> None:
     seen = set()
     for role, entry in ((role, item) for role in roles for item in capabilities[role]):
         identity = (role, entry["kind"], entry["path"])
@@ -87,26 +107,26 @@ def reject_duplicate_capabilities(roles: list[str], capabilities: dict[str, list
         seen.add(identity)
 
 
-def build_capabilities(roles: list[str], primary: str, primary_capabilities: list[tuple[str, str]], role_specs: list[tuple[str, str, str]]) -> dict[str, list[dict[str, str]]]:
-    capabilities: dict[str, list[dict[str, str]]] = {role: [] for role in roles}
+def build_capabilities(team: Team, primary_capabilities: CapPairs, role_specs: RoleCaps) -> CapMap:
+    capabilities: CapMap = {role: [] for role in team.roles}
     for kind, path in primary_capabilities:
-        capabilities[primary].append(capability_entry(kind, path))
+        capabilities[team.primary].append(capability_entry(kind, path))
     for role, kind, path in role_specs:
-        if role not in roles:
+        if role not in team.roles:
             fail("capability role is not in contract team")
         capabilities[role].append(capability_entry(kind, path))
-    reject_duplicate_capabilities(roles, capabilities)
+    reject_duplicate_capabilities(team.roles, capabilities)
     return capabilities
 
 
-def capabilities_from_allowances(allowances: dict[str, list[str]]) -> dict[str, list[dict[str, str]]]:
+def capabilities_from_allowances(allowances: AllowMap) -> CapMap:
     return {
         role: [{"access": "write", "kind": "file", "path": path} for path in paths]
         for role, paths in allowances.items()
     }
 
 
-def schema3_plan_requested(options: dict[str, Any]) -> bool:
+def schema3_plan_requested(options: JsonMap) -> bool:
     flags = (
         bool(options["requested_backend"]),
         bool(options["resolved_backend"]),
@@ -117,37 +137,38 @@ def schema3_plan_requested(options: dict[str, Any]) -> bool:
     return all(flags)
 
 
-def check_plan_backends(requested: str, resolved: str, runtime_kind: str, policy: str) -> None:
-    if requested not in EXECUTION_BACKENDS:
+def check_plan_backends(choice: BackendChoice) -> None:
+    if choice.requested not in EXECUTION_BACKENDS:
         fail("invalid requested_backend")
-    if resolved not in EXECUTION_BACKENDS:
+    if choice.resolved not in EXECUTION_BACKENDS:
         fail("invalid resolved_backend")
-    if requested != resolved:
+    if choice.requested != choice.resolved:
         fail("requested_backend and resolved_backend must match")
-    if runtime_kind not in RUNTIME_KINDS:
+    if choice.runtime_kind not in RUNTIME_KINDS:
         fail("invalid runtime_kind")
-    if policy not in COMMUNICATION_POLICIES:
+    if choice.policy not in COMMUNICATION_POLICIES:
         fail("invalid communication_policy")
 
 
-def plan_schema3_fields(options: dict[str, Any], root: Path, allowances: dict[str, list[str]]) -> dict[str, Any]:
-    requested = options["requested_backend"]
-    resolved = options["resolved_backend"]
-    runtime_kind = options["runtime_kind"] or "native-team"
-    policy = options["communication_policy"] or "native-team"
-    check_plan_backends(requested, resolved, runtime_kind, policy)
+def plan_schema3_fields(options: JsonMap, root: Path, allowances: AllowMap) -> JsonMap:
+    choice = BackendChoice(
+        options["requested_backend"], options["resolved_backend"],
+        options["runtime_kind"] or "native-team",
+        options["communication_policy"] or "native-team",
+    )
+    check_plan_backends(choice)
     return {
         "capabilities_by_role": capabilities_from_allowances(allowances),
-        "communication_policy": policy,
+        "communication_policy": choice.policy,
         "control_root": str(resolve_control_root(options["control_root"], root)),
-        "runtime_kind": runtime_kind,
-        "requested_backend": requested,
-        "resolved_backend": resolved,
+        "runtime_kind": choice.runtime_kind,
+        "requested_backend": choice.requested,
+        "resolved_backend": choice.resolved,
         "schema_version": 3,
     }
 
 
-def assert_contract_matches_snapshot(path: str, contract: dict[str, Any]) -> None:
+def assert_contract_matches_snapshot(path: str, contract: JsonMap) -> None:
     try:
         snapshot = json.loads(Path(path).read_text())
     except (OSError, json.JSONDecodeError):

@@ -4,11 +4,13 @@ from typing import Any
 
 from tc_common import (
     COMMUNICATION_POLICIES, EXECUTION_BACKENDS, RUNTIME_KINDS, SCHEMA_2_KEYS,
-    SCHEMA_3_KEYS, SCHEMA_3_ONLY_KEYS, STATES, digest_contract, fail,
+    SCHEMA_3_KEYS, SCHEMA_3_ONLY_KEYS, STATES, Expect, JsonMap, digest_contract, fail,
     protected_worker_path, resolve_control_root, safe_capability_path,
     safe_path, safe_token, sha256_text,
 )
 from tc_roles import configured_team
+
+FlatAllow = tuple[JsonMap, list[str]]
 
 
 def check_header(contract: Any, root: Path, expected_id: Any) -> Any:
@@ -30,14 +32,14 @@ def check_header(contract: Any, root: Path, expected_id: Any) -> Any:
     return schema_version
 
 
-def check_team(contract: dict[str, Any]) -> list[str]:
+def check_team(contract: JsonMap) -> list[str]:
     roles = configured_team(contract.get("role"), contract.get("team_mode"))
     if contract.get("roles") != roles or contract.get("test_dev") != ("test-dev" in roles):
         fail("invalid contract")
     return roles
 
 
-def flatten_contract_allowances(contract: dict[str, Any], roles: list[str], schema_version: int) -> tuple[dict[str, Any], list[str]]:
+def flatten_contract_allowances(contract: JsonMap, roles: list[str], schema_version: int) -> FlatAllow:
     allowances = contract.get("allowances_by_role")
     if not isinstance(allowances, dict) or set(allowances) != set(roles):
         fail("invalid contract")
@@ -75,7 +77,7 @@ def capability_paths_for(entries: Any) -> list[str]:
     return paths
 
 
-def check_schema3(contract: dict[str, Any], roles: list[str], root: Path) -> None:
+def check_schema3(contract: JsonMap, roles: list[str], root: Path) -> None:
     control_root = resolve_control_root(contract.get("control_root", ""), root)
     if str(control_root) != contract.get("control_root"):
         fail("invalid contract")
@@ -92,7 +94,7 @@ def check_schema3(contract: dict[str, Any], roles: list[str], root: Path) -> Non
     check_schema3_enums(contract)
 
 
-def check_schema3_enums(contract: dict[str, Any]) -> None:
+def check_schema3_enums(contract: JsonMap) -> None:
     if contract.get("runtime_kind") not in RUNTIME_KINDS:
         fail("invalid contract")
     if contract.get("communication_policy") not in COMMUNICATION_POLICIES:
@@ -105,7 +107,7 @@ def check_schema3_enums(contract: dict[str, Any]) -> None:
         fail("invalid contract")
 
 
-def check_plan_source(contract: dict[str, Any], root: Path, plan_files: list[str], flattened: list[str]) -> None:
+def check_plan_source(contract: JsonMap, root: Path) -> None:
     source = Path(contract.get("source_path", "")).resolve()
     try:
         source.relative_to(root)
@@ -117,11 +119,9 @@ def check_plan_source(contract: dict[str, Any], root: Path, plan_files: list[str
         fail("invalid contract: PLAN is unavailable")
     if source_digest != contract.get("source_sha256"):
         fail("invalid contract: PLAN digest mismatch")
-    if any(path not in plan_files for path in flattened):
-        fail("invalid contract")
 
 
-def check_source(contract: dict[str, Any], root: Path, flattened: list[str]) -> None:
+def check_source(contract: JsonMap, root: Path, flattened: list[str]) -> None:
     plan_files = contract.get("plan_files")
     if not isinstance(plan_files, list) or any(not isinstance(path, str) for path in plan_files):
         fail("invalid contract")
@@ -129,14 +129,17 @@ def check_source(contract: dict[str, Any], root: Path, flattened: list[str]) -> 
         safe_path(path)
     source_kind = contract.get("source_kind")
     if source_kind == "plan":
-        check_plan_source(contract, root, plan_files, flattened)
+        check_plan_source(contract, root)
+        if any(path not in plan_files for path in flattened):
+            fail("invalid contract")
         return
     if source_kind != "command" or contract.get("source_path") or contract.get("source_sha256") or plan_files:
         fail("invalid contract")
 
 
-def validate_contract(contract: Any, root: Path, expected_id: Any = None, expected_job: Any = None) -> None:
-    schema_version = check_header(contract, root, expected_id)
+def validate_contract(contract: Any, root: Path, expect: Expect = Expect()) -> None:
+    expected_job = expect.job
+    schema_version = check_header(contract, root, expect.contract_id)
     roles = check_team(contract)
     allowances, flattened = flatten_contract_allowances(contract, roles, schema_version)
     if schema_version == 3:

@@ -5,7 +5,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from tc_common import SCHEMA_2_KEYS, SCHEMA_3_KEYS, fail
+from tc_common import SCHEMA_2_KEYS, SCHEMA_3_KEYS, Expect, JsonMap, fail
 from tc_validate import validate_contract
 
 
@@ -88,7 +88,7 @@ def unlock(lock_dir: Path) -> None:
         pass
 
 
-def atomic(path: Path, contract: dict[str, Any]) -> None:
+def atomic(path: Path, contract: JsonMap) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     data = json.dumps(contract, sort_keys=True, indent=2) + "\n"
     descriptor, temporary = tempfile.mkstemp(prefix=path.name + ".tmp.", dir=path.parent)
@@ -112,20 +112,20 @@ def load(path: Path) -> Any:
         fail("invalid contract")
 
 
-def immutable_equal(left: dict[str, Any], right: dict[str, Any]) -> bool:
+def immutable_equal(left: JsonMap, right: JsonMap) -> bool:
     ignored = {"state", "contract_digest"}
     keys = SCHEMA_2_KEYS if left.get("schema_version") == 2 else SCHEMA_3_KEYS
     return all(left.get(key) == right.get(key) for key in keys - ignored)
 
 
-def check_existing(path: Path, root: Path, contract: dict[str, Any]) -> None:
+def check_existing(path: Path, root: Path, contract: JsonMap) -> None:
     existing = load(path)
-    validate_contract(existing, root, contract["contract_id"])
+    validate_contract(existing, root, Expect(contract["contract_id"]))
     if not immutable_equal(existing, contract):
         fail("duplicate contract")
 
 
-def create_or_reopen(root: Path, contract: dict[str, Any]) -> None:
+def create_or_reopen(root: Path, contract: JsonMap) -> None:
     validate_contract(contract, root)
     control_root = Path(contract["control_root"]) if contract.get("schema_version") == 3 else None
     path = contract_path(root, contract["contract_id"], control_root)
