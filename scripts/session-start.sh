@@ -51,6 +51,14 @@ fi
 
 bind_tmux_bootstrap || exit 1
 
+HOOK_INPUT=""
+[ -t 0 ] || HOOK_INPUT=$(cat 2>/dev/null) || HOOK_INPUT=""
+SESSION_SOURCE=$(printf '%s' "$HOOK_INPUT" | jq -r '.source // empty' 2>/dev/null || true)
+# Stale counts from old sessions would otherwise trigger the loop stop.
+case "$SESSION_SOURCE" in
+  startup|clear) [ -d "$PLANNING_DIR" ] && echo 0 > "$PLANNING_DIR/.compaction-count" 2>/dev/null ;;
+esac
+
 pd_field() {
   printf '%s\n' "$PHASE_OUT" | grep -m1 "^$1=" | sed "s/^[^=]*=//"
 }

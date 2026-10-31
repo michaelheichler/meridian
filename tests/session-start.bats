@@ -147,6 +147,78 @@ EOF
   [[ "$output" == *"lbwc: agent manifest status unavailable."* ]]
 }
 
+run_session_start_with_input() {
+  local input="$1"
+  (
+    cd "$REPO_ROOT"
+    printf '%s' "$input" | LBWC_PLANNING_DIR="$PLANNING_DIR" bash "$SCRIPT"
+  )
+}
+
+seed_compaction_count() {
+  mkdir -p "$PLANNING_DIR"
+  printf '%s\n' "$1" > "$PLANNING_DIR/.compaction-count"
+}
+
+read_compaction_count() {
+  cat "$PLANNING_DIR/.compaction-count"
+}
+
+assert_count_after_source() {
+  local session_source="$1" expected="$2"
+  seed_compaction_count 5
+
+  run run_session_start_with_input "{\"source\":\"$session_source\"}"
+
+  [ "$status" -eq 0 ]
+  [ "$(read_compaction_count)" = "$expected" ]
+}
+
+@test "session-start: a startup session resets the stale compaction count" {
+  assert_count_after_source startup 0
+}
+
+@test "session-start: a clear session resets the stale compaction count" {
+  assert_count_after_source clear 0
+}
+
+@test "session-start: a compact session keeps the compaction count" {
+  assert_count_after_source compact 5
+}
+
+@test "session-start: a resume session keeps the compaction count" {
+  assert_count_after_source resume 5
+}
+
+@test "session-start: empty stdin keeps the compaction count" {
+  seed_compaction_count 5
+
+  run run_session_start_with_input ""
+
+  [ "$status" -eq 0 ]
+  [ "$(read_compaction_count)" = "5" ]
+}
+
+@test "session-start: a startup session without a planning dir creates nothing" {
+  run run_session_start_with_input '{"source":"startup"}'
+
+  [ "$status" -eq 0 ]
+  [ ! -e "$PLANNING_DIR" ]
+}
+
+@test "session-start: a fresh session after a near-limit run does not trip the compaction loop stop" {
+  seed_compaction_count 9
+
+  run run_session_start_with_input '{"source":"startup"}'
+  [ "$status" -eq 0 ]
+
+  run env LBWC_PLANNING_DIR="$PLANNING_DIR" bash -c 'printf "%s" "{\"matcher\":\"auto\"}" | bash "$1"' _ "$REPO_ROOT/scripts/compaction-instructions.sh"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"COMPACTION LOOP DETECTED"* ]]
+  [ "$(read_compaction_count)" = "1" ]
+}
+
 fixture_session_bus() {
   local control_root="$1" hash registry
   source "$REPO_ROOT/scripts/lib/lbwc-control-root.sh"

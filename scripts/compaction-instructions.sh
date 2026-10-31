@@ -89,7 +89,6 @@ fi
 [ -d "$PLANNING_DIR" ] && date +%s > "$PLANNING_DIR/.compaction-marker" 2>/dev/null
 
 COMPACTION_LIMIT=10
-# ponytail: count survives across sessions, add a startup reset if a stale count misfires.
 if [ -d "$PLANNING_DIR" ]; then
   COUNT_FILE="$PLANNING_DIR/.compaction-count"
   PREV_COUNT=0
