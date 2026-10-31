@@ -20,15 +20,15 @@ set_verification_target() {
   local target_path="${1:-}"
   local target_name=""
   target_name=$(basename "$target_path")
-  declare -g VERIF_PATH="$target_path"
-  declare -g VERIF_NAME="$target_name"
+  printf -v VERIF_PATH '%s' "$target_path"
+  printf -v VERIF_NAME '%s' "$target_name"
 }
 
 resolve_gate_verification() {
   local resolved_path=""
   local phase_num=""
   if [ -n "$VERIF_NAME" ]; then
-    declare -g VERIF_PATH="$PHASE_DIR/$VERIF_NAME"
+    printf -v VERIF_PATH '%s' "$PHASE_DIR/$VERIF_NAME"
     return 0
   fi
   resolved_path=$(bash "$RESOLVE_VERIF_SCRIPT" phase "$PHASE_DIR" 2>/dev/null || true)
@@ -37,8 +37,8 @@ resolve_gate_verification() {
     return 0
   fi
   phase_num=$(basename "$PHASE_DIR" | grep -oE '^[0-9]+' 2>/dev/null || true)
-  declare -g VERIF_NAME="${phase_num:-01}-VERIFICATION.md"
-  declare -g VERIF_PATH="$PHASE_DIR/$VERIF_NAME"
+  printf -v VERIF_NAME '%s' "${phase_num:-01}-VERIFICATION.md"
+  printf -v VERIF_PATH '%s' "$PHASE_DIR/$VERIF_NAME"
 }
 
 stage_file_value() {
@@ -58,19 +58,19 @@ normalize_round_number() {
 
 adopt_round_scope() {
   local scope_kind="${1:-}"
-  declare -g PLAN_SCOPE_DIR="$GATE_ROUND_DIR"
-  declare -g SUMMARY_SCOPE_DIR="$GATE_ROUND_DIR"
-  declare -g REMEDIATION_SCOPE="$scope_kind round=$GATE_ROUND"
+  printf -v PLAN_SCOPE_DIR '%s' "$GATE_ROUND_DIR"
+  printf -v SUMMARY_SCOPE_DIR '%s' "$GATE_ROUND_DIR"
+  printf -v REMEDIATION_SCOPE '%s' "$scope_kind round=$GATE_ROUND"
 }
 
 set_round_location() {
   local kind_dir="${1:-}"
   local stage_value="${2:-}"
   local round_value="${3:-}"
-  declare -g GATE_STAGE="$stage_value"
-  declare -g GATE_ROUND="$round_value"
-  declare -g GATE_ROUND_DIR="$PHASE_DIR/remediation/${kind_dir}/round-${round_value}"
-  declare -g GATE_ROUND_VERIF="${GATE_ROUND_DIR}/R${round_value}-VERIFICATION.md"
+  printf -v GATE_STAGE '%s' "$stage_value"
+  printf -v GATE_ROUND '%s' "$round_value"
+  printf -v GATE_ROUND_DIR '%s' "$PHASE_DIR/remediation/${kind_dir}/round-${round_value}"
+  printf -v GATE_ROUND_VERIF '%s' "${GATE_ROUND_DIR}/R${round_value}-VERIFICATION.md"
 }
 
 select_qa_remediation_verification() {
@@ -97,7 +97,7 @@ load_qa_remediation_scope() {
   stage_value=$(stage_file_value "$state_file" stage)
   stage_value="${stage_value:-none}"
   case "$stage_value" in
-    plan|execute|verify|done) declare -g IN_REMEDIATION="true" ;;
+    plan|execute|verify|done) printf -v IN_REMEDIATION '%s' "true" ;;
     *) stage_value="none" ;;
   esac
   round_value=$(stage_file_value "$state_file" round)
@@ -117,7 +117,7 @@ load_uat_remediation_scope() {
   [ -f "$state_file" ] || return 0
   stage_value=$(stage_file_value "$state_file" stage)
   case "${stage_value:-none}" in
-    verify|done) declare -g IN_REMEDIATION="true" ;;
+    verify|done) printf -v IN_REMEDIATION '%s' "true" ;;
     *) stage_value="none" ;;
   esac
   round_value=$(stage_file_value "$state_file" round)
@@ -130,18 +130,18 @@ load_uat_remediation_scope() {
 }
 
 resolve_gate_scope() {
-  declare -g IN_REMEDIATION="false"
-  declare -g REMEDIATION_SCOPE="phase"
-  declare -g PLAN_SCOPE_DIR="$PHASE_DIR"
-  declare -g SUMMARY_SCOPE_DIR="$PHASE_DIR"
+  printf -v IN_REMEDIATION '%s' "false"
+  printf -v REMEDIATION_SCOPE '%s' "phase"
+  printf -v PLAN_SCOPE_DIR '%s' "$PHASE_DIR"
+  printf -v SUMMARY_SCOPE_DIR '%s' "$PHASE_DIR"
   resolve_gate_verification
   load_qa_remediation_scope
   load_uat_remediation_scope
 }
 
 set_known_issues() {
-  declare -g KNOWN_ISSUES_STATUS="${1:-}"
-  declare -g KNOWN_ISSUES_COUNT="${2:-0}"
+  printf -v KNOWN_ISSUES_STATUS '%s' "${1:-}"
+  printf -v KNOWN_ISSUES_COUNT '%s' "${2:-0}"
 }
 
 apply_known_issues_probe() {
@@ -188,17 +188,17 @@ recount_known_issues_from_registry() {
   registry_json=$(load_known_issue_registry_json "$PHASE_DIR/known-issues.json")
   registry_count=$(json_object_array_length "${registry_json:-[]}")
   case "${registry_count:-}" in
-    ''|*[!0-9]*) declare -g KNOWN_ISSUES_COUNT=0 ;;
-    *) declare -g KNOWN_ISSUES_COUNT="$registry_count" ;;
+    ''|*[!0-9]*) printf -v KNOWN_ISSUES_COUNT '%s' "0" ;;
+    *) printf -v KNOWN_ISSUES_COUNT '%s' "$registry_count" ;;
   esac
 }
 
 load_gate_known_issues() {
   local git_root=""
   git_root=$(git -C "$PHASE_DIR" rev-parse --show-toplevel 2>/dev/null || true)
-  declare -g GIT_ROOT="$git_root"
-  declare -g KNOWN_ISSUES_STATUS="missing"
-  declare -g KNOWN_ISSUES_COUNT=0
+  printf -v GIT_ROOT '%s' "$git_root"
+  printf -v KNOWN_ISSUES_STATUS '%s' "missing"
+  printf -v KNOWN_ISSUES_COUNT '%s' "0"
   probe_known_issues
   recount_known_issues_from_registry
 }

@@ -76,19 +76,19 @@ read_verification_frontmatter() {
   local result_value=""
   writer_value=$(awk "$QA_GATE_AWK_WRITER" "$VERIF_PATH" 2>/dev/null)
   result_value=$(awk "$QA_GATE_AWK_RESULT" "$VERIF_PATH" 2>/dev/null)
-  declare -g WRITER="$writer_value"
-  declare -g RESULT="$result_value"
+  printf -v WRITER '%s' "$writer_value"
+  printf -v RESULT '%s' "$result_value"
 }
 
 count_gate_findings() {
   local fail_total=""
   local deviation_total=""
   fail_total=$(count_fail_rows_in_verification "$VERIF_PATH")
-  declare -g FAIL_COUNT="$fail_total"
+  printf -v FAIL_COUNT '%s' "$fail_total"
   if gate_in_round_scope; then
     deviation_total=$(count_deviations_in_dir "$PHASE_DIR" "$SUMMARY_SCOPE_DIR" "$PLAN_SCOPE_DIR")
   else
     deviation_total=$(count_deviations_in_dir "$PHASE_DIR" "$SUMMARY_SCOPE_DIR")
   fi
-  declare -g DEVIATION_COUNT="$deviation_total"
+  printf -v DEVIATION_COUNT '%s' "$deviation_total"
 }
