@@ -41,11 +41,14 @@ A full `bats tests/` count is not claimed here. That invocation was not re-run i
 | --- | --- | --- |
 | Clean Claude Code 2.1.231 session loads the inline plugin command set | Debug log reports `Loaded 33 commands from plugin lbwc default directory`, matching 33 command files | PASS |
 | Clean interactive help exposes `/lbwc:team` and `/lbwc:import` without `/lbwc:lbwc:*` aliases | Rendered command discovery output from a fresh consumer session | PENDING |
-| First generated teammate forms a session-named native team in in-process mode | Native roster and task list, with no pre-authored config | PENDING |
+| First generated teammate forms a session-named native team in in-process mode | Native roster and task list, with no pre-authored configuration | PENDING |
 | Split-pane teammate payload resolves the same generated identity | Hook payload identity and manifest claim evidence | PENDING |
 | Runtime model and reasoning match generated frontmatter | Agent routing evidence plus teammate runtime transcript metadata | PENDING |
 | Teammates use native peer and lead messaging | Native inbox messages and message-scope hook evidence | PENDING |
-| Source-less `/lbwc:team` shows at most three newest candidates and creates no run before confirmation | Interactive proposal and filesystem check | PENDING |
+| Source-less `/lbwc:team` shows at most three newest candidates and creates no run before the user approves | Interactive proposal and filesystem check | PENDING |
 | `/lbwc:import` cancel and failed promotion preserve canonical artifact digests | Before and after digest evidence in a consumer project | PENDING |
+| When the user picks the workflow path, a command runs its task groupings through a generated workflow script | Workflow run record and generated script under the control root workflows directory | PENDING |
+| A failed workflow generation or denied `Workflow` call leaves the contract `planned` and does not fall back to `in_process` or `tmux` | Verbatim failure report and unchanged contract state | PENDING |
+| `workflow-spawn-guard` denies a `Workflow` call for an unissued, edited, or inline-script workflow | Hook denial message and manifest state before and after | PENDING |
 
 Pending means the repository has no honest interactive runtime evidence yet. It is not a passing claim.

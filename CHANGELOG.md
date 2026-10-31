@@ -4,32 +4,32 @@ This file records user-visible LBWC releases. Keep the newest entry first.
 
 ### A second way to get work done, and a fixed lookup
 
-Some commands can now hand a job to a scripted workflow instead of only spawning agents one by one, so multi-step work can run with less manual coordination.
+Some commands can now hand a job to a scripted workflow instead of only spawning agents one by one. Multi-step work can then run with less manual coordination.
 
-- Build, debug, fix, init, map, qa, research, team, and vibe can each choose the workflow path when it fits, and fall back to the usual agent spawn otherwise.
-- Fixed a bug where the DevIQ advisor and saved debug sessions could fail with a "no such file or directory" error instead of running.
+- When the workflow path fits, build, debug, fix, init, map, qa, research, team, and vibe can each choose it. They run it once they pick it. The workflow path never falls back to the usual agent spawn. If the workflow cannot run, the command stops and reports the failure.
+- Fixed a bug where the DevIQ advisor and saved debug sessions failed with a "no such file or directory" error instead of running.
 
 ## [1.0.4] - 2026-08-17
 
 ### Teams that follow Claude, and questions you can close
 
-Starting a team now follows your Claude settings and the models this Claude actually offers.
+Starting a team now follows your Claude settings and the models this Claude offers.
 
 - If Agent Teams is already on, you are not asked again.
 - A project setting that turns teams off wins over a personal setting that turns them on.
-- A broken extra settings file is skipped. A file you pointed at on purpose still has to be valid.
+- Starting a team skips a broken extra settings file. A file you pointed at on purpose still has to be valid.
 - Close a choice dialog and work continues. The session is not stuck, and it is not pushed into a review you did not ask for.
 - Teammates use the model names this Claude lists, including extra names from a router you installed.
-- Starting a team refreshes that list so the short names Claude already uses are accepted.
+- Starting a team refreshes that list so it accepts the short names Claude already uses.
 
 ## [1.0.3] - 2026-08-16
 
 ### TMUX agent panes
 
-Run teammates as real Claude sessions in their own tmux panes. Your main session stays the orchestrator: visible, in charge, not taken over.
+Run teammates as real Claude sessions in their own tmux panes. Your main session stays the orchestrator. It stays visible and in charge, and nothing takes it over.
 
 - Each teammate runs in its own tmux pane as a real Claude session.
-- Choose in-process agents or tmux panes. LBWC asks once, or you can save the choice in config.
+- Choose in-process agents or tmux panes. LBWC asks once, or you can save the choice in your LBWC settings.
 - The choice freezes for the phase, so it does not flip mid-run.
 - Cancel a spawn and it stops. Nothing silently falls back to in-process agents.
 - Doctor and status show whether the pane runtime is healthy.
@@ -38,10 +38,10 @@ Run teammates as real Claude sessions in their own tmux panes. Your main session
 ### Fixed
 - `AskUserQuestion` freeform handling no longer depends on a duplicated `Other` label. Any answer that is not a listed option now resolves as freeform in one step, matching the native contract.
 - Re-derived the model-selector extraction in `claude-capabilities.sh` against the current Claude Code binary layout, restoring live model detection.
-- Restored VBW-parity content that the initial port had summarized away (`report.md`, `research.md`, `config.md`, `map.md`, `debug.md`), and quoted bracketed `argument-hint` frontmatter values that were failing strict plugin validation.
+- Restored VBW-parity content that the initial port had summarized away (`report.md`, `research.md`, `config.md`, `map.md`, `debug.md`). Also quoted bracketed `argument-hint` frontmatter values that were failing strict plugin validation.
 - Removed dead legacy `config/model-profiles.json`, `config/model-pricing.json`, and `config/reasoning-profiles.json`, and the one ShellCheck error plus five warnings across `scripts/`.
 ### Changed
-- A clean install of the plugin now includes command, script, reference, and test files that were missing from earlier 1.0.x checkouts, so the plugin's own commands and hooks can resolve everything they reference.
+- A clean install now includes command, script, reference, and test files that earlier 1.0.x checkouts lacked. The plugin's own commands and hooks can now resolve everything they reference.
 ## [1.0.0] - 2026-08-09
 ### Added
 - Shell-issued worker contracts, protected execution boundaries, and main-session telemetry.

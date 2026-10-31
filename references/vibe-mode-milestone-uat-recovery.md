@@ -1,18 +1,19 @@
 ## Main-session Decision Handoffs
 
-Only the main session may call `AskUserQuestion`. Before every confirmation or
-checkpoint, follow `references/lbwc-brand-essentials.md`, then call it from the
-main session. A worker that reaches a decision boundary returns
-`user_decision_required` JSON defined in `references/subagent-contracts.md`. It does not mutate state, claim a todo, or start
-the next stage until the main session supplies the response. A declined choice
-preserves state and reports the documented Next Up command.
+Only the main session can call `AskUserQuestion`. Before each `AskUserQuestion`
+call, the main session follows `references/lbwc-brand-essentials.md`. A worker
+that reaches a decision boundary returns the `user_decision_required` JSON from
+`references/subagent-contracts.md`. The worker does not mutate state or claim a
+todo until the main session responds. It also does not start the next stage
+before that response. A declined choice keeps the state and reports the
+documented Next Up command.
 
-**Guard:** `milestone_uat_issues=true` from phase-detect.sh. Active phases dir is empty/all_done but the latest shipped milestone has unresolved UAT issues.
+**Guard:** `milestone_uat_issues=true` from phase-detect.sh. Active phases dir is empty/all_done but UAT issues remain unresolved in the latest shipped milestone.
 
-This mode handles the case where a milestone was archived before UAT issues were resolved (e.g., due to a missing audit gate in older versions).
+This mode handles a milestone that went to the archive with unresolved UAT issues (for example, because older versions had no audit gate).
 
 **Steps:**
-1. After milestone-recovery routing is selected, extract milestone UAT issues with this route-local block:
+1. After routing selects milestone recovery, extract milestone UAT issues with this route-local block:
    ```bash
    MILESTONE_UAT_CONTEXT=$(
      SESSION_KEY="${CLAUDE_SESSION_ID:-default}"
@@ -107,10 +108,10 @@ This mode handles the case where a milestone was archived before UAT issues were
    Each extracted block starts with `milestone_phase_dir=<path>` followed by `extract-uat-issues.sh` output (header line plus issue lines). Do NOT read UAT files from the milestone. All issue data is already in `MILESTONE_UAT_CONTEXT`.
    If `milestone_uat_count` > 1, multiple blocks are present, one per affected phase separated by `---`. If `milestone_uat_count` = 1, a single block is present.
 2. Display the unresolved issues to the user with milestone context (milestone slug, affected phase count, severity mix). Then call AskUserQuestion with three options:
-   - **"Create remediation phases"** (set `isRecommended` when `milestone_uat_major_or_higher=true`): Create one remediation phase per affected milestone phase. Auto-populate each phase goal from the UAT issue descriptions. Route to Plan mode for the first created phase.
-   - **"Start fresh with new work"**: Acknowledge the stale UAT issues, mark them as acknowledged (`.remediated`) so they don't re-trigger archive blocking, then proceed as if all_done. The user can define new work via `/lbwc:vibe` with arguments.
+   - **"Create remediation phases"** (for `milestone_uat_major_or_higher=true`, set `isRecommended`): Create one remediation phase per affected milestone phase. Auto-populate each phase goal from the UAT issue descriptions. Route to Plan mode for the first created phase.
+   - **"Start fresh with new work"**: Acknowledge the stale UAT issues and mark them as acknowledged (`.remediated`). The markers stop them from re-triggering archive blocking. Then treat the state as all_done and proceed. The user can define new work via `/lbwc:vibe` with arguments.
    - **"Not now"**: Skip milestone UAT recovery without marking anything. The unresolved UAT issues will re-trigger on the next `/lbwc:vibe` invocation.
-   **`--yolo` exception:** If `--yolo` was passed, skip the AskUserQuestion and auto-select "Create remediation phases" (the recommended action).
+   **`--yolo` exception:** For a `--yolo` invocation, skip the AskUserQuestion and auto-select "Create remediation phases" (the recommended action).
 3. If the user chooses remediation, create one remediation phase per affected milestone phase via the script:
    ```bash
    IFS='|' read -ra UAT_DIRS <<< "$milestone_uat_phase_dirs"
@@ -129,7 +130,7 @@ This mode handles the case where a milestone was archived before UAT issues were
    fi
    ```
    Then route to Plan mode for the first phase.
-4. If the user chooses start-fresh: persist acknowledgement markers for all affected archived phases before continuing:
+4. If the user chooses start-fresh, persist acknowledgement markers for all affected archived phases before continuing:
    ```bash
    TARGET_PHASE_DIRS="$milestone_uat_phase_dirs"
    if [ -z "$TARGET_PHASE_DIRS" ] && [ "$milestone_uat_phase_dir" != "none" ]; then
@@ -141,9 +142,9 @@ This mode handles the case where a milestone was archived before UAT issues were
    ```bash
    FRESH_PD=$(bash /tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/phase-detect.sh 2>/dev/null)
    ```
-   **Error guard:** If `FRESH_PD` is empty or contains `phase_detect_error=true`, display "⚠ Phase detection failed after marking milestones. Run `/lbwc:vibe` again." and STOP.
-   **Re-trigger guard:** If `FRESH_PD` still shows `milestone_uat_issues=true`, check whether `milestone_uat_slug` from `FRESH_PD` matches the slug that was just processed (the original `milestone_uat_slug` from the pre-computed state). If it matches, the marking failed for this milestone. Display "⚠ Some milestone UAT markers could not be written. Manually create `.remediated` files in the affected phase dirs, then run `/lbwc:vibe`." and STOP (prevents infinite loop). If it does NOT match, a different older milestone has unresolved UAT. Let routing continue (the priority table will handle it, which may route to Milestone UAT Recovery for that other milestone).
-   Otherwise, parse all routing variables from `FRESH_PD` (`next_phase_state`, `phase_count`, `config_auto_uat`, `has_unverified_phases`, etc.) and apply the **full priority table above** (priorities 1 to 11) to determine the correct mode. Route inline in the same turn. Key outcomes:
+   **Error guard:** For an empty `FRESH_PD`, or one that contains `phase_detect_error=true`, display "⚠ Phase detection failed after marking milestones. Run `/lbwc:vibe` again." and STOP.
+   **Re-trigger guard:** Apply this guard only while `FRESH_PD` still shows `milestone_uat_issues=true`. Compare `milestone_uat_slug` from `FRESH_PD` with the slug that this step processed (the original `milestone_uat_slug` from the pre-computed state). If the slugs match, the marking failed for this milestone. Display "⚠ LBWC failed to write some milestone UAT markers. Manually create `.remediated` files in the affected phase dirs, then run `/lbwc:vibe`." and STOP (this prevents an infinite loop). If the slugs do NOT match, a different older milestone still carries unresolved UAT. Let routing continue. The priority table handles that milestone, and it can route to Milestone UAT Recovery for it.
+   Otherwise, parse all routing variables from `FRESH_PD`, such as `next_phase_state`, `phase_count`, `config_auto_uat`, and `has_unverified_phases`. Apply the **full priority table above** (priorities 1 to 11) to determine the correct mode. Route inline in the same turn. Key outcomes:
 
    **Verification and remediation outcomes:**
    - `needs_uat_remediation` → UAT Remediation mode
@@ -157,12 +158,12 @@ This mode handles the case where a milestone was archived before UAT issues were
    - `needs_execute` → Execute mode
    - `phase_count=0` → Scope mode
    - `all_done` → Archive mode
-   This list is illustrative. Always defer to the full priority table. Do NOT stop and ask "What would you like to build?" when phases already exist.
-5. If the user chooses "Not now": display "Skipping milestone UAT recovery. Run `/lbwc:vibe` again when ready to address these issues." and STOP. No `.remediated` markers are written. The unresolved UAT issues will re-trigger on the next `/lbwc:vibe` invocation.
+   This list is illustrative. Always defer to the full priority table. While phases already exist, do NOT stop and ask the user what they want to build.
+5. If the user chooses "Not now", display "Skipping milestone UAT recovery. Run `/lbwc:vibe` again to address these issues." and STOP. Write no `.remediated` markers. The unresolved UAT issues will re-trigger on the next `/lbwc:vibe` invocation.
 
-## Phase 3 Helper Dependencies
+## Helper Scripts
 
-The following source helper contracts are not installed in LBWC. They define required behavior above, not available commands. Phase 3 must add each helper or wire the same behavior through a trusted existing LBWC helper before command integration.
+The sections above call these helpers, and each one lives under `scripts/`.
 
 - `scripts/create-remediation-phase.sh`
 - `scripts/ensure-plugin-root-link.sh`

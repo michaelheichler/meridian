@@ -4,13 +4,12 @@
 
 <p align="center">
   <a href="https://code.claude.com/docs/en/plugins"><img src="https://img.shields.io/badge/Claude%20Code-2.1.231-D97757?logo=anthropic&logoColor=white" alt="Claude Code 2.1.231 verified"></a>
-  <img src="https://img.shields.io/badge/tests-1189%20passing-2EA44F" alt="1189 local tests passing">
   <img src="https://img.shields.io/badge/release-local%20verification%20passed-2EA44F" alt="Local release verification passed">
 </p>
 
 <h1 align="center">Love Better With Claude</h1>
 
-LBWC is a Claude Code plugin for planning, building, QA, and UAT with one clear rule: the human owns the direction, the main session owns orchestration, and generated agents get only the work they were issued.
+LBWC is a Claude Code plugin for planning, building, QA, and UAT with one clear rule. The human owns the direction, the main session owns orchestration, and generated agents get only the work the main session issues to them.
 
 LBWC keeps the useful parts of a multi-agent workflow without asking you to become a full-time air traffic controller. It turns a project into a small, visible sequence of artifacts, contracts, checks, and decisions. Workers help with bounded tasks. They do not get to rewrite the plan, mint broader permissions, commit changes, or wander into a spare worktree for a little unsupervised character growth.
 
@@ -28,7 +27,7 @@ claude plugin marketplace add michaelheichler/lbwc
 claude plugin install lbwc@lbwc-marketplace
 ```
 
-For a project-wide install, add `--scope project` to either command. Confirm the install with:
+For a project-wide install, add `--scope project` to either command. Check the install with:
 
 ```bash
 claude plugin list
@@ -41,7 +40,7 @@ Open Claude Code in the project you want to work on. Run setup once, then use `/
 /lbwc:vibe
 ```
 
-`/lbwc:init` creates LBWC planning state. After that, `/lbwc:vibe` is the **only** LBWC command you need to drive the work. It reads the actual state, names the next missing artifact, asks for confirmation, and dispatches to the command that owns that step. Use `claude plugin marketplace update lbwc-marketplace` and `claude plugin update lbwc@lbwc-marketplace` to update. Use `claude plugin uninstall lbwc@lbwc-marketplace` to remove it.
+`/lbwc:init` creates LBWC planning state. After that, `/lbwc:vibe` is the **only** LBWC command you need to drive the work. It reads the actual state, names the next missing artifact, asks you to approve it, and dispatches to the command that owns that step. Use `claude plugin marketplace update lbwc-marketplace` and `claude plugin update lbwc@lbwc-marketplace` to update. Use `claude plugin uninstall lbwc@lbwc-marketplace` to remove it.
 
 ## One command after setup
 
@@ -60,11 +59,11 @@ You use `/lbwc:vibe` whenever you want the next step. It reads the actual artifa
 For a feature, the interaction is usually this:
 
 1. Run `/lbwc:init` once in a new project.
-2. Run `/lbwc:vibe`, review the proposed next action, and approve it when it matches your intent.
-3. Run `/lbwc:vibe` again when the current step ends.
-4. Accept the phase after LBWC has routed it through planning, build, QA, and UAT.
+2. Run `/lbwc:vibe` and review the proposed next action. If it matches your intent, approve it.
+3. When the current step ends, run `/lbwc:vibe` again.
+4. Accept the phase after LBWC routes it through planning, build, QA, and UAT.
 
-Give `/lbwc:vibe` a focused brief when you have one:
+When you have a focused brief, give it to `/lbwc:vibe`:
 
 ```text
 /lbwc:vibe Fix expired coupon checkout.
@@ -74,7 +73,7 @@ Give `/lbwc:vibe` a focused brief when you have one:
 
 ## What `/lbwc:vibe` routes to
 
-`/lbwc:vibe` is the user entry point. The routes below are the internal LBWC stages it dispatches after state detection and confirmation. You can recognize them in status and handoffs, but you do not need to steer the pipeline yourself.
+`/lbwc:vibe` is the user entry point. The routes below are the internal LBWC stages it dispatches after state detection and your approval. You can recognize them in status and handoffs, but you do not need to steer the pipeline yourself.
 
 | Route | When `/lbwc:vibe` chooses it | What comes back |
 | --- | --- | --- |
@@ -84,7 +83,7 @@ Give `/lbwc:vibe` a focused brief when you have one:
 | `/lbwc:plan` | A phase needs a reviewed plan | A bounded plan with verification criteria |
 | `/lbwc:build` | An accepted plan needs execution | Contracted task execution and summaries |
 | `/lbwc:qa` | A completed build needs plan-based checks | PASS, FAIL, or PARTIAL evidence |
-| `/lbwc:uat` | QA has passed and acceptance needs a human | Completed UAT or a concrete issue list |
+| `/lbwc:uat` | QA passes and acceptance needs a human | Completed UAT or a concrete issue list |
 | `/lbwc:debug` | The brief describes a defect | Root cause, fix evidence, and a focused record |
 | `/lbwc:fix` | The work is a known-small repair | A narrow repair path |
 | `/lbwc:docs` | The work is documentation scoped | Documentation scoped to the request |
@@ -95,7 +94,7 @@ The command files are intentionally readable. If you want the exact workflow or 
 
 ## Human-first architecture
 
-LBWC is zero trust in the practical direction: the framework should protect the user from agent drift. Agents do useful work, but they do not become the project manager just because they can produce a convincing paragraph.
+LBWC is zero trust in the practical direction. The framework protects the user from agent drift. Agents do useful work, but they do not become the project manager because they can produce a convincing paragraph.
 
 | Owner | Responsibility |
 | --- | --- |
@@ -104,28 +103,28 @@ LBWC is zero trust in the practical direction: the framework should protect the 
 | Generated agent | One contracted task, exact write paths, and structured evidence |
 | Shell guards | Contract, workspace, lifecycle, Git, and critical-command admission |
 
-Before LBWC registers a generated agent, the shell issues an immutable task contract. It binds the task, team shape, job, allowed paths, and lifecycle state. The generator, spawn guard, and file guard verify that contract. A worker cannot widen its scope by writing a more confident handoff, changing the manifest, or editing the contract store.
+Before LBWC registers a generated agent, the shell issues an immutable task contract. It binds the task, team shape, job, allowed paths, and lifecycle state. The generator, spawn guard, and file guard check that contract. A worker cannot widen its scope by writing a more confident handoff, changing the manifest, or editing the contract store.
 
 Template-granted Bash remains available for normal work. The guard blocks generated identities from Git, critical execution, shell evaluation routes, and LBWC control paths. This is command admission, not an operating-system sandbox. The distinction matters, and [the public architecture overview](PUBLIC-ARCHITECTURE.md) describes the boundary plainly.
 
 ## Teams, status, and release work
 
-LBWC runs its work through small team shapes: solo specialists, engineer and critic pairs, test-owner trios, and explicit native Claude Code teams through `/lbwc:team`. Native teams use generated `.claude/agents/` definitions and Claude's session-owned team and task storage. LBWC does not pre-author native team configuration. Each member receives only the paths its role owns. Critics receive no write allowance. The main session reviews evidence, persists approved artifacts, and owns commits.
+LBWC runs its work through small team shapes. These are solo specialists, engineer and critic pairs, test-owner trios, and explicit native Claude Code teams through `/lbwc:team`. Native teams use generated `.claude/agents/` definitions and Claude's session-owned team and task storage. LBWC does not pre-author native team configuration. Each member receives only the paths its role owns. Critics receive no write allowance. The main session reviews evidence and persists approved artifacts. It also owns commits.
 
-The statusline is read-only. It shows Claude Code supplied model, context, and rate-limit fields when available, plus project phase, task progress, active team state, QA or UAT status, and telemetry health. It does not call an API or read credentials.
+The statusline is read-only. When available, it shows the model, context, and rate-limit fields that Claude Code supplies. It also shows project phase, task progress, active team state, QA or UAT status, and telemetry health. It does not call an API or read credentials.
 
-If a teammate becomes idle, LBWC waits exactly 120 seconds, validates the manifest and contract again, and returns Claude Code native stop guidance. It does not send process signals, respawn work, clear ownership, or delete the teammate output. Quietly deleting evidence is a bad debugging strategy with better branding.
+If a teammate becomes idle, LBWC waits exactly 120 seconds, checks the manifest and contract again, and returns Claude Code native stop guidance. It does not send process signals, respawn work, clear ownership, or delete the teammate output. Quietly deleting evidence is a bad debugging strategy with better branding.
 
 For local tool and release work, LBWC includes:
 
-- `scripts/rtk-manager.sh` for confirmed, checksummed, project-local RTK installs with rollback.
+- `scripts/rtk-manager.sh` for approved, checksummed, project-local RTK installs with rollback.
 - `VERSION` and `CHANGELOG.md` for synchronized release history.
 - `scripts/version-bump.sh` to update release metadata together.
 - `scripts/release-verify.sh` to run local release checks before a maintainer decides to publish.
 
 ## Verify, update, and develop
 
-Validate a checkout before installing or releasing it:
+Check a checkout before installing or releasing it:
 
 ```bash
 claude plugin validate --strict .
@@ -148,7 +147,7 @@ To remove the plugin:
 claude plugin uninstall lbwc@lbwc-marketplace
 ```
 
-The release scripts verify local state. Publishing, tags, pushes, and history changes remain explicit maintainer decisions.
+The release scripts check local state. Publishing, tags, pushes, and history changes remain explicit maintainer decisions.
 
 ## Read next
 
@@ -157,6 +156,6 @@ The release scripts verify local state. Publishing, tags, pushes, and history ch
 
 ## License and maintenance
 
-Huge thanks to VBW, BMAD and other great planning harnesses. This repository is the merging of my old "Agentic Project Love" Framework and VBW, a great script-based planning system. The port is from VBW to LBWC, and many of VBWs source code is taken into LBWC.
+Thanks to VBW, BMAD, and other planning systems. This repository is the merging of my old "Agentic Project Love" Framework and VBW, a great script-based planning system. The port is from VBW to LBWC, and LBWC includes much of the VBW source code.
 
-LBWC is released under the [GNU General Public License v3.0 only](LICENSE). It is maintained by [Michael Heichler](https://github.com/michaelheichler). Report bugs or propose changes through the [issue tracker](https://github.com/michaelheichler/lbwc/issues).
+LBWC uses the [GNU General Public License v3.0 only](LICENSE). [Michael Heichler](https://github.com/michaelheichler) maintains it. Report bugs or propose changes through the [issue tracker](https://github.com/michaelheichler/lbwc/issues).
