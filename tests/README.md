@@ -11,7 +11,7 @@ Then run a `.bats` file directly: `bats tests/some-thing.bats`.
 
 ## What stays as-is
 
-- `tests/self-check.sh` and `scripts/tests/agent-generator-core.sh` are hand-rolled pass/fail scripts. They are not being ported to bats in this pass and keep working exactly as they do today (`bash tests/self-check.sh`, `bash scripts/tests/agent-generator-core.sh`).
+- `scripts/tests/agent-generator-core.sh` is a hand-rolled pass/fail script. This pass leaves it as a script, and it keeps working exactly as it does today (`bash scripts/tests/agent-generator-core.sh`). `tests/self-check.bats` replaced the former `tests/self-check.sh` (`bats tests/self-check.bats`).
 
 ## What's new
 

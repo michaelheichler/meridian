@@ -143,7 +143,7 @@ Run the local checks with:
 ```bash
 claude plugin validate --strict .
 bats tests/
-bash tests/self-check.sh
+bats tests/self-check.bats
 bash scripts/tests/agent-generator-core.sh
 bash scripts/release-verify.sh
 ```

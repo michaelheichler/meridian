@@ -6,7 +6,7 @@ added to `scripts/lbwc-routing.sh`. Referenced from `FOLLOW_UP.md`.
 ## Token flake: hypothesis, not a proven root cause
 
 `acquire_config_lock` occasionally fails to generate its owner token during
-`tests/lbwc-execution-config.bats` and `tests/self-check.sh`. Fork exhaustion
+`tests/lbwc-execution-config.bats` and `tests/self-check.bats`. Fork exhaustion
 in the test host was proposed as the cause, but that is not proven. A
 synthetic `ulimit -u` harness showed fork exhaustion CAN break the `od`/`env`
 subprocess construct used there, but the one captured run landed the failure
