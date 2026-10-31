@@ -8,11 +8,13 @@ setup() {
   export CLAUDE_SESSION_ID="session-start-${BATS_TEST_NUMBER}-$$"
   ROOT_LINK="/tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID}"
   rm -rf "$ROOT_LINK"
+  CONCURRENT_LINK="/tmp/.lbwc-plugin-root-link-concurrent-child-session"
 }
 
 teardown() {
-  rm -rf "$TEST_ROOT" "$ROOT_LINK"
+  rm -rf "$TEST_ROOT" "$ROOT_LINK" "$CONCURRENT_LINK"
   unset CLAUDE_SESSION_ID
+  [ ! -L "$REPO_ROOT/lbwc" ] || { rm -f "$REPO_ROOT/lbwc"; return 1; }
 }
 
 run_session_start() {
@@ -52,6 +54,29 @@ run_session_start_from() {
   [ "$status" -eq 0 ]
   [ -L "$ROOT_LINK" ]
   [ "$(readlink "$ROOT_LINK")" = "$canonical_root" ]
+}
+
+@test "session-start persists unset CDPATH to CLAUDE_ENV_FILE exactly once across runs" {
+  export CLAUDE_ENV_FILE="$TEST_ROOT/claude-env"
+  : > "$CLAUDE_ENV_FILE"
+
+  run run_session_start
+  [ "$status" -eq 0 ]
+  run run_session_start
+  [ "$status" -eq 0 ]
+
+  [ "$(grep -cxF 'unset CDPATH' "$CLAUDE_ENV_FILE")" -eq 1 ]
+}
+
+@test "session-start still succeeds when CLAUDE_ENV_FILE is not writable" {
+  export CLAUDE_ENV_FILE="$TEST_ROOT/claude-env"
+  printf 'export KEEP=1\n' > "$CLAUDE_ENV_FILE"
+  chmod 444 "$CLAUDE_ENV_FILE"
+
+  run run_session_start
+
+  [ "$status" -eq 0 ]
+  [ "$(cat "$CLAUDE_ENV_FILE")" = 'export KEEP=1' ]
 }
 
 @test "session-start: cold start with no planning dir exits 0 and reports init needed" {
@@ -326,6 +351,7 @@ write_credential() {
   agent_capability='0123456789abcdef0123456789abcdef'
   plant_unbound_agent agent-a "$agent_capability"
   write_credential agent-a "$agent_capability"
+  bash "$REPO_ROOT/scripts/ensure-plugin-root-link.sh" "$CONCURRENT_LINK" "$(cd -P "$REPO_ROOT" && pwd -P)"
 
   run env SESSION_START="$SCRIPT" CONTROL_ROOT="$control_root" PLANNING_DIR="$PLANNING_DIR" bash -c '
     LBWC_TMUX_AGENT=1 LBWC_TMUX_AGENT_ID=agent-a LBWC_TMUX_CONTRACT_ID=contract-a LBWC_TMUX_CONTROL_ROOT="$CONTROL_ROOT" LBWC_PLANNING_DIR="$PLANNING_DIR" CLAUDE_SESSION_ID=concurrent-child-session bash "$SESSION_START" > "$CONTROL_ROOT/first-session-start.log" 2>&1 &

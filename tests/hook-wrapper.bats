@@ -53,6 +53,15 @@ assert_warns_and_exits_1() {
   [ -z "$output" ]
 }
 
+@test "a target runs with CDPATH unset even when the caller exports it" {
+  printf 'printf "%%s" "${CDPATH-unset}"\n' > "$WRAPPER_ROOT/scripts/stub-cdpath.sh"
+
+  run env CDPATH=/tmp:. CLAUDE_PLUGIN_ROOT="$WRAPPER_ROOT" bash "$SCRIPTS_DIR/hook-wrapper.sh" stub-cdpath.sh
+
+  [ "$status" -eq 0 ]
+  [ "$output" = "unset" ]
+}
+
 @test "a target that blocks with exit 2 keeps its stderr and adds no warning" {
   run_wrapper stub-2.sh
   [ "$status" -eq 2 ]

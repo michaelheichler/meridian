@@ -1,12 +1,13 @@
 #!/bin/bash
 
+unset CDPATH TMUX TMUX_PANE
+
 export PROJECT_ROOT="${BATS_TEST_DIRNAME}/.."
 export SCRIPTS_DIR="${PROJECT_ROOT}/scripts"
 export CONFIG_DIR="${PROJECT_ROOT}/config"
 
 setup_temp_dir() {
-  TEST_TEMP_DIR=$(mktemp -d)
-  export TEST_TEMP_DIR
+  export TEST_TEMP_DIR="$(mktemp -d)"
   export _ORIG_HOME="${HOME:-}"
   export _ORIG_LBWC_PLANNING_DIR="${LBWC_PLANNING_DIR:-}"
   export HOME="$TEST_TEMP_DIR"
@@ -16,9 +17,9 @@ setup_temp_dir() {
 
 teardown_temp_dir() {
   [ -n "${TEST_TEMP_DIR:-}" ] && rm -rf "$TEST_TEMP_DIR"
-  HOME="$_ORIG_HOME"
+  export HOME="$_ORIG_HOME"
   if [ -n "${_ORIG_LBWC_PLANNING_DIR:-}" ]; then
-    LBWC_PLANNING_DIR="$_ORIG_LBWC_PLANNING_DIR"
+    export LBWC_PLANNING_DIR="$_ORIG_LBWC_PLANNING_DIR"
   else
     unset LBWC_PLANNING_DIR 2>/dev/null || true
   fi

@@ -1,5 +1,7 @@
 #!/bin/bash
 set -u
+# With CDPATH set, cd prints the path, so $(cd d && pwd) returns two lines.
+unset CDPATH
 SCRIPT="${1:-}"; shift || true
 if [ -z "$SCRIPT" ]; then
   echo "hook target resolution failed: target name is required" >&2

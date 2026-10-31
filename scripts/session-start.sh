@@ -1,11 +1,20 @@
 #!/bin/bash
 set -u
+unset CDPATH
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PLANNING_DIR="${LBWC_PLANNING_DIR:-.lbwc-planning}"
 CANONICAL_ROOT="$(cd "$SCRIPT_DIR/.." && pwd -P)"
 
 TMUX_BIND_JSON=""
+
+# Bash tool commands skip hook-wrapper, so this file is their only CDPATH reset.
+persist_cdpath_unset() {
+  local env_file="${CLAUDE_ENV_FILE:-}"
+  [ -n "$env_file" ] && [ -w "$env_file" ] || return 0
+  grep -qxF 'unset CDPATH' "$env_file" 2>/dev/null || echo 'unset CDPATH' >> "$env_file" 2>/dev/null
+  return 0
+}
 
 bind_tmux_bootstrap() {
   local agent_id contract_id capability control_root actual_session credential
@@ -50,6 +59,7 @@ if ! command -v jq >/dev/null 2>&1; then
 fi
 
 bind_tmux_bootstrap || exit 1
+persist_cdpath_unset
 
 HOOK_INPUT=""
 [ -t 0 ] || HOOK_INPUT=$(cat 2>/dev/null) || HOOK_INPUT=""
