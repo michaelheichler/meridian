@@ -1,13 +1,5 @@
-#!/usr/bin/env bash
-
-# Extract a single scalar from YAML frontmatter. This intentionally matches
-# compile-verify-context.sh's simple frontmatter lookup for plan identity.
-extract_frontmatter_scalar_value() {
-  local file_path="${1:-}"
-  local key_name="${2:-}"
-  [ -f "$file_path" ] || return 0
-  [ -n "$key_name" ] || return 0
-  awk -v key="$key_name" '
+# awk program sits in a constant because inline it exceeds the function limit
+QA_GATE_AWK_SCALAR_VALUE='
     function trim(v) {
       gsub(/^[[:space:]]+|[[:space:]]+$/, "", v)
       return v
@@ -32,7 +24,15 @@ extract_frontmatter_scalar_value() {
       if (value != "") print value
       exit
     }
-  ' "$file_path" 2>/dev/null
+'
+
+# mirrors compile-verify-context.sh because plan identity must match
+extract_frontmatter_scalar_value() {
+  local file_path="${1:-}"
+  local key_name="${2:-}"
+  [ -f "$file_path" ] || return 0
+  [ -n "$key_name" ] || return 0
+  awk -v key="$key_name" "$QA_GATE_AWK_SCALAR_VALUE" "$file_path" 2>/dev/null
 }
 
 summary_plan_id_from_plan_file() {
@@ -61,14 +61,22 @@ summary_plan_id_from_plan_file() {
   printf '%s\n' "${plan_id:-unknown}"
 }
 
+round_summary_plan_ids() {
+  local summary_dir="${1:-}"
+  local round_summary_base="${2:-}"
+  local plan_file=""
+  while IFS= read -r plan_file; do
+    [ -f "$plan_file" ] || continue
+    summary_plan_id_from_plan_file "$plan_file"
+  done < <(find "$summary_dir" -maxdepth 1 ! -name '.*' \( -name "${round_summary_base}-PLAN.md" -o -name "${round_summary_base}-*-PLAN.md" \) 2>/dev/null | (sort -V 2>/dev/null || sort))
+}
+
 source_plan_ids_for_summary() {
   local summary_file="${1:-}"
   local summary_dir=""
   local summary_base=""
   local summary_prefix=""
-  local round_summary_base=""
   local plan_file=""
-
   [ -f "$summary_file" ] || return 0
   summary_dir=$(dirname "$summary_file")
   summary_base=$(basename "$summary_file")
@@ -80,20 +88,12 @@ source_plan_ids_for_summary() {
   fi
 
   case "$summary_base" in
-    *-SUMMARY.md)
-      summary_prefix="${summary_base%-SUMMARY.md}"
-      ;;
-    *)
-      return 0
-      ;;
+    *-SUMMARY.md) summary_prefix="${summary_base%-SUMMARY.md}" ;;
+    *) return 0 ;;
   esac
 
   if [[ "$summary_dir" == */round-* ]] && [[ "$summary_prefix" =~ ^R[0-9][0-9]$ ]]; then
-    round_summary_base="$summary_prefix"
-    while IFS= read -r plan_file; do
-      [ -f "$plan_file" ] || continue
-      summary_plan_id_from_plan_file "$plan_file"
-    done < <(find "$summary_dir" -maxdepth 1 ! -name '.*' \( -name "${round_summary_base}-PLAN.md" -o -name "${round_summary_base}-*-PLAN.md" \) 2>/dev/null | (sort -V 2>/dev/null || sort))
+    round_summary_plan_ids "$summary_dir" "$summary_prefix"
     return 0
   fi
 
@@ -143,7 +143,6 @@ round_classification_pair_matches_deviation() {
   local classification_id=""
   local classification_type=""
   local bare_id=""
-  # Invariant: no rejected pair has matched, variant: unread classification pairs.
   while IFS=$'\t' read -r classification_id classification_type; do
     [ -n "$classification_id" ] && [ -n "$classification_type" ] || return 1
     case "$classification_type" in
@@ -276,11 +275,7 @@ count_deviations_in_summary() {
   printf '%s\n' "$deviations"
 }
 
-# Count active, non-placeholder deviations across SUMMARY.md files in a given directory.
-# Accepted UAT process exceptions are suppressed using the same signature identity
-# emitted by compile-verify-context.sh; when that identity cannot be derived, the
-# gate fails closed and counts the deviation as active.
-# Arguments: $1 = phase directory, $2 = directory to scan for SUMMARY.md files
+# fail closed when signatures are unreadable because exceptions need identity
 count_deviations_in_dir() {
   local phase_dir="${1:-}"
   local scan_dir="${2:-${1:-}}"
