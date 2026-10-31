@@ -131,7 +131,10 @@ plant_healthy_runtime() {
 #!/usr/bin/env bash
 case "$1" in
   has-session) [ "$3" = lbwc-main ] && exit 0; exit 1 ;;
-  display-message) exit 0 ;;
+  display-message)
+    grep -qxF -- "$4" "$(dirname "$0")/gone-panes" 2>/dev/null && exit 0
+    printf '%%1\n'
+    exit 0 ;;
   *) exit 1 ;;
 esac
 EOF
@@ -204,6 +207,17 @@ EOF
   [ "$(jq -r '.status' <<<"$output")" = PASS ]
   [ "$(jq -r '.detail' <<<"$output")" = 'backend=tmux session=lbwc-main panes=2/2 agents=1 running:1 idle:0 failed:0 heartbeats=fresh' ]
   [ "$(find "$CONTROL_ROOT/.runtime" -type f -exec cksum {} \; | sort)" = "$before" ]
+}
+
+@test "tmux doctor: a pane that tmux reports with empty output is a missing pane" {
+  plant_healthy_runtime
+  printf '%s\n' '%1' > "$FAKE_BIN/gone-panes"
+
+  run_tmux_doctor
+
+  [ "$status" -eq 0 ]
+  [ "$(jq -r '.status' <<<"$output")" = WARN ]
+  [[ "$(jq -r '.detail' <<<"$output")" == *'missing pane: %1'* ]]
 }
 
 @test "tmux doctor: shutdown agents without routes are PASS" {

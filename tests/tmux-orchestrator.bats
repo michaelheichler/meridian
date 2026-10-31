@@ -549,18 +549,18 @@ printf '%s\n' "\$?" > "$kill_result.status"
 SCRIPT
   chmod +x "$TEST_ROOT/provision.sh" "$TEST_ROOT/split.sh" "$TEST_ROOT/kill.sh"
 
-  run env PATH="$BIN_DIR:$PATH" TMUX_TMPDIR="$TMUX_TMPDIR" tmux -L "$TMUX_SERVER" new-session -d -s "$external_session" -n external -c "$PROJECT_ROOT"
+  run env PATH="$BIN_DIR:$PATH" TMUX_TMPDIR="$TMUX_TMPDIR" tmux -L "$TMUX_SERVER" new-session -d -s "$external_session" -n external -c "$PROJECT_ROOT" 3>&-
   [ "$status" -eq 0 ]
-  external_pane_id="$(TMUX_TMPDIR="$TMUX_TMPDIR" tmux -L "$TMUX_SERVER" display-message -p -t "$external_session:0.0" '#{pane_id}')"
+  external_pane_id="$(TMUX_TMPDIR="$TMUX_TMPDIR" tmux -L "$TMUX_SERVER" list-panes -t "$external_session" -F '#{pane_id}')"
 
-  run env TMUX_TMPDIR="$TMUX_TMPDIR" tmux -L "$TMUX_SERVER" send-keys -t "$external_session:0.0" "bash $TEST_ROOT/provision.sh" C-m
+  run env TMUX_TMPDIR="$TMUX_TMPDIR" tmux -L "$TMUX_SERVER" send-keys -t "$external_pane_id" "bash $TEST_ROOT/provision.sh" C-m
   [ "$status" -eq 0 ]
   wait_for_result "$provision_result.status"
   [ "$(cat "$provision_result.status")" -eq 0 ]
   run jq -e --arg session "$external_session" '.tmux_session == $session and .topology == "attached-existing-tmux"' "$provision_result"
   [ "$status" -eq 0 ]
 
-  run env TMUX_TMPDIR="$TMUX_TMPDIR" tmux -L "$TMUX_SERVER" send-keys -t "$external_session:0.0" "bash $TEST_ROOT/split.sh" C-m
+  run env TMUX_TMPDIR="$TMUX_TMPDIR" tmux -L "$TMUX_SERVER" send-keys -t "$external_pane_id" "bash $TEST_ROOT/split.sh" C-m
   [ "$status" -eq 0 ]
   wait_for_result "$split_result.status"
   [ "$(cat "$split_result.status")" -eq 0 ]
@@ -570,7 +570,7 @@ SCRIPT
   [[ "$agent_pane_id" =~ ^%[0-9]+$ ]]
   [ "$agent_pane_id" != "$external_pane_id" ]
 
-  run env TMUX_TMPDIR="$TMUX_TMPDIR" tmux -L "$TMUX_SERVER" send-keys -t "$external_session:0.0" "bash $TEST_ROOT/kill.sh" C-m
+  run env TMUX_TMPDIR="$TMUX_TMPDIR" tmux -L "$TMUX_SERVER" send-keys -t "$external_pane_id" "bash $TEST_ROOT/kill.sh" C-m
   [ "$status" -eq 0 ]
   wait_for_result "$kill_result.status" || { cat "$split_result" >&3; cat "$kill_result" >&3; false; }
   [ "$(cat "$kill_result.status")" -eq 0 ]

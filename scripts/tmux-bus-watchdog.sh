@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-set -Eeuo pipefail
+set -u
+set -Eeo pipefail
 umask 077
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd -P)"
+SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd -P)"
 source "$SCRIPT_DIR/lib/lbwc-control-root.sh"
 source "$SCRIPT_DIR/lib/tmux-runtime.sh"
 
@@ -17,7 +18,10 @@ usage() {
 }
 
 pane_exists() {
-  tmux display-message -p -t "$1" '#{pane_id}' >/dev/null 2>&1
+  local pane_id
+  # Unknown targets exit 0 with empty output, so the exit code alone misleads.
+  pane_id=$(tmux display-message -p -t "$1" '#{pane_id}' 2>/dev/null) || return 1
+  [ -n "$pane_id" ]
 }
 
 persist_shutdown() {
@@ -58,49 +62,61 @@ shutdown_request_exists() {
   jq -e --arg agent_id "$agent_id" --arg correlation_id "watchdog-$agent_id" '.type == "shutdown_request" and .to.agent_id == $agent_id and .correlation_id == $correlation_id' "$path" >/dev/null
 }
 
+stale_cleanup_pending() {
+  local agent_id="$1" registry
+  registry=$(tmux_runtime_registry_read) || {
+    watchdog_failures+=("runtime registry is malformed")
+    return 2
+  }
+  jq -e --arg agent_id "$agent_id" 'any(.agents[]; .agent_id == $agent_id and .state == "failed" and .watchdog_cleanup_pending == true)' <<<"$registry" >/dev/null || return 1
+}
+
+request_stale_shutdown() {
+  local agent_id="$1"
+  shutdown_request_exists "$agent_id" && return 0
+  bash "$SCRIPT_DIR/tmux-bus.sh" --control-root "$control_root" publish --to "$agent_id" --from-agent-id "$orchestrator_id" --from-session-id "$orchestrator_session_id" --from-role orchestrator --capability "$orchestrator_capability" --type shutdown_request --correlation-id "watchdog-$agent_id" --payload '{"reason":"watchdog stale heartbeat"}' --timeout-ms "$shutdown_timeout_ms" >/dev/null 2>&1
+}
+
+terminate_stale_pane() {
+  local agent_id="$1" target="$2" shutdown_requested="$3" deadline
+  pane_exists "$target" || return 0
+  deadline=$(tmux_runtime_deadline_after "$shutdown_timeout_ms")
+  if [ "$shutdown_requested" = true ]; then
+    bash "$SCRIPT_DIR/tmux-bus.sh" --control-root "$control_root" await --from "$agent_id" --agent-id "$orchestrator_id" --session-id "$orchestrator_session_id" --role orchestrator --capability "$orchestrator_capability" --types shutdown_response --timeout-ms "$shutdown_timeout_ms" >/dev/null 2>&1 || true
+  fi
+  wait_for_pane_exit "$target" "$deadline" && return 0
+  if ! tmux kill-pane -t "$target" >/dev/null 2>&1; then
+    watchdog_failures+=("cannot terminate stale agent pane after shutdown timeout: $agent_id")
+    return 1
+  fi
+  if pane_exists "$target"; then
+    watchdog_failures+=("stale agent pane remains after forced shutdown: $agent_id")
+    return 1
+  fi
+}
+
 shutdown_stale_agent() {
-  local agent_id="$1" target="$2" deadline cleanup_failed=0 shutdown_requested=false registry
+  local agent_id="$1" target="$2" cleanup_failed=0 shutdown_requested=false pending=0
   if ! tmux_runtime_lock_acquire "watchdog.$agent_id" 5000 30000; then
     watchdog_failures+=("cannot acquire stale agent cleanup lock: $agent_id")
     return 1
   fi
-  registry=$(tmux_runtime_registry_read) || {
-    watchdog_failures+=("runtime registry is malformed")
+  stale_cleanup_pending "$agent_id" || pending=$?
+  if [ "$pending" -ne 0 ]; then
     tmux_runtime_lock_release "watchdog.$agent_id" >/dev/null 2>&1 || true
-    return 1
-  }
-  if ! jq -e --arg agent_id "$agent_id" 'any(.agents[]; .agent_id == $agent_id and .state == "failed" and .watchdog_cleanup_pending == true)' <<<"$registry" >/dev/null; then
-    tmux_runtime_lock_release "watchdog.$agent_id" >/dev/null 2>&1 || true
-    return 0
+    [ "$pending" -eq 1 ]
+    return
   fi
-  if shutdown_request_exists "$agent_id"; then
-    shutdown_requested=true
-  elif bash "$SCRIPT_DIR/tmux-bus.sh" --control-root "$control_root" publish --to "$agent_id" --from-agent-id "$orchestrator_id" --from-session-id "$orchestrator_session_id" --from-role orchestrator --capability "$orchestrator_capability" --type shutdown_request --correlation-id "watchdog-$agent_id" --payload '{"reason":"watchdog stale heartbeat"}' --timeout-ms "$shutdown_timeout_ms" >/dev/null 2>&1; then
+  if request_stale_shutdown "$agent_id"; then
     shutdown_requested=true
   else
     watchdog_failures+=("cannot request stale agent shutdown: $agent_id")
     cleanup_failed=1
   fi
-  if pane_exists "$target"; then
-    deadline=$(tmux_runtime_deadline_after "$shutdown_timeout_ms")
-    if [ "$shutdown_requested" = true ]; then
-      bash "$SCRIPT_DIR/tmux-bus.sh" --control-root "$control_root" await --from "$agent_id" --agent-id "$orchestrator_id" --session-id "$orchestrator_session_id" --role orchestrator --capability "$orchestrator_capability" --types shutdown_response --timeout-ms "$shutdown_timeout_ms" >/dev/null 2>&1 || true
-    fi
-    if ! wait_for_pane_exit "$target" "$deadline"; then
-      if ! tmux kill-pane -t "$target" >/dev/null 2>&1; then
-        watchdog_failures+=("cannot terminate stale agent pane after shutdown timeout: $agent_id")
-        cleanup_failed=1
-      elif pane_exists "$target"; then
-        watchdog_failures+=("stale agent pane remains after forced shutdown: $agent_id")
-        cleanup_failed=1
-      fi
-    fi
-  fi
-  if [ "$cleanup_failed" -eq 0 ]; then
-    if ! persist_shutdown "$agent_id"; then
-      watchdog_failures+=("cannot persist stale agent shutdown state: $agent_id")
-      cleanup_failed=1
-    fi
+  terminate_stale_pane "$agent_id" "$target" "$shutdown_requested" || cleanup_failed=1
+  if [ "$cleanup_failed" -eq 0 ] && ! persist_shutdown "$agent_id"; then
+    watchdog_failures+=("cannot persist stale agent shutdown state: $agent_id")
+    cleanup_failed=1
   fi
   tmux_runtime_lock_release "watchdog.$agent_id" >/dev/null 2>&1 || true
   [ "$cleanup_failed" -eq 0 ]

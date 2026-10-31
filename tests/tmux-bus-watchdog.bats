@@ -185,6 +185,21 @@ EOF
   [ "$status" -eq 0 ]
 }
 
+@test "tmux watchdog: a pane that tmux reports with empty output counts as gone and the stale agent shuts down" {
+  local tmux_bin="$TEST_ROOT/bin"
+  mkdir -p "$tmux_bin"
+  printf '%s\n' '#!/usr/bin/env bash' 'case "$1" in display-message) exit 0 ;; *) exit 1 ;; esac' > "$tmux_bin/tmux"
+  chmod +x "$tmux_bin/tmux"
+  fixture_watchdog_bus
+  plant_bound_agent test:0.1 '%1'
+
+  run timeout 5 env PATH="$tmux_bin:$PATH" bash "$SCRIPT" --control-root "$CONTROL_ROOT" check --orchestrator-id main-session --orchestrator-session-id main-session --orchestrator-capability "$MAIN_CAPABILITY" --stale-after-ms 1 --shutdown-timeout-ms 30
+  [ "$status" -eq 1 ]
+
+  run jq -e '.agents[] | select(.agent_id == "agent-a") | .state == "shutdown"' "$CONTROL_ROOT/.runtime/tmux-bus/registry.json"
+  [ "$status" -eq 0 ]
+}
+
 @test "tmux watchdog: completes teardown after a busy error inbox without retrying terminal reports" {
   fixture_watchdog_bus
   plant_bound_agent missing:0.1 ''

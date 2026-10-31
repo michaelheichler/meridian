@@ -22,7 +22,10 @@ require_option_value() {
 }
 
 pane_exists() {
-  tmux display-message -p -t "$1" '#{pane_id}' >/dev/null 2>&1
+  local pane_id
+  # Unknown targets exit 0 with empty output, so the exit code alone misleads.
+  pane_id=$(tmux display-message -p -t "$1" '#{pane_id}' 2>/dev/null) || return 1
+  [ -n "$pane_id" ]
 }
 
 routing_table_valid() {
