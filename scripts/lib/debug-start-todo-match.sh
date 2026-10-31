@@ -5,8 +5,7 @@ MATCH_SESSION_STATUS=""
 SEL_REF=""
 SEL_RAW=""
 SEL_IDENTITY=0
-REF_COUNT_LOADED=false
-REF_COUNT_CACHED=0
+REF_COUNT_CACHED=""
 
 read_frontmatter_field() {
   local file="$1"
@@ -58,23 +57,23 @@ live_ref_count() {
 }
 
 canonicalize_debug_sessions() {
-  LBWC_PLANNING_DIR="$PLANNING_DIR" bash "$SCRIPT_DIR/debug-session-state.sh" list "$PLANNING_DIR" >/dev/null 2>&1 || true
+  env LBWC_PLANNING_DIR="$PLANNING_DIR" bash "$SCRIPT_DIR/debug-session-state.sh" list "$PLANNING_DIR" >/dev/null 2>&1 || true
 }
 
-load_ref_count_once() {
-  [ "$REF_COUNT_LOADED" != "true" ] || return 0
-  REF_COUNT_CACHED=$(live_ref_count "$SEL_REF")
-  case "$REF_COUNT_CACHED" in
-    ''|*[!0-9]*) REF_COUNT_CACHED=0 ;;
+load_ref_count() {
+  local out_name="$1" count
+  count=$(live_ref_count "$SEL_REF")
+  case "$count" in
+    ''|*[!0-9]*) count=0 ;;
   esac
-  REF_COUNT_LOADED=true
+  printf -v "$out_name" '%s' "$count"
 }
 
 matches_by_ref() {
   local source_ref="$1" source_raw_line="$2"
   [ "$source_ref" = "$SEL_REF" ] || return 1
   [ "$source_raw_line" != "$SEL_RAW" ] || return 0
-  load_ref_count_once
+  [ -n "$REF_COUNT_CACHED" ] || load_ref_count REF_COUNT_CACHED
   [ "$REF_COUNT_CACHED" = "1" ]
 }
 
@@ -101,8 +100,7 @@ load_selected_identity() {
   SEL_REF=$(printf '%s' "$selected_json" | jq -r '.ref // empty')
   SEL_RAW=$(printf '%s' "$selected_json" | jq -r '.line // .raw_line // .text // empty')
   SEL_IDENTITY=$(printf '%s' "$selected_json" | jq -r '.identity_total // 0')
-  REF_COUNT_LOADED=false
-  REF_COUNT_CACHED=0
+  REF_COUNT_CACHED=""
 }
 
 find_completed_source_todo_match() {

@@ -70,18 +70,21 @@ classify_verify_severity() {
 }
 
 resolve_verify_target() {
-  verify_target_phase="$TARGET_PHASE_ARG"
+  local phase_arg="$TARGET_PHASE_ARG" target_uat=""
 
-  if [ -n "$verify_target_phase" ]; then
-    verify_target_phase="${verify_target_phase#"${verify_target_phase%%[!0]*}"}"
-    [ -z "$verify_target_phase" ] && verify_target_phase="0"
+  if [ -n "$phase_arg" ]; then
+    phase_arg="${phase_arg#"${phase_arg%%[!0]*}"}"
+    [ -z "$phase_arg" ] && phase_arg="0"
+    printf -v verify_target_phase '%s' "$phase_arg"
     find_verify_target_by_number
   else
+    printf -v verify_target_phase '%s' ""
     find_verify_target_with_issues
   fi
 
   if [ -n "$verify_target_phase_dir" ]; then
-    verify_target_uat=$(current_uat "$verify_target_phase_dir")
+    target_uat=$(current_uat "$verify_target_phase_dir")
+    printf -v verify_target_uat '%s' "$target_uat"
   fi
 
   classify_verify_severity
