@@ -24,7 +24,8 @@ scan_promotable_issues() {
 insert_promoted_entries() {
   local state_path="$1" entries="$2" tmp
   tmp=$(mktemp "${state_path}.tmp.XXXXXX") || return 1
-  awk -v entries="${entries%$'\n'}" '
+  PROMOTE_TEXT="${entries%$'\n'}" awk '
+    BEGIN { entries = ENVIRON["PROMOTE_TEXT"] }
     /^## Todos$/ { in_todos=1; print; next }
     in_todos && /^## / { if (!added) print entries; in_todos=0; added=1 }
     in_todos && /^[[:space:]]*None\.?[[:space:]]*$/ { if (!added) print entries; added=1; next }

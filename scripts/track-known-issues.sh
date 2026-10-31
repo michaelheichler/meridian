@@ -8,7 +8,30 @@ PHASE_DIR="${2:-}"
 VERIFICATION_FILE="${3:-}"
 
 usage() {
-  echo "usage: track-known-issues.sh <status|sync-summaries|sync-verification|promote-todos|resolve|clear> <phase-dir> [verification-file|signature]" >&2
+  cat >&2 <<'EOF'
+usage: track-known-issues.sh <status|sync-summaries|sync-verification|promote-todos|resolve|clear> <phase-dir> [verification-file|signature]
+
+Registry: .lbwc-planning/phases/{NN}-{slug}/known-issues.json
+Each entry carries a deterministic 12-hex signature (sha256 of normalized
+test+file+error) as its unique identifier, so the same issue reported twice
+is one entry, and resolution is checked against evidence, not agent claims.
+
+  status <phase-dir>
+      Prints known_issues_path= / known_issues_status=missing|present|malformed
+      / known_issues_count=N (count of entries whose disposition is unresolved).
+  sync-summaries <phase-dir>
+      Reads pre_existing_issues from every *-SUMMARY.md in the phase and upserts entries.
+  sync-verification <phase-dir> <verification-file>
+      Reads `pre_existing_issues` (JSON array of {test,file,error}) from the
+      verification file's frontmatter, upserts entries, and marks entries absent
+      from a PASSing verification as resolved.
+  promote-todos <phase-dir>
+      Adds unresolved entries to the STATE.md Todos section as [KNOWN-ISSUE] lines.
+  resolve <phase-dir> <signature>
+      Mark one entry resolved by its signature.
+  clear <phase-dir>
+      Remove the registry (round closed clean).
+EOF
   exit 1
 }
 
