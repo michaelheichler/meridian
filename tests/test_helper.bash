@@ -96,8 +96,21 @@ _copy_libs_sourced_by() {
     [ -n "$name" ] && [ -f "$SCRIPTS_DIR/lib/$name" ] || continue
     [ -e "$libs_dest/$name" ] && continue
     cp "$SCRIPTS_DIR/lib/$name" "$libs_dest/$name"
+    _copy_lib_assets_referenced_by "$SCRIPTS_DIR/lib/$name" "$libs_dest"
     _copy_libs_sourced_by "$SCRIPTS_DIR/lib/$name" "$libs_dest"
   done < <(sed -nE 's/^[[:space:]]*(source|\.)[[:space:]].*lib\/([A-Za-z0-9_.-]+)["[:space:]]*.*$/\2/p' "$file")
+}
+
+_copy_lib_assets_referenced_by() {
+  local file="$1" libs_dest="$2" name
+  while IFS= read -r name; do
+    [ -n "$name" ] && [ -e "$SCRIPTS_DIR/lib/$name" ] || continue
+    [ -e "$libs_dest/$name" ] && continue
+    cp -R "$SCRIPTS_DIR/lib/$name" "$libs_dest/$name"
+    if [ -f "$SCRIPTS_DIR/lib/$name" ]; then
+      _copy_lib_assets_referenced_by "$SCRIPTS_DIR/lib/$name" "$libs_dest"
+    fi
+  done < <(grep -oE '(lib/[A-Za-z0-9_.-]+|[A-Za-z0-9_-]+\.(jq|awk|py|tmpl))' "$file" | sed 's|^lib/||' | grep -v '\.sh$')
 }
 
 copy_script_with_libs() {
@@ -112,7 +125,9 @@ copy_script_with_libs() {
   for lib in "$SCRIPTS_DIR/lib/$prefix"-*.sh; do
     [ -f "$lib" ] || continue
     cp "$lib" "$libs_dest/$(basename "$lib")"
+    _copy_lib_assets_referenced_by "$lib" "$libs_dest"
     _copy_libs_sourced_by "$lib" "$libs_dest"
   done
+  _copy_lib_assets_referenced_by "$src" "$libs_dest"
   _copy_libs_sourced_by "$src" "$libs_dest"
 }
