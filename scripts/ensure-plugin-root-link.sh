@@ -38,7 +38,8 @@ fi
 
 cleanup_existing
 
-if ln -s "$target_dir" "$link_path" 2>/dev/null; then
+# -n so that a racing winner's link cannot redirect ln into target_dir.
+if ln -sn "$target_dir" "$link_path" 2>/dev/null; then
   exit 0
 fi
 
@@ -48,4 +49,4 @@ if [ -L "$link_path" ] && [ "$current_target" = "$target_dir" ]; then
 fi
 
 cleanup_existing
-ln -s "$target_dir" "$link_path"
+ln -sn "$target_dir" "$link_path"

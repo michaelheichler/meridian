@@ -57,6 +57,18 @@ teardown() {
   [ "$(readlink "$ROOT_LINK")" = "$plugin_root" ]
 }
 
+@test "root link never creates a link inside the directory an existing link points to" {
+  local old_dir="$TEST_TEMP_DIR/old" plugin_root="$TEST_TEMP_DIR/plugin" fake_bin="$TEST_TEMP_DIR/bin"
+  mkdir -p "$old_dir" "$plugin_root" "$fake_bin"
+  ln -s "$old_dir" "$ROOT_LINK"
+  printf '#!/bin/sh\nexit 0\n' > "$fake_bin/rm"
+  chmod +x "$fake_bin/rm"
+
+  run env PATH="$fake_bin:$PATH" bash "$SCRIPTS_DIR/ensure-plugin-root-link.sh" "$ROOT_LINK" "$plugin_root"
+
+  [ ! -e "$old_dir/plugin" ]
+}
+
 @test "root link rejects a non-LBWC link name" {
   local plugin_root="$TEST_TEMP_DIR/plugin"
   mkdir -p "$plugin_root"
