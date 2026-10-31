@@ -27,4 +27,6 @@ fi
 bash "$TARGET" "$@"
 RC=$?
 [ "$RC" -eq 0 ] && exit 0
-exit 2
+[ "$RC" -eq 2 ] && exit 2
+echo "meridian hook warning: $SCRIPT exited $RC, call allowed" >&2
+exit 1

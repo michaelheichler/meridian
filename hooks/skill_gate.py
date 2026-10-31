@@ -185,7 +185,8 @@ def _required_reading(role) -> "str | None":
 def verdict(stdin_text, cwd=None) -> "str | None":
     data, error = _parse_pretool_input(stdin_text)
     if error:
-        return error
+        print(error, file=sys.stderr)
+        return None
     assert data is not None
     identifier = _agent_identifier(data)
     if not identifier:
@@ -207,7 +208,11 @@ def verdict(stdin_text, cwd=None) -> "str | None":
 
 
 def main() -> None:
-    reason = verdict(sys.stdin.read())
+    try:
+        reason = verdict(sys.stdin.read())
+    except Exception as exc:
+        print(f"Hook warning: skill_gate crashed ({exc!r}), call allowed.", file=sys.stderr)
+        sys.exit(0)
     if reason is None:
         sys.exit(0)
     emit_pretool_denial(reason)

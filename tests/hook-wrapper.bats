@@ -21,3 +21,44 @@ load test_helper
   [ "$status" -eq 0 ]
   [ -z "$output" ]
 }
+
+setup() {
+  WRAPPER_ROOT="$(mktemp -d)"
+  mkdir -p "$WRAPPER_ROOT/scripts"
+  printf 'exit 0\n' > "$WRAPPER_ROOT/scripts/stub-0.sh"
+  printf 'exit 1\n' > "$WRAPPER_ROOT/scripts/stub-1.sh"
+  printf 'exit 3\n' > "$WRAPPER_ROOT/scripts/stub-3.sh"
+  printf 'exit 127\n' > "$WRAPPER_ROOT/scripts/stub-127.sh"
+  printf 'echo "policy says no" >&2\nexit 2\n' > "$WRAPPER_ROOT/scripts/stub-2.sh"
+}
+
+teardown() {
+  rm -rf "$WRAPPER_ROOT"
+}
+
+run_wrapper() {
+  run env CLAUDE_PLUGIN_ROOT="$WRAPPER_ROOT" bash "$SCRIPTS_DIR/hook-wrapper.sh" "$1"
+}
+
+assert_warns_and_exits_1() {
+  local rc="$1"
+  run_wrapper "stub-$rc.sh"
+  [ "$status" -eq 1 ]
+  [ "$output" = "meridian hook warning: stub-$rc.sh exited $rc, call allowed" ]
+}
+
+@test "a target that exits 0 passes silently" {
+  run_wrapper stub-0.sh
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "a target that blocks with exit 2 keeps its stderr and adds no warning" {
+  run_wrapper stub-2.sh
+  [ "$status" -eq 2 ]
+  [ "$output" = "policy says no" ]
+}
+
+for rc in 1 3 127; do
+  bats_test_function --description "a target failing with exit $rc warns and exits 1 so the call is allowed" -- assert_warns_and_exits_1 "$rc"
+done
