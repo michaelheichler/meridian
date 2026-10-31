@@ -87,12 +87,35 @@ if [ "$1" = "send-keys" ] && [ -n "${LBWC_TEST_SEND_KEYS_COUNTER:-}" ]; then
   printf '%s\n' "$count" > "$LBWC_TEST_SEND_KEYS_COUNTER"
   [ "$count" -le "${LBWC_TEST_FAIL_SEND_KEYS_AFTER:-0}" ] || exit 1
 fi
+if [ "$1" = "split-window" ] && [ -n "${LBWC_TEST_LAYOUT_AFTER_SPLIT:-}" ]; then
+  printf '{"tmux":{"layout":"%s"}}\n' "$LBWC_TEST_LAYOUT_AFTER_SPLIT" > "$LBWC_TEST_CONFIG_PATH"
+fi
+if [ "$1" = "select-layout" ] && [ -n "${LBWC_TEST_SELECT_LAYOUT_LOG:-}" ]; then
+  printf '%s\n' "$*" >> "$LBWC_TEST_SELECT_LAYOUT_LOG"
+fi
 if [ "$1" = "select-layout" ] && [ "${LBWC_TEST_FAIL_LAYOUT:-0}" = 1 ]; then
   exit 1
 fi
 exec "$LBWC_TEST_TMUX_BINARY" -L "$LBWC_TEST_TMUX_SERVER" "$@"
 SCRIPT
   chmod +x "$BIN_DIR/tmux"
+  export LBWC_TEST_JQ_BINARY="$(command -v jq)"
+  cat > "$BIN_DIR/jq" <<'SCRIPT'
+#!/usr/bin/env bash
+if [ -n "${LBWC_TEST_JQ_FAIL_MATCH:-}" ]; then
+  case "$*" in
+    *"$LBWC_TEST_JQ_FAIL_MATCH"*)
+      count=0
+      [ -f "$LBWC_TEST_JQ_COUNTER" ] && count=$(cat "$LBWC_TEST_JQ_COUNTER")
+      count=$((count + 1))
+      printf '%s\n' "$count" > "$LBWC_TEST_JQ_COUNTER"
+      [ "$count" -ne "$LBWC_TEST_JQ_FAIL_NTH" ] || exit 1
+      ;;
+  esac
+fi
+exec "$LBWC_TEST_JQ_BINARY" "$@"
+SCRIPT
+  chmod +x "$BIN_DIR/jq"
   export LBWC_TEST_TMUX_BINARY="$(command -v tmux)"
   export LBWC_TEST_TMUX_SERVER="$TMUX_SERVER"
   export LBWC_TEST_PYTHON3="$(command -v python3)"
@@ -191,6 +214,23 @@ wait_for_binding() {
     [ "$attempts" -lt 100 ] || return 1
     sleep 0.05
   done
+}
+
+bus_state_digest() {
+  shasum -a 256 "$CONTROL_ROOT/.runtime/tmux-bus/registry.json" "$CONTROL_ROOT/.runtime/tmux-bus/routing-table.json"
+}
+
+split_group_with_jq_failing_at() {
+  local filter_fragment="$1" nth_call="$2" session="$3" definitions="$4" digest_before
+  rm -f "$TEST_ROOT/jq-count"
+  digest_before="$(bus_state_digest)"
+  export LBWC_TEST_JQ_FAIL_MATCH="$filter_fragment" LBWC_TEST_JQ_FAIL_NTH="$nth_call" LBWC_TEST_JQ_COUNTER="$TEST_ROOT/jq-count"
+  run_orchestrator split-group --project-root "$PROJECT_ROOT" --control-root "$CONTROL_ROOT" --session "$session" --agents "$definitions"
+  unset LBWC_TEST_JQ_FAIL_MATCH LBWC_TEST_JQ_FAIL_NTH LBWC_TEST_JQ_COUNTER
+  [ "$status" -eq 1 ] || return 1
+  [ "$(TMUX_TMPDIR="$TMUX_TMPDIR" tmux -L "$TMUX_SERVER" list-panes -t "$session" -F '#{pane_index}' | wc -l | tr -d ' ')" = 1 ] || return 1
+  [ ! -e "$CONTROL_ROOT/.runtime/tmux-bus/credentials/worker-a.json" ] || return 1
+  [ "$(bus_state_digest)" = "$digest_before" ]
 }
 
 @test "unknown --cancel is usage error" {
@@ -481,6 +521,51 @@ wait_for_binding() {
   [ "$status" -ne 0 ]
   [ "$(jq '.agents | length' "$CONTROL_ROOT/.runtime/tmux-bus/registry.json")" = 0 ]
   [ "$(jq '.routes | keys | length' "$CONTROL_ROOT/.runtime/tmux-bus/routing-table.json")" = 1 ]
+}
+
+@test "split-group rolls back and leaves registry.json and routing-table.json intact when jq fails mid-split" {
+  provision_main
+  session="$(jq -r '.tmux.session' "$CONTROL_ROOT/.runtime/tmux-bus/registry.json")"
+  definitions="$(prepare_tmux_agents worker-a)"
+  local -a failure_points=(
+    'panes:[]|1'
+    '+= [$value]|1'
+    '+= [$value]|2'
+    'capability: $capability|1'
+    'transpose|1'
+  )
+  local failure_point
+  for failure_point in "${failure_points[@]}"; do
+    split_group_with_jq_failing_at "${failure_point%|*}" "${failure_point##*|}" "$session" "$definitions" \
+      || { printf 'no clean rollback when jq fails at %s\n' "$failure_point" >&3; false; }
+  done
+}
+
+@test "split-group reads the layout only before panes exist" {
+  printf '%s\n' '{"tmux":{"layout":"even-vertical"}}' > "$CONTROL_ROOT/config.json"
+  provision_main
+  session="$(jq -r '.tmux.session' "$CONTROL_ROOT/.runtime/tmux-bus/registry.json")"
+  definitions="$(prepare_tmux_agents worker-a)"
+  export LBWC_TEST_CONFIG_PATH="$CONTROL_ROOT/config.json" LBWC_TEST_LAYOUT_AFTER_SPLIT=bogus-layout LBWC_TEST_SELECT_LAYOUT_LOG="$TEST_ROOT/select-layout.log"
+
+  run_orchestrator split-group --project-root "$PROJECT_ROOT" --control-root "$CONTROL_ROOT" --session "$session" --agents "$definitions"
+  unset LBWC_TEST_CONFIG_PATH LBWC_TEST_LAYOUT_AFTER_SPLIT LBWC_TEST_SELECT_LAYOUT_LOG
+
+  [ "$status" -eq 0 ]
+  [ "$(cat "$TEST_ROOT/select-layout.log")" = "select-layout -t $session even-vertical" ]
+}
+
+@test "split-group rejects an invalid layout in config before any pane exists" {
+  provision_main
+  session="$(jq -r '.tmux.session' "$CONTROL_ROOT/.runtime/tmux-bus/registry.json")"
+  definitions="$(prepare_tmux_agents worker-a)"
+  printf '%s\n' '{"tmux":{"layout":"bogus-layout"}}' > "$CONTROL_ROOT/config.json"
+
+  run_orchestrator split-group --project-root "$PROJECT_ROOT" --control-root "$CONTROL_ROOT" --session "$session" --agents "$definitions"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"tmux layout is invalid"* ]]
+  [ "$(TMUX_TMPDIR="$TMUX_TMPDIR" tmux -L "$TMUX_SERVER" list-panes -t "$session" -F '#{pane_index}' | wc -l | tr -d ' ')" = 1 ]
 }
 
 @test "kill-agent retries persisted teardown after a registry write failure" {

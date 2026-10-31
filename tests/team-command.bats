@@ -354,6 +354,23 @@ JSON
   jq -e '.routing.mode == "seeded" and .routing.model == "sonnet"' <<< "$output" >/dev/null
 }
 
+@test "preflight reports the string null for a null saved-route profile" {
+  local plugin="$TEST_ROOT/plugin"
+  mkdir -p "$plugin" "$PROJECT/.lbwc-planning"
+  cp -R "$REPO_ROOT/scripts" "$plugin/scripts"
+  ln -s "$REPO_ROOT/config" "$plugin/config"
+  ln -s "$REPO_ROOT/templates" "$plugin/templates"
+  printf '%s\n' '{"routing":{"active_profile":"balanced"}}' > "$PROJECT/.lbwc-planning/config.json"
+  printf '%s\n' '#!/usr/bin/env bash' \
+    "printf '%s\\n' '{\"model\":\"nova-route\",\"profile\":null,\"reasoning\":\"deliberate\",\"role\":\"web-engineer\"}'" \
+    > "$plugin/scripts/lbwc-routing.sh"
+
+  run bash "$plugin/scripts/team-command-transaction.sh" preflight --project-root "$PROJECT"
+
+  [ "$status" -eq 0 ]
+  jq -e '.routing.mode == "saved" and .routing.profile == "null"' <<< "$output" >/dev/null
+}
+
 @test "preflight is read-only and reports canonical scopes and no side effects" {
   run bash "$TRANSACTION" preflight --project-root "$PROJECT" --scope src --scope src
 
