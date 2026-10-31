@@ -10,6 +10,7 @@ LOCK_BACKEND=""
 LOCK_FD=9
 LOCK_GUARD=""
 LOCK_HELD=0
+LOCK_TOKEN=""
 LOCK_TOOL=""
 LOCK_OWNER_RECORD=""
 LOCK_STALE_AFTER_SECONDS=30
@@ -189,34 +190,29 @@ reclaim_stale_lock() {
   rmdir "$lock_dir" 2>/dev/null || return 1
 }
 
-acquire_config_lock() {
-  local planning_dir="$1" attempt wait_attempts created token guard_inode fd_inode guard_held=0
-  local token_status token_detail token_diag_file shell_detail
-  if [ "$TRANSACTION_ACTIVE" = 1 ]; then
-    LOCK_DIR="${LBWC_CONFIG_TRANSACTION_LOCK_DIR:-}"
-    LOCK_DIR_IDENTITY="${LBWC_CONFIG_TRANSACTION_LOCK_IDENTITY:-}"
-    LOCK_GUARD="${LBWC_CONFIG_TRANSACTION_GUARD:-}"
-    LOCK_FD="${LBWC_CONFIG_TRANSACTION_FD:-}"
-    LOCK_OWNER_RECORD="${LBWC_CONFIG_TRANSACTION_OWNER:-}"
-    [[ "$LOCK_FD" =~ ^[0-9]+$ ]] || fail 'inherited configuration transaction descriptor is invalid'
-    [ "${LBWC_CONFIG_TRANSACTION_PLANNING_DIR:-}" = "$planning_dir" ] \
-      || fail 'inherited configuration transaction targets another planning directory'
-    [ "$LOCK_DIR" = "$planning_dir/.routing.lock" ] \
-      || fail 'inherited configuration transaction lock path is invalid'
-    [ "$LOCK_GUARD" = "$planning_dir/.routing.lock.guard" ] \
-      || fail 'inherited configuration transaction guard path is invalid'
-    [ -e "/dev/fd/$LOCK_FD" ] || fail 'inherited configuration transaction descriptor is unavailable'
-    guard_inode=$(file_inode "$LOCK_GUARD") || fail 'could not identify inherited configuration transaction guard'
-    fd_inode=$(file_inode "/dev/fd/$LOCK_FD") || fail 'could not identify inherited configuration transaction descriptor'
-    [ "$guard_inode" = "$fd_inode" ] || fail 'inherited configuration transaction guard changed'
-    lock_is_owned || fail 'inherited configuration transaction ownership is invalid'
-    return 0
-  fi
-  LOCK_DIR="$planning_dir/.routing.lock"
-  LOCK_GUARD="$planning_dir/.routing.lock.guard"
-  wait_attempts="${LBWC_ROUTING_LOCK_WAIT_ATTEMPTS:-$LOCK_WAIT_ATTEMPTS_DEFAULT}"
-  [[ "$wait_attempts" =~ ^[1-9][0-9]*$ ]] || fail 'routing lock wait attempts must be a positive integer'
-  [ "$wait_attempts" -le 5000 ] || fail 'routing lock wait attempts exceed the safe bound'
+inherit_transaction_lock() {
+  local planning_dir="$1" guard_inode fd_inode
+  LOCK_DIR="${LBWC_CONFIG_TRANSACTION_LOCK_DIR:-}"
+  LOCK_DIR_IDENTITY="${LBWC_CONFIG_TRANSACTION_LOCK_IDENTITY:-}"
+  LOCK_GUARD="${LBWC_CONFIG_TRANSACTION_GUARD:-}"
+  LOCK_FD="${LBWC_CONFIG_TRANSACTION_FD:-}"
+  LOCK_OWNER_RECORD="${LBWC_CONFIG_TRANSACTION_OWNER:-}"
+  [[ "$LOCK_FD" =~ ^[0-9]+$ ]] || fail 'inherited configuration transaction descriptor is invalid'
+  [ "${LBWC_CONFIG_TRANSACTION_PLANNING_DIR:-}" = "$planning_dir" ] \
+    || fail 'inherited configuration transaction targets another planning directory'
+  [ "$LOCK_DIR" = "$planning_dir/.routing.lock" ] \
+    || fail 'inherited configuration transaction lock path is invalid'
+  [ "$LOCK_GUARD" = "$planning_dir/.routing.lock.guard" ] \
+    || fail 'inherited configuration transaction guard path is invalid'
+  [ -e "/dev/fd/$LOCK_FD" ] || fail 'inherited configuration transaction descriptor is unavailable'
+  guard_inode=$(file_inode "$LOCK_GUARD") || fail 'could not identify inherited configuration transaction guard'
+  fd_inode=$(file_inode "/dev/fd/$LOCK_FD") || fail 'could not identify inherited configuration transaction descriptor'
+  [ "$guard_inode" = "$fd_inode" ] || fail 'inherited configuration transaction guard changed'
+  lock_is_owned || fail 'inherited configuration transaction ownership is invalid'
+}
+
+create_lock_token() {
+  local token token_status token_detail token_diag_file shell_detail
   token_diag_file=$(mktemp "${TMPDIR:-/tmp}/lbwc-routing-lock-diag.XXXXXX") || fail 'could not create routing lock diagnostic file'
   {
     if token=$(command "$ENV_TOOL" LC_ALL=C "$OD_TOOL" -An -N 16 -tx1 /dev/urandom); then
@@ -236,6 +232,11 @@ acquire_config_lock() {
   token=${token//[[:space:]]/}
   [[ "$token" =~ ^[0-9a-f]{32}$ ]] \
     || fail "routing lock owner token was malformed: $OD_TOOL produced unexpected output (od stdout: $token_detail) (captured stderr: $shell_detail)"
+  LOCK_TOKEN="$token"
+}
+
+open_lock_guard() {
+  local guard_inode fd_inode
   [ ! -L "$LOCK_DIR" ] || fail "symbolic link paths are not allowed: $LOCK_DIR"
   [ ! -e "$LOCK_GUARD" ] || { [ -f "$LOCK_GUARD" ] && [ ! -L "$LOCK_GUARD" ]; } \
     || fail "routing lock guard must be a regular file: $LOCK_GUARD"
@@ -244,6 +245,10 @@ acquire_config_lock() {
   guard_inode=$(file_inode "$LOCK_GUARD") || fail 'could not identify routing lock guard'
   fd_inode=$(file_inode "/dev/fd/$LOCK_FD") || fail 'could not identify routing lock guard descriptor'
   [ "$guard_inode" = "$fd_inode" ] || fail 'routing lock guard changed while opening'
+}
+
+wait_for_lock_guard() {
+  local wait_attempts="$1" attempt guard_held=0
   for ((attempt = 0; attempt < wait_attempts; attempt++)); do
     if invoke_lock_backend "$LOCK_BACKEND" "$LOCK_TOOL" "$LOCK_FD"; then
       guard_held=1
@@ -252,34 +257,60 @@ acquire_config_lock() {
     sleep 0.01
   done
   [ "$guard_held" -eq 1 ] || fail "could not acquire routing lock: $LOCK_DIR"
+}
+
+claim_lock_directory() {
+  local token="$1" created
+  LOCK_DIR_IDENTITY=$(directory_identity "$LOCK_DIR") || {
+    rmdir "$LOCK_DIR" 2>/dev/null || true
+    fail 'could not identify routing lock directory'
+  }
+  created=$(date +%s) || {
+    lock_directory_has_identity && rmdir "$LOCK_DIR" 2>/dev/null || true
+    fail 'could not record routing lock creation time'
+  }
+  LOCK_OWNER_RECORD="$$"$'\t'"$created"$'\t'"$token"
+  if ! printf '%s\n' "$LOCK_OWNER_RECORD" > "$LOCK_DIR/owner"; then
+    if lock_directory_has_identity; then
+      rm -f -- "$LOCK_DIR/owner" 2>/dev/null || true
+      lock_directory_has_identity && rmdir "$LOCK_DIR" 2>/dev/null || true
+    fi
+    LOCK_OWNER_RECORD=""
+    fail 'could not record routing lock ownership'
+  fi
+  lock_is_owned || fail 'routing lock changed while recording ownership'
+  LOCK_HELD=1
+}
+
+wait_for_lock_directory() {
+  local token="$1" wait_attempts="$2" attempt
   for ((attempt = 0; attempt < wait_attempts; attempt++)); do
     [ ! -L "$LOCK_DIR" ] || fail "symbolic link paths are not allowed: $LOCK_DIR"
     if mkdir "$LOCK_DIR" 2>/dev/null; then
-      LOCK_DIR_IDENTITY=$(directory_identity "$LOCK_DIR") || {
-        rmdir "$LOCK_DIR" 2>/dev/null || true
-        fail 'could not identify routing lock directory'
-      }
-      created=$(date +%s) || {
-        lock_directory_has_identity && rmdir "$LOCK_DIR" 2>/dev/null || true
-        fail 'could not record routing lock creation time'
-      }
-      LOCK_OWNER_RECORD="$$"$'\t'"$created"$'\t'"$token"
-      if ! printf '%s\n' "$LOCK_OWNER_RECORD" > "$LOCK_DIR/owner"; then
-        if lock_directory_has_identity; then
-          rm -f -- "$LOCK_DIR/owner" 2>/dev/null || true
-          lock_directory_has_identity && rmdir "$LOCK_DIR" 2>/dev/null || true
-        fi
-        LOCK_OWNER_RECORD=""
-        fail 'could not record routing lock ownership'
-      fi
-      lock_is_owned || fail 'routing lock changed while recording ownership'
-      LOCK_HELD=1
+      claim_lock_directory "$token"
       return 0
     fi
     reclaim_stale_lock "$LOCK_DIR" && continue
     sleep 0.01
   done
   fail "could not acquire routing lock: $LOCK_DIR"
+}
+
+acquire_config_lock() {
+  local planning_dir="$1" wait_attempts
+  if [ "$TRANSACTION_ACTIVE" = 1 ]; then
+    inherit_transaction_lock "$planning_dir"
+    return 0
+  fi
+  LOCK_DIR="$planning_dir/.routing.lock"
+  LOCK_GUARD="$planning_dir/.routing.lock.guard"
+  wait_attempts="${LBWC_ROUTING_LOCK_WAIT_ATTEMPTS:-$LOCK_WAIT_ATTEMPTS_DEFAULT}"
+  [[ "$wait_attempts" =~ ^[1-9][0-9]*$ ]] || fail 'routing lock wait attempts must be a positive integer'
+  [ "$wait_attempts" -le 5000 ] || fail 'routing lock wait attempts exceed the safe bound'
+  create_lock_token
+  open_lock_guard
+  wait_for_lock_guard "$wait_attempts"
+  wait_for_lock_directory "$LOCK_TOKEN" "$wait_attempts"
 }
 
 export_config_transaction() {
@@ -524,62 +555,112 @@ check_route_value() {
   jq -cS -n --arg model "$selector" --argjson reasoning "$reasoning_json" '{model:$model,reasoning:$reasoning}'
 }
 
-migrate_routes() {
-  local planning_dir="$1" catalog config migrated role profile profile_json
-  catalog="$planning_dir/claude-capabilities.json"
-  config="$planning_dir/config.json"
-  acquire_config_lock "$planning_dir"
-  validate_current_catalog "$catalog"
-  validate_config_file "$config"
+validate_legacy_roles() {
+  local config="$1" role
   while IFS= read -r role; do
     [ -n "$role" ] || continue
     validate_role "$role"
   done < <(jq -r '(.roles // {}) | if type == "object" then keys[] else empty end' "$config")
+}
+
+assert_migration_profile() {
+  local planning_dir="$1" config="$2" profile profile_json
   profile=$(jq -r '(.routing.active_profile // .model_profile // "balanced") | if . == "budget" then "turbo" else . end' "$config") \
     || fail 'could not resolve migrated routing profile'
   validate_profile "$profile"
   profile_json=$(jq -cn --arg profile "$profile" '$profile') || fail 'could not encode routing profile'
   bash "$SCRIPT_DIR/lbwc-config.sh" assert-execution-setting-writable \
     "$planning_dir" routing.active_profile "$profile_json"
-  migrated=$(jq -c --slurpfile catalog "$catalog" '
-    def normalized_profile($value): if $value == "budget" then "turbo" else $value end;
-    def normalized_cell($cell):
-      ($cell.model // null) as $model
-      | (if $cell | has("reasoning") then $cell.reasoning else ($cell.effort // null) end) as $reasoning
-      | ($catalog[0]) as $capabilities
-      | ($capabilities.models | map(.selector) | index($model) != null) as $known_model
-      | ($reasoning == null or ($capabilities.reasoning.accepted_values | index($reasoning) != null)) as $known_reasoning
-      | ($capabilities.reasoning.model_associations[$model] // null) as $association
-      | ($reasoning == null
-          or $capabilities.reasoning.scope == "global"
-          or $association == null
-          or ($association | index($reasoning) != null)) as $allowed_reasoning
-      | {model: $model, reasoning: $reasoning, status: (if $known_model and $known_reasoning and $allowed_reasoning then "resolved" else "unresolved" end)};
-    (.routing.profiles // {}) as $existing_profiles
-    | (($existing_profiles.budget.roles // {}) * ($existing_profiles.turbo.roles // {})) as $turbo_roles
-    | .routing.profiles = {
-        quality: {roles: ($existing_profiles.quality.roles // {})},
-        balanced: {roles: ($existing_profiles.balanced.roles // {})},
-        turbo: {roles: $turbo_roles}
-      }
-    | .routing.active_profile = normalized_profile(.routing.active_profile // .model_profile // "balanced")
-    | .routing.profiles |= with_entries(.value.roles |= with_entries(.value |= normalized_cell(.)))
-    | .routing.active_profile as $active
-    | ((.roles // {}) | with_entries(
-        select(.value | has("model") or has("effort") or has("reasoning"))
-        | .value = normalized_cell({
-            model: .value.model,
-            reasoning: (if .value | has("reasoning") then .value.reasoning else (.value.effort // null) end)
-          })
-      )) as $legacy_roles
-    | .routing.profiles[$active].roles = ($legacy_roles * .routing.profiles[$active].roles)
-    | if (.roles | type) == "object"
-      then .roles |= with_entries(.value |= del(.model, .effort, .reasoning))
-      else .
-      end
-    | del(.model_profile)
-  ' "$config") || fail 'could not migrate routing configuration'
+}
+
+migrate_filter_cells() {
+  cat <<'JQ'
+def normalized_profile($value): if $value == "budget" then "turbo" else $value end;
+def normalized_cell($cell):
+  ($cell.model // null) as $model
+  | (if $cell | has("reasoning") then $cell.reasoning else ($cell.effort // null) end) as $reasoning
+  | ($catalog[0]) as $capabilities
+  | ($capabilities.models | map(.selector) | index($model) != null) as $known_model
+  | ($reasoning == null or ($capabilities.reasoning.accepted_values | index($reasoning) != null)) as $known_reasoning
+  | ($capabilities.reasoning.model_associations[$model] // null) as $association
+  | ($reasoning == null
+      or $capabilities.reasoning.scope == "global"
+      or $association == null
+      or ($association | index($reasoning) != null)) as $allowed_reasoning
+  | {model: $model, reasoning: $reasoning, status: (if $known_model and $known_reasoning and $allowed_reasoning then "resolved" else "unresolved" end)};
+JQ
+}
+
+migrate_filter_profiles() {
+  cat <<'JQ'
+(.routing.profiles // {}) as $existing_profiles
+| (($existing_profiles.budget.roles // {}) * ($existing_profiles.turbo.roles // {})) as $turbo_roles
+| .routing.profiles = {
+    quality: {roles: ($existing_profiles.quality.roles // {})},
+    balanced: {roles: ($existing_profiles.balanced.roles // {})},
+    turbo: {roles: $turbo_roles}
+  }
+| .routing.active_profile = normalized_profile(.routing.active_profile // .model_profile // "balanced")
+| .routing.profiles |= with_entries(.value.roles |= with_entries(.value |= normalized_cell(.)))
+| .routing.active_profile as $active
+| ((.roles // {}) | with_entries(
+    select(.value | has("model") or has("effort") or has("reasoning"))
+    | .value = normalized_cell({
+        model: .value.model,
+        reasoning: (if .value | has("reasoning") then .value.reasoning else (.value.effort // null) end)
+      })
+  )) as $legacy_roles
+| .routing.profiles[$active].roles = ($legacy_roles * .routing.profiles[$active].roles)
+| if (.roles | type) == "object"
+  then .roles |= with_entries(.value |= del(.model, .effort, .reasoning))
+  else .
+  end
+| del(.model_profile)
+JQ
+}
+
+migrate_routes() {
+  local planning_dir="$1" catalog config migrated
+  catalog="$planning_dir/claude-capabilities.json"
+  config="$planning_dir/config.json"
+  acquire_config_lock "$planning_dir"
+  validate_current_catalog "$catalog"
+  validate_config_file "$config"
+  validate_legacy_roles "$config"
+  assert_migration_profile "$planning_dir" "$config"
+  migrated=$(jq -c --slurpfile catalog "$catalog" "$(migrate_filter_cells)
+$(migrate_filter_profiles)" "$config") || fail 'could not migrate routing configuration'
   atomic_write_config "$planning_dir" "$migrated"
+}
+
+assert_command_arity() {
+  local command="$1" argument_count="$2"
+  case "$command" in
+    set) [ "$argument_count" -eq 6 ] || { usage; exit 1; } ;;
+    check|copy) [ "$argument_count" -eq 4 ] || { usage; exit 1; } ;;
+    activate) [ "$argument_count" -eq 3 ] || { usage; exit 1; } ;;
+    resolve) [ "$argument_count" -eq 3 ] || [ "$argument_count" -eq 4 ] || { usage; exit 1; } ;;
+    validate|migrate|assert-transaction) [ "$argument_count" -eq 2 ] || { usage; exit 1; } ;;
+    *)
+      usage
+      exit 1
+      ;;
+  esac
+}
+
+dispatch_route_command() {
+  local planning_dir="$1"
+  shift
+  case "$1" in
+    set) atomic_set_route "$planning_dir" "$3" "$4" "$5" "$6" ;;
+    check) check_route_value "$planning_dir" "$3" "$4" ;;
+    activate) activate_profile "$planning_dir" "$3" ;;
+    copy) copy_profile "$planning_dir" "$3" "$4" ;;
+    resolve) resolve_route "$planning_dir" "$3" "${4:-}" ;;
+    validate) validate_routing_config "$planning_dir" ;;
+    migrate) migrate_routes "$planning_dir" ;;
+    assert-transaction) printf '%s\n' "$planning_dir" ;;
+  esac
 }
 
 main() {
@@ -593,60 +674,15 @@ main() {
     run_config_transaction "$planning_dir" "$@"
     return
   fi
-  case "$command" in
-    set)
-      [ "$#" -eq 6 ] || { usage; exit 1; }
-      planning_dir=$(resolve_planning_directory "$2")
-      ;;
-    check)
-      [ "$#" -eq 4 ] || { usage; exit 1; }
-      planning_dir=$(resolve_planning_directory "$2")
-      ;;
-    activate)
-      [ "$#" -eq 3 ] || { usage; exit 1; }
-      planning_dir=$(resolve_planning_directory "$2")
-      ;;
-    copy)
-      [ "$#" -eq 4 ] || { usage; exit 1; }
-      planning_dir=$(resolve_planning_directory "$2")
-      ;;
-    resolve)
-      [ "$#" -eq 3 ] || [ "$#" -eq 4 ] || { usage; exit 1; }
-      planning_dir=$(resolve_planning_directory "$2")
-      ;;
-    validate)
-      [ "$#" -eq 2 ] || { usage; exit 1; }
-      planning_dir=$(resolve_planning_directory "$2")
-      ;;
-    migrate)
-      [ "$#" -eq 2 ] || { usage; exit 1; }
-      planning_dir=$(resolve_planning_directory "$2")
-      ;;
-    assert-transaction)
-      [ "$#" -eq 2 ] || { usage; exit 1; }
-      planning_dir=$(resolve_planning_directory "$2")
-      ;;
-    *)
-      usage
-      exit 1
-      ;;
-  esac
+  assert_command_arity "$command" "$#"
+  planning_dir=$(resolve_planning_directory "$2")
   if [ "$TRANSACTION_ACTIVE" = 1 ]; then
     acquire_config_lock "$planning_dir"
   else
     run_config_transaction "$planning_dir" bash "$0" "$@"
     return
   fi
-  case "$command" in
-    set) atomic_set_route "$planning_dir" "$3" "$4" "$5" "$6" ;;
-    check) check_route_value "$planning_dir" "$3" "$4" ;;
-    activate) activate_profile "$planning_dir" "$3" ;;
-    copy) copy_profile "$planning_dir" "$3" "$4" ;;
-    resolve) resolve_route "$planning_dir" "$3" "${4:-}" ;;
-    validate) validate_routing_config "$planning_dir" ;;
-    migrate) migrate_routes "$planning_dir" ;;
-    assert-transaction) printf '%s\n' "$planning_dir" ;;
-  esac
+  dispatch_route_command "$planning_dir" "$@"
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
