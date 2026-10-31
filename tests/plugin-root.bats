@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 
+bats_require_minimum_version 1.5.0
 load test_helper
 
 setup() {
@@ -67,6 +68,43 @@ teardown() {
   run env PATH="$fake_bin:$PATH" bash "$SCRIPTS_DIR/ensure-plugin-root-link.sh" "$ROOT_LINK" "$plugin_root"
 
   [ ! -e "$old_dir/plugin" ]
+}
+
+run_link_with_failing_ln() {
+  local planted_target="$1" plugin_root="$TEST_TEMP_DIR/plugin" fake_bin="$TEST_TEMP_DIR/bin"
+  mkdir -p "$plugin_root" "$fake_bin"
+  cat > "$fake_bin/ln" <<'SHIM'
+#!/bin/sh
+[ -z "$PLANTED_LINK_TARGET" ] || /bin/ln -s "$PLANTED_LINK_TARGET" "$3"
+exit 1
+SHIM
+  chmod +x "$fake_bin/ln"
+
+  run --separate-stderr env PATH="$fake_bin:$PATH" PLANTED_LINK_TARGET="$planted_target" bash "$SCRIPTS_DIR/ensure-plugin-root-link.sh" "$ROOT_LINK" "$plugin_root"
+}
+
+@test "root link succeeds when ln fails but a racing winner already linked the target" {
+  run_link_with_failing_ln "$TEST_TEMP_DIR/plugin"
+
+  [ "$status" -eq 0 ]
+  [ "$(readlink "$ROOT_LINK")" = "$TEST_TEMP_DIR/plugin" ]
+}
+
+@test "root link fails with an error when ln fails and the link points elsewhere" {
+  mkdir -p "$TEST_TEMP_DIR/elsewhere"
+
+  run_link_with_failing_ln "$TEST_TEMP_DIR/elsewhere"
+
+  [ "$status" -eq 1 ]
+  [[ "$stderr" == *"could not link $ROOT_LINK to $TEST_TEMP_DIR/plugin"* ]]
+}
+
+@test "root link fails with an error when ln fails and no link exists" {
+  run_link_with_failing_ln ""
+
+  [ "$status" -eq 1 ]
+  [[ "$stderr" == *"could not link $ROOT_LINK to $TEST_TEMP_DIR/plugin"* ]]
+  [ ! -e "$ROOT_LINK" ] && [ ! -L "$ROOT_LINK" ]
 }
 
 @test "root link rejects a non-LBWC link name" {
