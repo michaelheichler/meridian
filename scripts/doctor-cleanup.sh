@@ -18,7 +18,7 @@ fi
 
 TEAMS_DIR="$CLAUDE_DIR/teams"
 TASKS_DIR="$CLAUDE_DIR/tasks"
-STALE_THRESHOLD_SECONDS=7200  # 2 hours
+STALE_THRESHOLD_SECONDS=7200
 
 get_mtime() {
   local file="$1"
@@ -232,6 +232,27 @@ cleanup_stale_markers() {
   log_action "stale markers cleanup completed: $removed removed"
 }
 
+cleanup_one_worktree() {
+  local _wt_name="$1" _detail="$2" wt_phase wt_plan cleanup_output
+  case "$_wt_name" in
+    [0-9][0-9]-[0-9][0-9]) ;;
+    *)
+      log_action "scan-only stale worktree: invalid cleanup target $_wt_name"
+      return 0
+      ;;
+  esac
+  wt_phase="${_wt_name%-*}"
+  wt_plan="${_wt_name#*-}"
+  if cleanup_output=$(LBWC_AUTOMATIC_CLEANUP=1 bash "$SCRIPT_DIR/worktree-cleanup.sh" "$wt_phase" "$wt_plan" 2>&1); then
+    case "$cleanup_output" in
+      scan_only\|*) log_action "scan-only stale worktree: $cleanup_output" ;;
+      *) log_action "cleaned stale worktree: $_wt_name ($_detail)" ;;
+    esac
+  else
+    log_action "failed to clean worktree: $_wt_name (fail-silent)"
+  fi
+}
+
 cleanup_stale_worktrees() {
   local worktrees_dir
   worktrees_dir="$(pwd)/.lbwc-worktrees"
@@ -241,27 +262,10 @@ cleanup_stale_worktrees() {
   stale=$(scan_stale_worktrees)
   [ -z "$stale" ] && return 0
 
-  local _category _wt_name _detail cleanup_output
+  local _category _wt_name _detail
   echo "$stale" | while IFS='|' read -r _category _wt_name _detail; do
     [ -z "$_wt_name" ] && continue
-    local wt_phase wt_plan
-    case "$_wt_name" in
-      [0-9][0-9]-[0-9][0-9]) ;;
-      *)
-        log_action "scan-only stale worktree: invalid cleanup target $_wt_name"
-        continue
-        ;;
-    esac
-    wt_phase="${_wt_name%-*}"
-    wt_plan="${_wt_name#*-}"
-    if cleanup_output=$(LBWC_AUTOMATIC_CLEANUP=1 bash "$SCRIPT_DIR/worktree-cleanup.sh" "$wt_phase" "$wt_plan" 2>&1); then
-      case "$cleanup_output" in
-        scan_only\|*) log_action "scan-only stale worktree: $cleanup_output" ;;
-        *) log_action "cleaned stale worktree: $_wt_name ($_detail)" ;;
-      esac
-    else
-      log_action "failed to clean worktree: $_wt_name (fail-silent)"
-    fi
+    cleanup_one_worktree "$_wt_name" "$_detail"
   done
 
   log_action "stale worktrees cleanup completed"
