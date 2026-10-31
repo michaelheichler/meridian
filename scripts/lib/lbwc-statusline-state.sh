@@ -67,8 +67,10 @@ read_manifest_state() {
 }
 
 read_phase_from_state_file() {
+  local state_phase
   if [ "$PHASE" = "none" ] && [ -f "$PLANNING_DIR/STATE.md" ]; then
-    printf -v PHASE '%s' "$(sed -n 's/^Phase:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$PLANNING_DIR/STATE.md" 2>/dev/null | head -1)"
+    state_phase=$(sed -n 's/^Phase:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$PLANNING_DIR/STATE.md" 2>/dev/null | head -1) || state_phase=''
+    printf -v PHASE '%s' "$state_phase"
     [ -n "$PHASE" ] || printf -v PHASE '%s' none
   fi
 }

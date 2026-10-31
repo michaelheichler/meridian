@@ -56,35 +56,43 @@ split_agent_definition() {
 }
 
 split_ledger_new() {
-  local original_registry="$1" original_routing="$2" out_ledger="$3"
-  printf -v "$out_ledger" '%s' "$(jq -cn --arg registry "$original_registry" --arg routing "$original_routing" '{registry:$registry,routing:$routing,panes:[],agents:[],names:[]}')"
+  local original_registry="$1" original_routing="$2" out_ledger="$3" built
+  built=$(jq -cn --arg registry "$original_registry" --arg routing "$original_routing" '{registry:$registry,routing:$routing,panes:[],agents:[],names:[]}') || return 1
+  printf -v "$out_ledger" '%s' "$built"
 }
 
 split_ledger_add() {
-  local ledger="$1" field="$2" value="$3" out_ledger="$4"
-  printf -v "$out_ledger" '%s' "$(jq -c --arg field "$field" --arg value "$value" '.[$field] += [$value]' <<<"$ledger")"
+  local ledger="$1" field="$2" value="$3" out_ledger="$4" extended
+  extended=$(jq -c --arg field "$field" --arg value "$value" '.[$field] += [$value]' <<<"$ledger") || return 1
+  printf -v "$out_ledger" '%s' "$extended"
 }
 
 split_abort() {
-  local ledger="$1" message="$2"
-  rollback_split_group "$(jq -r '.registry' <<<"$ledger")" "$(jq -r '.routing' <<<"$ledger")" "$(jq -r '.panes | join("\n")' <<<"$ledger")" "$(jq -r '.agents | join("\n")' <<<"$ledger")"
+  local ledger="$1" message="$2" saved_registry saved_routing pane_ids agent_ids
+  saved_registry=$(jq -r '.registry' <<<"$ledger") \
+    && saved_routing=$(jq -r '.routing' <<<"$ledger") \
+    && pane_ids=$(jq -r '.panes | join("\n")' <<<"$ledger") \
+    && agent_ids=$(jq -r '.agents | join("\n")' <<<"$ledger") \
+    || fail "$message (rollback ledger is unreadable, nothing was restored)"
+  rollback_split_group "$saved_registry" "$saved_routing" "$pane_ids" "$agent_ids"
   fail "$message"
 }
 
 split_group_open() {
-  local definitions="$1" session="$2" out_registry="$3" out_target="$4" out_ledger="$5"
-  local current_registry routing_table agent_limit orchestrator_pane opened_ledger
+  local definitions="$1" session="$2" out_registry="$3" out_target="$4" out_ledger="$5" out_layout="$6"
+  local current_registry routing_table agent_limit orchestrator_pane opened_ledger opened_layout
   agent_manifest_with_lock "$TMUX_RUNTIME_CONTROL_ROOT" validate_split_group_definitions "$definitions" || fail "${SPLIT_VALIDATION_ERROR:-generated agent validation failed}"
   tmux_runtime_lock_acquire registry 5000 30000
   current_registry=$(tmux_runtime_registry_read)
   routing_table=$(cat "$TMUX_RUNTIME_BUS_ROOT/routing-table.json")
-  tmux_layout_name >/dev/null
+  opened_layout=$(tmux_layout_name)
   agent_limit=$(tmux_max_agents)
   [ $(( $(jq '[.agents[] | select(.state != "shutdown")] | length' <<<"$current_registry") + $(jq 'length' <<<"$definitions") )) -le "$agent_limit" ] || fail "tmux agent limit exceeded: $agent_limit"
   [ "$session" = "$(jq -r '.tmux.session' <<<"$current_registry")" ] || fail 'session does not match registry'
   orchestrator_pane=$(jq -r '.tmux.orchestrator_target' <<<"$current_registry")
   tmux_pane_exists "$orchestrator_pane" || fail 'registered orchestrator pane does not exist'
-  split_ledger_new "$current_registry" "$routing_table" opened_ledger
+  split_ledger_new "$current_registry" "$routing_table" opened_ledger || fail 'cannot build the rollback ledger'
+  printf -v "$out_layout" '%s' "$opened_layout"
   printf -v "$out_registry" '%s' "$current_registry"
   printf -v "$out_target" '%s' "$orchestrator_pane"
   printf -v "$out_ledger" '%s' "$opened_ledger"
@@ -108,8 +116,8 @@ split_member_credential() {
   new_capability=$(tmux_runtime_capability)
   new_hash=$(tmux_runtime_capability_hash "$new_capability")
   credential=$(jq -n --arg agent_id "$agent_id" --arg contract_id "$contract_id" --arg capability "$new_capability" '{agent_id:$agent_id,contract_id:$contract_id,capability:$capability}')
+  split_ledger_add "$in_ledger" agents "$agent_id" next_ledger || split_abort "$in_ledger" "cannot record agent capability: $agent_id"
   tmux_runtime_atomic_json "$TMUX_RUNTIME_BUS_ROOT/credentials/$agent_id.json" "$credential" || split_abort "$in_ledger" "cannot publish agent capability: $agent_id"
-  split_ledger_add "$in_ledger" agents "$agent_id" next_ledger
   printf -v "$out_capability" '%s' "$new_capability"
   printf -v "$out_hash" '%s' "$new_hash"
   printf -v "$out_ledger" '%s' "$next_ledger"
@@ -122,8 +130,9 @@ split_member_pane() {
   new_pane=$(jq -r '.pane_id' <<<"$prepared") || split_abort "$in_ledger" "cannot resolve generated agent pane identity: $agent_id"
   new_target=$(jq -r '.target' <<<"$prepared") || split_abort "$in_ledger" "cannot resolve generated agent target: $agent_id"
   [[ "$new_pane" =~ ^%[0-9]+$ ]] && tmux_runtime_valid_target "$new_target" || split_abort "$in_ledger" "generated agent pane identity is invalid: $agent_id"
-  split_ledger_add "$in_ledger" panes "$new_pane" next_ledger
-  split_ledger_add "$next_ledger" names "$generated_name" next_ledger
+  split_ledger_add "$in_ledger" panes "$new_pane" next_ledger \
+    && split_ledger_add "$next_ledger" names "$generated_name" next_ledger \
+    || { tmux kill-pane -t "$new_pane" >/dev/null 2>&1 || true; split_abort "$in_ledger" "cannot record generated agent pane: $agent_id"; }
   printf -v "$out_pane" '%s' "$new_pane"
   printf -v "$out_target" '%s' "$new_target"
   printf -v "$out_ledger" '%s' "$next_ledger"
@@ -138,14 +147,15 @@ split_member_register() {
 }
 
 split_group_launch() {
-  local ledger="$1" registry="$2" orchestrator_target="$3" capabilities="$4" session="$5" pane_id generated_name agent_id layout_name
+  local ledger="$1" registry="$2" orchestrator_target="$3" capabilities="$4" session="$5" layout_name="$6" pane_id generated_name agent_id launch_rows
+  launch_rows=$(jq -r '[.panes, .names, .agents] | transpose[] | @tsv' <<<"$ledger") || split_abort "$ledger" 'cannot read the generated agent ledger'
   if ! tmux_runtime_write_registry_route_bundle "$registry"; then
     split_abort "$ledger" 'cannot publish generated agent registry and routing table'
   fi
   while IFS=$'\t' read -r pane_id generated_name agent_id; do
+    [ -n "$pane_id" ] || continue
     launch_agent "$orchestrator_target" "$pane_id" "$generated_name" || split_abort "$ledger" "cannot launch generated agent: $agent_id"
-  done < <(jq -r '[.panes, .names, .agents] | transpose[] | @tsv' <<<"$ledger")
-  layout_name=$(tmux_layout_name)
+  done <<<"$launch_rows"
   if ! apply_tmux_layout "$session" "$layout_name"; then
     split_abort "$ledger" 'cannot arrange generated agent panes'
   fi
@@ -154,16 +164,16 @@ split_group_launch() {
 }
 
 split_group() {
-  local definitions="$1" registry orchestrator_target ledger item agent_id generated contract_id target pane_id capability hash capabilities='[]'
-  split_group_open "$definitions" "$session" registry orchestrator_target ledger
+  local definitions="$1" registry orchestrator_target ledger item agent_id generated contract_id target pane_id capability hash layout capabilities='[]'
+  split_group_open "$definitions" "$session" registry orchestrator_target ledger layout
   while IFS= read -r item; do
     split_member_identity "$item" "$registry" agent_id generated contract_id
     split_member_credential "$ledger" "$agent_id" "$contract_id" capability hash ledger
     split_member_pane "$ledger" "$orchestrator_target" "$agent_id" "$contract_id" "$generated" pane_id target ledger
-    capabilities=$(jq --arg id "$agent_id" --arg capability "$capability" '. + [{agent_id: $id, capability: $capability}]' <<<"$capabilities")
+    capabilities=$(jq --arg id "$agent_id" --arg capability "$capability" '. + [{agent_id: $id, capability: $capability}]' <<<"$capabilities") || split_abort "$ledger" "cannot record agent capability: $agent_id"
     split_member_register "$ledger" "$registry" "$agent_id" "$generated" "$contract_id" "$target" "$pane_id" "$hash" registry
   done < <(jq -c '.[]' <<<"$definitions")
-  split_group_launch "$ledger" "$registry" "$orchestrator_target" "$capabilities" "$session"
+  split_group_launch "$ledger" "$registry" "$orchestrator_target" "$capabilities" "$session" "$layout"
 }
 
 split_agent() {

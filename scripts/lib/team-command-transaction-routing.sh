@@ -14,20 +14,21 @@ planning_routing_available() {
 }
 
 resolve_routing_saved() {
-  local engineer="$1" out_record="$2" route_json merged_config workflow_effort
+  local engineer="$1" out_record="$2" route_json merged_config workflow_effort saved_record
   route_json=$(bash "$SCRIPT_DIR/lbwc-routing.sh" resolve "$ACTIVE_CONTROL_ROOT" "$engineer") \
     || fail "route resolution failed for '$engineer': $route_json"
   merged_config=$(lbwc_merged_config "$ACTIVE_CONTROL_ROOT/config.json")
   workflow_effort=$(jq -r '.effort // "balanced"' <<< "$merged_config")
   case "$workflow_effort" in thorough|balanced|fast|turbo) ;; *) workflow_effort="balanced" ;; esac
-  printf -v "$out_record" '%s' "$(jq -c --arg workflow_effort "$workflow_effort" '{
-    mode: "saved", profile: .profile, model: .model, reasoning: .reasoning,
+  saved_record=$(jq -c --arg workflow_effort "$workflow_effort" '{
+    mode: "saved", profile: (.profile | tostring), model: (.model | tostring), reasoning: .reasoning,
     effort: (if .reasoning == null then "" else .reasoning end),
-    workflow_effort: $workflow_effort, catalog: null}' <<< "$route_json")"
+    workflow_effort: $workflow_effort, catalog: null}' <<< "$route_json") || fail 'could not build the saved routing record'
+  printf -v "$out_record" '%s' "$saved_record"
 }
 
 resolve_routing_seeded() {
-  local out_record="$1" binary_path catalog_json model reasoning
+  local out_record="$1" binary_path catalog_json model reasoning seeded_record
   binary_path="${CLAUDE_CODE_EXECPATH:-}"
   if [ -z "$binary_path" ]; then
     binary_path=$(command -v claude 2>/dev/null || true)
@@ -42,9 +43,10 @@ resolve_routing_seeded() {
     || fail "no native host model in capability catalog"
   reasoning=$(jq -c '.reasoning.accepted_values[] | select(. == "high")' <<< "$catalog_json" | head -1)
   [ -n "$reasoning" ] || fail "no high reasoning value in capability catalog"
-  printf -v "$out_record" '%s' "$(jq -cn --arg model "$model" --argjson reasoning "$reasoning" --arg catalog "$catalog_json" '{
+  seeded_record=$(jq -cn --arg model "$model" --argjson reasoning "$reasoning" --arg catalog "$catalog_json" '{
     mode: "seeded", profile: "balanced", model: $model, reasoning: $reasoning, effort: "high",
-    workflow_effort: "balanced", catalog: $catalog}')"
+    workflow_effort: "balanced", catalog: $catalog}') || fail 'could not build the seeded routing record'
+  printf -v "$out_record" '%s' "$seeded_record"
 }
 
 resolve_routing_max_turns() {
@@ -65,7 +67,7 @@ resolve_routing_max_turns() {
 }
 
 resolve_routing() {
-  local engineer="$1" out_record="$2" record workflow_effort max_turns
+  local engineer="$1" out_record="$2" record workflow_effort max_turns final_record
   if [ "$CONTROL_ROOT_KIND" = "active-planning" ] && planning_routing_available; then
     resolve_routing_saved "$engineer" record
   else
@@ -73,5 +75,6 @@ resolve_routing() {
   fi
   workflow_effort=$(jq -r '.workflow_effort' <<< "$record")
   resolve_routing_max_turns "$engineer" "$workflow_effort" max_turns
-  printf -v "$out_record" '%s' "$(jq -c --argjson turns "$max_turns" '. + {max_turns: $turns} | del(.workflow_effort)' <<< "$record")"
+  final_record=$(jq -c --argjson turns "$max_turns" '. + {max_turns: $turns} | del(.workflow_effort)' <<< "$record") || fail 'could not finish the routing record'
+  printf -v "$out_record" '%s' "$final_record"
 }
