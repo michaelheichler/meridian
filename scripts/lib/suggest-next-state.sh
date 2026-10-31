@@ -229,10 +229,10 @@ classify_phase() {
 }
 
 set_active_phase() {
-  active_phase_dir="$1"
-  active_phase_num="$2"
-  active_phase_name="$3"
-  active_phase_plans="$4"
+  printf -v active_phase_dir '%s' "$1"
+  printf -v active_phase_num '%s' "$2"
+  printf -v active_phase_name '%s' "$3"
+  printf -v active_phase_plans '%s' "$4"
 }
 
 scan_qa_results() {

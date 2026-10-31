@@ -6,12 +6,10 @@ TODO_UAT_RESULT=""
 TODO_UAT_DISPOSITION=""
 
 reset_uat_deviation_fields() {
-  TODO_UAT_SIGNATURE=""
-  TODO_UAT_SOURCE_PLAN=""
-  TODO_UAT_SOURCE_PATH=""
-  TODO_UAT_DEVIATION=""
-  TODO_UAT_RESULT=""
-  TODO_UAT_DISPOSITION=""
+  local field
+  for field in TODO_UAT_SIGNATURE TODO_UAT_SOURCE_PLAN TODO_UAT_SOURCE_PATH TODO_UAT_DEVIATION TODO_UAT_RESULT TODO_UAT_DISPOSITION; do
+    printf -v "$field" '%s' ""
+  done
 }
 
 capture_uat_deviation_field() {
