@@ -9,7 +9,7 @@ def parsed_arrays:
 | ([ $raw[].group | select(. != null and . != "") ] | first_seen) as $families
 | (if ($families | length) < 2 then 1 else 2 end) as $min_hits
 | (
-    ($lines | parsed_arrays)
+    (split("\n") | parsed_arrays)
     | map(select(
         ([.[] as $member | $families | index($member)] | map(select(. != null)) | length) >= $min_hits
       ))

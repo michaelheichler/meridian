@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-LBWC_COMPOSE_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LBWC_COMPOSE_LIB_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 lbwc_extract_model_records() {
   local binary="$1" output="$2" entries metadata entry remainder selector_id group display_name
@@ -37,10 +37,10 @@ lbwc_extract_host_enum_candidates() {
 }
 
 lbwc_compose_model_catalog() {
-  local records_path="$1" candidates_path="$2" output="$3" lines_json filter
+  local records_path="$1" candidates_path="$2" output="$3" filter
   filter="$LBWC_COMPOSE_LIB_DIR/compose-model-catalog.jq"
-  lines_json=$(jq -Rsc 'split("\n")' "$candidates_path") || return 1
-  jq -n --slurpfile records "$records_path" --argjson lines "$lines_json" -f "$filter" > "$output"
+  # Candidates are file input, not argv, so host-sized catalogs stay under ARG_MAX.
+  jq -Rs --slurpfile records "$records_path" -f "$filter" "$candidates_path" > "$output"
 }
 
 lbwc_lookup_agent_model_id() {
@@ -60,58 +60,46 @@ lbwc_lookup_agent_model_id() {
   printf '%s\n' "$mapped"
 }
 
-lbwc_build_catalog() {
-  local binary="$1" output="$2" before after version detected_at help_path models_path reasoning_path associations_path host_enum_path composed_path envelope
-  envelope="$LBWC_COMPOSE_LIB_DIR/capability-catalog.jq"
-  help_path=$(mktemp "${TMPDIR:-/tmp}/lbwc-claude-help.XXXXXX") || fail 'could not create help temporary file'
-  HELP_TEMP="$help_path"
-  models_path=$(mktemp "${TMPDIR:-/tmp}/lbwc-claude-models.XXXXXX") || {
-    rm -f "$help_path"
-    fail 'could not create model temporary file'
-  }
-  MODELS_TEMP="$models_path"
-  reasoning_path=$(mktemp "${TMPDIR:-/tmp}/lbwc-claude-reasoning.XXXXXX") || {
-    rm -f "$help_path" "$models_path"
-    fail 'could not create reasoning temporary file'
-  }
-  REASONING_TEMP="$reasoning_path"
-  associations_path=$(mktemp "${TMPDIR:-/tmp}/lbwc-claude-model-associations.XXXXXX") || {
-    rm -f "$help_path" "$models_path" "$reasoning_path"
-    fail 'could not create model-association temporary file'
-  }
-  ASSOCIATIONS_TEMP="$associations_path"
-  host_enum_path=$(mktemp "${TMPDIR:-/tmp}/lbwc-claude-host-enum.XXXXXX") || {
-    rm -f "$help_path" "$models_path" "$reasoning_path" "$associations_path"
-    fail 'could not create host-enum temporary file'
-  }
-  HOST_ENUM_TEMP="$host_enum_path"
-  composed_path=$(mktemp "${TMPDIR:-/tmp}/lbwc-claude-composed-models.XXXXXX") || {
-    rm -f "$help_path" "$models_path" "$reasoning_path" "$associations_path" "$host_enum_path"
-    fail 'could not create composed-model temporary file'
-  }
-  COMPOSED_MODELS_TEMP="$composed_path"
-  before=$(sha256_file "$binary") || fail 'could not fingerprint Claude Code executable'
-  version=$(extract_version "$binary")
-  extract_help "$binary" "$help_path"
-  extract_model_records "$binary" "$models_path"
-  lbwc_extract_host_enum_candidates "$binary" "$host_enum_path"
-  lbwc_compose_model_catalog "$models_path" "$host_enum_path" "$composed_path" \
-    || fail 'could not compose host Agent model catalog'
-  extract_reasoning_values "$help_path" "$reasoning_path"
-  extract_model_associations "$binary" "$associations_path"
-  after=$(sha256_file "$binary") || fail 'could not recheck Claude Code executable fingerprint'
-  [ "$before" = "$after" ] || fail 'Claude Code executable changed during capability extraction'
+lbwc_alloc_catalog_temps() {
+  local stem="${TMPDIR:-/tmp}/lbwc-claude"
+  HELP_TEMP=$(mktemp "$stem-help.XXXXXX") || fail 'could not create help temporary file'
+  MODELS_TEMP=$(mktemp "$stem-models.XXXXXX") || fail 'could not create model temporary file'
+  REASONING_TEMP=$(mktemp "$stem-reasoning.XXXXXX") || fail 'could not create reasoning temporary file'
+  ASSOCIATIONS_TEMP=$(mktemp "$stem-model-associations.XXXXXX") || fail 'could not create model-association temporary file'
+  HOST_ENUM_TEMP=$(mktemp "$stem-host-enum.XXXXXX") || fail 'could not create host-enum temporary file'
+  COMPOSED_MODELS_TEMP=$(mktemp "$stem-composed-models.XXXXXX") || fail 'could not create composed-model temporary file'
+}
+
+lbwc_write_catalog_envelope() {
+  local binary="$1" version="$2" sha256="$3" output="$4" detected_at
   detected_at=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
   jq -S -n \
     --arg binary_path "$binary" \
     --arg version "$version" \
-    --arg sha256 "$after" \
+    --arg sha256 "$sha256" \
     --arg detected_at "$detected_at" \
-    --slurpfile composed "$composed_path" \
-    --slurpfile reasoning "$reasoning_path" \
-    --slurpfile associations "$associations_path" \
-    -f "$envelope" > "$output"
-  rm -f "$help_path" "$models_path" "$reasoning_path" "$associations_path" "$host_enum_path" "$composed_path"
+    --slurpfile composed "$COMPOSED_MODELS_TEMP" \
+    --slurpfile reasoning "$REASONING_TEMP" \
+    --slurpfile associations "$ASSOCIATIONS_TEMP" \
+    -f "$LBWC_COMPOSE_LIB_DIR/capability-catalog.jq" > "$output"
+}
+
+lbwc_build_catalog() {
+  local binary="$1" output="$2" before after version
+  lbwc_alloc_catalog_temps
+  before=$(sha256_file "$binary") || fail 'could not fingerprint Claude Code executable'
+  version=$(extract_version "$binary")
+  extract_help "$binary" "$HELP_TEMP"
+  extract_model_records "$binary" "$MODELS_TEMP"
+  lbwc_extract_host_enum_candidates "$binary" "$HOST_ENUM_TEMP"
+  lbwc_compose_model_catalog "$MODELS_TEMP" "$HOST_ENUM_TEMP" "$COMPOSED_MODELS_TEMP" \
+    || fail 'could not compose host Agent model catalog'
+  extract_reasoning_values "$HELP_TEMP" "$REASONING_TEMP"
+  extract_model_associations "$binary" "$ASSOCIATIONS_TEMP"
+  after=$(sha256_file "$binary") || fail 'could not recheck Claude Code executable fingerprint'
+  [ "$before" = "$after" ] || fail 'Claude Code executable changed during capability extraction'
+  lbwc_write_catalog_envelope "$binary" "$version" "$after" "$output"
+  rm -f "$HELP_TEMP" "$MODELS_TEMP" "$REASONING_TEMP" "$ASSOCIATIONS_TEMP" "$HOST_ENUM_TEMP" "$COMPOSED_MODELS_TEMP"
 }
 
 lbwc_map_agent_model_from_binary() {
@@ -152,8 +140,17 @@ lbwc_catalog_fingerprint_matches() {
   [ "$expected" = "$actual" ]
 }
 
+lbwc_map_agent_model_via_catalog() {
+  local catalog="$1" binary="$2" selector="$3"
+  if lbwc_catalog_fingerprint_matches "$catalog" "$binary"; then
+    lbwc_lookup_agent_model_id "$catalog" "$selector"
+    return $?
+  fi
+  lbwc_map_agent_model_from_binary "$binary" "$selector"
+}
+
 lbwc_map_agent_model() {
-  local source="$1" selector="$2" catalog_binary live_binary mapped
+  local source="$1" selector="$2" catalog_binary live_binary
   [ -n "$selector" ] || return 1
   if [ -f "$source" ] && jq -e '.schema_version == 1 and .source.sha256' "$source" >/dev/null 2>&1; then
     catalog_binary=$(jq -r '.source.binary_path' "$source")
@@ -162,21 +159,11 @@ lbwc_map_agent_model() {
       live_binary=$(resolve_claude_binary 2>/dev/null || true)
     fi
     if [ -n "$live_binary" ]; then
-      if lbwc_catalog_fingerprint_matches "$source" "$live_binary"; then
-        mapped=$(lbwc_lookup_agent_model_id "$source" "$selector") || return 1
-        printf '%s\n' "$mapped"
-        return 0
-      fi
-      lbwc_map_agent_model_from_binary "$live_binary" "$selector"
+      lbwc_map_agent_model_via_catalog "$source" "$live_binary" "$selector"
       return $?
     fi
     if [ -n "$catalog_binary" ] && [ -f "$catalog_binary" ] && [ -x "$catalog_binary" ]; then
-      if lbwc_catalog_fingerprint_matches "$source" "$catalog_binary"; then
-        mapped=$(lbwc_lookup_agent_model_id "$source" "$selector") || return 1
-        printf '%s\n' "$mapped"
-        return 0
-      fi
-      lbwc_map_agent_model_from_binary "$catalog_binary" "$selector"
+      lbwc_map_agent_model_via_catalog "$source" "$catalog_binary" "$selector"
       return $?
     fi
     return 1

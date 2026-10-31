@@ -408,6 +408,51 @@ extract_init_bootstrap() {
   [ "$status" -eq 0 ]
 }
 
+compose_catalog() {
+  env -u CDPATH bash -c '. "$1"; lbwc_compose_model_catalog "$2" "$3" "$4"' _ \
+    "$REPO_ROOT/scripts/lib/compose-model-catalog.sh" "$1" "$2" "$3"
+}
+
+@test "composing a catalog from host-sized candidates and records succeeds without argv overflow" {
+  local records="$TEST_ROOT/records.json" candidates="$TEST_ROOT/candidates.txt" composed="$TEST_ROOT/composed.json"
+  jq -nc '[range(30000) | {selector:"claude-m\(.)", label:"L", description:"L", group:"g\(. % 3)"}]' > "$records"
+  jq -nc 'range(45000) | ["g0","g1","g2","x1","x2","x3"]' > "$candidates"
+  [ "$(wc -c < "$records")" -gt 2000000 ]
+  [ "$(wc -c < "$candidates")" -gt 1300000 ]
+
+  run compose_catalog "$records" "$candidates" "$composed"
+
+  [ "$status" -eq 0 ]
+  run jq -e '
+    .host_agent_enum == ["g0","g1","g2","x1","x2","x3"]
+    and (.models | length) == 30006
+  ' "$composed"
+  [ "$status" -eq 0 ]
+}
+
+@test "composing a catalog ignores noise and blank candidate lines and keeps the matching host enum" {
+  local records="$TEST_ROOT/records.json" candidates="$TEST_ROOT/candidates.txt" composed="$TEST_ROOT/composed.json"
+  printf '%s' '[{"selector":"a","label":"A","description":"A","group":"g"},{"selector":"b","label":"B","description":"B","group":"h"}]' > "$records"
+  printf '["g","h","a"]\nnoise\n\n["a"]' > "$candidates"
+
+  run compose_catalog "$records" "$candidates" "$composed"
+
+  [ "$status" -eq 0 ]
+  run jq -e '
+    . == {
+      models: [
+        {selector:"a", label:"A", description:"A"},
+        {selector:"b", label:"B", description:"B"},
+        {selector:"g", label:"g", description:"g"},
+        {selector:"h", label:"h", description:"h"}
+      ],
+      agent_model_ids: {a:"a", b:"h", g:"g", h:"h"},
+      host_agent_enum: ["g","h","a"]
+    }
+  ' "$composed"
+  [ "$status" -eq 0 ]
+}
+
 @test "refresh rejects traversal components before path normalization" {
   local binary="$TEST_ROOT/claude" traversal
   make_claude_fixture "$binary"
