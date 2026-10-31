@@ -34,6 +34,13 @@ run_workflow() {
   run node "$HARNESS" "$rendered_file" "$responses_json"
 }
 
+make_script_fixture() {
+  fixture_dir=$(mktemp -d)
+  mkdir -p "$fixture_dir/scripts/lib" "$fixture_dir/templates/workflows"
+  cp "$SCRIPT" "$fixture_dir/scripts/render-workflow-template.sh"
+  cp "$BATS_TEST_DIRNAME/../scripts/lib/require-bash.sh" "$fixture_dir/scripts/lib/require-bash.sh"
+}
+
 wrap_body_for_syntax_check() {
   local file="$1" wrapped="${1}.syntax-check.mjs"
   { printf '(async () => {\n'; tail -n +2 "$file"; printf '})\n'; } > "$wrapped"
@@ -219,9 +226,7 @@ render_solo() {
 }
 
 @test "a template with no phase calls fails with a clear message instead of a bare pipefail exit" {
-  fixture_dir=$(mktemp -d)
-  mkdir -p "$fixture_dir/scripts" "$fixture_dir/templates/workflows"
-  cp "$SCRIPT" "$fixture_dir/scripts/render-workflow-template.sh"
+  make_script_fixture
   printf 'const JOB = @@JOB@@;\nconst TASK_ID = @@TASK_ID@@;\nconst ROLE = @@ROLE@@;\nconst AGENT_TYPE = @@AGENT_TYPE@@;\nconst MODEL = @@MODEL@@;\nconst EFFORT = @@EFFORT@@;\n' \
     > "$fixture_dir/templates/workflows/solo.js.tpl"
 
@@ -234,9 +239,7 @@ render_solo() {
 }
 
 @test "a template carrying an undeclared marker fails the unresolved-token scan" {
-  fixture_dir=$(mktemp -d)
-  mkdir -p "$fixture_dir/scripts" "$fixture_dir/templates/workflows"
-  cp "$SCRIPT" "$fixture_dir/scripts/render-workflow-template.sh"
+  make_script_fixture
   printf 'const JOB = @@JOB@@;\nconst TASK_ID = @@TASK_ID@@;\nconst ROLE = @@ROLE@@;\nconst AGENT_TYPE = @@AGENT_TYPE@@;\nconst MODEL = @@MODEL@@;\nconst EFFORT = @@EFFORT@@;\nconst STRAY = @@UNDECLARED_MARKER@@;\n\nawait phase("Execute");\n\nreturn { status: "complete" };\n' \
     > "$fixture_dir/templates/workflows/solo.js.tpl"
 

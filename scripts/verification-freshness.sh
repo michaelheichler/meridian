@@ -1,4 +1,3 @@
-#!/bin/bash
 # shellcheck disable=SC2034
 # verification-freshness.sh: shared helpers for determining whether a
 # VERIFICATION.md artifact is stale relative to current product-code state.
@@ -17,7 +16,9 @@ FRESHNESS_EXCLUDE_PATHSPEC=(
   ':!.lbwc-planning' ':!CLAUDE.md' ':!VERSION'
   ':!.claude-plugin/plugin.json' ':!.claude-plugin/marketplace.json' ':!marketplace.json'
 )
-VERIFICATION_FRESHNESS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+VERIFICATION_FRESHNESS_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+. "$VERIFICATION_FRESHNESS_DIR/lib/require-bash.sh"
+require_bash_43
 
 extract_verified_at_commit() {
   local verif_file="$1"

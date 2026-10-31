@@ -2,6 +2,8 @@
 set -euo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
+. "$SCRIPT_DIR/lib/require-bash.sh"
+require_bash_43
 TEMPLATE_DIR="$SCRIPT_DIR/../templates/workflows"
 SHAPE="${1:-}"
 shift || true

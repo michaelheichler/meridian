@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
-set -Eeuo pipefail
+set -euo pipefail
+set -E
 umask 077
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+. "$SCRIPT_DIR/lib/require-bash.sh"
+require_bash_43
 
 fail() {
   printf 'tmux-spawn-group: %s\n' "$1" >&2
@@ -96,8 +99,7 @@ await_ack_one() {
     '{agent_id:$agent_id,generated_name:$agent_id,message_id:$message_id,type:$type,payload:$payload}'
 }
 
-dispatch() {
-  local agents_json preflight provision session job_payload item agent_id results='[]' result_entry status='completed'
+validate_dispatch_args() {
   require_token "$main_id" 'main id'
   require_token "$contract_id" 'contract id'
   require_token "$contract_digest" 'contract digest'
@@ -106,13 +108,10 @@ dispatch() {
   [ -n "$job" ] || fail '--job is required'
   [[ "$timeout_ms" =~ ^[1-9][0-9]*$ ]] || fail '--timeout-ms must be a positive millisecond count'
   [ -d "$project_root" ] || fail "project root does not exist: $project_root"
-  run_id="${run_id:-$contract_id}"
-  require_token "$run_id" 'run id'
-  agents_json=$(build_agents_json)
-  job_payload=$(jq -nc --arg brief "$job" '{brief:$brief}')
+}
 
-  bash "$SCRIPT_DIR/tmux-preflight.sh" --project-root "$project_root" --control-root "$control_root" --main-id "$main_id" >/dev/null || fail 'preflight failed'
-
+provision_session() {
+  local provision
   if [ -n "$main_capability" ]; then
     provision=$(orchestrator provision --main-id "$main_id" --orchestrator-id "$main_id" --orchestrator-session-id "$main_id" --orchestrator-capability "$main_capability") || fail 'provision failed'
   else
@@ -120,23 +119,46 @@ dispatch() {
     main_capability=$(jq -r '.main_capability // empty' <<<"$provision")
   fi
   [ -n "$main_capability" ] || fail 'provision did not return a main capability'
-  session=$(jq -r '.tmux_session // empty' <<<"$provision")
-  [ -n "$session" ] || fail 'provision did not return a tmux session'
+  DISPATCH_SESSION=$(jq -r '.tmux_session // empty' <<<"$provision")
+  [ -n "$DISPATCH_SESSION" ] || fail 'provision did not return a tmux session'
+}
 
-  if ! orchestrator split-group --session "$session" --agents "$agents_json" --orchestrator-id "$main_id" --orchestrator-session-id "$main_id" --orchestrator-capability "$main_capability"; then
+split_group() {
+  local agents_json="$1"
+  if ! orchestrator split-group --session "$DISPATCH_SESSION" --agents "$agents_json" --orchestrator-id "$main_id" --orchestrator-session-id "$main_id" --orchestrator-capability "$main_capability"; then
     rollback_split
     fail 'split-group failed'
   fi
+}
 
+run_agent_jobs() {
+  local agents_json="$1" job_payload="$2" item agent_id result_entry
+  DISPATCH_RESULTS='[]'
+  DISPATCH_STATUS='completed'
   while IFS= read -r item; do
     agent_id=$(jq -r '.agent_id' <<<"$item")
     bus publish --to "$agent_id" --from-agent-id "$main_id" --from-session-id "$main_id" --from-role orchestrator --capability "$main_capability" --type job --correlation-id "$contract_id" --payload "$job_payload" >/dev/null || fail "publish failed for $agent_id"
     result_entry=$(await_ack_one "$agent_id") || fail "await/ack failed for $agent_id"
-    [ "$(jq -r '.type' <<<"$result_entry")" = result ] || status='failed'
-    results=$(jq -c --argjson entry "$result_entry" '. + [$entry]' <<<"$results")
+    [ "$(jq -r '.type' <<<"$result_entry")" = result ] || DISPATCH_STATUS='failed'
+    DISPATCH_RESULTS=$(jq -c --argjson entry "$result_entry" '. + [$entry]' <<<"$DISPATCH_RESULTS")
   done < <(jq -c '.[]' <<<"$agents_json")
+}
 
-  jq -n --arg status "$status" --arg main_id "$main_id" --arg main_capability "$main_capability" --arg session "$session" --arg contract_id "$contract_id" --argjson agents "$results" \
+dispatch() {
+  local agents_json job_payload
+  validate_dispatch_args
+  run_id="${run_id:-$contract_id}"
+  require_token "$run_id" 'run id'
+  agents_json=$(build_agents_json)
+  job_payload=$(jq -nc --arg brief "$job" '{brief:$brief}')
+
+  bash "$SCRIPT_DIR/tmux-preflight.sh" --project-root "$project_root" --control-root "$control_root" --main-id "$main_id" >/dev/null || fail 'preflight failed'
+
+  provision_session
+  split_group "$agents_json"
+  run_agent_jobs "$agents_json" "$job_payload"
+
+  jq -n --arg status "$DISPATCH_STATUS" --arg main_id "$main_id" --arg main_capability "$main_capability" --arg session "$DISPATCH_SESSION" --arg contract_id "$contract_id" --argjson agents "$DISPATCH_RESULTS" \
     '{status:$status,main_id:$main_id,main_capability:$main_capability,tmux_session:$session,contract_id:$contract_id,agents:$agents}'
 }
 

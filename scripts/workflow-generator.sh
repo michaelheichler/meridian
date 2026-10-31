@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
-set -Eeuo pipefail
+set -euo pipefail
+set -E
 umask 077
 
-SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
-PLUGIN_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
+SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname "$0")" && pwd)
+. "$SCRIPT_DIR/lib/require-bash.sh"
+require_bash_43
+PLUGIN_ROOT=$(CDPATH='' cd -- "$SCRIPT_DIR/.." && pwd)
 . "$SCRIPT_DIR/lib/agent-manifest.sh"
 . "$SCRIPT_DIR/lib/workflow-manifest.sh"
 
@@ -106,12 +109,12 @@ esac
 if [ "${CONTRACT_PATH:0:1}" != "/" ]; then
   CONTRACT_PATH="$PWD/$CONTRACT_PATH"
 fi
-CONTRACT_PATH=$(cd "$(dirname "$CONTRACT_PATH")" 2>/dev/null && printf '%s/%s' "$(pwd -P)" "$(basename "$CONTRACT_PATH")") || fail "contract path is unavailable"
+CONTRACT_PATH=$(CDPATH='' cd -- "$(dirname "$CONTRACT_PATH")" 2>/dev/null && printf '%s/%s' "$(pwd -P)" "$(basename "$CONTRACT_PATH")") || fail "contract path is unavailable"
 [ -f "$CONTRACT_PATH" ] || fail "contract not found: $CONTRACT_PATH"
 
 PROJECT_ROOT=$(jq -r '.project_root // empty' "$CONTRACT_PATH" 2>/dev/null) || fail "invalid contract"
 [ -n "$PROJECT_ROOT" ] || fail "contract project root is required"
-PROJECT_ROOT=$(cd "$PROJECT_ROOT" 2>/dev/null && pwd -P) || fail "contract project root is unavailable"
+PROJECT_ROOT=$(CDPATH='' cd -- "$PROJECT_ROOT" 2>/dev/null && pwd -P) || fail "contract project root is unavailable"
 
 CONTRACT_SCHEMA_PREVIEW=$(jq -r '.schema_version // empty' "$CONTRACT_PATH" 2>/dev/null) || fail "invalid contract"
 [ "$CONTRACT_SCHEMA_PREVIEW" = "3" ] || fail "workflow generation requires a schema 3 contract"
