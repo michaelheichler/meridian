@@ -15,4 +15,4 @@ Then run a `.bats` file directly: `bats tests/some-thing.bats`.
 
 ## What's new
 
-New test coverage for transferred or newly hardened scripts should be written as `.bats` files under `tests/`, not as additional hand-rolled shell scripts. This keeps future coverage on one harness instead of two.
+Authors of new test coverage for transferred or newly hardened scripts should write `.bats` files under `tests/`, not additional hand-rolled shell scripts. This keeps future coverage on one harness instead of two.

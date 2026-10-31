@@ -1,6 +1,6 @@
 # LBWC Public Architecture
 
-LBWC is a Claude Code plugin for disciplined software delivery. The human owns direction. The main session owns orchestration. Generated agents receive only shell-issued work contracts.
+LBWC is a Claude Code plugin for disciplined software delivery. The human owns direction, the main session owns orchestration, and generated agents receive only shell-issued work contracts.
 
 ## One user route
 
@@ -79,7 +79,7 @@ planned -> dispatched -> running -> awaiting_review -> verified
 
 Invalid transitions fail closed. A worker cannot add paths, change roles, edit contract records, or promote its own result.
 
-Schema 3 native-team contracts also bind runtime kind, communication policy, generated-definition authority, and native shared task identity. `TaskCreated` must bind one pending contract. `TaskCompleted` is accepted only after that bound contract reaches `verified`.
+Schema 3 native-team contracts also bind runtime kind, communication policy, generated-definition authority, and native shared task identity. `TaskCreated` must bind one pending contract. `TaskCompleted` succeeds only after that bound contract reaches `verified`.
 
 ## Team boundaries
 
@@ -114,19 +114,19 @@ Command admission is not an operating-system sandbox. It blocks recognized gener
 
 Agents return typed handoffs and evidence. The main session validates that material before it changes durable state.
 
-- Plans are reviewed before build work begins.
+- Reviewers check plans before build work begins.
 - Build summaries identify completed task evidence.
 - QA returns a structured verdict. The main session writes `VERIFICATION.md`.
 - UAT remains a human checkpoint.
 - Failed QA or UAT opens a bounded remediation round with explicit stage state.
 
-The DevIQ ledger records local decisions, evidence, and blocks in append-only hash-chained JSONL files. It is advisory. It does not route work, grant permissions, or accept a phase.
+The DevIQ ledger records local decisions, evidence, and blocks in append-only hash-chained JSONL files. It is advisory. It neither routes work nor grants permissions, and it never accepts a phase.
 
 ## Status and telemetry
 
 The statusline is read-only. It reads Claude Code supplied fields when available and combines them with local project state. It shows phase progress, team status, QA or UAT state, and telemetry health. It does not call an API or read credentials.
 
-An idle teammate is observed for 120 seconds. LBWC then revalidates the manifest, contract, and idle token before returning native stop guidance. It does not send process signals, delete output, or clear ownership without a valid state transition.
+LBWC observes an idle teammate for 120 seconds, then revalidates the manifest, contract, and idle token before returning native stop guidance. It never sends process signals, deletes output, or clears ownership without a valid state transition.
 
 Session telemetry is local and advisory. The main session writes bounded, hash-chained events. Events never contain prompts, transcripts, tool payloads, secrets, or uploaded data.
 

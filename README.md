@@ -109,7 +109,7 @@ Template-granted Bash remains available for normal work. The guard blocks genera
 
 ## Teams, status, and release work
 
-LBWC runs its work through small team shapes. These are solo specialists, engineer and critic pairs, test-owner trios, and explicit native Claude Code teams through `/lbwc:team`. Native teams use generated `.claude/agents/` definitions and Claude's session-owned team and task storage. LBWC does not pre-author native team configuration. Each member receives only the paths its role owns. Critics receive no write allowance. The main session reviews evidence and persists approved artifacts. It also owns commits.
+LBWC runs its work through small team shapes. These are solo specialists, engineer and critic pairs, test-owner trios, and explicit native Claude Code teams through `/lbwc:team`. Native teams use generated `.claude/agents/` definitions and Claude's session-owned team and task storage. LBWC does not pre-author native team configuration, and each member receives only the paths its role owns, so critics receive no write allowance. The main session reviews evidence and persists approved artifacts. It also owns commits.
 
 The statusline is read-only. When available, it shows the model, context, and rate-limit fields that Claude Code supplies. It also shows project phase, task progress, active team state, QA or UAT status, and telemetry health. It does not call an API or read credentials.
 
@@ -156,6 +156,6 @@ The release scripts check local state. Publishing, tags, pushes, and history cha
 
 ## License and maintenance
 
-Thanks to VBW, BMAD, and other planning systems. This repository is the merging of my old "Agentic Project Love" Framework and VBW, a great script-based planning system. The port is from VBW to LBWC, and LBWC includes much of the VBW source code.
+Thanks to VBW, BMAD and similar planning systems. This repository is the merging of my old "Agentic Project Love" Framework and VBW, a great script-based planning system. The port is from VBW to LBWC, and LBWC includes much of the VBW source code.
 
 LBWC uses the [GNU General Public License v3.0 only](LICENSE). [Michael Heichler](https://github.com/michaelheichler) maintains it. Report bugs or propose changes through the [issue tracker](https://github.com/michaelheichler/lbwc/issues).

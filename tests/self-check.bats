@@ -53,10 +53,14 @@ spawn_guard() {
 
 @test "spawn guard blocks an unrelated role while a pair is open" {
   write_pair_manifest
+  local before
+  before=$(cksum < "$MANIFEST")
 
-  run -2 spawn_guard lbwc-scout-x
+  run -2 --separate-stderr spawn_guard lbwc-scout-x
 
   [ "$status" -eq 2 ]
+  [[ "$stderr" == *"Pair p1 "*"is open, spawn every member before starting other work."* ]]
+  [ "$(cksum < "$MANIFEST")" = "$before" ]
 }
 
 @test "spawn guard allows the paired name and flips its manifest entry to running" {
