@@ -1,5 +1,7 @@
 #!/usr/bin/env bats
 
+bats_require_minimum_version 1.5.0
+
 setup() {
   REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/.." && pwd)"
   SCRIPT="$REPO_ROOT/scripts/agent-lifecycle.sh"
@@ -13,14 +15,40 @@ teardown() {
   rm -rf "$TEST_ROOT"
 }
 
-@test "agent-lifecycle: malformed manifest fails with its status" {
-  mkdir -p "$PLANNING_DIR"
+assert_malformed_manifest_reports_on_stderr_only() {
   printf '{not valid json\n' > "$PLANNING_DIR/.agent-manifest.json"
 
-  run env LBWC_PLANNING_DIR="$PLANNING_DIR" bash "$SCRIPT" sweep
+  run --separate-stderr env LBWC_PLANNING_DIR="$PLANNING_DIR" bash "$SCRIPT" "$@" <<< '{"hook_event_name":"TeammateIdle","agent_type":"lbwc-python-engineer-calm-fox"}'
 
-  [ "$status" -ne 0 ]
-  [ "$output" = "agent_manifest_status=malformed" ]
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+  [ "$stderr" = "agent_manifest_status=malformed" ]
+}
+
+assert_silent_without_project() {
+  local event="$1"
+  shift
+  rm -rf "$PLANNING_DIR"
+
+  run env LBWC_PLANNING_DIR="$PLANNING_DIR" bash "$SCRIPT" "$@" <<< "{\"hook_event_name\":\"$event\",\"agent_type\":\"lbwc-python-engineer-calm-fox\"}"
+
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+bats_test_function --description "agent-lifecycle: a malformed manifest on sweep fails with exit 1 and stderr only" -- assert_malformed_manifest_reports_on_stderr_only sweep
+bats_test_function --description "agent-lifecycle: a malformed manifest on idle fails with exit 1 and stderr only" -- assert_malformed_manifest_reports_on_stderr_only idle
+
+bats_test_function --description "agent-lifecycle: idle without a planning dir exits 0 silently" -- assert_silent_without_project TeammateIdle idle
+bats_test_function --description "agent-lifecycle: check without a planning dir exits 0 silently" -- assert_silent_without_project TeammateIdle check
+bats_test_function --description "agent-lifecycle: touch start without a planning dir exits 0 silently" -- assert_silent_without_project SubagentStart touch start
+bats_test_function --description "agent-lifecycle: touch stop without a planning dir exits 0 silently" -- assert_silent_without_project SubagentStop touch stop
+
+@test "agent-lifecycle: touch start with a planning dir but no manifest exits 0 silently" {
+  run env LBWC_PLANNING_DIR="$PLANNING_DIR" bash "$SCRIPT" touch start <<< '{"hook_event_name":"SubagentStart","agent_type":"lbwc-python-engineer-calm-fox"}'
+
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
 }
 
 @test "agent-lifecycle: unavailable manifest library fails with its status" {

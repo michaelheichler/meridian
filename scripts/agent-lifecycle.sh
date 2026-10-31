@@ -2,12 +2,12 @@
 set -u
 
 lifecycle_manifest_error() {
-  printf 'agent_manifest_status=%s\n' "$1"
+  printf 'agent_manifest_status=%s\n' "$1" >&2
   exit 1
 }
 
 command -v jq >/dev/null 2>&1 || lifecycle_manifest_error unavailable
-SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
+SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname "$0")" && pwd)
 [ -f "$SCRIPT_DIR/lib/agent-manifest.sh" ] || lifecycle_manifest_error unavailable
 . "$SCRIPT_DIR/lib/agent-manifest.sh" || lifecycle_manifest_error unavailable
 . "$SCRIPT_DIR/lib/lbwc-control-root.sh" || lifecycle_manifest_error unavailable
@@ -161,6 +161,7 @@ touch_agent() {
     *) exit 0 ;;
   esac
   [ "$event" = "$expected_event" ] || exit 0
+  ! lifecycle_has_no_project || exit 0
   manifest=$(agent_manifest_read "$PLANNING_DIR" 2>/dev/null) || lifecycle_manifest_failure
   name=$(extract_known_agent_name "$manifest") || exit 0
   now_iso=$(lifecycle_epoch_iso "$(lifecycle_now_epoch)") || exit 0
@@ -173,9 +174,8 @@ touch_agent() {
   exit 0
 }
 
-lifecycle_contract_is_valid() {
-  local entry="$1" contract_path contract root expected_root contract_id role task schema_version capabilities
-  jq -e '.contract_enabled == true' <<< "$entry" >/dev/null 2>&1 || return 1
+lifecycle_resolve_contract_path() {
+  local entry="$1" contract_path root
   contract_path=$(jq -r '.contract_path // empty' <<< "$entry" 2>/dev/null) || return 1
   [ -n "$contract_path" ] && [ -f "$contract_path" ] && [ ! -L "$contract_path" ] || return 1
   contract_path=$(cd "$(dirname "$contract_path")" 2>/dev/null && printf '%s/%s' "$(pwd -P)" "$(basename "$contract_path")") || return 1
@@ -184,8 +184,22 @@ lifecycle_contract_is_valid() {
     .lbwc-planning) case "$contract_path" in "$root/.contracts/"*) ;; *) return 1 ;; esac ;;
     *) case "$contract_path" in "$root/contracts/"*) ;; *) return 1 ;; esac ;;
   esac
-  expected_root=$(lbwc_control_root_project_root "$root") || return 1
-  contract=$(bash "$SCRIPT_DIR/task-contract.sh" verify "$contract_path" "$expected_root" 2>/dev/null) || return 1
+  printf '%s\n' "$contract_path"
+}
+
+lifecycle_contract_v3_matches() {
+  local entry="$1" contract="$2" role capabilities
+  role=$(jq -r '.role // empty' <<< "$entry")
+  capabilities=$(jq -c '.capabilities // []' <<< "$entry")
+  jq -e --arg role "$role" --arg runtime "$(jq -r '.runtime_kind' <<< "$entry")" --arg policy "$(jq -r '.communication_policy' <<< "$entry")" --argjson capabilities "$capabilities" '
+    .runtime_kind == $runtime
+    and .communication_policy == $policy
+    and .capabilities_by_role[$role] == $capabilities
+  ' <<< "$contract" >/dev/null 2>&1
+}
+
+lifecycle_contract_matches_entry() {
+  local entry="$1" contract="$2" contract_id role task
   contract_id=$(jq -r '.contract_id // .id // empty' <<< "$contract")
   [ -n "$contract_id" ] && [ "$contract_id" = "$(jq -r '.contract_id // empty' <<< "$entry")" ] || return 1
   [ "$(jq -r '.contract_digest // empty' <<< "$contract")" = "$(jq -r '.contract_digest // empty' <<< "$entry")" ] || return 1
@@ -193,16 +207,19 @@ lifecycle_contract_is_valid() {
   jq -e --arg role "$role" '(.roles | type == "array") and (.roles | index($role) != null)' <<< "$contract" >/dev/null 2>&1 || return 1
   task=$(jq -r '.task_identity // .task_id // .contract_id // empty' <<< "$contract")
   [ -n "$task" ] && [ "$task" = "$(jq -r '.task_identity // empty' <<< "$entry")" ] || return 1
-  jq -e --arg role "$role" --argjson allowances "$(jq -c '.write_allowances // []' <<< "$entry")" '.allowances_by_role[$role] == $allowances' <<< "$contract" >/dev/null 2>&1 || return 1
-  schema_version=$(jq -r '.schema_version' <<< "$contract")
-  if [ "$schema_version" = "3" ]; then
-    capabilities=$(jq -c '.capabilities // []' <<< "$entry")
-    jq -e --arg role "$role" --arg runtime "$(jq -r '.runtime_kind' <<< "$entry")" --arg policy "$(jq -r '.communication_policy' <<< "$entry")" --argjson capabilities "$capabilities" '
-      .runtime_kind == $runtime
-      and .communication_policy == $policy
-      and .capabilities_by_role[$role] == $capabilities
-    ' <<< "$contract" >/dev/null 2>&1 || return 1
-  fi
+  jq -e --arg role "$role" --argjson allowances "$(jq -c '.write_allowances // []' <<< "$entry")" '.allowances_by_role[$role] == $allowances' <<< "$contract" >/dev/null 2>&1
+}
+
+lifecycle_contract_is_valid() {
+  local entry="$1" contract_path contract root expected_root
+  jq -e '.contract_enabled == true' <<< "$entry" >/dev/null 2>&1 || return 1
+  contract_path=$(lifecycle_resolve_contract_path "$entry") || return 1
+  root=$(cd "$PLANNING_DIR" 2>/dev/null && pwd -P) || return 1
+  expected_root=$(lbwc_control_root_project_root "$root") || return 1
+  contract=$(bash "$SCRIPT_DIR/task-contract.sh" verify "$contract_path" "$expected_root" 2>/dev/null) || return 1
+  lifecycle_contract_matches_entry "$entry" "$contract" || return 1
+  [ "$(jq -r '.schema_version' <<< "$contract")" = "3" ] || return 0
+  lifecycle_contract_v3_matches "$entry" "$contract"
 }
 
 mark_idle_locked() {
@@ -232,11 +249,18 @@ expire_if_still_idle_locked() {
   agent_manifest_write "$PLANNING_DIR" "$updated" >/dev/null 2>&1 || return 1
 }
 
+lifecycle_has_no_project() {
+  local manifest_path
+  manifest_path=$(agent_manifest_path "$PLANNING_DIR" 2>/dev/null) || return 0
+  [ ! -e "$manifest_path" ]
+}
+
 idle_agent() {
   local manifest name now now_iso token result final_now_iso
   INPUT=$(cat 2>/dev/null) || INPUT=""
   [ -n "$INPUT" ] || exit 0
   [ "$(jq -r '.hook_event_name // empty' <<< "$INPUT" 2>/dev/null)" = "TeammateIdle" ] || exit 0
+  ! lifecycle_has_no_project || exit 0
   manifest=$(agent_manifest_read "$PLANNING_DIR" 2>/dev/null) || lifecycle_manifest_failure
   name=$(extract_known_agent_name "$manifest") || exit 0
   now=$(lifecycle_now_epoch)
