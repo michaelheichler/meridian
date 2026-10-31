@@ -13,7 +13,7 @@ TMUX_STALE=0
 TMUX_DIAGNOSTICS=''
 
 read_tmux_config() {
-  local backend
+  local backend hide_agent collapse_agent
   if ! jq -e '
     type == "object"
     and (if has("agent_execution_mode") then (.agent_execution_mode | type == "string" and (. == "in_process" or . == "tmux" or . == "workflow" or . == "ask")) else true end)
@@ -30,8 +30,10 @@ read_tmux_config() {
     return 1
   }
   printf -v TMUX_BACKEND '%s' "$backend"
-  printf -v TMUX_HIDE_AGENT '%s' "$(jq -r '.statusline_hide_agent_in_tmux // false' "$PLANNING_DIR/config.json")"
-  printf -v TMUX_COLLAPSE_AGENT '%s' "$(jq -r '.statusline_collapse_agent_in_tmux // false' "$PLANNING_DIR/config.json")"
+  hide_agent=$(jq -r '.statusline_hide_agent_in_tmux // false' "$PLANNING_DIR/config.json") || return 1
+  collapse_agent=$(jq -r '.statusline_collapse_agent_in_tmux // false' "$PLANNING_DIR/config.json") || return 1
+  printf -v TMUX_HIDE_AGENT '%s' "$hide_agent"
+  printf -v TMUX_COLLAPSE_AGENT '%s' "$collapse_agent"
 }
 
 read_tmux_registry_counts() {
