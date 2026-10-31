@@ -1,11 +1,5 @@
-#!/usr/bin/env bash
-
-extract_fail_classification_field() {
-  local file_path="${1:-}"
-  local field_name="${2:-}"
-  [ -f "$file_path" ] || return 0
-  [ -n "$field_name" ] || return 0
-  awk -v field="$field_name" '
+# awk programs sit in constants because inline they exceed the function limit
+QA_GATE_AWK_CLASSIFICATION_FIELD='
     function trim(v) {
       gsub(/^[[:space:]]+|[[:space:]]+$/, "", v)
       return v
@@ -52,18 +46,8 @@ extract_fail_classification_field() {
       next
     }
     in_fm && in_fc && /^[^[:space:]]/ { exit }
-  ' "$file_path" 2>/dev/null
-}
-
-extract_fail_classification_types() { extract_fail_classification_field "${1:-}" type; }
-extract_fail_classification_ids() { extract_fail_classification_field "${1:-}" id; }
-extract_fail_classification_paths() { extract_fail_classification_field "${1:-}" path; }
-extract_fail_classification_source_plans() { extract_fail_classification_field "${1:-}" source_plan; }
-
-extract_fail_classification_id_type_pairs() {
-  local file_path="${1:-}"
-  [ -f "$file_path" ] || return 0
-  awk '
+'
+QA_GATE_AWK_CLASSIFICATION_PAIRS='
     function value(text, field, value_start, remainder, boundary, result) {
       if (!match(text, field ":[[:space:]]*")) return ""
       value_start=RSTART+RLENGTH
@@ -90,9 +74,84 @@ extract_fail_classification_id_type_pairs() {
     in_fm && in_fc && /^[[:space:]]+/ { if (entry!="") entry=entry " " $0; next }
     in_fm && in_fc && /^[^[:space:]]/ { flush(); exit }
     END { flush() }
-  ' "$file_path" 2>/dev/null
+'
+QA_GATE_AWK_FAIL_IDS='
+    function trim(v) {
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", v)
+      return v
+    }
+    !/^\|/ { header_found = 0; next }
+    /^\|/ {
+      if ($0 ~ /^\|[[:space:]-]+(\|[[:space:]-]+)+\|?[[:space:]]*$/) next
+      if (!header_found) {
+        status_col = 0
+        id_col = 0
+        for (i = 2; i < NF; i++) {
+          cell = trim($i)
+          if (cell == "Status") status_col = i
+          if (cell == "ID") id_col = i
+        }
+        if (status_col > 0) header_found = 1
+        next
+      }
+      if (status_col > 0) {
+        status = trim($(status_col))
+        gsub(/\*+/, "", status)
+        status = trim(status)
+        if (status == "FAIL") {
+          fail_index++
+          fail_id = (id_col > 0) ? trim($(id_col)) : ""
+          if (fail_id == "") fail_id = sprintf("FAIL-ROW-%02d", fail_index)
+          print fail_id
+        }
+      }
+    }
+'
+QA_GATE_AWK_FAIL_ROWS='
+    function trim(v) {
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", v)
+      return v
+    }
+    !/^\|/ { header_found = 0; next }
+    /^\|/ {
+      if ($0 ~ /^\|[[:space:]-]+(\|[[:space:]-]+)+\|?[[:space:]]*$/) next
+      if (!header_found) {
+        status_col = 0
+        for (i = 2; i < NF; i++) {
+          cell = trim($i)
+          if (cell == "Status") status_col = i
+        }
+        if (status_col > 0) header_found = 1
+        next
+      }
+      if (status_col > 0) {
+        status = trim($(status_col))
+        gsub(/\*+/, "", status)
+        status = trim(status)
+        if (status == "FAIL") count++
+      }
+    }
+    END { print count + 0 }
+'
+
+extract_fail_classification_field() {
+  local file_path="${1:-}"
+  local field_name="${2:-}"
+  [ -f "$file_path" ] || return 0
+  [ -n "$field_name" ] || return 0
+  awk -v field="$field_name" "$QA_GATE_AWK_CLASSIFICATION_FIELD" "$file_path" 2>/dev/null
 }
 
+extract_fail_classification_types() { extract_fail_classification_field "${1:-}" type; }
+extract_fail_classification_ids() { extract_fail_classification_field "${1:-}" id; }
+extract_fail_classification_paths() { extract_fail_classification_field "${1:-}" path; }
+extract_fail_classification_source_plans() { extract_fail_classification_field "${1:-}" source_plan; }
+
+extract_fail_classification_id_type_pairs() {
+  local file_path="${1:-}"
+  [ -f "$file_path" ] || return 0
+  awk "$QA_GATE_AWK_CLASSIFICATION_PAIRS" "$file_path" 2>/dev/null
+}
 
 collect_fail_classification_types_in_dir() {
   local scan_dir="${1:-}"
@@ -200,69 +259,13 @@ fail_classification_types_are_valid() {
 extract_fail_ids_from_verification() {
   local file_path="${1:-}"
   [ -f "$file_path" ] || return 0
-  awk -F'|' '
-    function trim(v) {
-      gsub(/^[[:space:]]+|[[:space:]]+$/, "", v)
-      return v
-    }
-    !/^\|/ { header_found = 0; next }
-    /^\|/ {
-      if ($0 ~ /^\|[[:space:]-]+(\|[[:space:]-]+)+\|?[[:space:]]*$/) next
-      if (!header_found) {
-        status_col = 0
-        id_col = 0
-        for (i = 2; i < NF; i++) {
-          cell = trim($i)
-          if (cell == "Status") status_col = i
-          if (cell == "ID") id_col = i
-        }
-        if (status_col > 0) header_found = 1
-        next
-      }
-      if (status_col > 0) {
-        status = trim($(status_col))
-        gsub(/\*+/, "", status)
-        status = trim(status)
-        if (status == "FAIL") {
-          fail_index++
-          fail_id = (id_col > 0) ? trim($(id_col)) : ""
-          if (fail_id == "") fail_id = sprintf("FAIL-ROW-%02d", fail_index)
-          print fail_id
-        }
-      }
-    }
-  ' "$file_path" 2>/dev/null
+  awk -F'|' "$QA_GATE_AWK_FAIL_IDS" "$file_path" 2>/dev/null
 }
 
 count_fail_rows_in_verification() {
   local file_path="${1:-}"
   [ -f "$file_path" ] || { echo 0; return; }
-  awk -F'|' '
-    function trim(v) {
-      gsub(/^[[:space:]]+|[[:space:]]+$/, "", v)
-      return v
-    }
-    !/^\|/ { header_found = 0; next }
-    /^\|/ {
-      if ($0 ~ /^\|[[:space:]-]+(\|[[:space:]-]+)+\|?[[:space:]]*$/) next
-      if (!header_found) {
-        status_col = 0
-        for (i = 2; i < NF; i++) {
-          cell = trim($i)
-          if (cell == "Status") status_col = i
-        }
-        if (status_col > 0) header_found = 1
-        next
-      }
-      if (status_col > 0) {
-        status = trim($(status_col))
-        gsub(/\*+/, "", status)
-        status = trim(status)
-        if (status == "FAIL") count++
-      }
-    }
-    END { print count + 0 }
-  ' "$file_path" 2>/dev/null
+  awk -F'|' "$QA_GATE_AWK_FAIL_ROWS" "$file_path" 2>/dev/null
 }
 
 classification_ids_cover_source_fail_ids() {
@@ -293,7 +296,6 @@ classification_pairs_match_fail_id() {
   local classified_pairs="${2:-}"
   local classification_id=""
   local classification_type=""
-  # Invariant: no earlier pair matched, variant: unread classification pairs.
   while IFS=$'\t' read -r classification_id classification_type; do
     [ -n "$classification_id" ] && [ -n "$classification_type" ] || continue
     case "$classification_type" in
@@ -320,7 +322,6 @@ count_fail_ids_with_round_classifications() {
   [ -n "$source_fail_ids" ] || { printf '0\n'; return 0; }
   classified_pairs=$(collect_fail_classification_id_type_pairs_in_dir "$plan_dir" 2>/dev/null) || { printf '0\n'; return 0; }
   [ -n "$classified_pairs" ] || { printf '0\n'; return 0; }
-  # Invariant: exempt_count covers matched FAIL ids seen so far, variant: unread source FAIL ids.
   while IFS= read -r source_fail_id; do
     [ -n "$source_fail_id" ] || continue
     if classification_pairs_match_fail_id "$source_fail_id" "$classified_pairs"; then
