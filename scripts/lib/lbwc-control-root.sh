@@ -1,5 +1,3 @@
-#!/usr/bin/env bash
-
 lbwc_control_root_canonical_path() {
   local candidate="$1"
   [ -n "$candidate" ] || return 1
@@ -15,37 +13,45 @@ lbwc_control_root_is_valid_json() {
   jq -e 'type == "object"' "$config_path" >/dev/null 2>&1
 }
 
-lbwc_control_root_validate() {
-  local candidate="$1" allow_manifest_only="${2:-0}" canonical project_root run_parent run_parent_parent run_id
+lbwc_control_root_export() {
+  LBWC_CONTROL_ROOT_KIND="$1"
+  LBWC_CONTROL_ROOT="$2"
+  LBWC_PROJECT_ROOT="$3"
+  export LBWC_CONTROL_ROOT_KIND LBWC_CONTROL_ROOT LBWC_PROJECT_ROOT
+  printf '%s\n' "$2"
+}
 
-  canonical=$(lbwc_control_root_canonical_path "$candidate") || return 1
-  case "$(basename "$canonical")" in
-    .lbwc-planning)
-      project_root=$(dirname "$canonical")
-      if ! lbwc_control_root_is_valid_json "$canonical/config.json"; then
-        [ "$allow_manifest_only" = "1" ] || return 1
-        [ -f "$canonical/.agent-manifest.json" ] || return 1
-      fi
-      LBWC_CONTROL_ROOT_KIND="active-planning"
-      LBWC_CONTROL_ROOT="$canonical"
-      LBWC_PROJECT_ROOT="$project_root"
-      export LBWC_CONTROL_ROOT_KIND LBWC_CONTROL_ROOT LBWC_PROJECT_ROOT
-      printf '%s\n' "$canonical"
-      return 0
-      ;;
-  esac
+lbwc_control_root_validate_planning() {
+  local canonical="$1" allow_manifest_only="$2"
+  if ! lbwc_control_root_is_valid_json "$canonical/config.json"; then
+    [ "$allow_manifest_only" = "1" ] || return 1
+    [ -f "$canonical/.agent-manifest.json" ] || return 1
+  fi
+  lbwc_control_root_export "active-planning" "$canonical" "$(dirname "$canonical")"
+}
 
+lbwc_control_root_validate_run() {
+  local canonical="$1" run_parent run_parent_parent run_id
   run_parent=$(dirname "$canonical")
   run_parent_parent=$(dirname "$run_parent")
   run_id=$(basename "$canonical")
   [ "$(basename "$run_parent")" = "runs" ] || return 1
   [ "$(basename "$run_parent_parent")" = ".temporary-agent-runfiles" ] || return 1
   [[ "$run_id" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || return 1
-  LBWC_CONTROL_ROOT_KIND="temporary-run"
-  LBWC_CONTROL_ROOT="$canonical"
-  LBWC_PROJECT_ROOT=$(dirname "$run_parent_parent")
-  export LBWC_CONTROL_ROOT_KIND LBWC_CONTROL_ROOT LBWC_PROJECT_ROOT
-  printf '%s\n' "$canonical"
+  lbwc_control_root_export "temporary-run" "$canonical" "$(dirname "$run_parent_parent")"
+}
+
+lbwc_control_root_validate() {
+  local candidate="$1" allow_manifest_only="${2:-0}" canonical
+
+  canonical=$(lbwc_control_root_canonical_path "$candidate") || return 1
+  case "$(basename "$canonical")" in
+    .lbwc-planning)
+      lbwc_control_root_validate_planning "$canonical" "$allow_manifest_only" || return 1
+      return 0
+      ;;
+  esac
+  lbwc_control_root_validate_run "$canonical"
 }
 
 lbwc_control_root_project_root() {
@@ -119,8 +125,22 @@ lbwc_control_root_generated_agents_dir() {
   printf '%s/.claude/agents\n' "$project_root"
 }
 
+lbwc_control_root_find_run() {
+  local current="$1" candidate="$1/.temporary-agent-runfiles/runs" run_candidate selected_run=""
+  [ -d "$candidate" ] || return 2
+  for run_candidate in "$candidate"/*; do
+    [ -d "$run_candidate" ] || continue
+    if [ "$current" = "$(lbwc_control_root_project_root "$run_candidate" 2>/dev/null || true)" ] && lbwc_control_root_validate "$run_candidate" 0 >/dev/null 2>&1; then
+      [ -z "$selected_run" ] || return 1
+      selected_run=$(lbwc_control_root_canonical_path "$run_candidate") || return 1
+    fi
+  done
+  [ -n "$selected_run" ] || return 2
+  printf '%s\n' "$selected_run"
+}
+
 lbwc_control_root_find_from_start() {
-  local start="$1" current candidate run_candidate selected_run
+  local start="$1" current candidate run_status
   current=$(CDPATH='' cd -- "$start" 2>/dev/null && pwd -P) || return 1
   while :; do
     candidate="$current/.lbwc-planning"
@@ -129,21 +149,10 @@ lbwc_control_root_find_from_start() {
       return 0
     fi
 
-    candidate="$current/.temporary-agent-runfiles/runs"
-    if [ -d "$candidate" ]; then
-      selected_run=""
-      for run_candidate in "$candidate"/*; do
-        [ -d "$run_candidate" ] || continue
-        if [ "$current" = "$(lbwc_control_root_project_root "$run_candidate" 2>/dev/null || true)" ] && lbwc_control_root_validate "$run_candidate" 0 >/dev/null 2>&1; then
-          [ -z "$selected_run" ] || return 1
-          selected_run=$(lbwc_control_root_canonical_path "$run_candidate") || return 1
-        fi
-      done
-      if [ -n "$selected_run" ]; then
-        printf '%s\n' "$selected_run"
-        return 0
-      fi
-    fi
+    run_status=0
+    lbwc_control_root_find_run "$current" || run_status=$?
+    [ "$run_status" -ne 0 ] || return 0
+    [ "$run_status" -ne 1 ] || return 1
 
     [ "$current" = "/" ] && break
     current=$(dirname "$current")
