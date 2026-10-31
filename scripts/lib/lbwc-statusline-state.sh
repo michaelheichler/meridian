@@ -1,3 +1,12 @@
+# Plain assignments, because declare -g fails on bash 3.2.
+PHASE="none"
+TASK="none"
+PAIR="none"
+TRIO="none"
+QA_STATE="pending"
+UAT_STATE="pending"
+TELEMETRY_STATE="off"
+
 read_frontmatter_value() {
   local path="$1" key="$2"
   [ -f "$path" ] || return 0
@@ -44,16 +53,6 @@ read_native_fields() {
   ] | map(tostring) | join("\u001f")' <<< "$STATUS_INPUT"
 }
 
-reset_orchestration_state() {
-  PHASE="none"
-  TASK="none"
-  PAIR="none"
-  TRIO="none"
-  QA_STATE="pending"
-  UAT_STATE="pending"
-  TELEMETRY_STATE="off"
-}
-
 read_manifest_state() {
   local manifest="$PLANNING_DIR/.agent-manifest.json" active contract_path
   if [ -f "$manifest" ] && active=$(jq -ce '[.agents[] | select(.state == "registered" or .state == "running")]' "$manifest" 2>/dev/null); then
@@ -69,8 +68,8 @@ read_manifest_state() {
 
 read_phase_from_state_file() {
   if [ "$PHASE" = "none" ] && [ -f "$PLANNING_DIR/STATE.md" ]; then
-    PHASE=$(sed -n 's/^Phase:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$PLANNING_DIR/STATE.md" 2>/dev/null | head -1)
-    PHASE=${PHASE:-none}
+    printf -v PHASE '%s' "$(sed -n 's/^Phase:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$PLANNING_DIR/STATE.md" 2>/dev/null | head -1)"
+    [ -n "$PHASE" ] || printf -v PHASE '%s' none
   fi
 }
 
@@ -118,7 +117,6 @@ read_telemetry_state() {
 }
 
 read_orchestration_state() {
-  reset_orchestration_state
   [ -d "$PLANNING_DIR" ] || return 0
   read_manifest_state
   read_phase_from_state_file

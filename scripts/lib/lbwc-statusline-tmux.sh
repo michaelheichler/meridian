@@ -1,36 +1,37 @@
-reset_tmux_state() {
-  TMUX_BACKEND='in_process'
-  TMUX_HIDE_AGENT='false'
-  TMUX_COLLAPSE_AGENT='false'
-  TMUX_SESSION='none'
-  TMUX_SESSION_STATUS='unavailable'
-  TMUX_PANES='0/0'
-  TMUX_AGENT_TOTAL=0
-  TMUX_RUNNING=0
-  TMUX_IDLE=0
-  TMUX_FAILED=0
-  TMUX_STALE=0
-  TMUX_DIAGNOSTICS=''
-}
+# Top-level assignments, because declare -g fails on bash 3.2.
+TMUX_BACKEND='in_process'
+TMUX_HIDE_AGENT='false'
+TMUX_COLLAPSE_AGENT='false'
+TMUX_SESSION='none'
+TMUX_SESSION_STATUS='unavailable'
+TMUX_PANES='0/0'
+TMUX_AGENT_TOTAL=0
+TMUX_RUNNING=0
+TMUX_IDLE=0
+TMUX_FAILED=0
+TMUX_STALE=0
+TMUX_DIAGNOSTICS=''
 
 read_tmux_config() {
+  local backend
   if ! jq -e '
     type == "object"
     and (if has("agent_execution_mode") then (.agent_execution_mode | type == "string" and (. == "in_process" or . == "tmux" or . == "workflow" or . == "ask")) else true end)
     and (if has("statusline_hide_agent_in_tmux") then (.statusline_hide_agent_in_tmux | type == "boolean") else true end)
     and (if has("statusline_collapse_agent_in_tmux") then (.statusline_collapse_agent_in_tmux | type == "boolean") else true end)
   ' "$PLANNING_DIR/config.json" >/dev/null 2>&1; then
-    TMUX_BACKEND='invalid'
-    TMUX_DIAGNOSTICS='configuration drift'
+    printf -v TMUX_BACKEND '%s' invalid
+    printf -v TMUX_DIAGNOSTICS '%s' 'configuration drift'
     return 1
   fi
-  TMUX_BACKEND=$(jq -r '.agent_execution_mode // "in_process"' "$PLANNING_DIR/config.json" 2>/dev/null) || {
-    TMUX_BACKEND='invalid'
-    TMUX_DIAGNOSTICS='configuration drift'
+  backend=$(jq -r '.agent_execution_mode // "in_process"' "$PLANNING_DIR/config.json" 2>/dev/null) || {
+    printf -v TMUX_BACKEND '%s' invalid
+    printf -v TMUX_DIAGNOSTICS '%s' 'configuration drift'
     return 1
   }
-  TMUX_HIDE_AGENT=$(jq -r '.statusline_hide_agent_in_tmux // false' "$PLANNING_DIR/config.json")
-  TMUX_COLLAPSE_AGENT=$(jq -r '.statusline_collapse_agent_in_tmux // false' "$PLANNING_DIR/config.json")
+  printf -v TMUX_BACKEND '%s' "$backend"
+  printf -v TMUX_HIDE_AGENT '%s' "$(jq -r '.statusline_hide_agent_in_tmux // false' "$PLANNING_DIR/config.json")"
+  printf -v TMUX_COLLAPSE_AGENT '%s' "$(jq -r '.statusline_collapse_agent_in_tmux // false' "$PLANNING_DIR/config.json")"
 }
 
 read_tmux_registry_counts() {
@@ -78,7 +79,6 @@ scan_tmux_locks() {
 
 read_tmux_runtime_state() {
   local runtime="$PLANNING_DIR/.runtime/tmux-bus" registry
-  reset_tmux_state
   [ -f "$PLANNING_DIR/config.json" ] || return 0
   read_tmux_config || return 0
   [ "$TMUX_BACKEND" = tmux ] || return 0
