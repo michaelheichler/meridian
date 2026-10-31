@@ -67,7 +67,7 @@ QA_GATE_AWK_CLASSIFICATION_PAIRS='
     in_fm && /^---[[:space:]]*$/ { exit }
     in_fm && /^fail_classifications:/ {
       rest=$0; sub(/^fail_classifications:[[:space:]]*/,"",rest)
-      if (rest ~ /^\[/) { while (match(rest,/\{[^}]*\}/)) { emit(substr(rest,RSTART,RLENGTH)); rest=substr(rest,RSTART+RLENGTH) }; exit }
+      if (rest ~ /^\[/) { while (match(rest,/\{[^}]*\}/)) { obj_start=RSTART; obj_len=RLENGTH; emit(substr(rest,obj_start,obj_len)); rest=substr(rest,obj_start+obj_len) }; exit }
       in_fc=1; next
     }
     in_fm && in_fc && /^[[:space:]]+-[[:space:]]/ { flush(); entry=$0; sub(/^[[:space:]]+-[[:space:]]*/,"",entry); next }
