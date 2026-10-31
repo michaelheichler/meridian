@@ -275,3 +275,56 @@ VERIF
   [[ "$output" == *"qa_gate_scope=uat round=01"* ]]
   [[ "$output" == *"qa_gate_result=PASS"* ]]
 }
+
+write_qa_round_plan() {
+  printf -- '---\nround: 01\n%s\n---\n' "$1" > "$PHASE_DIR/remediation/qa/round-01/R01-PLAN.md"
+}
+
+create_qa_remediation_fixture() {
+  local round_dir="$PHASE_DIR/remediation/qa/round-01"
+  mkdir -p "$round_dir"
+  create_verif "write-verification.sh" "FAIL" "| ID | Status |
+|----|--------|
+| F1 | FAIL |"
+  : > "$PHASE_DIR/01-01-PLAN.md"
+  printf 'stage=verify\nround=01\nsource_verification_path=%s/01-VERIFICATION.md\n' "$PHASE_DIR" \
+    > "$PHASE_DIR/remediation/qa/.qa-remediation-stage"
+  write_qa_round_plan "$1"
+  printf -- '---\nstatus: complete\n---\n\n## Deviations\n\n- Changed approach\n' > "$round_dir/R01-SUMMARY.md"
+  printf -- '---\nresult: PASS\nwriter: write-verification.sh\n---\n' > "$round_dir/R01-VERIFICATION.md"
+}
+
+@test "flow-style invalid classification with a deviation terminates and routes to remediation" {
+  create_qa_remediation_fixture 'fail_classifications: [{id: F1, type: bogus}]'
+
+  run timeout 10 bash "$SCRIPT" "$PHASE_DIR"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"qa_gate_classifications_invalid=true"* ]]
+  [[ "$output" == *"qa_gate_routing=REMEDIATION_REQUIRED"* ]]
+  [[ "$output" != *"PROCEED_TO_UAT"* ]]
+}
+
+@test "flow-style and block-style invalid classifications produce identical output" {
+  create_qa_remediation_fixture 'fail_classifications: [{id: F1, type: bogus}]'
+  run timeout 10 bash "$SCRIPT" "$PHASE_DIR"
+  local flow_output="$output"
+
+  write_qa_round_plan $'fail_classifications:\n  - id: F1\n    type: bogus'
+  run timeout 10 bash "$SCRIPT" "$PHASE_DIR"
+
+  [ "$status" -eq 0 ]
+  [ "$output" = "$flow_output" ]
+}
+
+@test "flow-style and block-style valid classifications produce identical output" {
+  create_qa_remediation_fixture 'fail_classifications: [{id: F1, type: code-fix}]'
+  run timeout 10 bash "$SCRIPT" "$PHASE_DIR"
+  local flow_output="$output"
+
+  write_qa_round_plan $'fail_classifications:\n  - id: F1\n    type: code-fix'
+  run timeout 10 bash "$SCRIPT" "$PHASE_DIR"
+
+  [ "$status" -eq 0 ]
+  [ "$output" = "$flow_output" ]
+}
