@@ -128,11 +128,11 @@ _PD_ISSUE_PARSER="$_SCRIPT_DIR_PD/parse-uat-issues.awk"
 _PD_ROUND_ID_PARSER="$_SCRIPT_DIR_PD/extract-round-issue-ids.awk"
 
 _pd_reset_uat_extraction() {
-  declare -g _PD_EXTRACT_LINES=""
-  declare -g _PD_EXTRACT_COUNT=0
-  declare -g _PD_EXTRACT_ERROR=""
-  declare -g _PD_BASE_ISSUES=""
-  declare -g _PD_ROUND_IDS=""
+  _PD_EXTRACT_LINES=""
+  _PD_EXTRACT_COUNT=0
+  _PD_EXTRACT_ERROR=""
+  _PD_BASE_ISSUES=""
+  _PD_ROUND_IDS=""
 }
 
 _pd_read_base_uat_issues() {
@@ -231,7 +231,7 @@ _pd_build_uat_issue_lines() {
 _pd_resolve_milestone_uat_file() {
   local phase_dir="$1"
 
-  declare -g _pd_ms_uat=""
+  _pd_ms_uat=""
   if type current_uat &>/dev/null; then
     _pd_ms_uat=$(current_uat "$phase_dir")
   elif type latest_non_source_uat &>/dev/null; then
@@ -245,7 +245,7 @@ _pd_resolve_milestone_uat_metadata() {
   local is_round_dir=false
 
   _pd_resolve_milestone_uat_file "$phase_dir" || return 1
-  declare -g _pd_ms_phase _pd_ms_fname _pd_ms_round
+  _pd_ms_phase="" _pd_ms_fname="" _pd_ms_round=""
   _pd_ms_phase=$(resolve_phase_number_from_phase_dir "$phase_dir")
   _pd_ms_fname=$(basename "$_pd_ms_uat")
   _pd_ms_round=""

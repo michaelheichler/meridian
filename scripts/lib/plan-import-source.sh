@@ -1,4 +1,5 @@
-declare -g SOURCE_DIGEST="" SOURCE_FILE_COUNT=0 SOURCE_TOTAL_BYTES=0
+# Plain assignments, because bash 3.2 has no declare -g.
+SOURCE_DIGEST="" SOURCE_FILE_COUNT=0 SOURCE_TOTAL_BYTES=0
 
 valid_import_id() {
   [[ "$1" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]

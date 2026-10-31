@@ -6,6 +6,9 @@ PLANNING_DIR="${LBWC_PLANNING_DIR:-.lbwc-planning}"
 [ ! -d "$PLANNING_DIR" ] && exit 0
 
 _QG_SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd)"
+# Guard first, because verification-freshness.sh needs bash 4.3.
+. "$_QG_SCRIPT_DIR/lib/require-bash.sh"
+require_bash_43
 _QG_SUPPORT_LOADED=false
 _QG_SUPPORT_READY=true
 

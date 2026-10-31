@@ -1,5 +1,6 @@
-declare -g PLAN_DESTINATION=""
-declare -g MD_H1='#' MD_H2='##' MD_H3='###'
+# Plain assignments, because bash 3.2 has no declare -g.
+PLAN_DESTINATION=""
+MD_H1='#' MD_H2='##' MD_H3='###'
 
 write_text() {
   local path="$1" value="$2" temporary

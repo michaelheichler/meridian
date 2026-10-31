@@ -1,7 +1,6 @@
 #!/bin/bash
 set -u
 
-declare -g PHASE_STATE_LIB_DIR=""
 PHASE_STATE_LIB_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib"
 . "$PHASE_STATE_LIB_DIR/phase-state-dirs.sh"
 . "$PHASE_STATE_LIB_DIR/phase-state-qa.sh"

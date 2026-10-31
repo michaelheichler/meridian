@@ -30,9 +30,9 @@ print_known_issues_section() {
 
 resolve_source_fail_verif() {
   local _cvc_active_round _cvc_prev_round _cvc_expected_source_verif
-  # Callers read these flags after the call, so they must stay global
-  declare -g _cvc_source_fail_verif_missing=false
-  declare -g _cvc_remediation_state_active=false
+  # Callers read these flags after the call, so they stay global.
+  _cvc_source_fail_verif_missing=false
+  _cvc_remediation_state_active=false
   [ -f "$PHASE_DIR/remediation/qa/.qa-remediation-stage" ] || {
     if [ -z "$_cvc_source_fail_verif" ] && [ -n "$_cvc_phase_verif" ]; then
       _cvc_source_fail_verif="$_cvc_phase_verif"

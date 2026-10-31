@@ -24,11 +24,11 @@ UAT_LANE_BLOCKS_QA=false
 PHASE_DIRS=()
 
 set_next_phase_candidate() {
-  declare -g NEXT_PHASE="$1"
-  declare -g NEXT_PHASE_SLUG="$2"
-  declare -g NEXT_PHASE_STATE="$3"
-  declare -g NEXT_PHASE_PLANS="$4"
-  declare -g NEXT_PHASE_SUMMARIES="$5"
+  NEXT_PHASE="$1"
+  NEXT_PHASE_SLUG="$2"
+  NEXT_PHASE_STATE="$3"
+  NEXT_PHASE_PLANS="$4"
+  NEXT_PHASE_SUMMARIES="$5"
 }
 
 route_earlier_phase_candidate() {

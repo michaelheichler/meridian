@@ -1,6 +1,7 @@
-declare -g LEGACY_PHASE_DIR=""
-declare -g SHAPE_ERROR=""
-declare -g MISMATCH_ERROR=""
+# Plain assignments, because bash 3.2 has no declare -g.
+LEGACY_PHASE_DIR=""
+SHAPE_ERROR=""
+MISMATCH_ERROR=""
 
 validate_legacy_shape() {
   local expected_suffix="$1" phase_prefix artifact_basename

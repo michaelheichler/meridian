@@ -1,5 +1,5 @@
-# Globals, because a parser cannot return three values.
-declare -g CONV_CONFLICT_ID="" CONV_REPLACE_ID="" CONV_KEEP_BOTH=0
+# Plain globals, because bash 3.2 has no declare -g.
+CONV_CONFLICT_ID="" CONV_REPLACE_ID="" CONV_KEEP_BOTH=0
 
 parse_add_options() {
   while [ "$#" -gt 0 ]; do
