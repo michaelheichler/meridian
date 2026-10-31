@@ -54,10 +54,8 @@ check_test() {
   fi
 }
 
-new_project() {
-  local dir binary sha
-  dir=$(mktemp -d "$WORK_ROOT/project.XXXXXX")
-  mkdir -p "$dir/.lbwc-planning"
+write_capabilities_fixture() {
+  local dir="$1" binary sha
   binary="$dir/claude-generator-fixture"
   printf '%s\n' '#!/usr/bin/env bash' 'printf "%s\\n" "fixture"' > "$binary"
   chmod +x "$binary"
@@ -77,6 +75,10 @@ new_project() {
       }
     }
   ' > "$dir/.lbwc-planning/claude-capabilities.json"
+}
+
+write_config_fixture() {
+  local dir="$1"
   jq --slurpfile defaults "$ROLE_DEFAULTS" '
     . + {
       schema_version: 1,
@@ -92,6 +94,14 @@ new_project() {
       }
     }
   ' "$PLUGIN_FIXTURE/config/settings.json" > "$dir/.lbwc-planning/config.json"
+}
+
+new_project() {
+  local dir
+  dir=$(mktemp -d "$WORK_ROOT/project.XXXXXX")
+  mkdir -p "$dir/.lbwc-planning"
+  write_capabilities_fixture "$dir"
+  write_config_fixture "$dir"
   printf '%s\n' "$dir"
 }
 
