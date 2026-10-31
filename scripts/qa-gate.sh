@@ -24,6 +24,8 @@ for _qg_dependency in \
   qa-result-gate.sh \
   lib/qa-gate-decision.sh \
   lib/qa-result-gate-path-evidence.sh \
+  lib/qa-result-gate-path-resolve.sh \
+  lib/qa-result-gate-git-evidence.sh \
   lib/qa-result-gate-fail-classifications.sh \
   lib/qa-result-gate-known-issues.sh \
   lib/qa-result-gate-summary-deviations.sh; do
