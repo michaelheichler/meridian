@@ -107,19 +107,40 @@ find_blocking_open_pair() {
   ' <<< "$manifest" 2>/dev/null
 }
 
-validate_entry_contract() {
-  local name="$1" entry="$2" manifest="$3" contract_path contract contract_id contract_digest task_identity role allowances team_mode pair_id manifest_roles contract_roles runtime_kind communication_policy capabilities
-  contract_path=$(jq -r '.contract_path // empty' <<< "$entry")
-  [ -n "$contract_path" ] || return 1
-  contract=$(bash "$SCRIPT_DIR/task-contract.sh" verify "$contract_path" "$PROJECT_ROOT" 2>/dev/null) || return 1
-  jq -e '.state == "dispatched"' <<< "$contract" >/dev/null 2>&1 || return 1
-  if [ "$(jq -r '.schema_version' <<< "$contract")" = "3" ]; then
-    runtime_kind=$(jq -r '.runtime_kind // empty' <<< "$contract")
-    communication_policy=$(jq -r '.communication_policy // empty' <<< "$contract")
-    jq -e --arg runtime "$runtime_kind" --arg policy "$communication_policy" '
-      .runtime_kind == $runtime and .communication_policy == $policy
-    ' <<< "$entry" >/dev/null 2>&1 || return 2
+contract_runtime_matches() {
+  local entry="$1" contract="$2" runtime_kind communication_policy
+  [ "$(jq -r '.schema_version' <<< "$contract")" = "3" ] || return 0
+  runtime_kind=$(jq -r '.runtime_kind // empty' <<< "$contract")
+  communication_policy=$(jq -r '.communication_policy // empty' <<< "$contract")
+  jq -e --arg runtime "$runtime_kind" --arg policy "$communication_policy" '
+    .runtime_kind == $runtime and .communication_policy == $policy
+  ' <<< "$entry" >/dev/null 2>&1 || return 2
+}
+
+contract_capabilities_match() {
+  local entry="$1" contract="$2" role capabilities
+  [ "$(jq -r '.schema_version' <<< "$contract")" = "3" ] || return 0
+  role=$(jq -r '.role // empty' <<< "$entry")
+  capabilities=$(jq -c '.capabilities // []' <<< "$entry")
+  jq -e --arg role "$role" --argjson capabilities "$capabilities" '.capabilities_by_role[$role] == $capabilities' <<< "$contract" >/dev/null 2>&1 || return 2
+}
+
+contract_team_matches() {
+  local entry="$1" contract="$2" manifest="$3" team_mode pair_id manifest_roles contract_roles
+  team_mode=$(jq -r '.team_mode' <<< "$contract")
+  pair_id=$(jq -r '.pair_id // empty' <<< "$entry")
+  if [ "$team_mode" = "solo" ]; then
+    [ -z "$pair_id" ] || return 1
+  else
+    [ -n "$pair_id" ] || return 1
+    manifest_roles=$(jq -c --arg pair "$pair_id" '[.agents[] | select(.pair_id == $pair) | .role]' <<< "$manifest") || return 1
+    contract_roles=$(jq -c '.roles' <<< "$contract") || return 1
+    [ "$manifest_roles" = "$contract_roles" ] || return 1
   fi
+}
+
+contract_identity_matches() {
+  local entry="$1" contract="$2" contract_id contract_digest task_identity role allowances
   contract_id=$(jq -r '.contract_id // empty' <<< "$contract")
   contract_digest=$(jq -r '.contract_digest // empty' <<< "$contract")
   task_identity=$(jq -r '.task_identity // empty' <<< "$contract")
@@ -135,20 +156,18 @@ validate_entry_contract() {
       and $id != ""
     ' <<< "$entry" >/dev/null 2>&1 || return 1
   jq -e --arg role "$role" --argjson allowances "$allowances" '.allowances_by_role[$role] == $allowances' <<< "$contract" >/dev/null 2>&1 || return 1
-  if [ "$(jq -r '.schema_version' <<< "$contract")" = "3" ]; then
-    capabilities=$(jq -c '.capabilities // []' <<< "$entry")
-    jq -e --arg role "$role" --argjson capabilities "$capabilities" '.capabilities_by_role[$role] == $capabilities' <<< "$contract" >/dev/null 2>&1 || return 2
-  fi
-  team_mode=$(jq -r '.team_mode' <<< "$contract")
-  pair_id=$(jq -r '.pair_id // empty' <<< "$entry")
-  if [ "$team_mode" = "solo" ]; then
-    [ -z "$pair_id" ] || return 1
-  else
-    [ -n "$pair_id" ] || return 1
-    manifest_roles=$(jq -c --arg pair "$pair_id" '[.agents[] | select(.pair_id == $pair) | .role]' <<< "$manifest") || return 1
-    contract_roles=$(jq -c '.roles' <<< "$contract") || return 1
-    [ "$manifest_roles" = "$contract_roles" ] || return 1
-  fi
+}
+
+validate_entry_contract() {
+  local name="$1" entry="$2" manifest="$3" contract_path contract
+  contract_path=$(jq -r '.contract_path // empty' <<< "$entry")
+  [ -n "$contract_path" ] || return 1
+  contract=$(bash "$SCRIPT_DIR/task-contract.sh" verify "$contract_path" "$PROJECT_ROOT" 2>/dev/null) || return 1
+  jq -e '.state == "dispatched"' <<< "$contract" >/dev/null 2>&1 || return 1
+  contract_runtime_matches "$entry" "$contract" || return $?
+  contract_identity_matches "$entry" "$contract" || return $?
+  contract_capabilities_match "$entry" "$contract" || return $?
+  contract_team_matches "$entry" "$contract" "$manifest" || return $?
   return 0
 }
 
@@ -253,11 +272,26 @@ claim_manifest_spawn() {
   agent_manifest_with_lock "$PLANNING_DIR" _claim_manifest_spawn_locked "$1"
 }
 
+block_claim_failure() {
+  local message
+  case "$1" in
+    20) message="Pair ${PAIR_ID:-} (${PAIR_MEMBERS:-?}) is open, spawn every member before starting other work." ;;
+    30) message="generated agent '$SUBAGENT_TYPE' contract is missing, stale, tampered, or not dispatched." ;;
+    31) message="generated agent '$SUBAGENT_TYPE' runtime or communication policy does not match its contract." ;;
+    32) message="call-time ${NATIVE_CONFLICT_FIELD:-value} override conflicts with generated definition." ;;
+    33) message="generated agent '$SUBAGENT_TYPE' model is not present in the live host Agent enum." ;;
+    3) message="generated agent '$SUBAGENT_TYPE' is already ${CLAIM_STATE:-unregistered} and cannot be spawned again." ;;
+    *) message="registered agent '$SUBAGENT_TYPE' could not be claimed." ;;
+  esac
+  echo "Blocked: $message" >&2
+  exit 2
+}
+
 manifest_guard() {
-  local rc
+  local claim_status
   claim_manifest_spawn "$SUBAGENT_TYPE"
-  rc=$?
-  case "$rc" in
+  claim_status=$?
+  case "$claim_status" in
     0) return 0 ;;
     10)
       case "$SUBAGENT_TYPE" in
@@ -268,34 +302,7 @@ manifest_guard() {
         *) return 0 ;;
       esac
       ;;
-    20)
-      echo "Blocked: Pair ${PAIR_ID:-} (${PAIR_MEMBERS:-?}) is open, spawn every member before starting other work." >&2
-      exit 2
-      ;;
-    30)
-      echo "Blocked: generated agent '$SUBAGENT_TYPE' contract is missing, stale, tampered, or not dispatched." >&2
-      exit 2
-      ;;
-    31)
-      echo "Blocked: generated agent '$SUBAGENT_TYPE' runtime or communication policy does not match its contract." >&2
-      exit 2
-      ;;
-    32)
-      echo "Blocked: call-time ${NATIVE_CONFLICT_FIELD:-value} override conflicts with generated definition." >&2
-      exit 2
-      ;;
-    33)
-      echo "Blocked: generated agent '$SUBAGENT_TYPE' model is not present in the live host Agent enum." >&2
-      exit 2
-      ;;
-    3)
-      echo "Blocked: generated agent '$SUBAGENT_TYPE' is already ${CLAIM_STATE:-unregistered} and cannot be spawned again." >&2
-      exit 2
-      ;;
-    *)
-      echo "Blocked: registered agent '$SUBAGENT_TYPE' could not be claimed." >&2
-      exit 2
-      ;;
+    *) block_claim_failure "$claim_status" ;;
   esac
 }
 
