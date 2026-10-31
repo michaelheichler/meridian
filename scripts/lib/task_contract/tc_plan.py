@@ -1,10 +1,12 @@
 import re
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 from xml.etree import ElementTree as ET
 
-from tc_build import build_allowances, new_contract, plan_schema3_fields, schema3_plan_requested
-from tc_common import fail, safe_id, safe_path, safe_token, sha256_text, with_digest
+from tc_build import AllowanceSpec, build_allowances, new_contract, plan_schema3_fields, schema3_plan_requested
+from tc_common import JsonMap, Team, fail, safe_id, safe_path, safe_token, sha256_text, with_digest
+
+PlanParts = tuple[str, str, dict[str, str], list[str]]
 from tc_roles import configured_team, default_team_mode
 
 
@@ -41,7 +43,7 @@ def select_task(records: list[str], requested: str) -> dict[str, str]:
     return selected
 
 
-def parse_plan(path: Path, requested: str) -> tuple[str, str, dict[str, str], list[str]]:
+def parse_plan(path: Path, requested: str) -> PlanParts:
     try:
         text = path.read_text()
     except OSError:
@@ -62,7 +64,16 @@ def parse_plan(path: Path, requested: str) -> tuple[str, str, dict[str, str], li
     return text, phase, selected, files
 
 
-def plan_contract(path: Path, root: Path, task_name: str, options: dict[str, Any]) -> dict[str, Any]:
+@dataclass(frozen=True)
+class PlanRequest:
+    path: Path
+    root: Path
+    task_name: str
+    options: JsonMap
+
+
+def plan_contract(request: PlanRequest) -> JsonMap:
+    path, root, task_name, options = request.path, request.root, request.task_name, request.options
     text, phase, selected, plan_files = parse_plan(path, task_name)
     role = options["role"] or selected.get("role", "")
     if not role:
@@ -72,18 +83,18 @@ def plan_contract(path: Path, root: Path, task_name: str, options: dict[str, Any
     job = options["job"] or selected["action"]
     roles = configured_team(role, team)
     primary_paths = options["write_allowances"] or plan_files
-    allowances, files = build_allowances(roles, role, primary_paths, options["role_write_allowances"], plan_files)
+    spec = AllowanceSpec(Team(roles, role), primary_paths, options["role_write_allowances"], plan_files)
+    allowances, files = build_allowances(spec)
     suffix = [] if group == "task" else [group]
-    contract_id = safe_id(phase, path.stem, task_name, *suffix)
-    contract = new_contract(root, {
-        "contract_id": contract_id, "source_kind": "plan", "source_path": str(path),
-        "source_sha256": sha256_text(text), "command_name": "build", "phase": phase,
-        "task_name": task_name, "group": group, "team": team, "role": role,
+    core = {key: selected[key] for key in ("action", "verify", "done", "strategy")}
+    core.update({
+        "contract_id": safe_id(phase, path.stem, task_name, *suffix), "source_kind": "plan",
+        "source_path": str(path), "source_sha256": sha256_text(text), "command_name": "build",
+        "phase": phase, "task_name": task_name, "group": group, "team": team, "role": role,
         "roles": roles, "plan_files": plan_files, "files": files,
-        "allowances": allowances, "job": job, "action": selected["action"],
-        "verify": selected["verify"], "done": selected["done"],
-        "strategy": selected["strategy"],
+        "allowances": allowances, "job": job,
     })
+    contract = new_contract(root, core)
     if schema3_plan_requested(options):
         contract.update(plan_schema3_fields(options, root, allowances))
     return with_digest(contract)

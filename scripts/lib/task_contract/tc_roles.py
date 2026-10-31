@@ -3,10 +3,10 @@ import os
 from pathlib import Path
 from typing import Any
 
-from tc_common import fail, safe_token
+from tc_common import JsonMap, fail, safe_token
 
 
-def role_defaults() -> dict[str, Any]:
+def role_defaults() -> JsonMap:
     path = Path(os.environ["TASK_CONTRACT_SCRIPT_DIR"]) / ".." / "templates" / "agent-roles" / "defaults.json"
     try:
         data = json.loads(path.read_text())
@@ -24,7 +24,7 @@ def role_write_capable(role_name: str) -> bool:
     return not {"Write", "Edit"}.issubset(tokens)
 
 
-def team_roles(defaults: dict[str, Any], role: str, mode: Any) -> list[str]:
+def team_roles(defaults: JsonMap, role: str, mode: Any) -> list[str]:
     if mode == "solo":
         return [role]
     if mode == "pair":

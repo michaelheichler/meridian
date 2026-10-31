@@ -1,13 +1,12 @@
 import json
 import sys
 from pathlib import Path
-from typing import Any
 
 from tc_build import assert_contract_matches_snapshot
 from tc_command import command_contract
-from tc_common import LEGAL, STATES, USAGE, canonical_root, digest_contract, fail, safe_token
+from tc_common import LEGAL, STATES, USAGE, Expect, JsonMap, canonical_root, digest_contract, fail, safe_token
 from tc_options import parse_options
-from tc_plan import plan_contract
+from tc_plan import PlanRequest, plan_contract
 from tc_store import (
     atomic, control_root_for_contract_path, create_or_reopen, load,
     locate_contract_path, lock, unlock, validate_contract_path,
@@ -15,7 +14,7 @@ from tc_store import (
 from tc_validate import validate_contract
 
 
-def finish_issue(root: Path, contract: dict[str, Any], options: dict[str, Any]) -> None:
+def finish_issue(root: Path, contract: JsonMap, options: JsonMap) -> None:
     if options["assert_snapshot"]:
         assert_contract_matches_snapshot(options["assert_snapshot"], contract)
     create_or_reopen(root, contract)
@@ -31,7 +30,7 @@ def run_open(argv: list[str]) -> None:
     except ValueError:
         fail("PLAN escapes project root")
     options = parse_options(argv[5:])
-    finish_issue(root, plan_contract(plan, root, argv[4], options), options)
+    finish_issue(root, plan_contract(PlanRequest(plan, root, argv[4], options)), options)
 
 
 def run_issue(argv: list[str]) -> None:
@@ -48,11 +47,11 @@ def run_verify(argv: list[str]) -> None:
     root = canonical_root(argv[3])
     path = validate_contract_path(Path(argv[2]), root)
     contract = load(path)
-    validate_contract(contract, root, path.stem, argv[5] if len(argv) == 6 else None)
+    validate_contract(contract, root, Expect(path.stem, argv[5] if len(argv) == 6 else None))
     print(json.dumps(contract, sort_keys=True, indent=2))
 
 
-def transition(contract: dict[str, Any], new_state: str, path: Path) -> None:
+def transition(contract: JsonMap, new_state: str, path: Path) -> None:
     if new_state not in STATES:
         fail("invalid state")
     if new_state not in LEGAL.get(contract["state"], set()):
@@ -74,7 +73,7 @@ def run_read_or_state(argv: list[str]) -> None:
     held = lock(root, control_root_for_contract_path(path, root))
     try:
         contract = load(path)
-        validate_contract(contract, root, contract_id)
+        validate_contract(contract, root, Expect(contract_id))
         if command == "state":
             transition(contract, argv[4], path)
         print(json.dumps(contract, sort_keys=True, indent=2))

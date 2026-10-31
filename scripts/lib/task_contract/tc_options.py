@@ -1,6 +1,4 @@
-from typing import Any
-
-from tc_common import USAGE, fail
+from tc_common import USAGE, JsonMap, fail
 
 VALUE_OPTIONS = {
     "--role": "role",
@@ -21,28 +19,28 @@ LIST_KEYS = (
 )
 
 
-def empty_options() -> dict[str, Any]:
-    options: dict[str, Any] = {key: "" for key in VALUE_OPTIONS.values()}
+def empty_options() -> JsonMap:
+    options: JsonMap = {key: "" for key in VALUE_OPTIONS.values()}
     for key in LIST_KEYS:
         options[key] = []
     return options
 
 
-def add_capability(options: dict[str, Any], value: str) -> None:
+def add_capability(options: JsonMap, value: str) -> None:
     if ":" not in value:
         fail("invalid write capability")
     kind, path = value.split(":", 1)
     options["capabilities"].append((kind, path))
 
 
-def add_role_capability(options: dict[str, Any], value: str) -> None:
+def add_role_capability(options: JsonMap, value: str) -> None:
     parts = value.split(":", 2)
     if len(parts) != 3:
         fail("invalid role write capability")
     options["role_capabilities"].append(tuple(parts))
 
 
-def list_handlers() -> dict[str, Any]:
+def list_handlers() -> JsonMap:
     return {
         "--write-allowance": lambda opts, val: opts["write_allowances"].append(val),
         "--role-write-allowance": lambda opts, val: opts["role_write_allowances"].append(val),
@@ -53,7 +51,7 @@ def list_handlers() -> dict[str, Any]:
     }
 
 
-def apply_option(options: dict[str, Any], flag: str, value: str) -> None:
+def apply_option(options: JsonMap, flag: str, value: str) -> None:
     if flag in VALUE_OPTIONS:
         key = VALUE_OPTIONS[flag]
         if options[key]:
@@ -66,7 +64,7 @@ def apply_option(options: dict[str, Any], flag: str, value: str) -> None:
     handler(options, value)
 
 
-def parse_options(arguments: list[str], require_command: bool = False) -> dict[str, Any]:
+def parse_options(arguments: list[str], require_command: bool = False) -> JsonMap:
     options = empty_options()
     index = 0
     while index < len(arguments):

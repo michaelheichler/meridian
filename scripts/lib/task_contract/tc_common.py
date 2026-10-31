@@ -4,8 +4,26 @@ import os
 import re
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, NoReturn
+
+JsonMap = dict[str, Any]
+AllowMap = dict[str, list[str]]
+CapMap = dict[str, list[dict[str, str]]]
+AllowResult = tuple[AllowMap, list[str]]
+
+
+@dataclass(frozen=True)
+class Team:
+    roles: list[str]
+    primary: str
+
+
+@dataclass(frozen=True)
+class Expect:
+    contract_id: Any = None
+    job: Any = None
 
 USAGE = (
     "Usage: task-contract.sh "
