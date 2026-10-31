@@ -5,9 +5,9 @@ from xml.etree import ElementTree as ET
 
 from tc_build import AllowanceSpec, build_allowances, new_contract, plan_schema3_fields, schema3_plan_requested
 from tc_common import JsonMap, Team, fail, safe_id, safe_path, safe_token, sha256_text, with_digest
+from tc_roles import configured_team, default_team_mode
 
 PlanParts = tuple[str, str, dict[str, str], list[str]]
-from tc_roles import configured_team, default_team_mode
 
 
 def task_records(text: str) -> list[str]:
