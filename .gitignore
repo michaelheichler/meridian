@@ -2,7 +2,8 @@
 __pycache__/
 *.pyc
 .lbwc-planning/
-.claude/
+.claude/*
+!.claude/dispatch/
 .agent-discipline.json
 .markdownlint.json
 docs/
