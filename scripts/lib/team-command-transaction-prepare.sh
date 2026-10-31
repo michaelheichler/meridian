@@ -13,12 +13,15 @@ prepare_create_run() {
 }
 
 prepare_seed_temporary_root() {
+  local routing model reasoning
   CONTROL_ROOT="$RUN_ROOT"
-  resolve_routing
-  printf '%s\n' "$CATALOG_JSON" > "$CONTROL_ROOT/claude-capabilities.json"
+  resolve_routing "$ROSTER_ENGINEER" routing
+  model=$(jq -r '.model' <<< "$routing")
+  reasoning=$(jq -c '.reasoning' <<< "$routing")
+  jq -r '.catalog' <<< "$routing" > "$CONTROL_ROOT/claude-capabilities.json"
   jq -n \
-    --arg model "$ROUTING_MODEL" \
-    --argjson reasoning "$ROUTING_REASONING_JSON" \
+    --arg model "$model" \
+    --argjson reasoning "$reasoning" \
     --slurpfile defaults "$ROLE_DEFAULTS_PATH" \
     '{
       schema_version: 1,
@@ -149,7 +152,7 @@ action_prepare() {
   resolve_scopes
   reject_protected_scopes
   resolve_active_control_root
-  resolve_roster
+  resolve_roster ROSTER_ENGINEER ROSTER_CRITIC ROSTER_TEST_DEV TEAM_MODE ROSTER_ROLES_JSON
   prepare_create_run
   CONTROL_ROOT="$ACTIVE_CONTROL_ROOT"
   if [ "$CONTROL_ROOT_KIND" = "temporary-run" ]; then

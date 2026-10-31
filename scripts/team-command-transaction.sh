@@ -212,8 +212,10 @@ reject_protected_scopes() {
 }
 
 read_agent_teams_status() {
-  AGENT_TEAMS_STATUS=$(bash "$SCRIPT_DIR/lbwc-config.sh" agent-teams-status --project-root "$PROJECT_ROOT") \
+  local project_root="$1" out_status="$2" status_json
+  status_json=$(bash "$SCRIPT_DIR/lbwc-config.sh" agent-teams-status --project-root "$project_root") \
     || fail 'could not read agent teams status'
+  printf -v "$out_status" '%s' "$status_json"
 }
 
 require_run_contract() {
@@ -255,9 +257,9 @@ case "$ACTION" in
     resolve_scopes
     reject_protected_scopes
     resolve_active_control_root
-    resolve_roster
-    resolve_routing
-    read_agent_teams_status
+    resolve_roster ROSTER_ENGINEER ROSTER_CRITIC ROSTER_TEST_DEV TEAM_MODE ROSTER_ROLES_JSON
+    resolve_routing "$ROSTER_ENGINEER" ROUTING_RECORD
+    read_agent_teams_status "$PROJECT_ROOT" AGENT_TEAMS_STATUS
     jq -n \
       --arg project_root "$PROJECT_ROOT" \
       --argjson scopes "$RESOLVED_SCOPES" \
@@ -266,18 +268,14 @@ case "$ACTION" in
       --arg team_mode "$TEAM_MODE" \
       --arg control_root_kind "$CONTROL_ROOT_KIND" \
       --arg active_control_root "$ACTIVE_CONTROL_ROOT" \
-      --arg routing_mode "$ROUTING_MODE" \
-      --arg routing_profile "$ROUTING_PROFILE" \
-      --arg model "$ROUTING_MODEL" \
-      --argjson reasoning "$ROUTING_REASONING_JSON" \
-      --arg max_turns "$ROUTING_MAX_TURNS" \
+      --argjson routing "$ROUTING_RECORD" \
       --arg settings_path "$SETTINGS_PATH" \
       --argjson agent_teams_status "$AGENT_TEAMS_STATUS" \
       '{schema_version:1,project_root:$project_root,scopes:$scopes,roles:$roles,engineer:$engineer,
         team_mode:$team_mode,
         control_root_kind:$control_root_kind,active_control_root:$active_control_root,
-        routing:{mode:$routing_mode,profile:$routing_profile,model:$model,reasoning:$reasoning,
-          max_turns:($max_turns|tonumber)},
+        routing:{mode:$routing.mode,profile:$routing.profile,model:$routing.model,reasoning:$routing.reasoning,
+          max_turns:$routing.max_turns},
         agent_teams:{enabled:($agent_teams_status.enabled == true),settings_path:$settings_path,
           status:$agent_teams_status},
         side_effects:false}'
@@ -285,7 +283,7 @@ case "$ACTION" in
 
   propose)
     PROJECT_ROOT=$(canonical_project_root "$PROJECT_ROOT_ARG")
-    resolve_roster
+    resolve_roster ROSTER_ENGINEER ROSTER_CRITIC ROSTER_TEST_DEV TEAM_MODE ROSTER_ROLES_JSON
     jq -n --argjson roles "$ROSTER_ROLES_JSON" --arg engineer "$ROSTER_ENGINEER" \
       --arg critic "$ROSTER_CRITIC" --arg team_mode "$TEAM_MODE" \
       --argjson test_dev "$ROSTER_TEST_DEV" \
@@ -299,7 +297,7 @@ case "$ACTION" in
   spawn-payload)
     PROJECT_ROOT=$(canonical_project_root "$PROJECT_ROOT_ARG")
     resolve_run_root
-    require_run_roster
+    require_run_roster ROSTER_JSON MANIFEST_PATH
     PAYLOADS='[]'
     while IFS= read -r name; do
       [ -n "$name" ] || continue
@@ -323,7 +321,7 @@ case "$ACTION" in
     is_valid_record_id "$CONTRACT_ID_ARG" || fail 'contract id is invalid'
     [ -n "$TEAMMATE_ARG" ] || fail '--teammate is required'
     is_valid_record_id "$TEAMMATE_ARG" || fail 'teammate name is invalid'
-    require_run_roster
+    require_run_roster ROSTER_JSON MANIFEST_PATH
     [ "$CONTRACT_ID_ARG" = "$EXPECTED_CONTRACT" ] || fail_diag "contract id mismatch: expected $EXPECTED_CONTRACT"
     jq -e --arg name "$TEAMMATE_ARG" '.agents[$name] | type == "object"' "$MANIFEST_PATH" >/dev/null \
       || fail_diag "teammate is not registered in the run manifest: $TEAMMATE_ARG"
@@ -353,7 +351,7 @@ case "$ACTION" in
   task-payload)
     PROJECT_ROOT=$(canonical_project_root "$PROJECT_ROOT_ARG")
     resolve_run_root
-    require_run_roster
+    require_run_roster ROSTER_JSON MANIFEST_PATH
     while IFS= read -r name; do
       [ -n "$name" ] || continue
       jq -e --arg name "$name" --arg contract "$EXPECTED_CONTRACT" '
@@ -376,7 +374,7 @@ case "$ACTION" in
     is_valid_record_id "$CONTRACT_ID_ARG" || fail 'contract id is invalid'
     [ -n "$TASK_ID_ARG" ] || fail '--task-id is required'
     is_valid_record_id "$TASK_ID_ARG" || fail 'task id is invalid'
-    require_run_roster
+    require_run_roster ROSTER_JSON MANIFEST_PATH
     [ "$CONTRACT_ID_ARG" = "$EXPECTED_CONTRACT" ] || fail_diag "contract id mismatch: expected $EXPECTED_CONTRACT"
     jq -e --arg task "$TASK_ID_ARG" --arg contract "$CONTRACT_ID_ARG" \
       '.tasks[$task].contract_id == $contract' "$MANIFEST_PATH" >/dev/null \

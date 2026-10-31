@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -Eeuo pipefail
+set -euo pipefail
 umask 077
 
 SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname "$0")" && pwd -P)
@@ -25,9 +25,11 @@ require_tmux() {
 }
 
 resolve_context() {
-  [ -d "$project_root" ] || fail "project root does not exist: $project_root"
-  PROJECT_ROOT=$(CDPATH='' cd -- "$project_root" && pwd -P)
-  tmux_runtime_configure "$requested_control_root"
+  local requested_root="$1" control_root="$2" out_root="$3" physical_root
+  [ -d "$requested_root" ] || fail "project root does not exist: $requested_root"
+  physical_root=$(CDPATH='' cd -- "$requested_root" && pwd -P)
+  printf -v "$out_root" '%s' "$physical_root"
+  tmux_runtime_configure "$control_root"
 }
 
 ensure_runtime_layout() {
@@ -60,15 +62,22 @@ require_main_orchestrator() {
   [ "$orchestrator_id" = "$(jq -r '.main.agent_id' <<<"$registry")" ] || fail 'operation requires the main orchestrator'
 }
 
-tmux_layout_config() {
-  layout=$(jq -r '.tmux_execution.layout // .tmux.layout // "tiled"' "$TMUX_RUNTIME_CONTROL_ROOT/config.json")
-  case "$layout" in tiled|even-horizontal|even-vertical|main-horizontal|main-vertical) ;; *) fail 'tmux layout is invalid' ;; esac
-  max_agents=$(jq -r '.tmux_execution.max_agents // .tmux.max_agents // 3' "$TMUX_RUNTIME_CONTROL_ROOT/config.json")
-  [[ "$max_agents" =~ ^[1-4]$ ]] || fail 'tmux max_agents must be between 1 and 4'
+tmux_layout_name() {
+  local layout_name
+  layout_name=$(jq -r '.tmux_execution.layout // .tmux.layout // "tiled"' "$TMUX_RUNTIME_CONTROL_ROOT/config.json")
+  case "$layout_name" in tiled|even-horizontal|even-vertical|main-horizontal|main-vertical) ;; *) fail 'tmux layout is invalid' ;; esac
+  printf '%s\n' "$layout_name"
+}
+
+tmux_max_agents() {
+  local agent_limit
+  agent_limit=$(jq -r '.tmux_execution.max_agents // .tmux.max_agents // 3' "$TMUX_RUNTIME_CONTROL_ROOT/config.json")
+  [[ "$agent_limit" =~ ^[1-4]$ ]] || fail 'tmux max_agents must be between 1 and 4'
+  printf '%s\n' "$agent_limit"
 }
 
 apply_tmux_layout() {
-  tmux select-layout -t "$1" "$layout"
+  tmux select-layout -t "$1" "$2"
 }
 
 configure_pane_borders() {
@@ -118,7 +127,7 @@ done
 [ -n "$requested_control_root" ] || fail '--control-root is required'
 case "$subcommand" in provision|split-agent|split-group|focus-orchestrator|kill-agent|kill-session|status|rollback) ;; *) usage ;; esac
 require_tmux
-resolve_context
+resolve_context "$project_root" "$requested_control_root" PROJECT_ROOT
 trap tmux_runtime_cleanup_locks EXIT
 
 case "$subcommand" in

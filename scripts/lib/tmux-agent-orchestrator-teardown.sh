@@ -74,19 +74,18 @@ kill_agent() {
   jq -n --arg target "$target" '{tmux_target: $target, state: "shutdown"}'
 }
 
-# Reads kill_session locals because teardown steps share one registry snapshot.
 stop_owned_session() {
+  local registry="$1" session_name="$2" intent_name="$3" ownership marker
   ownership=$(jq -r '.tmux.ownership_token' <<<"$registry")
-  marker=$(tmux show-options -v -t "$session" @lbwc_ownership_token 2>/dev/null || true)
+  marker=$(tmux show-options -v -t "$session_name" @lbwc_ownership_token 2>/dev/null || true)
   [ "$marker" = "$ownership" ] || fail 'owned tmux session is missing its provisioning ownership marker'
-  tmux kill-session -t "$session" || fail 'cannot kill owned tmux session'
-  tmux_session_exists "$session" && fail 'owned tmux session remains after kill request'
-  write_teardown_intent "$intent_name" "$session" process_stopped || fail 'cannot persist stopped session teardown intent'
+  tmux kill-session -t "$session_name" || fail 'cannot kill owned tmux session'
+  tmux_session_exists "$session_name" && fail 'owned tmux session remains after kill request'
+  write_teardown_intent "$intent_name" "$session_name" process_stopped || fail 'cannot persist stopped session teardown intent'
 }
 
 snapshot_external_agents() {
-  local agent
-  active_agents='[]'
+  local registry="$1" out_agents="$2" agent agent_id agent_target agent_pane_id snapshot_list='[]'
   while IFS= read -r agent; do
     agent_id=$(jq -r '.agent_id' <<<"$agent")
     agent_target=$(jq -r '.tmux_target' <<<"$agent")
@@ -95,15 +94,17 @@ snapshot_external_agents() {
     [[ "$agent_pane_id" =~ ^%[0-9]+$ ]] || fail 'registered external agent pane identity is invalid'
     if tmux_pane_exists "$agent_pane_id"; then
       write_teardown_intent "$agent_id" "$agent_target" prepared || fail 'cannot persist external agent teardown intent'
-      active_agents=$(jq --arg agent_id "$agent_id" --arg target "$agent_target" --arg pane_id "$agent_pane_id" '. + [{agent_id:$agent_id,tmux_target:$target,pane_id:$pane_id}]' <<<"$active_agents") || fail 'cannot snapshot external agent teardown'
+      snapshot_list=$(jq --arg agent_id "$agent_id" --arg target "$agent_target" --arg pane_id "$agent_pane_id" '. + [{agent_id:$agent_id,tmux_target:$target,pane_id:$pane_id}]' <<<"$snapshot_list") || fail 'cannot snapshot external agent teardown'
     else
       write_teardown_intent "$agent_id" "$agent_target" prepared || fail 'cannot persist absent external agent teardown intent'
       write_teardown_intent "$agent_id" "$agent_target" process_stopped || fail 'cannot persist absent external agent shutdown state'
     fi
   done < <(jq -c '.agents[] | select(.state != "shutdown") | {agent_id, tmux_target, tmux_pane_id}' <<<"$registry")
+  printf -v "$out_agents" '%s' "$snapshot_list"
 }
 
 stop_external_agents() {
+  local active_agents="$1" snapshot_agent agent_id agent_target agent_pane_id
   while IFS= read -r snapshot_agent; do
     agent_id=$(jq -r '.agent_id' <<<"$snapshot_agent")
     agent_target=$(jq -r '.tmux_target' <<<"$snapshot_agent")
@@ -117,8 +118,9 @@ stop_external_agents() {
 }
 
 stop_external_session() {
-  snapshot_external_agents
-  stop_external_agents
+  local registry="$1" active_agent_ids="$2" intent_name="$3" active_agents agent_id
+  snapshot_external_agents "$registry" active_agents
+  stop_external_agents "$active_agents"
   persist_shutdown_agents "$registry" "$active_agent_ids" || fail 'cannot persist session shutdown state; retry to finalize teardown'
   while IFS= read -r agent_id; do
     [ -n "$agent_id" ] && clear_teardown_intent "$agent_id"
@@ -129,7 +131,7 @@ stop_external_session() {
 }
 
 kill_session() {
-  local registry registered_session managed ownership marker agent_target agent_pane_id agent_id active_agents active_agent_ids snapshot_agent intent_name='session'
+  local registry registered_session managed active_agent_ids intent_name='session'
   require_main_orchestrator
   tmux_runtime_lock_acquire registry 5000 30000
   registry=$(tmux_runtime_registry_read)
@@ -139,11 +141,11 @@ kill_session() {
   active_agent_ids=$(jq -c '[.agents[] | select(.state != "shutdown") | .agent_id]' <<<"$registry")
   write_teardown_intent "$intent_name" "$session" prepared || fail 'cannot persist session teardown intent'
   if [ "$managed" = true ] && tmux_session_exists "$session"; then
-    stop_owned_session
+    stop_owned_session "$registry" "$session" "$intent_name"
   elif [ "$managed" = true ]; then
     teardown_process_stopped "$intent_name" "$session" || fail 'owned tmux session is unavailable; refusing false shutdown'
   elif [ "$managed" = false ]; then
-    stop_external_session
+    stop_external_session "$registry" "$active_agent_ids" "$intent_name"
     return 0
   fi
   persist_shutdown_agents "$registry" "$(jq -c '[.agents[].agent_id]' <<<"$registry")" || fail 'cannot persist session shutdown state; retry to finalize teardown'

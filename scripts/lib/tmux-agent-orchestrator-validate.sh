@@ -1,5 +1,5 @@
 split_validation_error() {
-  SPLIT_VALIDATION_ERROR="$1"
+  printf -v SPLIT_VALIDATION_ERROR '%s' "$1"
   return 1
 }
 
@@ -19,30 +19,34 @@ validate_definitions_shape() {
 }
 
 load_validation_manifest() {
-  local manifest_path
+  local out_manifest="$1" manifest_path loaded_manifest
   manifest_path=$(agent_manifest_path "$TMUX_RUNTIME_CONTROL_ROOT") || { split_validation_error 'generated agent manifest is unavailable'; return 1; }
   [ -f "$manifest_path" ] && [ ! -L "$manifest_path" ] || { split_validation_error 'generated agent manifest is missing'; return 1; }
-  manifest=$(jq -ce 'select(type == "object" and (.agents | type == "object"))' "$manifest_path" 2>/dev/null) || { split_validation_error 'generated agent manifest is malformed'; return 1; }
+  loaded_manifest=$(jq -ce 'select(type == "object" and (.agents | type == "object"))' "$manifest_path" 2>/dev/null) || { split_validation_error 'generated agent manifest is malformed'; return 1; }
+  printf -v "$out_manifest" '%s' "$loaded_manifest"
 }
 
-# Shares validate_split_item locals because each check feeds the next.
 check_item_identity() {
-  local value
-  agent_id=$(jq -r '.agent_id' <<<"$item")
-  generated_name=$(jq -r '.generated_name' <<<"$item")
-  contract_id=$(jq -r '.contract_id' <<<"$item")
-  contract_digest=$(jq -r '.contract_digest' <<<"$item")
-  for value in "$agent_id" "$generated_name" "$contract_id"; do
+  local item="$1" out_agent="$2" out_contract="$3" out_digest="$4" item_agent item_generated item_contract item_digest value
+  item_agent=$(jq -r '.agent_id' <<<"$item")
+  item_generated=$(jq -r '.generated_name' <<<"$item")
+  item_contract=$(jq -r '.contract_id' <<<"$item")
+  item_digest=$(jq -r '.contract_digest' <<<"$item")
+  for value in "$item_agent" "$item_generated" "$item_contract"; do
     tmux_runtime_valid_token "$value" || { split_validation_error 'agent group contains an invalid identifier'; return 1; }
   done
-  [ "$agent_id" = "$generated_name" ] || { split_validation_error 'agent and generated identities must match'; return 1; }
+  [ "$item_agent" = "$item_generated" ] || { split_validation_error 'agent and generated identities must match'; return 1; }
+  printf -v "$out_agent" '%s' "$item_agent"
+  printf -v "$out_contract" '%s' "$item_contract"
+  printf -v "$out_digest" '%s' "$item_digest"
 }
 
 check_item_manifest_entry() {
-  entry=$(jq -ce --arg name "$agent_id" '.agents[$name] | select(type == "object")' <<<"$manifest" 2>/dev/null) || { split_validation_error "generated agent is not registered: $agent_id"; return 1; }
-  [ "$(jq -r '.name // empty' <<<"$entry")" = "$agent_id" ] || { split_validation_error 'generated manifest identity does not match agent id'; return 1; }
-  [ "$(jq -r '.contract_id // empty' <<<"$entry")" = "$contract_id" ] || { split_validation_error 'contract identity does not match generated manifest'; return 1; }
-  [ "$(jq -r '.contract_digest // empty' <<<"$entry")" = "$contract_digest" ] || { split_validation_error 'contract digest does not match generated manifest'; return 1; }
+  local manifest="$1" agent_id="$2" contract_id="$3" contract_digest="$4" out_entry="$5" found_entry
+  found_entry=$(jq -ce --arg name "$agent_id" '.agents[$name] | select(type == "object")' <<<"$manifest" 2>/dev/null) || { split_validation_error "generated agent is not registered: $agent_id"; return 1; }
+  [ "$(jq -r '.name // empty' <<<"$found_entry")" = "$agent_id" ] || { split_validation_error 'generated manifest identity does not match agent id'; return 1; }
+  [ "$(jq -r '.contract_id // empty' <<<"$found_entry")" = "$contract_id" ] || { split_validation_error 'contract identity does not match generated manifest'; return 1; }
+  [ "$(jq -r '.contract_digest // empty' <<<"$found_entry")" = "$contract_digest" ] || { split_validation_error 'contract digest does not match generated manifest'; return 1; }
   jq -e '
     .schema_version == 3
     and .state == "registered"
@@ -50,7 +54,7 @@ check_item_manifest_entry() {
     and .definition_authority == "generated-definition"
     and .runtime_kind == "native-team"
     and .communication_policy == "native-team"
-  ' <<<"$entry" >/dev/null 2>&1 || { split_validation_error 'generated manifest entry is not an unconsumed schema 3 native-team definition'; return 1; }
+  ' <<<"$found_entry" >/dev/null 2>&1 || { split_validation_error 'generated manifest entry is not an unconsumed schema 3 native-team definition'; return 1; }
   jq -e '
     . as $entry
     | (.execution | type == "object")
@@ -61,11 +65,12 @@ check_item_manifest_entry() {
     and .execution.contract_id == $entry.contract_id
     and .execution.contract_digest == $entry.contract_digest
     and .execution.task_identity == $entry.task_identity
-  ' <<<"$entry" >/dev/null 2>&1 || { split_validation_error 'generated agent execution identity does not match the manifest'; return 1; }
+  ' <<<"$found_entry" >/dev/null 2>&1 || { split_validation_error 'generated agent execution identity does not match the manifest'; return 1; }
+  printf -v "$out_entry" '%s' "$found_entry"
 }
 
 check_item_contract() {
-  local contract_path
+  local entry="$1" agent_id="$2" contract_id="$3" contract_digest="$4" contract_path contract
   contract_path=$(jq -r '.contract_path // empty' <<<"$entry")
   [ -n "$contract_path" ] || { split_validation_error 'generated agent contract path is missing'; return 1; }
   contract=$(bash "$SCRIPT_DIR/task-contract.sh" verify "$contract_path" "$PROJECT_ROOT" 2>/dev/null) || { split_validation_error 'generated agent contract is missing, stale, or tampered'; return 1; }
@@ -96,7 +101,7 @@ check_item_contract() {
 }
 
 check_item_definition() {
-  local definition_path definition_digest
+  local entry="$1" agent_id="$2" definition_path definition_digest
   definition_path=$(jq -r '.definition_path // empty' <<<"$entry")
   [ "$definition_path" = "$PROJECT_ROOT/.claude/agents/$agent_id.md" ] || { split_validation_error 'generated definition path is invalid'; return 1; }
   [ -f "$definition_path" ] && [ ! -L "$definition_path" ] || { split_validation_error 'generated definition is missing'; return 1; }
@@ -105,19 +110,19 @@ check_item_definition() {
 }
 
 validate_split_item() {
-  local item="$1" agent_id generated_name contract_id contract_digest entry contract
-  check_item_identity || return 1
-  check_item_manifest_entry || return 1
-  check_item_contract || return 1
-  check_item_definition || return 1
+  local item="$1" manifest="$2" agent_id contract_id contract_digest entry
+  check_item_identity "$item" agent_id contract_id contract_digest || return 1
+  check_item_manifest_entry "$manifest" "$agent_id" "$contract_id" "$contract_digest" entry || return 1
+  check_item_contract "$entry" "$agent_id" "$contract_id" "$contract_digest" || return 1
+  check_item_definition "$entry" "$agent_id" || return 1
 }
 
 validate_split_group_definitions() {
   local definitions="$1" manifest item
   SPLIT_VALIDATION_ERROR=''
   validate_definitions_shape "$definitions" || return 1
-  load_validation_manifest || return 1
+  load_validation_manifest manifest || return 1
   while IFS= read -r item; do
-    validate_split_item "$item" || return 1
+    validate_split_item "$item" "$manifest" || return 1
   done < <(jq -c '.[]' <<<"$definitions")
 }
