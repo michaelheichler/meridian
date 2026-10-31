@@ -130,6 +130,7 @@ normalize_round_padded_value() {
 }
 
 migrate_legacy_remediation_state_if_needed() {
+  local _mig_rd _mig_name
   [ ! -f "$STATE_FILE" ] && [ -f "$LEGACY_REMED_STATE_FILE" ] || return 0
 
   mkdir -p "$PHASE_DIR/remediation/uat"
@@ -143,37 +144,6 @@ migrate_legacy_remediation_state_if_needed() {
   done
   rm -f "$LEGACY_REMED_STATE_FILE"
   reconcile_uat_state "$STATE_FILE"
-}
-
-preflight_legacy_remediation_needs_round() {
-  local legacy_stage legacy_round legacy_round_padded legacy_uat legacy_uat_class
-
-  [ ! -f "$STATE_FILE" ] && [ -f "$LEGACY_REMED_STATE_FILE" ] || return 0
-
-  legacy_stage=$(read_state_stage_value "$LEGACY_REMED_STATE_FILE")
-  case "$legacy_stage" in
-    verify|done) ;;
-    *)
-      echo "Error: needs-round requires stage verify or done, got: $legacy_stage" >&2
-      exit 1
-      ;;
-  esac
-
-  legacy_round=$(read_state_round_value "$LEGACY_REMED_STATE_FILE")
-  legacy_round_padded=$(normalize_round_padded_value "$legacy_round") || exit 1
-  legacy_uat="$PHASE_DIR/remediation/round-${legacy_round_padded}/R${legacy_round_padded}-UAT.md"
-  if [ ! -f "$legacy_uat" ]; then
-    echo "Error: needs-round current round UAT evidence is missing for round $legacy_round_padded" >&2
-    exit 1
-  fi
-
-  if type uat_file_status_class >/dev/null 2>&1; then
-    legacy_uat_class=$(uat_file_status_class "$legacy_uat")
-    if [ "$legacy_uat_class" != "issues_found" ]; then
-      echo "Error: needs-round requires a finalized 'issues_found' UAT; current UAT is '$legacy_uat_class': $legacy_uat" >&2
-      exit 1
-    fi
-  fi
 }
 
 if [ "$CMD" != "needs-round" ]; then
@@ -308,165 +278,57 @@ next_stage() {
   echo "done"
 }
 
-do_init() {
-  local severity="$1"
-  local initial_stage
-  case "$severity" in
-    major|critical) initial_stage="research" ;;
-    minor)          initial_stage="fix" ;;
-    *)              initial_stage="research" ;;
-  esac
+. "$SCRIPT_DIR/lib/uat-remediation-init.sh"
+. "$SCRIPT_DIR/lib/uat-remediation-needs-round.sh"
 
-  mkdir -p "$PHASE_DIR/remediation/uat/round-01"
-
-  printf 'stage=%s\nround=01\nlayout=round-dir\n' "$initial_stage" > "$STATE_FILE"
-
-  rm -f "$LEGACY_STATE_FILE"
-  rm -f "$LEGACY_REMED_STATE_FILE"
-
-  reconcile_uat_state "$STATE_FILE"
-
-  echo "$initial_stage"
-
-  local context_file uat_file uat_content _already_seeded
-  _init_emit_context=false
-  _init_context_file=""
-
-  context_file=$(find "$PHASE_DIR" -maxdepth 1 ! -name '.*' -name '[0-9]*-CONTEXT.md' 2>/dev/null | sort | head -1)
-  if type latest_non_source_uat &>/dev/null; then
-    uat_file=$(latest_non_source_uat "$PHASE_DIR")
+cmd_advance() {
+  local current new_stage round layout
+  current=$(get_stage)
+  if [ "$current" = "none" ]; then
+    echo "$current"
+  elif [ "$current" = "verify" ]; then
+    start_new_round
+  elif [ "$current" = "verified" ]; then
+    echo "$current"
   else
-    uat_file=$(find "$PHASE_DIR" -maxdepth 1 ! -name '.*' -name '[0-9]*-UAT.md' ! -name '*SOURCE-UAT.md' 2>/dev/null | sort | tail -1)
-  fi
-
-  if [ -n "$uat_file" ] && [ -f "$uat_file" ]; then
-    uat_content=$(cat "$uat_file")
-    uat_content=$(printf '%s\n' "$uat_content" | sed -E '/^---[[:space:]]*$/,/^---[[:space:]]*$/{
-      s/^([[:space:]]*(phase|round)[[:space:]]*:[[:space:]]*)"([0-9]+)"/\1\3/
-    }')
-
-    if [ -n "$context_file" ] && [ -f "$context_file" ]; then
-      _already_seeded=false
-      if awk '
-        BEGIN { in_fm=0; found=0 }
-        NR==1 && /^---[[:space:]]*$/ { in_fm=1; next }
-        in_fm && /^---[[:space:]]*$/ { exit }
-        in_fm && /^pre_seeded[[:space:]]*:[[:space:]]*"?true"?[[:space:]]*$/ { found=1; exit }
-        END { exit !found }
-      ' "$context_file" 2>/dev/null; then
-        _already_seeded=true
-      fi
-
-      if [ "$_already_seeded" = true ]; then
-        awk '/^## UAT Remediation Issues[[:space:]]*$/ { exit } { print }' \
-          "$context_file" > "${context_file}.tmp" && mv "${context_file}.tmp" "$context_file"
-        {
-          echo "## UAT Remediation Issues"
-          echo ""
-          printf '%s\n' "$uat_content"
-        } >> "$context_file"
-        _init_emit_context=true
-        _init_context_file="$context_file"
-      else
-        if head -1 "$context_file" | grep -q '^---[[:space:]]*$'; then
-          awk '
-            NR==1 && /^---[[:space:]]*$/ { print; next }
-            !inserted && /^---[[:space:]]*$/ { print "pre_seeded: true"; inserted=1 }
-            { print }
-          ' "$context_file" > "${context_file}.tmp" && mv "${context_file}.tmp" "$context_file"
-        else
-          {
-            echo "---"
-            echo "pre_seeded: true"
-            echo "---"
-            echo ""
-            cat "$context_file"
-          } > "${context_file}.tmp" && mv "${context_file}.tmp" "$context_file"
-        fi
-
-        {
-          echo ""
-          echo "---"
-          echo ""
-          echo "## UAT Remediation Issues"
-          echo ""
-          printf '%s\n' "$uat_content"
-        } >> "$context_file"
-        _init_emit_context=true
-        _init_context_file="$context_file"
-      fi
-    else
-      local phase_basename phase_num
-      phase_basename=$(basename "$PHASE_DIR")
-      phase_num="${phase_basename%%[^0-9]*}"
-      context_file="$PHASE_DIR/${phase_num}-CONTEXT.md"
-
-      {
-        echo "---"
-        echo "pre_seeded: true"
-        echo "---"
-        echo ""
-        echo "# Phase ${phase_num}: UAT Remediation Context"
-        echo ""
-        echo "## UAT Remediation Issues"
-        echo ""
-        printf '%s\n' "$uat_content"
-      } > "$context_file"
-      _init_emit_context=true
-      _init_context_file="$context_file"
-    fi
+    new_stage=$(next_stage "$current")
+    round=$(get_round)
+    layout=$(get_layout)
+    mkdir -p "$(dirname "$STATE_FILE")"
+    printf 'stage=%s\nround=%s\nlayout=%s\n' "$new_stage" "$round" "$layout" > "$STATE_FILE"
+    [ -f "$LEGACY_STATE_FILE" ] && rm -f "$LEGACY_STATE_FILE"
+    reconcile_uat_state "$STATE_FILE"
+    echo "$new_stage"
   fi
 }
 
-emit_init_context() {
-  if [ "$_init_emit_context" = true ] && [ -n "$_init_context_file" ] && [ -f "$_init_context_file" ]; then
-    echo "---CONTEXT---"
-    cat "$_init_context_file"
-  fi
+adopt_legacy_state_file() {
+  local resume_round
+  resume_round=$(get_round)
+  mkdir -p "$PHASE_DIR/remediation/uat/round-${resume_round}"
+  printf 'stage=%s\nround=%s\nlayout=legacy\n' "$1" "$resume_round" > "$STATE_FILE"
+  rm -f "$LEGACY_STATE_FILE"
+  reconcile_uat_state "$STATE_FILE"
 }
 
-emit_plan_metadata() {
-  local round round_dir layout research_path="" plan_path="" summary_path=""
-
-  round=$(get_round)
-  round_dir=$(get_round_dir)
-  layout=$(get_layout)
-  summary_path="${round_dir}/R${round}-SUMMARY.md"
-
-  local rr_research="${round_dir}/R${round}-RESEARCH.md"
-  if [ -f "$rr_research" ]; then
-    research_path="$rr_research"
-  elif [ "$layout" = "legacy" ]; then
-    local phase_prefix
-    phase_prefix=$(extract_phase_num)
-    local legacy_per_plan legacy_phase_level
-    legacy_per_plan=$(find "$PHASE_DIR" -maxdepth 1 -name "${phase_prefix}-*-RESEARCH.md" ! -name '.*' 2>/dev/null | sort | tail -1)
-    legacy_phase_level="${PHASE_DIR}/${phase_prefix}-RESEARCH.md"
-    if [ -n "$legacy_per_plan" ] && [ -f "$legacy_per_plan" ]; then
-      research_path="$legacy_per_plan"
-    elif [ -f "$legacy_phase_level" ]; then
-      research_path="$legacy_phase_level"
-    fi
+cmd_get_or_init() {
+  local existing
+  if [ -z "$SEVERITY_ARG" ]; then
+    echo "Usage: uat-remediation-state.sh get-or-init <phase-dir> <major|minor>" >&2
+    exit 1
   fi
-
-  local rr_plan="${round_dir}/R${round}-PLAN.md"
-  if [ -f "$rr_plan" ]; then
-    plan_path="$rr_plan"
-  elif [ "$layout" = "legacy" ]; then
-    local phase_prefix
-    phase_prefix=$(extract_phase_num)
-    local legacy_plan
-    legacy_plan=$(find "$PHASE_DIR" -maxdepth 1 -name "${phase_prefix}-*-PLAN.md" ! -name '.*' 2>/dev/null | sort | tail -1)
-    if [ -n "$legacy_plan" ] && [ -f "$legacy_plan" ]; then
-      plan_path="$legacy_plan"
+  existing=$(get_stage)
+  if [ "$existing" != "none" ]; then
+    if [ ! -f "$STATE_FILE" ] && [ -f "$LEGACY_STATE_FILE" ]; then
+      adopt_legacy_state_file "$existing"
     fi
+    echo "$existing"
+    emit_plan_metadata
+  else
+    do_init "$SEVERITY_ARG"
+    emit_plan_metadata
+    emit_init_context
   fi
-
-  echo "round=${round}"
-  echo "round_dir=${round_dir}"
-  echo "research_path=${research_path}"
-  echo "plan_path=${plan_path}"
-  echo "summary_path=${summary_path}"
 }
 
 case "$CMD" in
@@ -475,23 +337,7 @@ case "$CMD" in
     ;;
 
   advance)
-    current=$(get_stage)
-    if [ "$current" = "none" ]; then
-      echo "$current"
-    elif [ "$current" = "verify" ]; then
-      start_new_round
-    elif [ "$current" = "verified" ]; then
-      echo "$current"
-    else
-      new_stage=$(next_stage "$current")
-      round=$(get_round)
-      layout=$(get_layout)
-      mkdir -p "$(dirname "$STATE_FILE")"
-      printf 'stage=%s\nround=%s\nlayout=%s\n' "$new_stage" "$round" "$layout" > "$STATE_FILE"
-      [ -f "$LEGACY_STATE_FILE" ] && rm -f "$LEGACY_STATE_FILE"
-      reconcile_uat_state "$STATE_FILE"
-      echo "$new_stage"
-    fi
+    cmd_advance
     ;;
 
   reset)
@@ -501,56 +347,7 @@ case "$CMD" in
     ;;
 
   needs-round)
-    if [ ! -f "$STATE_FILE" ] && [ -f "$LEGACY_REMED_STATE_FILE" ]; then
-      preflight_legacy_remediation_needs_round
-      migrate_legacy_remediation_state_if_needed
-    fi
-    if [ ! -f "$STATE_FILE" ] && [ ! -f "$LEGACY_STATE_FILE" ]; then
-      echo "Error: no UAT remediation state exists for $PHASE_DIR, cannot advance to next round without prior init" >&2
-      exit 1
-    fi
-    current_stage=$(get_stage)
-    case "$current_stage" in
-      verify|done) ;;
-      *)
-        echo "Error: needs-round requires stage verify or done, got: $current_stage" >&2
-        exit 1
-        ;;
-    esac
-    if type uat_file_status_class >/dev/null 2>&1; then
-      current_layout=$(get_layout)
-      if [ "$current_layout" = "round-dir" ]; then
-        current_round=$(get_round)
-        current_round_padded=$(normalize_round_padded_value "$current_round") || exit 1
-        phase_num=$(extract_phase_num)
-        current_round_uat="$PHASE_DIR/remediation/uat/round-${current_round_padded}/R${current_round_padded}-UAT.md"
-        current_flat_uat="$PHASE_DIR/${phase_num}-UAT-round-${current_round_padded}.md"
-        current_uat_file=""
-        if [ -f "$current_round_uat" ]; then
-          current_uat_file="$current_round_uat"
-        elif [ -n "$phase_num" ] && [ -f "$current_flat_uat" ]; then
-          current_uat_file="$current_flat_uat"
-        else
-          echo "Error: needs-round current round UAT evidence is missing for round $current_round_padded" >&2
-          exit 1
-        fi
-        current_uat_class=$(uat_file_status_class "$current_uat_file")
-        if [ "$current_uat_class" != "issues_found" ]; then
-          echo "Error: needs-round requires a finalized 'issues_found' UAT; current UAT is '$current_uat_class': $current_uat_file" >&2
-          exit 1
-        fi
-      elif type current_uat >/dev/null 2>&1; then
-        current_uat_file=$(current_uat "$PHASE_DIR")
-        if [ -n "$current_uat_file" ] && [ -f "$current_uat_file" ]; then
-          current_uat_class=$(uat_file_status_class "$current_uat_file")
-          if [ "$current_uat_class" != "issues_found" ]; then
-            echo "Error: needs-round requires a finalized 'issues_found' UAT; current UAT is '$current_uat_class': $current_uat_file" >&2
-            exit 1
-          fi
-        fi
-      fi
-    fi
-    start_new_round
+    cmd_needs_round
     ;;
 
   current-round)
@@ -568,26 +365,7 @@ case "$CMD" in
     ;;
 
   get-or-init)
-    if [ -z "$SEVERITY_ARG" ]; then
-      echo "Usage: uat-remediation-state.sh get-or-init <phase-dir> <major|minor>" >&2
-      exit 1
-    fi
-    existing=$(get_stage)
-    if [ "$existing" != "none" ]; then
-      if [ ! -f "$STATE_FILE" ] && [ -f "$LEGACY_STATE_FILE" ]; then
-        _resume_round=$(get_round)
-        mkdir -p "$PHASE_DIR/remediation/uat/round-${_resume_round}"
-        printf 'stage=%s\nround=%s\nlayout=legacy\n' "$existing" "$_resume_round" > "$STATE_FILE"
-        rm -f "$LEGACY_STATE_FILE"
-        reconcile_uat_state "$STATE_FILE"
-      fi
-      echo "$existing"
-      emit_plan_metadata
-    else
-      do_init "$SEVERITY_ARG"
-      emit_plan_metadata
-      emit_init_context
-    fi
+    cmd_get_or_init
     ;;
 
   *)
