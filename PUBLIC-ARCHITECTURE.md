@@ -12,7 +12,7 @@ LBWC is a Claude Code plugin for disciplined software delivery. The human owns d
 LBWC routes the active phase through planning, build, QA, and UAT
 ```
 
-`/lbwc:vibe` reads the project state, identifies one missing artifact, asks for confirmation, and dispatches the route that owns that work. Users do not have to manage the pipeline stages themselves.
+`/lbwc:vibe` reads the project state, identifies one missing artifact, asks for approval, and dispatches the route that owns that work. Users do not have to manage the pipeline stages themselves.
 
 ## System shape
 
@@ -38,7 +38,7 @@ The control plane uses local files, small scripts, hooks, JSON, Markdown artifac
 | Human | Scope, priorities, approvals, UAT, release decisions | Routine orchestration work |
 | Main session | Routing, contracts, artifact persistence, commits, Git | Worker implementation scope |
 | Generated agent | One assigned task and its evidence | Planning authority, contract changes, Git, release actions |
-| Shell guards | Validation and admission decisions | Product direction or autonomous planning |
+| Shell guards | Checks and admission decisions | Product direction or autonomous planning |
 
 Agent output is evidence, not authority. The framework protects the human from agent drift.
 
@@ -69,7 +69,7 @@ Before an agent starts, the main session creates a shell-owned contract. The con
 - allowed lifecycle transitions
 - primary workspace
 
-The generator validates the contract before it renders an agent definition or registers the agent. The spawn guard validates it again before work starts. The file guard validates it before every write reaches the workspace.
+The generator checks the contract before it renders an agent definition or registers the agent. The spawn guard checks it again before work starts. The file guard checks it before every write reaches the workspace.
 
 ```text
 planned -> dispatched -> running -> awaiting_review -> verified
@@ -87,10 +87,10 @@ LBWC uses the smallest team that matches the work:
 
 - A solo specialist handles a bounded planning, research, QA, debug, or documentation task.
 - An engineer and critic pair handles implementation and independent review.
-- A trio adds `test-dev` when the task has separate test-path ownership.
-- `/lbwc:team` forms a Claude Code native team after the main session displays and confirms the roster and scope.
+- If the task has separate test-path ownership, a trio adds `test-dev`.
+- `/lbwc:team` forms a Claude Code native team after the main session shows the roster and scope and the user approves them.
 
-Only one generated grouping is active at a time. The next grouping waits until every current member is `used` or `expired`. Native teams form when Claude Code spawns the first teammate. LBWC never calls `TeamCreate`, passes deprecated `team_name`, or edits native team configuration. Critics have no write allowance. Test owners receive test paths only. The main session owns commits and final artifact writes.
+Only one generated grouping is active at a time. The next grouping waits until every current member is `used` or `expired`. After Claude Code spawns the first teammate, the native team exists. LBWC never calls `TeamCreate`, passes deprecated `team_name`, or edits native team configuration. Critics have no write allowance. Test owners receive test paths only. The main session owns commits and final artifact writes.
 
 ## External plan import
 
@@ -100,7 +100,7 @@ Only one generated grouping is active at a time. The next grouping waits until e
 
 | Boundary | Protects | Enforcement |
 | --- | --- | --- |
-| Contract validation | Task, role, team, path, and plan identity | Contract writer, generator, spawn guard |
+| Contract checks | Task, role, team, path, and plan identity | Contract writer, generator, spawn guard |
 | File capability | Exact writes in the primary workspace | File guard on Write, Edit, and NotebookEdit |
 | Test ownership | Product code and test-path separation | Test scope guard and contracts |
 | Worker lifecycle | Active work, idle expiry, exclusive admission | Manifest lock and lifecycle script |
@@ -112,9 +112,9 @@ Command admission is not an operating-system sandbox. It blocks recognized gener
 
 ## Quality and evidence
 
-Agents return typed handoffs and evidence. The main session validates that material before it changes durable state.
+Agents return typed handoffs and evidence. The main session checks that material before it changes durable state.
 
-- Reviewers check plans before build work begins.
+- The `lead-critic` checks plans before build work begins.
 - Build summaries identify completed task evidence.
 - QA returns a structured verdict. The main session writes `VERIFICATION.md`.
 - UAT remains a human checkpoint.
@@ -124,9 +124,9 @@ The DevIQ ledger records local decisions, evidence, and blocks in append-only ha
 
 ## Status and telemetry
 
-The statusline is read-only. It reads Claude Code supplied fields when available and combines them with local project state. It shows phase progress, team status, QA or UAT state, and telemetry health. It does not call an API or read credentials.
+The statusline is read-only. If Claude Code supplies status fields, it reads them and combines them with local project state. It shows phase progress, team status, QA or UAT state, and telemetry health. It does not call an API or read credentials.
 
-LBWC observes an idle teammate for 120 seconds, then revalidates the manifest, contract, and idle token before returning native stop guidance. It never sends process signals, deletes output, or clears ownership without a valid state transition.
+LBWC observes an idle teammate for 120 seconds, then checks the manifest, contract, and idle token again before returning native stop guidance. It never sends process signals, deletes output, or clears ownership without a valid state transition.
 
 Session telemetry is local and advisory. The main session writes bounded, hash-chained events. Events never contain prompts, transcripts, tool payloads, secrets, or uploaded data.
 
@@ -136,7 +136,7 @@ The repository is a Claude Code marketplace. Its `.claude-plugin/` manifest decl
 
 Release metadata stays synchronized across `VERSION`, plugin metadata, marketplace metadata, and `CHANGELOG.md`. `scripts/release-verify.sh` checks local release readiness. Publishing, tagging, history changes, and repository visibility remain explicit maintainer actions.
 
-## Verification
+## Local checks
 
 Run the local checks with:
 
@@ -148,4 +148,4 @@ bash scripts/tests/agent-generator-core.sh
 bash scripts/release-verify.sh
 ```
 
-These checks verify the local plugin and control plane. They do not claim a hosted service, a remote execution environment, or a universal process sandbox.
+These checks cover the local plugin and control plane. They do not claim a hosted service, a remote execution environment, or a universal process sandbox.
