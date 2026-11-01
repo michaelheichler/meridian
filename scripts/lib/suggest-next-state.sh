@@ -63,10 +63,10 @@ pd_field() {
 }
 
 set_from_pd() {
-  local value
-  value=$(pd_field "$2")
-  if [ -n "$value" ]; then
-    printf -v "$1" '%s' "$value"
+  local _sfp_out="$1" _sfp_value
+  _sfp_value=$(pd_field "$2")
+  if [ -n "$_sfp_value" ]; then
+    printf -v "$_sfp_out" '%s' "$_sfp_value"
   fi
   return 0
 }
