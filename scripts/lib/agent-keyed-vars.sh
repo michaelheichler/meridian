@@ -1,19 +1,19 @@
 # Bash 3.2 has no associative arrays, so entries live in PREFIX_KEY globals.
 
 keyed_ref() {
-  local LC_ALL=C key="$2" encoded="" character code hex index
-  for ((index = 0; index < ${#key}; index++)); do
-    character="${key:index:1}"
-    case "$character" in
-      [A-Za-z0-9]) encoded="$encoded$character" ;;
+  local LC_ALL=C _kr_key="$2" _kr_encoded="" _kr_character _kr_code _kr_hex _kr_index _kr_out="$3"
+  for ((_kr_index = 0; _kr_index < ${#_kr_key}; _kr_index++)); do
+    _kr_character="${_kr_key:_kr_index:1}"
+    case "$_kr_character" in
+      [A-Za-z0-9]) _kr_encoded="$_kr_encoded$_kr_character" ;;
       *)
-        printf -v code '%d' "'$character"
-        printf -v hex '%02x' $((code & 255))
-        encoded="${encoded}_$hex"
+        printf -v _kr_code '%d' "'$_kr_character"
+        printf -v _kr_hex '%02x' $((_kr_code & 255))
+        _kr_encoded="${_kr_encoded}_$_kr_hex"
         ;;
     esac
   done
-  printf -v "$3" '%s' "${1}_${encoded}"
+  printf -v "$_kr_out" '%s' "${1}_${_kr_encoded}"
 }
 
 keyed_set() {
@@ -29,9 +29,9 @@ keyed_has() {
 }
 
 keyed_get_into() {
-  local variable_name
-  keyed_ref "$2" "$3" variable_name
-  printf -v "$1" '%s' "${!variable_name-}"
+  local _kgi_out="$1" _kgi_variable
+  keyed_ref "$2" "$3" _kgi_variable
+  printf -v "$_kgi_out" '%s' "${!_kgi_variable-}"
 }
 
 keyed_unset() {
