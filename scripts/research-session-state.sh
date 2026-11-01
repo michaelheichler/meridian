@@ -36,16 +36,17 @@ read_field() {
   ' "$file"
 }
 
-update_field() {
-  local file="$1" field="$2" value="$3"
-  if ! awk -v field="$field" '
+has_frontmatter_field() {
+  local file="$1" field="$2"
+  awk -v field="$field" '
     /^---$/ { if (!s) { s=1; f=1; next } if (f) exit }
     f && index($0, field ":") == 1 { found=1; exit }
     END { exit !found }
-  ' "$file" 2>/dev/null; then
-    return 1
-  fi
+  ' "$file" 2>/dev/null
+}
 
+rewrite_field_line() {
+  local file="$1" field="$2" value="$3"
   awk -v field="$field" -v value="$value" '
     BEGIN { in_fm = 0; delim = 0 }
     $0 == "---" {
@@ -60,6 +61,12 @@ update_field() {
     }
     { print }
   ' "$file" > "$file.tmp" && mv "$file.tmp" "$file"
+}
+
+update_field() {
+  local file="$1" field="$2" value="$3"
+  has_frontmatter_field "$file" "$field" || return 1
+  rewrite_field_line "$file" "$field" "$value"
 
   if [ "$field" != "updated" ]; then
     local now
@@ -70,13 +77,7 @@ update_field() {
 
 inject_field() {
   local target="$1" fname="$2" fval="$3"
-  if awk -v field="$fname" '
-    /^---$/ { if (!s) { s=1; f=1; next } if (f) exit }
-    f && index($0, field ":") == 1 { found=1; exit }
-    END { exit !found }
-  ' "$target" 2>/dev/null; then
-    return  # Field already exists in frontmatter
-  fi
+  has_frontmatter_field "$target" "$fname" && return 0
   awk -v field="$fname" -v value="$fval" '
     BEGIN { delim = 0 }
     $0 == "---" {
@@ -96,7 +97,7 @@ validate_session_name() {
       return 1 ;;
   esac
   case "$base" in
-    [0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9][0-9][0-9]-*) ;; # valid
+    [0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9][0-9][0-9]-*) ;;
     *)
       echo "Error: invalid session name (expected YYYYMMDD-HHMMSS-slug format): $name" >&2
       return 1 ;;
@@ -250,7 +251,7 @@ ENDSESSION
     validate_session_name "$SESSION_NAME" || exit 1
     SESSION_FILE="$RESEARCH_DIR/$SESSION_NAME"
     if [ ! -f "$SESSION_FILE" ]; then
-      echo "Error: research file not found: $SESSION_FILE" >&2
+      echo "Error: session file not found: $SESSION_FILE" >&2
       exit 1
     fi
     print_session_metadata "$SESSION_FILE"
@@ -320,13 +321,14 @@ ENDSESSION
 
       mv "$f" "$NEW_PATH"
 
+      # BSD and GNU stat take different flags, so probe BSD first.
       if stat -f '%Sm' -t '%Y-%m-%d %H:%M:%S' "$NEW_PATH" > /dev/null 2>&1; then
-        created_ts=$(stat -f '%Sm' -t '%Y-%m-%d %H:%M:%S' "$NEW_PATH")  # macOS/BSD
+        created_ts=$(stat -f '%Sm' -t '%Y-%m-%d %H:%M:%S' "$NEW_PATH")
       elif stat -c '%Y' "$NEW_PATH" > /dev/null 2>&1; then
         _epoch=$(stat -c '%Y' "$NEW_PATH")
-        created_ts=$(date -d "@$_epoch" '+%Y-%m-%d %H:%M:%S' 2>/dev/null || date -r "$_epoch" '+%Y-%m-%d %H:%M:%S' 2>/dev/null || date '+%Y-%m-%d %H:%M:%S')  # GNU/Linux / mixed coreutils
+        created_ts=$(date -d "@$_epoch" '+%Y-%m-%d %H:%M:%S' 2>/dev/null || date -r "$_epoch" '+%Y-%m-%d %H:%M:%S' 2>/dev/null || date '+%Y-%m-%d %H:%M:%S')
       else
-        created_ts=$(date '+%Y-%m-%d %H:%M:%S')  # fallback
+        created_ts=$(date '+%Y-%m-%d %H:%M:%S')
       fi
 
       has_frontmatter=false
