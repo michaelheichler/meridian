@@ -1,104 +1,87 @@
 #!/usr/bin/env bats
 
 load test_helper
-load guard_helper
+load gate_case_helper
+load rejection_case_helper
+load routing_fixture
 
 ROUTING="${LBWC_ROUTING_UNDER_TEST:-${SCRIPTS_DIR}/lbwc-routing.sh}"
 
 setup() {
-  local temporary_root="${TMPDIR:-/tmp}"
-  TEST_TEMP_DIR=$(mktemp -d "${temporary_root%/}/lbwc-routing.XXXXXX")
-  export TEST_TEMP_DIR
-  export _ORIG_HOME="${HOME:-}"
-  export _ORIG_LBWC_PLANNING_DIR="${LBWC_PLANNING_DIR:-}"
-  export HOME="$TEST_TEMP_DIR"
-  unset LBWC_PLANNING_DIR CLAUDE_SESSION_ID 2>/dev/null || true
-  mkdir -p "$TEST_TEMP_DIR/.lbwc-planning"
-  ROUTE_BINARY="$TEST_TEMP_DIR/claude-route-fixture"
-  printf '%s\n' '#!/usr/bin/env bash' 'printf "%s\\n" "fixture"' > "$ROUTE_BINARY"
-  chmod +x "$ROUTE_BINARY"
-  ROUTE_SHA=$(shasum -a 256 "$ROUTE_BINARY" | awk '{print $1}')
-  jq '
-    . + {
-      schema_version: 1,
-      routing: {
-        active_profile: "balanced",
-        profiles: {
-          quality: {roles: {}},
-          balanced: {roles: {}},
-          turbo: {roles: {}}
-        }
-      }
-    }
-  ' "$CONFIG_DIR/settings.json" > "$TEST_TEMP_DIR/.lbwc-planning/config.json"
-  jq -n \
-    --arg binary "$ROUTE_BINARY" \
-    --arg sha "$ROUTE_SHA" '
-      {
-        schema_version: 1,
-        source: {
-          binary_path: $binary,
-          version: "fixture",
-          sha256: $sha,
-          detected_at: "2035-01-02T03:04:05Z"
-        },
-        models: [
-          {selector: "nova-route", label: "Nova Route", description: "Fixture selector"},
-          {selector: "ember-path", label: "Ember Path", description: "Second fixture selector"}
-        ],
-        reasoning: {
-          scope: "global",
-          accepted_values: ["deliberate", "swift", "default"],
-          model_associations: {"nova-route": ["deliberate"]}
-        }
-      }
-    ' > "$TEST_TEMP_DIR/.lbwc-planning/claude-capabilities.json"
+  routing_fixture_setup
 }
 
 teardown() {
-  if [ -n "${LOCK_OWNER_PID:-}" ]; then
-    [ -z "${LOCK_OWNER_RELEASE:-}" ] || : > "$LOCK_OWNER_RELEASE"
-    kill -TERM "$LOCK_OWNER_PID" 2>/dev/null || true
-    wait "$LOCK_OWNER_PID" 2>/dev/null || true
-  fi
-  [ -z "${VAR_TEST_DIR:-}" ] || rm -rf "$VAR_TEST_DIR"
-  teardown_temp_dir
+  routing_fixture_teardown
 }
 
-@test "set stores an exact catalog route" {
-  run bash "$ROUTING" set "$TEST_TEMP_DIR/.lbwc-planning" quality architect nova-route '"deliberate"'
-
-  [ "$status" -eq 0 ]
-  jq -e '
-    .routing.profiles.quality.roles.architect
-    == {model: "nova-route", reasoning: "deliberate", status: "resolved"}
-  ' "$TEST_TEMP_DIR/.lbwc-planning/config.json" >/dev/null
+set_accepted_row() {
+  local label="$1" profile="$2" role="$3" model="$4" reasoning="$5" expected="$6"
+  restore_planning
+  run bash "$ROUTING" set "$PLANNING" "$profile" "$role" "$model" "$reasoning"
+  expect_case "$label" 0
+  expect_jq "$label" "$PLANNING/config.json" ".routing.profiles.$profile.roles.$role == $expected"
 }
 
-@test "set stores structural default reasoning as null" {
-  run bash "$ROUTING" set "$TEST_TEMP_DIR/.lbwc-planning" balanced docs ember-path null
+@test "set stores exact catalog routes, structural null reasoning and any global reasoning value" {
+  snapshot_planning
 
-  [ "$status" -eq 0 ]
-  jq -e '
-    .routing.profiles.balanced.roles.docs
-    == {model: "ember-path", reasoning: null, status: "resolved"}
-  ' "$TEST_TEMP_DIR/.lbwc-planning/config.json" >/dev/null
+  while IFS='|' read -r label profile role model reasoning expected; do
+    [ -n "$label" ] || continue
+    set_accepted_row "$label" "$profile" "$role" "$model" "$reasoning" "$expected"
+  done <<'CASES'
+exact-route|quality|architect|nova-route|"deliberate"|{model: "nova-route", reasoning: "deliberate", status: "resolved"}
+structural-null|balanced|docs|ember-path|null|{model: "ember-path", reasoning: null, status: "resolved"}
+global-reasoning-ignores-associations|quality|architect|nova-route|"swift"|{model: "nova-route", reasoning: "swift", status: "resolved"}
+CASES
+
+  assert_no_case_failures
 }
 
-@test "set rejects a selector missing from the catalog without changing config" {
-  before=$(shasum -a 256 "$TEST_TEMP_DIR/.lbwc-planning/config.json" | awk '{print $1}')
+check_set_rejected() {
+  local label="$1" fragment="$2" before
+  shift 2
+  before=$(config_digest)
+  run bash "$ROUTING" set "$PLANNING" "$@"
+  expect_rejected "$label" "$fragment"
+  expect_digest "$label" "$before" "$(config_digest)"
+}
 
-  run bash "$ROUTING" set "$TEST_TEMP_DIR/.lbwc-planning" quality architect missing-route '"deliberate"'
+@test "set rejects invalid requests and leaves the configuration untouched" {
+  local external external_before
+  snapshot_planning
 
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"not present in the saved capability catalog"* ]]
-  after=$(shasum -a 256 "$TEST_TEMP_DIR/.lbwc-planning/config.json" | awk '{print $1}')
-  [ "$before" = "$after" ]
+  check_set_rejected missing-selector "not present in the saved capability catalog" \
+    quality architect missing-route '"deliberate"'
+
+  check_set_rejected unknown-role "unknown routing role" quality unknown-role ember-path '"swift"'
+
+  edit_json "$PLANNING/config.json" '.routing.profiles.experimental = {roles: {}}'
+  check_set_rejected malformed-profile-table "exactly quality, balanced, and turbo" \
+    quality docs ember-path '"swift"'
+  restore_planning
+
+  external="$TEST_TEMP_DIR/external-config.json"
+  printf '%s\n' '{"sentinel":true}' > "$external"
+  external_before=$(shasum -a 256 "$external" | awk '{print $1}')
+  rm "$PLANNING/config.json"
+  ln -s "$external" "$PLANNING/config.json"
+  run bash "$ROUTING" set "$PLANNING" quality docs ember-path '"swift"'
+  expect_rejected symlinked-config "symbolic link"
+  [ "$external_before" = "$(shasum -a 256 "$external" | awk '{print $1}')" ] \
+    || record_case_failure symlinked-config "symlink target changed"
+  [ -L "$PLANNING/config.json" ] || record_case_failure symlinked-config "symlink was replaced"
+  restore_planning
+
+  printf '%s\n' 'changed' >> "$ROUTE_BINARY"
+  check_set_rejected catalog-binary-changed "fingerprint differs" turbo docs ember-path null
+
+  assert_no_case_failures
 }
 
 check_host_enum_case() {
   local label="$1" enum_state="$2" selector="$3" expected_status="$4" expected_text="$5"
-  local catalog="$TEST_TEMP_DIR/.lbwc-planning/claude-capabilities.json"
+  local catalog="$PLANNING/claude-capabilities.json"
   [ -f "$catalog.base" ] || cp "$catalog" "$catalog.base"
   if [ "$enum_state" = "enum" ]; then
     jq '. + {host_agent_enum: ["sonnet"], agent_model_ids: {sonnet: "sonnet"}}
@@ -108,10 +91,9 @@ check_host_enum_case() {
     cp "$catalog.base" "$catalog"
   fi
 
-  run bash "$ROUTING" check "$TEST_TEMP_DIR/.lbwc-planning" "$selector" '"deliberate"'
+  run bash "$ROUTING" check "$PLANNING" "$selector" '"deliberate"'
 
-  [ "$status" -eq "$expected_status" ] || fail_case "$label" "expected exit status $expected_status got $status"
-  [[ "$output" == *"$expected_text"* ]] || fail_case "$label" "expected output to contain '$expected_text'"
+  expect_case "$label" "$expected_status" "$expected_text"
 }
 
 @test "check requires a host Agent id only when the catalog carries a host Agent enum" {
@@ -123,72 +105,108 @@ selector-without-host-id|enum|nova-route|1|not present in the live host Agent en
 selector-with-host-id|enum|sonnet|0|
 catalog-without-host-enum|none|nova-route|0|
 CASES
-}
 
-@test "global reasoning accepts every detected value regardless of model associations" {
-  run bash "$ROUTING" set "$TEST_TEMP_DIR/.lbwc-planning" quality architect nova-route '"swift"'
-
-  [ "$status" -eq 0 ]
-  jq -e '
-    .routing.profiles.quality.roles.architect
-    == {model: "nova-route", reasoning: "swift", status: "resolved"}
-  ' "$TEST_TEMP_DIR/.lbwc-planning/config.json" >/dev/null
-}
-
-@test "set fails closed after the catalog binary changes" {
-  printf '%s\n' 'changed' >> "$ROUTE_BINARY"
-
-  run bash "$ROUTING" set "$TEST_TEMP_DIR/.lbwc-planning" turbo docs ember-path null
-
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"fingerprint differs"* ]]
+  assert_no_case_failures
 }
 
 @test "activate and copy persist only the three routing profiles" {
-  bash "$ROUTING" set "$TEST_TEMP_DIR/.lbwc-planning" quality architect nova-route '"deliberate"' >/dev/null
+  bash "$ROUTING" set "$PLANNING" quality architect nova-route '"deliberate"' >/dev/null
 
-  run bash "$ROUTING" copy "$TEST_TEMP_DIR/.lbwc-planning" quality turbo
+  run bash "$ROUTING" copy "$PLANNING" quality turbo
   [ "$status" -eq 0 ]
-  run bash "$ROUTING" activate "$TEST_TEMP_DIR/.lbwc-planning" turbo
+  run bash "$ROUTING" activate "$PLANNING" turbo
   [ "$status" -eq 0 ]
 
   jq -e '
     .routing.active_profile == "turbo"
     and .routing.profiles.turbo.roles == .routing.profiles.quality.roles
     and (.routing.profiles | keys | sort) == ["balanced", "quality", "turbo"]
-  ' "$TEST_TEMP_DIR/.lbwc-planning/config.json" >/dev/null
+  ' "$PLANNING/config.json" >/dev/null
 }
 
-@test "activate rejects profile changes while execution is active" {
-  printf '%s\n' '{"status":"executing"}' > "$TEST_TEMP_DIR/.lbwc-planning/.execution-state.json"
-  before=$(shasum -a 256 "$TEST_TEMP_DIR/.lbwc-planning/config.json" | awk '{print $1}')
+@test "resolve and validate accept a resolved routing table" {
+  bash "$ROUTING" set "$PLANNING" balanced docs ember-path null >/dev/null
+  bash "$ROUTING" set "$PLANNING" quality docs ember-path '"swift"' >/dev/null
 
-  run bash "$ROUTING" activate "$TEST_TEMP_DIR/.lbwc-planning" turbo
+  run bash "$ROUTING" resolve "$PLANNING" docs
+  expect_case active-profile-route 0
+  [ "$output" = '{"model":"ember-path","profile":"balanced","reasoning":null,"role":"docs"}' ] \
+    || record_case_failure active-profile-route "unexpected output=$output"
 
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"frozen"* ]]
-  after=$(shasum -a 256 "$TEST_TEMP_DIR/.lbwc-planning/config.json" | awk '{print $1}')
-  [ "$before" = "$after" ]
+  run bash "$ROUTING" resolve "$PLANNING" docs quality
+  expect_case explicit-profile-route 0
+  [ "$output" = '{"model":"ember-path","profile":"quality","reasoning":"swift","role":"docs"}' ] \
+    || record_case_failure explicit-profile-route "unexpected output=$output"
+
+  run bash "$ROUTING" validate "$PLANNING"
+  expect_case validate-resolved-table 0
+
+  assert_no_case_failures
 }
 
-@test "resolve emits the exact active route as stable JSON" {
-  bash "$ROUTING" set "$TEST_TEMP_DIR/.lbwc-planning" balanced docs ember-path null >/dev/null
-
-  run bash "$ROUTING" resolve "$TEST_TEMP_DIR/.lbwc-planning" docs
-
-  [ "$status" -eq 0 ]
-  [ "$output" = '{"model":"ember-path","profile":"balanced","reasoning":null,"role":"docs"}' ]
+check_migrate_unchanged_rejection() {
+  local label="$1" fragment="$2" before
+  before=$(config_digest)
+  run bash "$ROUTING" migrate "$PLANNING"
+  expect_rejected "$label" "$fragment"
+  expect_digest "$label" "$before" "$(config_digest)"
 }
 
-@test "resolve rejects an absent route" {
-  run bash "$ROUTING" resolve "$TEST_TEMP_DIR/.lbwc-planning" docs
+@test "routing commands reject invalid state without changing the configuration" {
+  local before
+  snapshot_planning
 
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"route is unresolved or absent"* ]]
+  printf '%s\n' '{"status":"executing"}' > "$PLANNING/.execution-state.json"
+  before=$(config_digest)
+  run bash "$ROUTING" activate "$PLANNING" turbo
+  expect_rejected activate-while-executing frozen
+  expect_digest activate-while-executing "$before" "$(config_digest)"
+  restore_planning
+
+  edit_json "$PLANNING/config.json" '.routing.active_profile = "budget"'
+  printf '%s\n' '{"status":"executing"}' > "$PLANNING/.execution-state.json"
+  check_migrate_unchanged_rejection migrate-while-executing frozen
+  restore_planning
+
+  edit_json "$PLANNING/config.json" '.roles.intruder = {model: "ember-path", effort: "swift"}'
+  check_migrate_unchanged_rejection migrate-unknown-legacy-role "unknown routing role"
+  restore_planning
+
+  edit_json "$PLANNING/config.json" \
+    '.routing.profiles.quality.roles.docs = {model: "removed-route", reasoning: null, status: "resolved"}'
+  before=$(config_digest)
+  run bash "$ROUTING" copy "$PLANNING" quality turbo
+  expect_rejected copy-invalid-source-route ""
+  expect_digest copy-invalid-source-route "$before" "$(config_digest)"
+  restore_planning
+
+  run bash "$ROUTING" resolve "$PLANNING" docs
+  expect_rejected resolve-absent-route "route is unresolved or absent"
+
+  edit_json "$PLANNING/config.json" '.routing.profiles.experimental = {roles: {}}'
+  run bash "$ROUTING" validate "$PLANNING"
+  expect_rejected validate-extra-profile "exactly quality, balanced, and turbo"
+  restore_planning
+
+  edit_json "$PLANNING/config.json" '.routing.profiles.quality.roles.docs = {model: "ember-path", reasoning: null, status: "unresolved"}'
+  run bash "$ROUTING" validate "$PLANNING"
+  expect_rejected validate-unresolved-route "unresolved routing cell"
+
+  assert_no_case_failures
 }
 
-@test "migrate maps budget routes to turbo and marks removed values unresolved" {
-  jq '
+migrate_row() {
+  local label="$1" expected="$2"
+  run bash "$ROUTING" migrate "$PLANNING"
+  expect_case "$label" 0
+  expect_jq "$label" "$PLANNING/config.json" "$expected"
+}
+
+@test "migrate maps legacy routes into the three profiles and resolves each cell" {
+  local first second
+  snapshot_planning
+
+  edit_json "$PLANNING/config.json" '
     .model_profile = "budget"
     | .routing.active_profile = "budget"
     | .routing.profiles.budget = {
@@ -197,246 +215,105 @@ CASES
           architect: {model: "removed-route", reasoning: "deliberate"}
         }
       }
-  ' "$TEST_TEMP_DIR/.lbwc-planning/config.json" > "$TEST_TEMP_DIR/.lbwc-planning/config.next"
-  mv "$TEST_TEMP_DIR/.lbwc-planning/config.next" "$TEST_TEMP_DIR/.lbwc-planning/config.json"
-
-  run bash "$ROUTING" migrate "$TEST_TEMP_DIR/.lbwc-planning"
-
-  [ "$status" -eq 0 ]
-  jq -e '
+  '
+  migrate_row budget-becomes-turbo '
     .routing.active_profile == "turbo"
     and (.routing.profiles | keys | sort) == ["balanced", "quality", "turbo"]
     and .routing.profiles.turbo.roles.docs
       == {model: "ember-path", reasoning: "swift", status: "resolved"}
     and .routing.profiles.turbo.roles.architect
       == {model: "removed-route", reasoning: "deliberate", status: "unresolved"}
-  ' "$TEST_TEMP_DIR/.lbwc-planning/config.json" >/dev/null
-}
+  '
+  restore_planning
 
-@test "migrate rejects profile changes while execution is active" {
-  jq '.routing.active_profile = "budget"' \
-    "$TEST_TEMP_DIR/.lbwc-planning/config.json" > "$TEST_TEMP_DIR/.lbwc-planning/config.next"
-  mv "$TEST_TEMP_DIR/.lbwc-planning/config.next" "$TEST_TEMP_DIR/.lbwc-planning/config.json"
-  printf '%s\n' '{"status":"executing"}' > "$TEST_TEMP_DIR/.lbwc-planning/.execution-state.json"
-  before=$(shasum -a 256 "$TEST_TEMP_DIR/.lbwc-planning/config.json" | awk '{print $1}')
-
-  run bash "$ROUTING" migrate "$TEST_TEMP_DIR/.lbwc-planning"
-
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"frozen"* ]]
-  after=$(shasum -a 256 "$TEST_TEMP_DIR/.lbwc-planning/config.json" | awk '{print $1}')
-  [ "$before" = "$after" ]
-}
-
-@test "migrate preserves exact legacy role routes and remains idempotent" {
-  jq '
+  edit_json "$PLANNING/config.json" '
     .routing.active_profile = "quality"
     | .roles = {
         docs: {model: "ember-path", effort: "swift", max_turns: 33},
         architect: {model: "removed-route", effort: "deliberate"}
       }
-  ' "$TEST_TEMP_DIR/.lbwc-planning/config.json" > "$TEST_TEMP_DIR/.lbwc-planning/config.next"
-  mv "$TEST_TEMP_DIR/.lbwc-planning/config.next" "$TEST_TEMP_DIR/.lbwc-planning/config.json"
-
-  run bash "$ROUTING" migrate "$TEST_TEMP_DIR/.lbwc-planning"
-  [ "$status" -eq 0 ]
-  first=$(shasum -a 256 "$TEST_TEMP_DIR/.lbwc-planning/config.json" | awk '{print $1}')
-  run bash "$ROUTING" migrate "$TEST_TEMP_DIR/.lbwc-planning"
-  [ "$status" -eq 0 ]
-  second=$(shasum -a 256 "$TEST_TEMP_DIR/.lbwc-planning/config.json" | awk '{print $1}')
-
-  [ "$first" = "$second" ]
-  jq -e '
+  '
+  migrate_row legacy-roles-preserved '
     .routing.profiles.quality.roles.docs
       == {model: "ember-path", reasoning: "swift", status: "resolved"}
     and .routing.profiles.quality.roles.architect
       == {model: "removed-route", reasoning: "deliberate", status: "unresolved"}
     and .roles.docs == {max_turns: 33}
     and .roles.architect == {}
-  ' "$TEST_TEMP_DIR/.lbwc-planning/config.json" >/dev/null
-}
+  '
+  first=$(config_digest)
+  run bash "$ROUTING" migrate "$PLANNING"
+  expect_case legacy-roles-idempotent 0
+  second=$(config_digest)
+  expect_digest legacy-roles-idempotent "$first" "$second"
+  restore_planning
 
-@test "migrate resolves arbitrary global reasoning without model association approval" {
-  jq '
+  edit_json "$PLANNING/claude-capabilities.json" '
     .models += [{selector: "quartz-freeform", label: "Quartz Freeform", description: "Global reasoning fixture"}]
     | .reasoning.accepted_values += ["depth-99"]
     | .reasoning.model_associations["quartz-freeform"] = ["default"]
-  ' "$TEST_TEMP_DIR/.lbwc-planning/claude-capabilities.json" > "$TEST_TEMP_DIR/.lbwc-planning/catalog.next"
-  mv "$TEST_TEMP_DIR/.lbwc-planning/catalog.next" "$TEST_TEMP_DIR/.lbwc-planning/claude-capabilities.json"
-  jq '
+  '
+  edit_json "$PLANNING/config.json" '
     .routing.profiles.quality.roles.docs = {
       model: "quartz-freeform",
       reasoning: "depth-99",
       status: "resolved"
     }
-  ' "$TEST_TEMP_DIR/.lbwc-planning/config.json" > "$TEST_TEMP_DIR/.lbwc-planning/config.next"
-  mv "$TEST_TEMP_DIR/.lbwc-planning/config.next" "$TEST_TEMP_DIR/.lbwc-planning/config.json"
+  '
+  migrate_row global-reasoning-needs-no-association \
+    '.routing.profiles.quality.roles.docs.status == "resolved"'
+  run bash "$ROUTING" resolve "$PLANNING" docs quality
+  expect_case global-reasoning-resolves 0
+  [ "$output" = '{"model":"quartz-freeform","profile":"quality","reasoning":"depth-99","role":"docs"}' ] \
+    || record_case_failure global-reasoning-resolves "unexpected output=$output"
+  restore_planning
 
-  run bash "$ROUTING" migrate "$TEST_TEMP_DIR/.lbwc-planning"
-  [ "$status" -eq 0 ]
-  run bash "$ROUTING" resolve "$TEST_TEMP_DIR/.lbwc-planning" docs quality
-
-  [ "$status" -eq 0 ]
-  [ "$output" = '{"model":"quartz-freeform","profile":"quality","reasoning":"depth-99","role":"docs"}' ]
-}
-
-@test "migrate enforces model associations for explicit non-global reasoning" {
-  jq '.reasoning.scope = "model_associated"' \
-    "$TEST_TEMP_DIR/.lbwc-planning/claude-capabilities.json" > "$TEST_TEMP_DIR/.lbwc-planning/catalog.next"
-  mv "$TEST_TEMP_DIR/.lbwc-planning/catalog.next" "$TEST_TEMP_DIR/.lbwc-planning/claude-capabilities.json"
-  jq '
+  edit_json "$PLANNING/claude-capabilities.json" '.reasoning.scope = "model_associated"'
+  edit_json "$PLANNING/config.json" '
     .routing.profiles.quality.roles.docs = {
       model: "nova-route",
       reasoning: "swift",
       status: "resolved"
     }
-  ' "$TEST_TEMP_DIR/.lbwc-planning/config.json" > "$TEST_TEMP_DIR/.lbwc-planning/config.next"
-  mv "$TEST_TEMP_DIR/.lbwc-planning/config.next" "$TEST_TEMP_DIR/.lbwc-planning/config.json"
-
-  run bash "$ROUTING" migrate "$TEST_TEMP_DIR/.lbwc-planning"
-
-  [ "$status" -eq 0 ]
-  jq -e '
+  '
+  migrate_row model-associated-reasoning-enforced '
     .routing.profiles.quality.roles.docs
     == {model: "nova-route", reasoning: "swift", status: "unresolved"}
-  ' "$TEST_TEMP_DIR/.lbwc-planning/config.json" >/dev/null
+  '
+
+  assert_no_case_failures
 }
 
-@test "migrate rejects an unknown legacy root role without changing config" {
-  jq '
-    .roles.intruder = {model: "ember-path", effort: "swift"}
-  ' "$TEST_TEMP_DIR/.lbwc-planning/config.json" > "$TEST_TEMP_DIR/.lbwc-planning/config.next"
-  mv "$TEST_TEMP_DIR/.lbwc-planning/config.next" "$TEST_TEMP_DIR/.lbwc-planning/config.json"
-  before=$(shasum -a 256 "$TEST_TEMP_DIR/.lbwc-planning/config.json" | awk '{print $1}')
-
-  run bash "$ROUTING" migrate "$TEST_TEMP_DIR/.lbwc-planning"
-
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"unknown routing role"* ]]
-  after=$(shasum -a 256 "$TEST_TEMP_DIR/.lbwc-planning/config.json" | awk '{print $1}')
-  [ "$before" = "$after" ]
-}
-
-@test "validate rejects extra profiles and unresolved routes" {
-  bash "$ROUTING" set "$TEST_TEMP_DIR/.lbwc-planning" quality docs ember-path '"swift"' >/dev/null
-  run bash "$ROUTING" validate "$TEST_TEMP_DIR/.lbwc-planning"
-  [ "$status" -eq 0 ]
-
-  jq '.routing.profiles.experimental = {roles: {}}' \
-    "$TEST_TEMP_DIR/.lbwc-planning/config.json" > "$TEST_TEMP_DIR/.lbwc-planning/config.next"
-  mv "$TEST_TEMP_DIR/.lbwc-planning/config.next" "$TEST_TEMP_DIR/.lbwc-planning/config.json"
-  run bash "$ROUTING" validate "$TEST_TEMP_DIR/.lbwc-planning"
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"exactly quality, balanced, and turbo"* ]]
-
-  jq 'del(.routing.profiles.experimental) | .routing.profiles.quality.roles.docs.status = "unresolved"' \
-    "$TEST_TEMP_DIR/.lbwc-planning/config.json" > "$TEST_TEMP_DIR/.lbwc-planning/config.next"
-  mv "$TEST_TEMP_DIR/.lbwc-planning/config.next" "$TEST_TEMP_DIR/.lbwc-planning/config.json"
-  run bash "$ROUTING" validate "$TEST_TEMP_DIR/.lbwc-planning"
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"unresolved routing cell"* ]]
-}
-
-@test "copy rejects an invalid source route without changing config" {
-  jq '.routing.profiles.quality.roles.docs = {model: "removed-route", reasoning: null, status: "resolved"}' \
-    "$TEST_TEMP_DIR/.lbwc-planning/config.json" > "$TEST_TEMP_DIR/.lbwc-planning/config.next"
-  mv "$TEST_TEMP_DIR/.lbwc-planning/config.next" "$TEST_TEMP_DIR/.lbwc-planning/config.json"
-  before=$(shasum -a 256 "$TEST_TEMP_DIR/.lbwc-planning/config.json" | awk '{print $1}')
-
-  run bash "$ROUTING" copy "$TEST_TEMP_DIR/.lbwc-planning" quality turbo
-
-  [ "$status" -ne 0 ]
-  after=$(shasum -a 256 "$TEST_TEMP_DIR/.lbwc-planning/config.json" | awk '{print $1}')
-  [ "$before" = "$after" ]
-}
-
-@test "set rejects a symlinked configuration without changing its target" {
-  external="$TEST_TEMP_DIR/external-config.json"
-  printf '%s\n' '{"sentinel":true}' > "$external"
-  external_before=$(shasum -a 256 "$external" | awk '{print $1}')
-  rm "$TEST_TEMP_DIR/.lbwc-planning/config.json"
-  ln -s "$external" "$TEST_TEMP_DIR/.lbwc-planning/config.json"
-
-  run bash "$ROUTING" set "$TEST_TEMP_DIR/.lbwc-planning" quality docs ember-path '"swift"'
-
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"symbolic link"* ]]
-  external_after=$(shasum -a 256 "$external" | awk '{print $1}')
-  [ "$external_before" = "$external_after" ]
-  [ -L "$TEST_TEMP_DIR/.lbwc-planning/config.json" ]
-}
-
-@test "set rejects an unknown role without changing config" {
-  before=$(shasum -a 256 "$TEST_TEMP_DIR/.lbwc-planning/config.json" | awk '{print $1}')
-
-  run bash "$ROUTING" set "$TEST_TEMP_DIR/.lbwc-planning" quality unknown-role ember-path '"swift"'
-
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"unknown routing role"* ]]
-  after=$(shasum -a 256 "$TEST_TEMP_DIR/.lbwc-planning/config.json" | awk '{print $1}')
-  [ "$before" = "$after" ]
-}
-
-@test "set rejects a malformed profile table without changing config" {
-  jq '.routing.profiles.experimental = {roles: {}}' \
-    "$TEST_TEMP_DIR/.lbwc-planning/config.json" > "$TEST_TEMP_DIR/.lbwc-planning/config.next"
-  mv "$TEST_TEMP_DIR/.lbwc-planning/config.next" "$TEST_TEMP_DIR/.lbwc-planning/config.json"
-  before=$(shasum -a 256 "$TEST_TEMP_DIR/.lbwc-planning/config.json" | awk '{print $1}')
-
-  run bash "$ROUTING" set "$TEST_TEMP_DIR/.lbwc-planning" quality docs ember-path '"swift"'
-
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"exactly quality, balanced, and turbo"* ]]
-  after=$(shasum -a 256 "$TEST_TEMP_DIR/.lbwc-planning/config.json" | awk '{print $1}')
-  [ "$before" = "$after" ]
+boundary_rejected_row() {
+  local label="$1" fragment="$2"
+  shift 2
+  run bash "$ROUTING" "$@"
+  expect_rejected "$label" "$fragment"
 }
 
 @test "every command rejects a directory outside the .lbwc-planning boundary" {
   local other="$TEST_TEMP_DIR/not-planning"
-  mkdir -p "$other"
-  cp "$TEST_TEMP_DIR/.lbwc-planning/config.json" "$other/config.json"
-  cp "$TEST_TEMP_DIR/.lbwc-planning/claude-capabilities.json" "$other/claude-capabilities.json"
-
-  run bash "$ROUTING" set "$other" quality docs ember-path '"swift"'
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"must end with .lbwc-planning"* ]]
-  run bash "$ROUTING" copy "$other" quality turbo
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"must end with .lbwc-planning"* ]]
-  run bash "$ROUTING" activate "$other" turbo
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"must end with .lbwc-planning"* ]]
-  run bash "$ROUTING" migrate "$other"
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"must end with .lbwc-planning"* ]]
-  run bash "$ROUTING" resolve "$other" docs
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"must end with .lbwc-planning"* ]]
-  run bash "$ROUTING" check "$other" ember-path '"swift"'
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"must end with .lbwc-planning"* ]]
-  run bash "$ROUTING" validate "$other"
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"must end with .lbwc-planning"* ]]
-}
-
-@test "planning boundary rejects traversal and a symlink without changing its target" {
   local target="$TEST_TEMP_DIR/real/.lbwc-planning"
-  local linked="$TEST_TEMP_DIR/linked/.lbwc-planning"
-  mkdir -p "$target" "$(dirname "$linked")"
-  cp "$TEST_TEMP_DIR/.lbwc-planning/config.json" "$target/config.json"
-  cp "$TEST_TEMP_DIR/.lbwc-planning/claude-capabilities.json" "$target/claude-capabilities.json"
+  local linked="$TEST_TEMP_DIR/linked/.lbwc-planning" before
+  mkdir -p "$other" "$target" "$(dirname "$linked")"
+  cp "$PLANNING/config.json" "$PLANNING/claude-capabilities.json" "$other/"
+  cp "$PLANNING/config.json" "$PLANNING/claude-capabilities.json" "$target/"
   ln -s "$target" "$linked"
-  before=$(shasum -a 256 "$target/config.json" | awk '{print $1}')
+  before=$(config_digest "$target")
 
-  run bash "$ROUTING" validate "$TEST_TEMP_DIR/.lbwc-planning/../.lbwc-planning"
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"traversal is not allowed"* ]]
-  run bash "$ROUTING" set "$linked" quality docs ember-path '"swift"'
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"must not be a symbolic link"* ]]
-  after=$(shasum -a 256 "$target/config.json" | awk '{print $1}')
-  [ "$before" = "$after" ]
+  boundary_rejected_row outside-set "must end with .lbwc-planning" set "$other" quality docs ember-path '"swift"'
+  boundary_rejected_row outside-copy "must end with .lbwc-planning" copy "$other" quality turbo
+  boundary_rejected_row outside-activate "must end with .lbwc-planning" activate "$other" turbo
+  boundary_rejected_row outside-migrate "must end with .lbwc-planning" migrate "$other"
+  boundary_rejected_row outside-resolve "must end with .lbwc-planning" resolve "$other" docs
+  boundary_rejected_row outside-check "must end with .lbwc-planning" check "$other" ember-path '"swift"'
+  boundary_rejected_row outside-validate "must end with .lbwc-planning" validate "$other"
+  boundary_rejected_row traversal "traversal is not allowed" validate "$PLANNING/../.lbwc-planning"
+  boundary_rejected_row symlinked-planning "must not be a symbolic link" \
+    set "$linked" quality docs ember-path '"swift"'
+  expect_digest symlinked-planning "$before" "$(config_digest "$target")"
+
+  assert_no_case_failures
 }
 
 @test "planning boundary accepts the macOS var ancestor alias" {
@@ -444,8 +321,8 @@ CASES
   VAR_TEST_DIR=$(mktemp -d /private/var/tmp/lbwc-routing-alias.XXXXXX)
   local aliased="/var/tmp/${VAR_TEST_DIR##*/}/.lbwc-planning"
   mkdir -p "$VAR_TEST_DIR/.lbwc-planning"
-  cp "$TEST_TEMP_DIR/.lbwc-planning/config.json" "$VAR_TEST_DIR/.lbwc-planning/config.json"
-  cp "$TEST_TEMP_DIR/.lbwc-planning/claude-capabilities.json" "$VAR_TEST_DIR/.lbwc-planning/claude-capabilities.json"
+  cp "$PLANNING/config.json" "$VAR_TEST_DIR/.lbwc-planning/config.json"
+  cp "$PLANNING/claude-capabilities.json" "$VAR_TEST_DIR/.lbwc-planning/claude-capabilities.json"
 
   run bash "$ROUTING" validate "$aliased"
 
@@ -453,38 +330,16 @@ CASES
 }
 
 @test "concurrent route writers preserve both updates" {
-  local wrapper_dir="$TEST_TEMP_DIR/bin"
-  local real_jq ready release first_rc second_rc
-  real_jq=$(command -v jq)
-  ready="$TEST_TEMP_DIR/first-transform-ready"
-  release="$TEST_TEMP_DIR/release-first-transform"
-  mkdir -p "$wrapper_dir"
-  printf '%s\n' \
-    '#!/usr/bin/env bash' \
-    'set -euo pipefail' \
-    'if [[ "$*" == *'"'"'.routing.profiles[$profile].roles[$role]'"'"'* ]] && [[ " $* " == *'"'"' --arg role docs '"'"'* ]]; then' \
-    '  output=$("$REAL_JQ" "$@")' \
-    '  : > "$ROUTING_FIRST_READY"' \
-    '  while [ ! -e "$ROUTING_FIRST_RELEASE" ]; do sleep 0.01; done' \
-    '  printf '"'"'%s\n'"'"' "$output"' \
-    'else' \
-    '  exec "$REAL_JQ" "$@"' \
-    'fi' > "$wrapper_dir/jq"
-  chmod +x "$wrapper_dir/jq"
+  local first_pid second_pid first_rc second_rc sleep_mark="$TEST_TEMP_DIR/second-writer-waiting"
+  install_blocking_jq
 
-  env PATH="$wrapper_dir:$PATH" REAL_JQ="$real_jq" ROUTING_FIRST_READY="$ready" ROUTING_FIRST_RELEASE="$release" \
-    bash "$ROUTING" set "$TEST_TEMP_DIR/.lbwc-planning" balanced docs ember-path '"swift"' \
-    >/dev/null 2>&1 &
+  start_blocked_writer
   first_pid=$!
-  for _ in {1..300}; do [ -e "$ready" ] && break; sleep 0.01; done
-  [ -e "$ready" ]
-
-  env PATH="$wrapper_dir:$PATH" REAL_JQ="$real_jq" ROUTING_FIRST_READY="$ready" ROUTING_FIRST_RELEASE="$release" \
-    bash "$ROUTING" set "$TEST_TEMP_DIR/.lbwc-planning" balanced architect nova-route '"deliberate"' \
-    >/dev/null 2>&1 &
+  run_wrapped_routing ROUTING_SLEEP_MARK="$sleep_mark" \
+    bash "$ROUTING" set "$PLANNING" balanced architect nova-route '"deliberate"' >/dev/null 2>&1 &
   second_pid=$!
-  sleep 0.2
-  : > "$release"
+  wait_for_file "$sleep_mark"
+  : > "$TEST_TEMP_DIR/release-first-transform"
   wait "$first_pid"; first_rc=$?
   wait "$second_pid"; second_rc=$?
 
@@ -495,13 +350,13 @@ CASES
       == {model: "ember-path", reasoning: "swift", status: "resolved"}
     and .routing.profiles.balanced.roles.architect
       == {model: "nova-route", reasoning: "deliberate", status: "resolved"}
-  ' "$TEST_TEMP_DIR/.lbwc-planning/config.json" >/dev/null
+  ' "$PLANNING/config.json" >/dev/null
 }
 
-@test "a forged inherited transaction fails closed without changing configuration" {
-  local before after planning
-  planning=$(cd -P "$TEST_TEMP_DIR/.lbwc-planning" && pwd -P)
-  before=$(shasum -a 256 "$planning/config.json" | awk '{print $1}')
+@test "a forged or failed configuration transaction fails closed and releases its lock" {
+  local before planning
+  planning=$(cd -P "$PLANNING" && pwd -P)
+  before=$(config_digest "$planning")
 
   run env \
     LBWC_CONFIG_TRANSACTION_ACTIVE=1 \
@@ -512,18 +367,13 @@ CASES
     LBWC_CONFIG_TRANSACTION_FD=999 \
     LBWC_CONFIG_TRANSACTION_OWNER='forged' \
     bash "$ROUTING" set "$planning" balanced docs ember-path '"swift"'
-
-  [ "$status" -ne 0 ]
-  [[ "$output" == *'inherited configuration transaction descriptor is unavailable'* ]]
-  after=$(shasum -a 256 "$planning/config.json" | awk '{print $1}')
-  [ "$before" = "$after" ]
-}
-
-@test "a failed transaction command releases its owned lock" {
-  local planning="$TEST_TEMP_DIR/.lbwc-planning"
+  expect_rejected forged-inherited-transaction 'inherited configuration transaction descriptor is unavailable'
+  expect_digest forged-inherited-transaction "$before" "$(config_digest "$planning")"
 
   run bash "$ROUTING" transaction "$planning" bash -c 'exit 47'
+  expect_case failed-command-exit-status 47
+  [ ! -e "$planning/.routing.lock" ] \
+    || record_case_failure failed-command-releases-lock "lock directory remained"
 
-  [ "$status" -eq 47 ]
-  [ ! -e "$planning/.routing.lock" ]
+  assert_no_case_failures
 }
