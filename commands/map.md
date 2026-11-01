@@ -56,7 +56,7 @@ Refresh the saved Claude capability catalog before any Scout contract or spawn:
 bash "{plugin-root}/scripts/lbwc-model" refresh .lbwc-planning
 ```
 
-The refresh stores workflow-backend availability as `.workflow` in `.lbwc-planning/claude-capabilities.json`. Step 3 reads that value before it offers or resolves `workflow`. A non-zero exit does not stop mapping. It leaves `RESOLVED_BACKEND` at `in_process`, so mapping continues on the existing catalog. Only a run that requests or chooses `workflow` can still stop. Step 0 of `workflow-spawn-protocol.md` and the live check in `workflow-generator.sh` stop that run. If `.lbwc-planning/` is missing, skip this gate and do not create a planning directory here.
+The refresh stores workflow-backend availability as `.workflow` in `.lbwc-planning/claude-capabilities.json`. Step 3 reads that value before it offers or resolves `workflow`. A non-zero exit does not stop mapping, because Step 3 then keeps `RESOLVED_BACKEND` at `in_process` and maps on the existing catalog. Only a run that requests or chooses `workflow` can still stop. Step 0 of `workflow-spawn-protocol.md` and the live check in `workflow-generator.sh` stop that run. If `.lbwc-planning/` is missing, skip this gate and do not create a planning directory here.
 
 ## Guard
 
@@ -212,7 +212,7 @@ Analyze stack, dependencies, architecture, structure, conventions, testing, and 
 
 #### Execution backend for duo and quad
 
-Solo-tier mapping analyzes inline and spawns no Scout, so this choice never applies to it. For duo and quad, follow step 0 of `{plugin-root}/references/workflow-spawn-protocol.md`, with `<control-root>` bound to `.lbwc-planning`. If that step takes its `ask` branch, use these literal `AskUserQuestion` fields.
+Follow step 0 of `{plugin-root}/references/workflow-spawn-protocol.md`, with `<control-root>` bound to `.lbwc-planning`. If that step takes its `ask` branch, use these literal `AskUserQuestion` fields.
 
 - header: `Map execution`
 - question: `Where should Scout evidence gathering run? Workflow run orchestrates each Scout through a committed background script. Native spawn keeps the current multi-agent Scout spawn.`
