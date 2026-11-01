@@ -20,9 +20,9 @@ read_flat_todos() {
 }
 
 use_todo_anchor() {
-  TODO_HAS_SECTION=true
-  TODO_ANCHOR="$1"
-  TODO_STOP_PATTERN="$2"
+  printf -v TODO_HAS_SECTION '%s' true
+  printf -v TODO_ANCHOR '%s' "$1"
+  printf -v TODO_STOP_PATTERN '%s' "$2"
 }
 
 choose_todo_anchor() {
