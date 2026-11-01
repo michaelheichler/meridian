@@ -37,7 +37,7 @@ inherit_transaction_lock() {
     || fail 'inherited configuration transaction guard path is invalid'
   [ -e "/dev/fd/$LOCK_FD" ] || fail 'inherited configuration transaction descriptor is unavailable'
   guard_inode=$(file_inode "$LOCK_GUARD") || fail 'could not identify inherited configuration transaction guard'
-  fd_inode=$(file_inode "/dev/fd/$LOCK_FD") || fail 'could not identify inherited configuration transaction descriptor'
+  fd_inode=$(descriptor_inode "$LOCK_FD") || fail 'could not identify inherited configuration transaction descriptor'
   [ "$guard_inode" = "$fd_inode" ] || fail 'inherited configuration transaction guard changed'
   lock_is_owned || fail 'inherited configuration transaction ownership is invalid'
 }
@@ -74,7 +74,7 @@ open_lock_guard() {
   exec 9>> "$LOCK_GUARD" || fail 'could not open routing lock guard'
   [ -f "$LOCK_GUARD" ] && [ ! -L "$LOCK_GUARD" ] || fail "routing lock guard must be a regular file: $LOCK_GUARD"
   guard_inode=$(file_inode "$LOCK_GUARD") || fail 'could not identify routing lock guard'
-  fd_inode=$(file_inode "/dev/fd/$LOCK_FD") || fail 'could not identify routing lock guard descriptor'
+  fd_inode=$(descriptor_inode "$LOCK_FD") || fail 'could not identify routing lock guard descriptor'
   [ "$guard_inode" = "$fd_inode" ] || fail 'routing lock guard changed while opening'
 }
 
