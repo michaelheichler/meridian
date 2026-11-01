@@ -356,3 +356,32 @@ expected_effort_for_status() {
   [ -f "$opened_dir/config.json" ]
   [ "$(jq -r '.effort' "$opened_dir/config.json")" = "$(expected_effort_for_status "$command_status")" ]
 }
+
+doc_default_turns() {
+  awk -F'|' '$2 ~ /^ agent_max_turns $/ { print $5 }' "$BATS_TEST_DIRNAME/../commands/config.md" \
+    | tr ',' '\n' | sed -n "s/^ *$1=\([0-9][0-9]*\) *$/\1/p"
+}
+
+expect_doc_turns_match() {
+  local label=$1 doc_role=$2 role_name=$3 documented shipped
+  documented=$(doc_default_turns "$doc_role")
+  shipped=$(jq -r --arg role "$role_name" '.[$role].maxTurns' "$BATS_TEST_DIRNAME/../templates/agent-roles/defaults.json")
+  [ -n "$documented" ] && [ "$documented" = "$shipped" ] \
+    || record_case_failure "$label" "documented=[$documented] shipped=[$shipped]"
+}
+
+@test "agent_max_turns docs: the defaults row matches the shipped role maxTurns" {
+  reset_case_failures
+
+  expect_doc_turns_match scout scout scout
+  expect_doc_turns_match qa qa qa
+  expect_doc_turns_match architect architect architect
+  expect_doc_turns_match debugger debugger debugger
+  expect_doc_turns_match lead lead lead
+  expect_doc_turns_match engineers-dijkstra engineers coding-dijkstra
+  expect_doc_turns_match engineers-python engineers python-engineer
+  expect_doc_turns_match engineers-web engineers web-engineer
+  expect_doc_turns_match test-dev test-dev test-dev
+
+  assert_no_case_failures
+}
