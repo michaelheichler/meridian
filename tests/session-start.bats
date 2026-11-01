@@ -10,9 +10,14 @@ setup() {
   ROOT_LINK="/tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID}"
   rm -rf "$ROOT_LINK"
   CONCURRENT_LINK="/tmp/.lbwc-plugin-root-link-concurrent-child-session"
+  WORKDIR="$TEST_ROOT/project"
+  mkdir -p "$WORKDIR"
+  git -C "$WORKDIR" init -q
+  cd "$WORKDIR"
 }
 
 teardown() {
+  cd "$BATS_TEST_DIRNAME"
   rm -rf "$TEST_ROOT" "$ROOT_LINK" "$CONCURRENT_LINK"
   unset CLAUDE_SESSION_ID
   [ ! -L "$REPO_ROOT/lbwc" ] || { rm -f "$REPO_ROOT/lbwc"; return 1; }
@@ -20,7 +25,7 @@ teardown() {
 
 run_session_start() {
   (
-    cd "$REPO_ROOT"
+    cd "$WORKDIR"
     LBWC_PLANNING_DIR="$PLANNING_DIR" bash "$SCRIPT" </dev/null
   )
 }
@@ -28,7 +33,7 @@ run_session_start() {
 run_session_start_from() {
   local script_dir="$1"
   (
-    cd "$REPO_ROOT"
+    cd "$WORKDIR"
     LBWC_PLANNING_DIR="$PLANNING_DIR" bash "$script_dir/session-start.sh" </dev/null
   )
 }
@@ -36,7 +41,7 @@ run_session_start_from() {
 run_session_start_with_input() {
   local input="$1"
   (
-    cd "$REPO_ROOT"
+    cd "$WORKDIR"
     printf '%s' "$input" | LBWC_PLANNING_DIR="$PLANNING_DIR" bash "$SCRIPT"
   )
 }
