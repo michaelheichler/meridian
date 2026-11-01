@@ -23,6 +23,7 @@ if [ -f "$HOOK_PATH" ]; then
   if [ -L "$HOOK_PATH" ]; then
     CURRENT_TARGET=$(readlink "$HOOK_PATH")
     if echo "$CURRENT_TARGET" | grep -q "pre-push-hook.sh"; then
+      rm -f "$HOOK_PATH"
       echo "$HOOK_CONTENT" > "$HOOK_PATH"
       chmod +x "$HOOK_PATH"
       echo "Upgraded pre-push hook to standalone script" >&2
