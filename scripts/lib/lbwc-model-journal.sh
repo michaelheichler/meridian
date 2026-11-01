@@ -1,8 +1,8 @@
 bind_image_into() {
-  local identity_var="$1" sha_var="$2" path="$3" message="$4" binding
-  binding=$(image_binding "$path") || fail "$message"
-  printf -v "$identity_var" '%s' "${binding%%$'\t'*}"
-  printf -v "$sha_var" '%s' "${binding#*$'\t'}"
+  local _bii_identity_out="$1" _bii_sha_out="$2" _bii_binding
+  _bii_binding=$(image_binding "$3") || fail "$4"
+  printf -v "$_bii_identity_out" '%s' "${_bii_binding%%$'\t'*}"
+  printf -v "$_bii_sha_out" '%s' "${_bii_binding#*$'\t'}"
 }
 
 bind_rollback_images() {
