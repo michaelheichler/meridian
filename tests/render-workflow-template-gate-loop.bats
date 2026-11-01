@@ -1,158 +1,93 @@
 #!/usr/bin/env bats
 
+load gate_case_helper
+load gate_case_files
+
 setup() {
+  command -v node >/dev/null 2>&1 || skip "node is required to execute rendered workflow templates"
   SCRIPT="$BATS_TEST_DIRNAME/../scripts/render-workflow-template.sh"
-  OUT_DIR=$(mktemp -d)
+  HARNESS="$BATS_TEST_DIRNAME/fixtures/workflow-harness.cjs"
+  reset_case_failures
 }
-
-teardown() {
-  rm -rf "$OUT_DIR"
-}
-
-HARNESS="$BATS_TEST_DIRNAME/fixtures/workflow-harness.cjs"
 
 render_pair() {
-  local autonomy="$1" job="${2:-job}"
   run bash "$SCRIPT" pair NAME=probe-pair DESCRIPTION=desc \
-    "JOB=$job" TASK_ID=task-2 "AUTONOMY=$autonomy" \
+    JOB=job TASK_ID=task-2 "AUTONOMY=$1" \
     ENGINEER_AGENT_TYPE=lbwc-eng-a ENGINEER_MODEL=sonnet ENGINEER_EFFORT=balanced \
     CRITIC_AGENT_TYPE=lbwc-crit-a CRITIC_MODEL=sonnet CRITIC_EFFORT=fast
 }
 
 render_trio() {
-  local autonomy="$1" job="${2:-job}"
   run bash "$SCRIPT" trio NAME=probe-trio DESCRIPTION=desc \
-    "JOB=$job" TASK_ID=task-3 "AUTONOMY=$autonomy" \
+    JOB=job TASK_ID=task-3 "AUTONOMY=$1" \
     ENGINEER_AGENT_TYPE=lbwc-eng-a ENGINEER_MODEL=sonnet ENGINEER_EFFORT=balanced \
     CRITIC_AGENT_TYPE=lbwc-crit-a CRITIC_MODEL=sonnet CRITIC_EFFORT=fast \
     TESTDEV_AGENT_TYPE=lbwc-td-a TESTDEV_MODEL=sonnet TESTDEV_EFFORT=fast
 }
 
-run_workflow() {
-  local rendered_file="$1" responses_json="$2"
-  run node "$HARNESS" "$rendered_file" "$responses_json"
+run_gate_loop() {
+  local kind=$1 autonomy=$2 responses=$3 rendered
+  rendered="$BATS_TEST_TMPDIR/$kind-exec.mjs"
+  "render_$kind" "$autonomy"
+  [ "$status" -eq 0 ] || return 1
+  printf '%s' "$output" > "$rendered"
+  run node "$HARNESS" "$rendered" "$responses"
 }
 
-agent_labels() {
-  jq -r '.agentCalls | map(.label) | join(",")' <<< "$output"
+@test "pair gate loop scores verdicts and stops or continues by autonomy" {
+  local label autonomy responses labels result_status round
+  while IFS='|' read -r label autonomy responses labels result_status round; do
+    [ -n "$label" ] || continue
+    run_gate_loop pair "$autonomy" "$responses" || { record_case_failure "$label" "render failed output=$output"; continue; }
+    expect_status "$label" 0
+    expect_jq_output "$label-calls" ".agentCalls | map(.label) | join(\",\") == \"$labels\""
+    expect_jq_output "$label-result" ".result.status == \"$result_status\" and .result.round == $round"
+    expect_jq_output "$label-critic-schema" '.agentCalls | map(select(.label == "critic")) | all(.hasSchema == true)'
+  done <<'CASES'
+pass-on-round-1|standard|[{"n":1},{"verdict":"PASS"}]|engineer,critic|complete|1
+pure-vibe-continues-past-round-3|pure-vibe|[{"n":1},{"verdict":"BLOCK"},{"n":2},{"verdict":"BLOCK"},{"n":3},{"verdict":"BLOCK"},{"n":4},{"verdict":"PASS"}]|engineer,critic,engineer,critic,engineer,critic,engineer,critic|complete|4
+block-text-containing-pass-stays-block|standard|[{"n":1},{"verdict":"BLOCK","findings":"1. (blocking) The variant does not decrease. Fix: tighten the guard split.\nVERDICT: BLOCK. Flips on: fix 1 so tests/guard.bats can pass.\nGrounding: discipline-of-programming-dijkstra/SKILL.md."},{"n":2},{"verdict":"PASS"}]|engineer,critic,engineer,critic|complete|2
+CASES
+
+  assert_no_case_failures
 }
 
-@test "pair template: PASS on round 1 exits after one engineer and one critic call" {
-  render_pair standard
-  [ "$status" -eq 0 ]
-  printf '%s' "$output" > "$OUT_DIR/pair-exec.mjs"
+@test "trio gate loop reruns only the role that owns the blocking verdict" {
+  local label autonomy responses labels result_status round
+  while IFS='|' read -r label autonomy responses labels result_status round; do
+    [ -n "$label" ] || continue
+    run_gate_loop trio "$autonomy" "$responses" || { record_case_failure "$label" "render failed output=$output"; continue; }
+    expect_status "$label" 0
+    expect_jq_output "$label-calls" ".agentCalls | map(.label) | join(\",\") == \"$labels\""
+    expect_jq_output "$label-result" ".result.status == \"$result_status\" and .result.round == $round"
+    expect_jq_output "$label-critic-schema" '.agentCalls | map(select(.label == "critic")) | all(.hasSchema == true)'
+  done <<'CASES'
+pass-on-round-1|standard|[{"n":1},{"t":1},{"verdict":"PASS"}]|engineer,test-dev,critic|complete|1
+owner-source-reruns-engineer|standard|[{"n":1},{"t":1},{"verdict":"BLOCK","owner":"SOURCE"},{"n":2},{"verdict":"PASS"}]|engineer,test-dev,critic,engineer,critic|complete|2
+owner-tests-reruns-test-dev|standard|[{"n":1},{"t":1},{"verdict":"BLOCK","owner":"TESTS"},{"t":2},{"verdict":"PASS"}]|engineer,test-dev,critic,test-dev,critic|complete|2
+no-owner-reruns-both|standard|[{"n":1},{"t":1},{"verdict":"BLOCK"},{"n":2},{"t":2},{"verdict":"PASS"}]|engineer,test-dev,critic,engineer,test-dev,critic|complete|2
+pure-vibe-continues-past-round-3|pure-vibe|[{"n":1},{"t":1},{"verdict":"BLOCK"},{"n":2},{"t":2},{"verdict":"BLOCK"},{"n":3},{"t":3},{"verdict":"BLOCK"},{"n":4},{"t":4},{"verdict":"PASS"}]|engineer,test-dev,critic,engineer,test-dev,critic,engineer,test-dev,critic,engineer,test-dev,critic|complete|4
+CASES
 
-  run_workflow "$OUT_DIR/pair-exec.mjs" '[{"n":1},{"verdict":"PASS"}]'
-  [ "$status" -eq 0 ]
-  [ "$(agent_labels)" = "engineer,critic" ]
-  [ "$(jq -r '.agentCalls[1].hasSchema' <<< "$output")" = true ]
-  [ "$(jq -r '.result.status' <<< "$output")" = complete ]
-  [ "$(jq -r '.result.round' <<< "$output")" = 1 ]
+  assert_no_case_failures
 }
 
-@test "pair template: three BLOCK rounds under AUTONOMY=standard emit user_decision_required" {
-  render_pair standard
-  [ "$status" -eq 0 ]
-  printf '%s' "$output" > "$OUT_DIR/pair-exec.mjs"
+@test "gate loops under standard autonomy ask the user after three blocked rounds" {
+  local label kind responses labels
+  while IFS='|' read -r label kind responses labels; do
+    [ -n "$label" ] || continue
+    run_gate_loop "$kind" standard "$responses" || { record_case_failure "$label" "render failed output=$output"; continue; }
+    expect_status "$label" 0
+    expect_jq_output "$label-calls" ".agentCalls | map(.label) | join(\",\") == \"$labels\""
+    expect_jq_output "$label-payload-keys" '.result | keys | sort | join(",") == "choices,context,decision,question,status"'
+    expect_jq_output "$label-decision" '.result.status == "user_decision_required" and .result.decision == "workflow_gate_unresolved"'
+    expect_jq_output "$label-context" '(.result.context | type) == "string" and .result.context == "round 3 findings"'
+    expect_jq_output "$label-choices" '(.result.choices | length) >= 2 and (.result.choices | length) <= 4'
+    expect_jq_output "$label-question" '.result.question | contains("Round 3")'
+  done <<'CASES'
+pair|pair|[{"n":1},{"verdict":"BLOCK"},{"n":2},{"verdict":"BLOCK"},{"n":3},{"verdict":"BLOCK","findings":"round 3 findings"}]|engineer,critic,engineer,critic,engineer,critic
+trio|trio|[{"n":1},{"t":1},{"verdict":"BLOCK"},{"n":2},{"t":2},{"verdict":"BLOCK"},{"n":3},{"t":3},{"verdict":"BLOCK","findings":"round 3 findings"}]|engineer,test-dev,critic,engineer,test-dev,critic,engineer,test-dev,critic
+CASES
 
-  local responses='[{"n":1},{"verdict":"BLOCK"},{"n":2},{"verdict":"BLOCK"},{"n":3},{"verdict":"BLOCK","findings":"round 3 findings"}]'
-  run_workflow "$OUT_DIR/pair-exec.mjs" "$responses"
-  [ "$status" -eq 0 ]
-  [ "$(agent_labels)" = "engineer,critic,engineer,critic,engineer,critic" ]
-  [ "$(jq -r '.result | keys | sort | join(",")' <<< "$output")" = "choices,context,decision,question,status" ]
-  [ "$(jq -r '.result.status' <<< "$output")" = user_decision_required ]
-  [ "$(jq -r '.result.decision' <<< "$output")" = workflow_gate_unresolved ]
-  [ "$(jq -r '.result.context | type' <<< "$output")" = string ]
-  [ "$(jq -r '.result.context' <<< "$output")" = "round 3 findings" ]
-  choice_count=$(jq -r '.result.choices | length' <<< "$output")
-  [ "$choice_count" -ge 2 ]
-  [ "$choice_count" -le 4 ]
-  [[ "$(jq -r '.result.question' <<< "$output")" == *"Round 3"* ]]
-}
-
-@test "pair template: AUTONOMY=pure-vibe does not stop at round 3" {
-  render_pair pure-vibe
-  [ "$status" -eq 0 ]
-  printf '%s' "$output" > "$OUT_DIR/pair-exec.mjs"
-
-  local responses='[{"n":1},{"verdict":"BLOCK"},{"n":2},{"verdict":"BLOCK"},{"n":3},{"verdict":"BLOCK"},{"n":4},{"verdict":"PASS"}]'
-  run_workflow "$OUT_DIR/pair-exec.mjs" "$responses"
-  [ "$status" -eq 0 ]
-  [ "$(agent_labels)" = "engineer,critic,engineer,critic,engineer,critic,engineer,critic" ]
-  [ "$(jq -r '.result.status' <<< "$output")" = complete ]
-  [ "$(jq -r '.result.round' <<< "$output")" = 4 ]
-}
-
-@test "pair template: a BLOCK verdict whose findings text contains the word PASS is still scored BLOCK" {
-  render_pair standard
-  [ "$status" -eq 0 ]
-  printf '%s' "$output" > "$OUT_DIR/pair-exec.mjs"
-
-  local findings='1. (blocking) The variant does not decrease. Fix: tighten the guard split.\nVERDICT: BLOCK. Flips on: fix 1 so tests/guard.bats can pass.\nGrounding: discipline-of-programming-dijkstra/SKILL.md.'
-  local round1="{\"verdict\":\"BLOCK\",\"findings\":\"$findings\"}"
-  local responses="[{\"n\":1},$round1,{\"n\":2},{\"verdict\":\"PASS\"}]"
-  run_workflow "$OUT_DIR/pair-exec.mjs" "$responses"
-  [ "$status" -eq 0 ]
-  [ "$(agent_labels)" = "engineer,critic,engineer,critic" ]
-  [ "$(jq -r '.result.status' <<< "$output")" = complete ]
-  [ "$(jq -r '.result.round' <<< "$output")" = 2 ]
-}
-
-@test "trio template: PASS on round 1 exits after one engineer, one test-dev and one critic call" {
-  render_trio standard
-  [ "$status" -eq 0 ]
-  printf '%s' "$output" > "$OUT_DIR/trio-exec.mjs"
-
-  run_workflow "$OUT_DIR/trio-exec.mjs" '[{"n":1},{"t":1},{"verdict":"PASS"}]'
-  [ "$status" -eq 0 ]
-  [ "$(agent_labels)" = "engineer,test-dev,critic" ]
-  [ "$(jq -r '.agentCalls[2].hasSchema' <<< "$output")" = true ]
-  [ "$(jq -r '.result.status' <<< "$output")" = complete ]
-}
-
-@test "trio template: an OWNER SOURCE verdict reruns only the engineer on round 2" {
-  render_trio standard
-  [ "$status" -eq 0 ]
-  printf '%s' "$output" > "$OUT_DIR/trio-exec.mjs"
-
-  local responses='[{"n":1},{"t":1},{"verdict":"BLOCK","owner":"SOURCE"},{"n":2},{"verdict":"PASS"}]'
-  run_workflow "$OUT_DIR/trio-exec.mjs" "$responses"
-  [ "$status" -eq 0 ]
-  [ "$(agent_labels)" = "engineer,test-dev,critic,engineer,critic" ]
-}
-
-@test "trio template: an OWNER TESTS verdict reruns only test-dev on round 2" {
-  render_trio standard
-  [ "$status" -eq 0 ]
-  printf '%s' "$output" > "$OUT_DIR/trio-exec.mjs"
-
-  local responses='[{"n":1},{"t":1},{"verdict":"BLOCK","owner":"TESTS"},{"t":2},{"verdict":"PASS"}]'
-  run_workflow "$OUT_DIR/trio-exec.mjs" "$responses"
-  [ "$status" -eq 0 ]
-  [ "$(agent_labels)" = "engineer,test-dev,critic,test-dev,critic" ]
-}
-
-@test "trio template: a BLOCK with no owner field reruns both engineer and test-dev on round 2" {
-  render_trio standard
-  [ "$status" -eq 0 ]
-  printf '%s' "$output" > "$OUT_DIR/trio-exec.mjs"
-
-  local responses='[{"n":1},{"t":1},{"verdict":"BLOCK"},{"n":2},{"t":2},{"verdict":"PASS"}]'
-  run_workflow "$OUT_DIR/trio-exec.mjs" "$responses"
-  [ "$status" -eq 0 ]
-  [ "$(agent_labels)" = "engineer,test-dev,critic,engineer,test-dev,critic" ]
-}
-
-@test "trio template: three BLOCK rounds under AUTONOMY=standard emit user_decision_required" {
-  render_trio standard
-  [ "$status" -eq 0 ]
-  printf '%s' "$output" > "$OUT_DIR/trio-exec.mjs"
-
-  local responses='[{"n":1},{"t":1},{"verdict":"BLOCK"},{"n":2},{"t":2},{"verdict":"BLOCK"},{"n":3},{"t":3},{"verdict":"BLOCK","findings":"round 3 findings"}]'
-  run_workflow "$OUT_DIR/trio-exec.mjs" "$responses"
-  [ "$status" -eq 0 ]
-  [ "$(jq -r '.result.status' <<< "$output")" = user_decision_required ]
-  [ "$(jq -r '.result.context | type' <<< "$output")" = string ]
-  [ "$(jq -r '.result.context' <<< "$output")" = "round 3 findings" ]
-  [[ "$(jq -r '.result.question' <<< "$output")" == *"Round 3"* ]]
+  assert_no_case_failures
 }
