@@ -26,22 +26,25 @@ use_todo_anchor() {
 }
 
 choose_todo_anchor() {
-  local state_path="$1" flat_todos="$2" grep_status
+  local state_path="$1" flat_todos="$2" pending_status=0 todos_status=0
 
   TODO_HAS_SECTION=false
   if [ -n "$flat_todos" ]; then
     use_todo_anchor '^## Todos$' '(^### )|(^## )'
-  elif grep -Eq '^### Pending Todos$' "$state_path"; then
+    return 0
+  fi
+
+  grep -Eq '^### Pending Todos$' "$state_path" || pending_status=$?
+  if [ "$pending_status" -eq 0 ]; then
     use_todo_anchor '^### Pending Todos$' '(^### Completed Todos$)|(^## )'
-  else
-    grep_status=$?
-    [ "$grep_status" -le 1 ] || return 1
-    if grep -Eq '^## Todos$' "$state_path"; then
-      use_todo_anchor '^## Todos$' '(^### )|(^## )'
-    else
-      grep_status=$?
-      [ "$grep_status" -le 1 ] || return 1
-    fi
+    return 0
+  fi
+  [ "$pending_status" -le 1 ] || return 1
+
+  grep -Eq '^## Todos$' "$state_path" || todos_status=$?
+  [ "$todos_status" -le 1 ] || return 1
+  if [ "$todos_status" -eq 0 ]; then
+    use_todo_anchor '^## Todos$' '(^### )|(^## )'
   fi
   return 0
 }
