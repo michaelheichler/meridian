@@ -1,10 +1,3 @@
-#!/usr/bin/env bash
-# Shared field-token map and role validation for the agent-generation cluster.
-# Sourced by agent-generator.sh, render-agent-template.sh, and resolve-agent-settings.sh.
-set -u
-
-# Map a frontmatter field name (any accepted casing) to its {{TOKEN}} name.
-# Prints the token on success, returns 1 for an unknown field.
 agent_field_token() {
   case "$1" in
     name|NAME) printf 'NAME' ;;
@@ -28,8 +21,6 @@ agent_field_token() {
   esac
 }
 
-# Return 0 when $1 is a role defined in the given model-profiles JSON, else 1.
-# Usage: agent_role_is_valid <role> <model-profiles.json>
 agent_role_is_valid() {
   jq -e --arg r "$1" '[.quality, .balanced, .budget | keys[]] | index($r) != null' \
     "$2" >/dev/null 2>&1

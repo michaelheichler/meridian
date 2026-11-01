@@ -1,66 +1,68 @@
 #!/usr/bin/env bash
-set -euo pipefail
-
-SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-OPEN_FILTER="$SCRIPT_DIR/deviq-open-blocks.jq"
-PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(CDPATH='' cd -- "$SCRIPT_DIR/../.." && pwd)}"
-NUDGES_FILE="$PLUGIN_ROOT/config/deviq-nudges.json"
-
-ROOT=".lbwc-planning/deviq"
-PHASE_FILTER=""
-
-while [ $# -gt 0 ]; do
-  case "$1" in
-    --phase)
-      PHASE_FILTER="${2:?--phase requires a value}"
-      shift 2
-      ;;
-    --root)
-      ROOT="${2:?--root requires a value}"
-      shift 2
-      ;;
-    *)
-      echo "deviq-digest: unknown argument: $1" >&2
-      exit 1
-      ;;
-  esac
-done
 
 newest_matching() {
-  local file="$1" select="$2" format="$3"
+  local phase="$1" file="$2" select="$3" format="$4"
   [ -s "$file" ] || return 0
-  jq -c --arg phase "$PHASE_FILTER" "$select" "$file" \
+  jq -c --arg phase "$phase" "$select" "$file" \
     | tail -n 5 \
     | jq -s -r "$format"
 }
 
-NUDGES_JSON=$(jq -c '.' "$NUDGES_FILE" 2>/dev/null) || NUDGES_JSON='[]'
-[ -n "$NUDGES_JSON" ] || NUDGES_JSON='[]'
+deviq_nudges_json() {
+  local nudges
+  nudges=$(jq -c '.' "$1/config/deviq-nudges.json" 2>/dev/null) || nudges='[]'
+  [ -n "$nudges" ] || nudges='[]'
+  printf '%s' "$nudges"
+}
 
-OPEN_ISSUES=""
-if [ -s "$ROOT/blocks.jsonl" ]; then
-  OPEN_ISSUES=$(jq -c --arg phase "$PHASE_FILTER" 'select($phase == "" or .phase == $phase)' "$ROOT/blocks.jsonl" \
-    | jq -s -c -f "$OPEN_FILTER" \
-    | jq -r --argjson nudges "$NUDGES_JSON" '
+deviq_open_issues() {
+  local root="$1" phase="$2" open_filter="$3" nudges_json="$4"
+  [ -s "$root/blocks.jsonl" ] || return 0
+  jq -c --arg phase "$phase" 'select($phase == "" or .phase == $phase)' "$root/blocks.jsonl" \
+    | jq -s -c -f "$open_filter" \
+    | jq -r --argjson nudges "$nudges_json" '
         .[-5:] | reverse[] |
         (.trigger // "") as $t |
         ([$nudges[] | . as $n | select($t != "" and (try ($t | test($n.pattern; "i")) catch false))] | first) as $hit |
         "- [\(.phase)] \($t) (fix: \(.fix // ""))"
           + (if $hit then " (see: \($hit.article))" else "" end)
-      ')
+      '
+}
+
+deviq_print_sections() {
+  local open_issues="$1" recent_decisions="$2"
+  if [ -n "$open_issues" ]; then
+    printf '## Recent open issues\n%s\n' "$open_issues"
+  fi
+  if [ -n "$recent_decisions" ]; then
+    [ -n "$open_issues" ] && printf '\n'
+    printf '## Recent decisions\n%s\n' "$recent_decisions"
+  fi
+  return 0
+}
+
+deviq_digest_main() {
+  local script_dir plugin_root root=".lbwc-planning/deviq" phase_filter="" open_issues recent_decisions
+  script_dir="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)" || return 1
+  plugin_root="${CLAUDE_PLUGIN_ROOT:-$(CDPATH='' cd -- "$script_dir/../.." && pwd)}"
+
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --phase) phase_filter="${2:?--phase requires a value}"; shift 2 ;;
+      --root) root="${2:?--root requires a value}"; shift 2 ;;
+      *) echo "deviq-digest: unknown argument: $1" >&2; return 1 ;;
+    esac
+  done
+
+  open_issues=$(deviq_open_issues "$root" "$phase_filter" "$script_dir/deviq-open-blocks.jq" \
+    "$(deviq_nudges_json "$plugin_root")") || return 1
+  recent_decisions=$(newest_matching "$phase_filter" "$root/decisions.jsonl" \
+    'select($phase == "" or .phase == $phase)' \
+    'reverse[] | "- [\(.phase)] \(.summary // "")"') || return 1
+  deviq_print_sections "$open_issues" "$recent_decisions"
+}
+
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+  set -euo pipefail
+  deviq_digest_main "$@"
 fi
-
-RECENT_DECISIONS=$(newest_matching "$ROOT/decisions.jsonl" \
-  'select($phase == "" or .phase == $phase)' \
-  'reverse[] | "- [\(.phase)] \(.summary // "")"')
-
-if [ -n "$OPEN_ISSUES" ]; then
-  printf '## Recent open issues\n%s\n' "$OPEN_ISSUES"
-fi
-
-if [ -n "$RECENT_DECISIONS" ]; then
-  [ -n "$OPEN_ISSUES" ] && printf '\n'
-  printf '## Recent decisions\n%s\n' "$RECENT_DECISIONS"
-fi
-
-exit 0

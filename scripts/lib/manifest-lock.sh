@@ -1,6 +1,3 @@
-#!/usr/bin/env bash
-set -u
-
 manifest_lock_mtime() {
   local lock_dir="$1" mtime
   mtime=$(stat -c %Y "$lock_dir" 2>/dev/null) || mtime=$(stat -f %m "$lock_dir" 2>/dev/null) || return 1

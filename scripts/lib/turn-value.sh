@@ -1,6 +1,3 @@
-#!/usr/bin/env bash
-set -u
-
 # Prefixed locals, so a caller's output name cannot be shadowed.
 
 normalize_turn_value() {
