@@ -15,6 +15,7 @@ setup() {
   export LBWC_SETTINGS_PATH="$SETTINGS"
   export CLAUDE_CONFIG_DIR="$TEST_ROOT/claude"
   unset CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS || true
+  use_claude_fixture "$TEST_ROOT/host-claude"
 }
 
 teardown() {
@@ -55,30 +56,6 @@ record_full_roster() {
       --contract-id "$CONTRACT_ID" --teammate "$name"
     [ "$status" -eq 0 ]
   done < <(jq -r '.teammates[].name' <<< "$output")
-}
-
-write_seeded_claude_fixture() {
-  local binary="$1" host_enum="$2" models_json="$3"
-  mkdir -p "$(dirname "$binary")"
-  cat > "$binary" <<EOF
-#!/usr/bin/env bash
-set -euo pipefail
-case "\${1:-}" in
-  --version)
-    printf '%s\n' '91.7.3 (Fixture Code)'
-    ;;
-  --help)
-    printf '%s\n' '  --effort <level>  Session reasoning' '                      (low, high, max)'
-    ;;
-  *)
-    exit 97
-    ;;
-esac
-exit 0
-: 'models:$models_json'
-: '$host_enum'
-EOF
-  chmod +x "$binary"
 }
 
 @test "agent teams status reports disabled without changing settings" {

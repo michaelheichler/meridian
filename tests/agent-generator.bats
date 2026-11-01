@@ -6,7 +6,7 @@ GENERATOR="${SCRIPTS_DIR}/agent-generator.sh"
 export GENERATOR
 
 setup() {
-  TEST_TEMP_DIR=$(mktemp -d /private/tmp/lbwc-generator.XXXXXX)
+  TEST_TEMP_DIR=$(cd "$(mktemp -d "${TMPDIR:-/tmp}/lbwc-generator.XXXXXX")" && pwd -P)
   export TEST_TEMP_DIR
   export _ORIG_HOME="${HOME:-}"
   export _ORIG_LBWC_PLANNING_DIR="${LBWC_PLANNING_DIR:-}"

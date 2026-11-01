@@ -5,7 +5,7 @@ load test_helper
 RESOLVER="${SCRIPTS_DIR}/resolve-agent-settings.sh"
 
 setup() {
-  TEST_TEMP_DIR=$(mktemp -d /private/tmp/lbwc-resolver.XXXXXX)
+  TEST_TEMP_DIR=$(cd "$(mktemp -d "${TMPDIR:-/tmp}/lbwc-resolver.XXXXXX")" && pwd -P)
   export TEST_TEMP_DIR
   export _ORIG_HOME="${HOME:-}"
   export _ORIG_LBWC_PLANNING_DIR="${LBWC_PLANNING_DIR:-}"
