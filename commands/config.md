@@ -28,7 +28,7 @@ Config:
 
 ## Guard
 
-If no .lbwc-planning/ dir: STOP "Run /lbwc:init first." (check `.lbwc-planning/config.json`)
+If no .lbwc-planning/ dir exists, STOP with "Run /lbwc:init first." (check `.lbwc-planning/config.json`)
 
 ## Behavior
 
@@ -40,13 +40,13 @@ Every ordinary setting mutation runs `bash "{plugin-root}/scripts/lbwc-config.sh
 
 Run `bash "{plugin-root}/scripts/lbwc-config.sh" migrate .lbwc-planning`, then `bash "{plugin-root}/scripts/lbwc-config.sh" validate .lbwc-planning`. A nonzero result stops the command and leaves the invalid file for explicit repair. Do not silently replace it with defaults. Validate routing profiles separately with `bash "{plugin-root}/scripts/lbwc-model" validate .lbwc-planning`.
 
-### No arguments: Interactive configuration
+### No arguments (interactive configuration)
 
 **Step 1:** Display current settings in single-line box table (setting, value, description) + skill-hook mappings.
 
 Before any presentation, run `bash "{plugin-root}/scripts/lbwc-model" --json refresh .lbwc-planning`.
 
-Present the detected routing state by running `bash "{plugin-root}/scripts/lbwc-model" --json show .lbwc-planning`. Render its active profile and each supported role's selector, reasoning value, and turn limit. Mark custom profiles as custom. Do not resolve roles through static profile files or assign cost weights.
+Present the detected routing state by running `bash "{plugin-root}/scripts/lbwc-model" --json show .lbwc-planning`. Render its active profile and each supported role's selector and reasoning value, plus its turn limit. Mark custom profiles as custom. Do not resolve roles through static profile files or assign cost weights.
 
 **Step 2:** AskUserQuestion with 1 question:
 
@@ -112,7 +112,7 @@ If `SETTING=autonomy`, AskUserQuestion with 1 question:
 If `SETTING=planning_tracking`, AskUserQuestion with 1 question:
 
 - header: `Tracking`
-- question: `How should planning artifacts be tracked?`
+- question: `How should the plugin track planning artifacts?`
 - options:
   - `manual`: Leave planning files for manual git handling
   - `ignore`: Keep `.lbwc-planning/` out of git
@@ -129,7 +129,7 @@ If `SETTING=auto_push`, AskUserQuestion with 1 question:
 
 Store the selected value in variable `VALUE`.
 
-After a core setting value is chosen, continue to Step 3 and apply it there with the same validation, write behavior, and side effects as the `/lbwc:config <setting> <value>` path below. Step 4 remains the no-args tail behavior after that shared apply step.
+After the user chooses a core setting value, continue to Step 3 and apply it there with the same validation, write behavior, and side effects as the `/lbwc:config <setting> <value>` path below. Step 4 remains the no-args tail behavior after that shared apply step.
 
 **Step 2.7:** If `CONFIG_SECTION = "Model profile"`, AskUserQuestion with 1 question:
 
@@ -144,9 +144,9 @@ Store selection in variable `PROFILE_METHOD`.
 
 **Branching:**
 
-- If `PROFILE_METHOD = "Use preset profile"`: AskUserQuestion with 1 question and 3 options (`quality`, `balanced`, `budget`). Store the selected preset in `PROFILE`, then continue to Step 3 and apply it there using the `Model profile switching` logic below.
-- If `PROFILE_METHOD = "Configure each agent individually"`: Proceed to individual agent configuration flow (Round 1 below).
-- If `PROFILE_METHOD = "Model matrix"`: run the model matrix flow below, then continue to Step 4.
+- If `PROFILE_METHOD = "Use preset profile"`, call AskUserQuestion with 1 question and 3 options (`quality`, `balanced`, `budget`). Store the selected preset in `PROFILE`, then continue to Step 3 and apply it there using the `Model profile switching` logic below.
+- If `PROFILE_METHOD = "Configure each agent individually"`, proceed to individual agent configuration flow (Round 1 below).
+- If `PROFILE_METHOD = "Model matrix"`, run the model matrix flow below, then continue to Step 4.
 
 **Step 2.8:** If `CONFIG_SECTION = "Execution mode"`, AskUserQuestion with 1 question:
 
@@ -177,10 +177,10 @@ Native Other text may name a detected selector or profile. Reject an unknown val
 
 **Step 3:** Apply changes to config.json. This is the shared apply step for no-args core-setting changes and preset-model-profile changes. Display ✓ per changed setting with ➜. No changes: "✓ No changes made."
 
-**Step 4: Profile drift detection**: if effort/autonomy/verification_tier changed:
+**Step 4 (profile drift detection).** If effort/autonomy/verification_tier changed:
 
 - Compare against active profile's expected values
-- If mismatch: AskUserQuestion "Settings no longer match '{profile}'. Save as new profile?" → "Save" (route to /lbwc:profile save) or "No" (set active_profile to "custom")
+- If they mismatch, call AskUserQuestion "Settings no longer match '{profile}'. Save as new profile?" → "Save" (route to /lbwc:profile save) or "No" (set active_profile to "custom")
 - Skip if no profile-tracked settings changed or already "custom"
 
 Run `bash "{plugin-root}/scripts/suggest-next.sh" config` and display.
@@ -194,7 +194,7 @@ Execution settings use the same transaction and validation path as every other s
 - `agent_execution_mode` accepts only `in_process`, `tmux`, `workflow`, or `ask`.
 - `tmux_execution.<field>` updates one validated field without replacing the other fields.
 - `set-json` accepts a complete `tmux_execution` object for atomic replacement. The object must contain every documented field and no unknown fields.
-- `tmux_execution.enabled` is false by default and becomes true only after the TMUX option is accepted.
+- `tmux_execution.enabled` is false by default and becomes true only after the user accepts the TMUX option.
 
 If `setting=max_uat_remediation_rounds`, validate the value before writing:
 
@@ -245,7 +245,7 @@ Read the active profile with `lbwc-model --json show`. Validate the role, select
 
 ## Settings Reference
 
-Note: `auto_commit` controls source-task commits during Execute mode. Planning artifact commit behavior is controlled by `planning_tracking`.
+Note that `auto_commit` controls source-task commits during Execute mode, while `planning_tracking` controls planning artifact commit behavior.
 
 | Setting | Type | Values | Default |
 | ------- | ---- | ------ | ------- |
@@ -263,7 +263,7 @@ Note: `auto_commit` controls source-task commits during Execute mode. Planning a
 | max_tasks_per_plan | number | 1-7 | 5 |
 | prefer_teams | string | always/auto/never | auto |
 | agent_execution_mode | string | in_process/tmux/workflow/ask | ask |
-| tmux_execution | object | strict TMUX backend and restriction object | enabled: false |
+| tmux_execution | object | strict TMUX backend and restriction object | enabled=false |
 | tmux_execution.enabled | boolean | true/false | false |
 | tmux_execution.session_name_prefix | string | ASCII name prefix, 1-32 characters | lbwc |
 | tmux_execution.max_agents | integer | 1-4 | 3 |
@@ -275,7 +275,7 @@ Note: `auto_commit` controls source-task commits during Execute mode. Planning a
 | tmux_execution.cleanup_policy | string | kill_on_complete/keep_panes | kill_on_complete |
 | tmux_execution.layout | string | main-vertical/main-horizontal/tiled/even-horizontal/even-vertical | main-vertical |
 | tmux_execution.restrictions | object | four strict boolean restrictions | see defaults |
-| workflow_execution | object | strict workflow backend object | enabled: false |
+| workflow_execution | object | strict workflow backend object | enabled=false |
 | workflow_execution.enabled | boolean | true/false | false |
 | pipeline_research | boolean | true/false | false |
 | branch_per_milestone | boolean | true/false | false |
@@ -310,10 +310,10 @@ Note: `auto_commit` controls source-task commits during Execute mode. Planning a
 
 ### Execution Runtime Rules
 
-- During active plan execution, identified by `.execution-state.json` status `running`, `executing`, or `active`, `STATE.md` status `active` or `executing`, or a dispatched or running task contract, the execution backend is frozen.
+- During active plan execution, identified by `.execution-state.json` status `running`, `executing`, or `active`, `STATE.md` status `active` or `executing`, or a dispatched or running task contract, the execution backend stays fixed.
 - The frozen fields are `agent_execution_mode`, `tmux_execution.max_agents`, `tmux_execution.comms_fallback`, `tmux_execution.restrictions.allow_agent_git`, `effort`, and `routing.active_profile`.
-- `tmux_execution.cleanup_policy` may change for the next teardown. The emergency `agent_execution_mode=in_process` override is accepted only when no running TMUX agents are registered.
-- Invalid or malformed configuration is rejected without replacing the saved file. Migration fills only missing execution defaults and preserves valid existing values.
+- `tmux_execution.cleanup_policy` may change for the next teardown. The emergency `agent_execution_mode=in_process` override works only when the registry lists no running TMUX agents.
+- The command rejects invalid or malformed configuration and keeps the saved file. Migration fills only missing execution defaults and preserves valid existing values.
 - `agent_execution_mode=ask` is a persisted gate, not a fallback instruction. A rejected or cancelled spawn remains cancelled until the caller explicitly starts a different backend.
 
 ### Statusline switches
@@ -370,7 +370,7 @@ Accepted values:
 
 - `false`: unlimited UAT remediation rounds
 - `0`: unlimited UAT remediation rounds
-- positive integer: finite UAT remediation round cap
+- positive integer, the finite UAT remediation round cap
 
 Injected default is `false`, and runtime fallback is also unlimited when the persisted value is absent or malformed. `/lbwc:config` rejects malformed interactive input instead of writing it.
 
@@ -392,7 +392,7 @@ Unlimited example:
 
 ## Output Format
 
-Follow @${CLAUDE_PLUGIN_ROOT}/references/lbwc-brand-essentials.md: single-line box, ✓ success, ⚠ invalid, ➜ transitions, no ANSI.
+Follow @${CLAUDE_PLUGIN_ROOT}/references/lbwc-brand-essentials.md (single-line box, ✓ success, ⚠ invalid, ➜ transitions, no ANSI).
 
 ## Next Up
 

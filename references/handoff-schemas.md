@@ -123,7 +123,7 @@ Task progress or completion update from Dev or Docs.
 
 ## `blocker_report` (Dev/Docs -> Lead)
 
-Escalation when agent is blocked and cannot proceed.
+Escalation when an agent cannot proceed.
 
 ```json
 {
@@ -148,7 +148,7 @@ Escalation when agent is blocked and cannot proceed.
   }
 }
 ```
-If no pre-existing issues were found, omit the field or pass an empty array.
+If you find no pre-existing issues, omit the field or pass an empty array.
 
 ## `tests_ready` (QA Author -> Lead/Dev)
 
@@ -175,7 +175,7 @@ Failing tests committed for a plan's TDD red stage.
 
 ## `debugger_report` (Debugger -> Lead)
 
-Diagnostic investigation report from the Debugger agent. Used in Teammate Mode when the Debugger is assigned a single hypothesis to investigate. It is distinct from `blocker_report`. The Debugger's payload uses diagnostic fields, not escalation fields.
+Diagnostic investigation report from the Debugger agent. Used in Teammate Mode when the Lead assigns the Debugger a single hypothesis to investigate. It is distinct from `blocker_report`. The Debugger's payload uses diagnostic fields, not escalation fields.
 
 ```json
 {
@@ -200,8 +200,8 @@ Diagnostic investigation report from the Debugger agent. Used in Teammate Mode w
   }
 }
 ```
-`resolution_observation` is analysis-scoped and must be one of `already_fixed`, `needs_change`, or `inconclusive`. Use `already_fixed` only when evidence shows the current branch already contains the fix and no new code change is needed. Use `needs_change` when a code change was required or would still be required. Use `inconclusive` when the diagnosis is not yet strong enough. This field informs the orchestrator's synthesis. It does not let the Debugger own final session state.
-For `pre_existing_issues`, if no pre-existing issues were found, omit the field or pass an empty array.
+`resolution_observation` covers the analysis only and takes one value, either `already_fixed`, `needs_change`, or `inconclusive`. Use `already_fixed` only when evidence shows the current branch already contains the fix and the fix needs no new code change. Use `needs_change` when the fix required a code change or still requires one. Use `inconclusive` when the diagnosis lacks enough strength. This field informs the orchestrator's synthesis. It does not let the Debugger own final session state.
+For `pre_existing_issues`, if you find no pre-existing issues, omit the field or pass an empty array.
 
 ## `qa_verdict` (QA -> Lead)
 
@@ -243,19 +243,19 @@ All items share: `id`, `category`, `description`, `status`, `evidence`. Category
 
 | Category | Optional Fields | Fallback |
 | --- | --- | --- |
-| `must_have` | _(none)_ | 5-col: Truth/Condition, Status, Evidence |
+| `must_have` | _(none)_ | 5-col (Truth/Condition, Status, Evidence) |
 | `artifact` | `exists` (bool), `contains` (string) | 5-col when absent |
 | `key_link` | `from`, `to`, `via` (strings) | 5-col when absent |
-| `anti_pattern` | _(none)_ | 5-col: Pattern, Status, Evidence |
+| `anti_pattern` | _(none)_ | 5-col (Pattern, Status, Evidence) |
 | `convention` | `file`, `detail` (strings) | 5-col when absent |
 | `requirement` | `plan_ref` (string) | 5-col when absent |
-| `skill_augmented` | _(none)_ | 5-col: Skill Check, Status, Evidence |
+| `skill_augmented` | _(none)_ | 5-col (Skill Check, Status, Evidence) |
 
 When category-specific fields are present, `write-verification.sh` emits a 6-column table. When absent, falls back to uniform 5-column format.
 
 ## `approval_request` (Dev/Lead -> Lead/Architect)
 
-Request for approval on plan, scope change, or override.
+Request for approval of a plan or scope change, or of an override.
 
 ```json
 {
@@ -351,7 +351,7 @@ Claude Code delivers `shutdown_request` as JSON text in the SendMessage inbox. T
 
 Follow the team-shutdown contract in `references/subagent-contracts.md`.
 
-Shutdown invariant: acknowledge every `shutdown_request` by calling SendMessage with `shutdown_response`, then stop.
+Shutdown invariant. Acknowledge every `shutdown_request` by calling SendMessage with `shutdown_response`, then stop.
 
 > **Conditional refusal:** The schema allows `approved: false` with `pending_work` describing what remains. Currently all agents are instructed to always approve. The orchestrator retries up to 3 times on rejection before proceeding. If a future agent needs to delay shutdown (for example, during a disk write), update its Shutdown Handling section to allow conditional refusal with `approved: false`.
 
