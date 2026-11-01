@@ -78,9 +78,12 @@ lbwc_markdown_has_heading_title() {
     BEGIN { in_fence = 0; found = 0 }
     /^[[:space:]]*```/ || /^[[:space:]]*~~~/ { in_fence = !in_fence; next }
     in_fence { next }
-    /^#{1,6}[[:space:]]+/ {
+    /^#+[[:space:]]/ {
+      marks = $0
+      sub(/[^#].*$/, "", marks)
+      if (length(marks) > 6) { next }
       line = $0
-      sub(/^#{1,6}[[:space:]]+/, "", line)
+      sub(/^#+[[:space:]]+/, "", line)
       sub(/[[:space:]]+$/, "", line)
       if (line == title) {
         found = 1
