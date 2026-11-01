@@ -199,7 +199,7 @@ is_canonical_identifier() {
 }
 
 plan_ids=()
-for plan_file in "${plan_files[@]}"; do
+for plan_file in ${plan_files[@]+"${plan_files[@]}"}; do
   if [[ "$(basename "$plan_file")" == "PLAN.md" ]]; then
     plan_id=$(legacy_plan_id "$plan_file")
   else
@@ -211,7 +211,7 @@ for plan_file in "${plan_files[@]}"; do
     echo "Error: discovered plan '$plan_file' has an unsafe canonical plan ID '$plan_id'." >&2
     exit 1
   fi
-  for existing_plan_id in "${plan_ids[@]}"; do
+  for existing_plan_id in ${plan_ids[@]+"${plan_ids[@]}"}; do
     if [[ "$existing_plan_id" == "$plan_id" ]]; then
       echo "Error: discovered PLAN.md files have duplicate canonical plan ID '$plan_id'." >&2
       exit 1
@@ -249,7 +249,7 @@ if [[ "$plan_count" -gt 0 ]]; then
       echo "Error: plan '$plan_id' in plans_verified is not a canonical plan ID." >&2
       exit 1
     fi
-    for existing_plan_id in "${verified_plan_ids[@]}"; do
+    for existing_plan_id in ${verified_plan_ids[@]+"${verified_plan_ids[@]}"}; do
       if [[ "$existing_plan_id" == "$plan_id" ]]; then
         echo "Error: plans_verified must not contain duplicate plan ID '$plan_id'." >&2
         exit 1
@@ -263,9 +263,9 @@ if [[ "$plan_count" -gt 0 ]]; then
     exit 1
   fi
 
-  for plan_id in "${verified_plan_ids[@]}"; do
+  for plan_id in ${verified_plan_ids[@]+"${verified_plan_ids[@]}"}; do
     matched_plan="false"
-    for discovered_plan_id in "${plan_ids[@]}"; do
+    for discovered_plan_id in ${plan_ids[@]+"${plan_ids[@]}"}; do
       if [[ "$plan_id" == "$discovered_plan_id" ]]; then
         matched_plan="true"
         break
@@ -277,9 +277,9 @@ if [[ "$plan_count" -gt 0 ]]; then
     fi
   done
 
-  for discovered_plan_id in "${plan_ids[@]}"; do
+  for discovered_plan_id in ${plan_ids[@]+"${plan_ids[@]}"}; do
     matched_plan="false"
-    for plan_id in "${verified_plan_ids[@]}"; do
+    for plan_id in ${verified_plan_ids[@]+"${verified_plan_ids[@]}"}; do
       if [[ "$plan_id" == "$discovered_plan_id" ]]; then
         matched_plan="true"
         break
@@ -303,7 +303,7 @@ if [[ "$plan_count" -gt 0 ]]; then
       exit 1
     fi
     matched_plan="false"
-    for discovered_plan_id in "${plan_ids[@]}"; do
+    for discovered_plan_id in ${plan_ids[@]+"${plan_ids[@]}"}; do
       if [[ "$plan_ref" == "$discovered_plan_id" ]]; then
         matched_plan="true"
         break
@@ -315,7 +315,7 @@ if [[ "$plan_count" -gt 0 ]]; then
     fi
   done < <(echo "$payload" | jq -r '.checks_detail[].plan_ref')
 
-  for plan_id in "${verified_plan_ids[@]}"; do
+  for plan_id in ${verified_plan_ids[@]+"${verified_plan_ids[@]}"}; do
     ref_count=$(echo "$payload" | jq --arg pid "$plan_id" \
       '[.checks_detail[] | select(.plan_ref == $pid)] | length')
     if [[ "$ref_count" -eq 0 ]]; then
@@ -346,7 +346,7 @@ trap 'rm -f "$tmp_output"' EXIT
   echo "writer: write-verification.sh"
   if [[ "$has_plans_verified" == "true" ]]; then
     echo "plans_verified:"
-    for pvid in "${plan_ids[@]}"; do
+    for pvid in ${plan_ids[@]+"${plan_ids[@]}"}; do
       echo "  - $pvid"
     done
   fi
@@ -398,19 +398,21 @@ uses_rich_columns() {
   esac
 }
 
+ROW_NUMBER_LABEL='#'
+
 emit_rich_header() {
   case "$1" in
     artifact)
-      echo "| # | ID | Artifact | Exists | Contains | Evidence | Status |"
+      echo "| $ROW_NUMBER_LABEL | ID | Artifact | Exists | Contains | Evidence | Status |"
       echo "|---|-----|----------|--------|----------|----------|--------|" ;;
     key_link)
-      echo "| # | ID | From | To | Via | Evidence | Status |"
+      echo "| $ROW_NUMBER_LABEL | ID | From | To | Via | Evidence | Status |"
       echo "|---|-----|------|-----|-----|----------|--------|" ;;
     requirement)
-      echo "| # | ID | Requirement | Plan Ref | Evidence | Status |"
+      echo "| $ROW_NUMBER_LABEL | ID | Requirement | Plan Ref | Evidence | Status |"
       echo "|---|-----|-------------|----------|----------|--------|" ;;
     convention)
-      echo "| # | ID | Convention | File | Status | Detail |"
+      echo "| $ROW_NUMBER_LABEL | ID | Convention | File | Status | Detail |"
       echo "|---|-----|------------|------|--------|--------|" ;;
   esac
 }
@@ -468,7 +470,7 @@ emit_section() {
       emit_rich_row "$category" "$row_number" "$row"
     done < <(echo "$items" | jq -c '.[]')
   else
-    echo "| # | ID | $col_name | Status | Evidence |"
+    echo "| $ROW_NUMBER_LABEL | ID | $col_name | Status | Evidence |"
     echo "|---|-----|$(printf '%0.s-' $(seq 1 ${#col_name}))--|--------|----------|"
     emit_plain_rows "$items"
   fi
@@ -480,7 +482,7 @@ emit_other_checks() {
   local unknown_items="$1"
   echo "## Other Checks"
   echo ""
-  echo "| # | ID | Check | Status | Evidence |"
+  echo "| $ROW_NUMBER_LABEL | ID | Check | Status | Evidence |"
   echo "|---|-----|-------|--------|----------|"
   emit_plain_rows "$unknown_items"
   echo ""
