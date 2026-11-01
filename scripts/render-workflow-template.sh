@@ -2,8 +2,6 @@
 set -euo pipefail
 
 SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname "$0")" && pwd)
-. "$SCRIPT_DIR/lib/require-bash.sh"
-require_bash_43
 TEMPLATE_DIR="$SCRIPT_DIR/../templates/workflows"
 SHAPE="${1:-}"
 shift || true
@@ -38,23 +36,33 @@ is_optional_token() {
   esac
 }
 
-declare -A VALUES=()
+field_is_set() {
+  local slot="FIELD_VALUE_$1"
+  [ "${!slot+set}" = set ]
+}
+
+load_field() {
+  local slot="FIELD_VALUE_$1"
+  printf -v CURRENT_FIELD '%s' "${!slot}"
+}
+
 for assignment in "$@"; do
   key=${assignment%%=*}
   [ "$key" != "$assignment" ] || fail "expected KEY=VALUE, got '$assignment'"
   is_allowed_field "$key" || fail "unknown field '$key'"
-  VALUES["$key"]=${assignment#*=}
+  printf -v "FIELD_VALUE_$key" '%s' "${assignment#*=}"
 done
 
 for required in NAME DESCRIPTION "${BODY_TOKENS[@]}"; do
-  [ "${VALUES[$required]+set}" = set ] || fail "missing required field $required"
-  is_optional_token "$required" || [ -n "${VALUES[$required]}" ] || fail "missing required field $required"
+  field_is_set "$required" || fail "missing required field $required"
+  load_field "$required"
+  is_optional_token "$required" || [ -n "$CURRENT_FIELD" ] || fail "missing required field $required"
 done
 
 phase_titles=$(grep -oE 'phase\("[^"]*"\)' "$TEMPLATE" | sed -E 's/^phase\("//; s/"\)$//') || true
 [ -n "$phase_titles" ] || fail "template '$SHAPE' declares no phase(\"...\") calls"
 PHASE_TITLES_JSON=$(jq -R -s 'split("\n") | map(select(length > 0))' <<< "$phase_titles")
-META_JSON=$(jq -nc --arg name "${VALUES[NAME]}" --arg description "${VALUES[DESCRIPTION]}" --argjson phases "$PHASE_TITLES_JSON" \
+META_JSON=$(jq -nc --arg name "$FIELD_VALUE_NAME" --arg description "$FIELD_VALUE_DESCRIPTION" --argjson phases "$PHASE_TITLES_JSON" \
   '{name: $name, description: $description, phases: $phases}')
 META_LINE="export const meta = ${META_JSON};"
 
@@ -71,10 +79,11 @@ done
 
 for token in "${BODY_TOKENS[@]}"; do
   sentinel="${SEP}LBWC_WORKFLOW_SLOT_${token}${SEP}"
-  if is_optional_token "$token" && [ -z "${VALUES[$token]}" ]; then
+  load_field "$token"
+  if is_optional_token "$token" && [ -z "$CURRENT_FIELD" ]; then
     escaped='null'
   else
-    escaped=$(jq -Rn --arg v "${VALUES[$token]}" '$v')
+    escaped=$(jq -Rn --arg v "$CURRENT_FIELD" '$v')
   fi
   rendered=${rendered//"$sentinel"/"$escaped"}
   check_rendered=${check_rendered//"$sentinel"/__LBWC_WORKFLOW_USER_CONTENT__}
