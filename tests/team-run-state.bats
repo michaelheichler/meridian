@@ -14,21 +14,23 @@ teardown() {
   teardown_temp_dir
 }
 
-@test "team run state defaults scope to the repository root" {
-  run bash "$SCRIPT" resolve-scopes --project-root "$ROOT"
-
-  [ "$status" -eq 0 ]
-  jq -e '.scopes == ["."]' <<< "$output" >/dev/null
-}
-
-@test "team run state preserves repeatable canonical scopes" {
+@test "team run state resolves scope arguments to canonical repository-relative scopes" {
+  local label scope_args expected
+  local -a scope_array
   mkdir -p "$ROOT/src/web" "$ROOT/tests/web"
-
-  run bash "$SCRIPT" resolve-scopes --project-root "$ROOT" \
-    --scope src/web --scope "$ROOT/tests/web"
-
-  [ "$status" -eq 0 ]
-  jq -e '.scopes == ["src/web", "tests/web"]' <<< "$output" >/dev/null
+  while IFS='|' read -r label scope_args expected; do
+    [ -n "$label" ] || continue
+    scope_array=()
+    [ -z "$scope_args" ] || read -r -a scope_array <<< "$scope_args"
+    run bash "$SCRIPT" resolve-scopes --project-root "$ROOT" ${scope_array[@]+"${scope_array[@]}"}
+    [ "$status" -eq 0 ] || { echo "case=$label status=$status output=$output" >&2; return 1; }
+    [ "$(jq -c '.scopes' <<< "$output")" = "$expected" ] \
+      || { echo "case=$label expected=$expected output=$output" >&2; return 1; }
+  done <<CASES
+default-is-repository-root||["."]
+repeatable-relative-scopes|--scope src/web --scope tests/web|["src/web","tests/web"]
+absolute-scope-becomes-relative|--scope $ROOT/tests/web|["tests/web"]
+CASES
 }
 
 @test "team run state creates diagnosis files without active planning state" {
@@ -102,8 +104,14 @@ teardown() {
   [[ "$output" == *"temporary_run_unreadable|unreadable"* ]]
 }
 
-@test "session start and doctor integrate temporary run cleanup" {
-  grep -F 'cleanup-temporary-agent-runfiles.sh' "$SCRIPTS_DIR/session-start.sh" >/dev/null
-  grep -F 'scan_temporary_runs' "$SCRIPTS_DIR/doctor-cleanup.sh" >/dev/null
-  grep -F 'Temporary agent runs' "$PROJECT_ROOT/commands/doctor.md" >/dev/null
+@test "doctor cleanup scan reports temporary runs through the cleanup helper" {
+  local runs="$ROOT/.temporary-agent-runfiles/runs"
+  mkdir -p "$runs/active"
+  printf '%s\n' '{"status":"awaiting-review"}' > "$runs/active/run.json"
+  (cd "$ROOT" && git init -q)
+
+  run bash -c 'cd "$1" && bash "$2" scan' _ "$ROOT" "$SCRIPTS_DIR/doctor-cleanup.sh"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"temporary_run_active|active"* ]]
 }
