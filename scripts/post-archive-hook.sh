@@ -1,14 +1,12 @@
 #!/usr/bin/env bash
 set -u
 
-# post-archive-hook.sh <milestone-slug> <archive-path> <tag> [config-path]
-# Fail-open dispatcher for user-configured post-archive hooks.
+# Fails open, so a broken user hook never blocks archiving.
 
 SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname "$0")" && pwd -P 2>/dev/null || dirname "$0")
 ROOT_HELPER="$SCRIPT_DIR/lib/lbwc-config-root.sh"
 
 if [ -f "$ROOT_HELPER" ]; then
-  # shellcheck source=lib/lbwc-config-root.sh
   . "$ROOT_HELPER"
   find_lbwc_root "$SCRIPT_DIR" 2>/dev/null || true
 fi
@@ -21,10 +19,11 @@ resolve_from_base() {
   local path="$1"
   local base_dir="$2"
 
-  case "$path" in
-    /*) printf '%s\n' "$path" ;;
-    *)  printf '%s/%s\n' "$base_dir" "$path" ;;
-  esac
+  if [ "${path:0:1}" = "/" ]; then
+    printf '%s\n' "$path"
+  else
+    printf '%s/%s\n' "$base_dir" "$path"
+  fi
 }
 
 MILESTONE_SLUG="${1:-}"
@@ -51,15 +50,6 @@ export LBWC_PLANNING_DIR="$PLANNING_DIR"
 [ -n "$ARCHIVE_PATH" ] || exit 0
 
 ARCHIVE_PATH=$(resolve_from_base "$ARCHIVE_PATH" "$PROJECT_ROOT")
-
-LOG_EVENT_SCRIPT="$SCRIPT_DIR/log-event.sh"
-if [ -f "$LOG_EVENT_SCRIPT" ]; then
-  bash "$LOG_EVENT_SCRIPT" milestone_shipped archive \
-    "slug=$MILESTONE_SLUG" \
-    "archive_path=$ARCHIVE_PATH" \
-    "tag=$TAG" \
-    >/dev/null 2>&1 || true
-fi
 
 if [ ! -f "$CONFIG_PATH" ]; then
   warn "config not found at $CONFIG_PATH; skipping post_archive hook"
