@@ -29,6 +29,12 @@ expect_case_silent() {
     || record_case_failure "$label" "expected empty output, got=$output"
 }
 
+expect_case_absent() {
+  local label=$1 fragment=$2
+  [[ "$output" != *"$fragment"* ]] \
+    || record_case_failure "$label" "unexpected fragment=[$fragment] output=$output"
+}
+
 assert_no_case_failures() {
   [ ! -s "$(case_failure_log)" ] || { cat "$(case_failure_log)" >&2; return 1; }
 }
