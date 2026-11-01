@@ -258,7 +258,7 @@ scan_summaries() {
       [0-9]*) deviation_count=$((deviation_count + deviations)) ;;
       *) deviation_count=$((deviation_count + 1)) ;;
     esac
-    status=$(read_status_field "$summary_file")
+    status=$(extract_summary_status "$summary_file")
     if [ "$status" = "failed" ] || [ "$status" = "partial" ]; then
       plan_id=$(basename "$summary_file" | sed 's/-SUMMARY.md//')
       failing_plan_ids="${failing_plan_ids:+$failing_plan_ids }$plan_id"
