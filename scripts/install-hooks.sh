@@ -30,6 +30,8 @@ if [ -f "$HOOK_PATH" ]; then
     else
       echo "pre-push hook exists but is not managed by LBWC -- skipping" >&2
     fi
+  elif [ -x "$HOOK_PATH" ] && [ "$(cat "$HOOK_PATH")" = "$HOOK_CONTENT" ]; then
+    echo "pre-push hook already installed" >&2
   elif grep -qE '(_lbwc_find_script|SCRIPT="/tmp/.lbwc-plugin-root-link-)' "$HOOK_PATH" 2>/dev/null; then
     echo "$HOOK_CONTENT" > "$HOOK_PATH"
     chmod +x "$HOOK_PATH"
