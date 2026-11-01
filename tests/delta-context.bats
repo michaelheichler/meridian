@@ -1,288 +1,236 @@
 #!/usr/bin/env bats
 
 load test_helper
+load gate_case_helper
+load gate_case_files
 
 setup() {
   setup_temp_dir
-  create_test_config
-  mkdir -p "$TEST_TEMP_DIR/.lbwc-planning/phases/02-test-phase"
-  cat > "$TEST_TEMP_DIR/.lbwc-planning/ROADMAP.md" <<'EOF'
-# Test Roadmap
-## Phase 2: Test Phase
-**Goal:** Test goal
-EOF
-  cat > "$TEST_TEMP_DIR/.lbwc-planning/phases/02-test-phase/02-01-PLAN.md" <<'EOF'
----
-phase: 2
-plan: 1
-title: "Test Plan"
-wave: 1
-depends_on: []
-must_haves: ["test"]
----
-# Test Plan
-EOF
+  reset_case_failures
 }
 
 teardown() {
   teardown_temp_dir
 }
 
-setup_nested_git_workspace() {
-  NESTED_REPO_ROOT="$TEST_TEMP_DIR/mono"
-  NESTED_WORKSPACE_ROOT="$NESTED_REPO_ROOT/apps/proj"
-  NESTED_PLANNING_DIR="$NESTED_WORKSPACE_ROOT/.lbwc-planning"
-  NESTED_PHASE_DIR="$NESTED_PLANNING_DIR/phases/02-test-phase"
-  NESTED_PLAN_PATH="$NESTED_PHASE_DIR/02-01-PLAN.md"
-
-  mkdir -p "$NESTED_PHASE_DIR"
-  create_test_config "mono/apps/proj/.lbwc-planning"
-  cat > "$NESTED_PLANNING_DIR/ROADMAP.md" <<'EOF'
-# Test Roadmap
-## Phase 2: Nested Test Phase
-**Goal:** Nested test goal
-**Reqs:** REQ-01
-**Success:** Tests pass
-EOF
-  cat > "$NESTED_PLAN_PATH" <<'EOF'
----
-phase: 2
-plan: 1
-title: "Nested Test Plan"
-wave: 1
-depends_on: []
-must_haves: ["test"]
----
-# Nested Test Plan
-EOF
-
-  cd "$NESTED_REPO_ROOT" || return 1
-  git init -q
-  git config user.name "LBWC Test"
-  git config user.email "lbwc-tests@example.com"
+build_workspace() {
+  local root=$1 plan_title=${2:-Test Plan} planning
+  planning="$root/.lbwc-planning"
+  mkdir -p "$planning/phases/02-test-phase"
+  printf '%s\n' '{}' > "$planning/config.json"
+  printf '%s\n' '# Test Roadmap' '## Phase 2: Test Phase' '**Goal:** Test goal' \
+    '**Reqs:** REQ-01' '**Success:** Tests pass' > "$planning/ROADMAP.md"
+  printf '%s\n' '---' 'phase: 2' 'plan: 1' "title: \"$plan_title\"" 'wave: 1' \
+    'depends_on: []' 'must_haves: ["test"]' '---' "# $plan_title" \
+    > "$planning/phases/02-test-phase/02-01-PLAN.md"
 }
 
-@test "delta-files.sh outputs changed files in git repo" {
-  cd "$PROJECT_ROOT"
-  run bash "$SCRIPTS_DIR/delta-files.sh" "$TEST_TEMP_DIR/.lbwc-planning/phases/02-test-phase"
-  [ "$status" -eq 0 ]
-  # Should output at least some files (we have uncommitted changes or recent commits)
-  # Just verify it doesn't error
+init_repo() {
+  mkdir -p "$1"
+  git -C "$1" init -q
+  git -C "$1" config user.name "LBWC Test"
+  git -C "$1" config user.email "lbwc-tests@example.com"
 }
 
-@test "delta-files.sh handles non-git directory gracefully" {
-  cd "$TEST_TEMP_DIR"
-  # No SUMMARY.md files, no git — should output nothing and exit 0
+commit_all() {
+  git -C "$1" add -A
+  git -C "$1" commit -qm "$2"
+}
+
+write_summary() {
+  local phase_dir=$1
+  shift
+  { printf '%s\n' '# Summary' '## Files Modified'; printf '%s\n' "$@"; printf '%s\n' '## Deviations'; } \
+    > "$phase_dir/02-01-SUMMARY.md"
+}
+
+expect_exact_output() {
+  local label=$1 want=$2
+  [ "$output" = "$want" ] || record_case_failure "$label" "output=[$output] want=[$want]"
+}
+
+phase_of() { printf '%s\n' "$1/.lbwc-planning/phases/02-test-phase"; }
+plan_of() { printf '%s\n' "$1/.lbwc-planning/phases/02-test-phase/02-01-PLAN.md"; }
+
+@test "delta-files picks summaries, worktree changes, last tag or recent commits for the target scope" {
+  local root phase unrelated nested step
+
+  root="$TEST_TEMP_DIR/summary-only"
+  build_workspace "$root"
+  phase=$(phase_of "$root")
+  write_summary "$phase" '- scripts/test.sh' '- config/test.json (new)'
+  printf '%s\n' '## Files Modified' '- scripts/test.sh' '- docs/extra.md' > "$phase/02-02-SUMMARY.md"
+  cd "$root" || return 1
   run bash "$SCRIPTS_DIR/delta-files.sh" ".lbwc-planning/phases/02-test-phase"
-  [ "$status" -eq 0 ]
-}
+  expect_case "union-sorted-deduped-suffix-stripped" 0 ""
+  expect_exact_output "union-sorted-deduped-suffix-stripped" $'config/test.json\ndocs/extra.md\nscripts/test.sh'
 
-@test "delta-files.sh extracts files from SUMMARY.md when no git" {
-  cd "$TEST_TEMP_DIR"
-  cat > ".lbwc-planning/phases/02-test-phase/02-01-SUMMARY.md" <<'EOF'
----
-phase: 2
-plan: 1
-title: "Test"
-status: complete
----
-# Summary
-## Files Modified
-- scripts/test.sh
-- config/test.json (new)
-## Deviations
-EOF
+  rm -f "$phase/02-01-SUMMARY.md" "$phase/02-02-SUMMARY.md"
   run bash "$SCRIPTS_DIR/delta-files.sh" ".lbwc-planning/phases/02-test-phase"
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "scripts/test.sh"
+  expect_case_silent "no-summary-files" 0
+
+  run bash "$SCRIPTS_DIR/delta-files.sh" "$root/absent-phase"
+  expect_case_silent "missing-phase-directory" 0
+
+  root="$TEST_TEMP_DIR/dirty"
+  build_workspace "$root"
+  init_repo "$root"
+  printf 'v1\n' > "$root/sample.txt"
+  commit_all "$root" init
+  printf 'v2\n' > "$root/sample.txt"
+  printf 'new\n' > "$root/staged.txt"
+  git -C "$root" add staged.txt
+  cd "$root" || return 1
+
+  run bash "$SCRIPTS_DIR/delta-files.sh" "$(phase_of "$root")" "$(plan_of "$root")"
+
+  expect_case "dirty" 0 ""
+  expect_exact_output "dirty" $'sample.txt\nstaged.txt'
+  root="$TEST_TEMP_DIR/tagged"
+  build_workspace "$root"
+  init_repo "$root"
+  printf 'v1\n' > "$root/sample.txt"
+  commit_all "$root" init
+  git -C "$root" tag v1
+  printf 'v2\n' > "$root/sample.txt"
+  printf 'other\n' > "$root/other.txt"
+  commit_all "$root" change
+  cd "$root" || return 1
+
+  run bash "$SCRIPTS_DIR/delta-files.sh" "$(phase_of "$root")" "$(plan_of "$root")"
+
+  expect_case "tagged" 0 ""
+  expect_exact_output "tagged" $'other.txt\nsample.txt'
+  root="$TEST_TEMP_DIR/untagged"
+  build_workspace "$root"
+  init_repo "$root"
+  printf 'old\n' > "$root/old.txt"
+  commit_all "$root" first
+  for step in 1 2 3 4 5; do
+    printf 'v%s\n' "$step" > "$root/sample-$step.txt"
+    commit_all "$root" "step $step"
+  done
+  cd "$root" || return 1
+
+  run bash "$SCRIPTS_DIR/delta-files.sh" "$(phase_of "$root")" "$(plan_of "$root")"
+
+  expect_case "untagged" 0 "sample-5.txt"
+  expect_output_has "oldest-of-five-included" "sample-1.txt"
+  expect_output_lacks "sixth-commit-excluded" "old.txt"
+  unrelated="$TEST_TEMP_DIR/unrelated"
+  setup_unrelated_git_repo "$unrelated"
+  printf 'modified\n' >> "$unrelated/unrelated.txt"
+
+  root="$TEST_TEMP_DIR/not-git"
+  build_workspace "$root"
+  write_summary "$(phase_of "$root")" '- scripts/test.sh'
+  cd "$unrelated" || return 1
+  run bash "$SCRIPTS_DIR/delta-files.sh" "$(phase_of "$root")" "$(plan_of "$root")"
+  expect_case "non-git-target-ignores-ambient-repo" 0 ""
+  expect_exact_output "non-git-target-ignores-ambient-repo" "scripts/test.sh"
+
+  root="$TEST_TEMP_DIR/young"
+  build_workspace "$root"
+  init_repo "$root"
+  printf 'v1\n' > "$root/sample.txt"
+  commit_all "$root" init
+  printf 'v2\n' > "$root/sample.txt"
+  commit_all "$root" update
+  cd "$unrelated" || return 1
+  run bash "$SCRIPTS_DIR/delta-files.sh" "$(phase_of "$root")" "$(plan_of "$root")"
+  expect_case "git-target-recent-log" 0 "sample.txt"
+  expect_output_lacks "git-target-excludes-ambient-file" "unrelated.txt"
+
+  nested="$TEST_TEMP_DIR/mono"
+  build_workspace "$nested/apps/proj"
+  init_repo "$nested"
+  mkdir -p "$nested/apps/other"
+  printf 'x\n' > "$nested/apps/other/skip.txt"
+  printf 'v1\n' > "$nested/apps/proj/sample.txt"
+  commit_all "$nested" init
+  printf 'v2\n' > "$nested/apps/proj/sample.txt"
+  commit_all "$nested" update
+  cd "$unrelated" || return 1
+  run bash "$SCRIPTS_DIR/delta-files.sh" "$(phase_of "$nested/apps/proj")" "$(plan_of "$nested/apps/proj")"
+  expect_case "nested-workspace-relative-paths" 0 "sample.txt"
+  expect_output_lacks "nested-workspace-no-repo-prefix" "apps/proj/sample.txt"
+  expect_output_lacks "nested-workspace-excludes-sibling" "skip.txt"
+
+  assert_no_case_failures
 }
 
-@test "delta-files.sh uses the target phase path instead of ambient git repo state" {
-  local unrelated_repo="$TEST_TEMP_DIR/unrelated-git"
+@test "compile-context renders delta slices, lead metadata and the active plan for the target workspace" {
+  local root unrelated nested context
 
-  cat > "$TEST_TEMP_DIR/.lbwc-planning/phases/02-test-phase/02-01-SUMMARY.md" <<'EOF'
-# Summary
-## Files Modified
-- scripts/test.sh
-## Deviations
-EOF
+  unrelated="$TEST_TEMP_DIR/unrelated"
+  setup_unrelated_git_repo "$unrelated"
 
-  setup_unrelated_git_repo "$unrelated_repo"
-  echo "modified" >> "$unrelated_repo/unrelated.txt"
+  root="$TEST_TEMP_DIR/summary-target"
+  build_workspace "$root"
+  write_summary "$(phase_of "$root")" '- sample.txt'
+  printf 'sample body\n' > "$root/sample.txt"
+  cd "$unrelated" || return 1
+  run env LBWC_PLANNING_DIR="$root/.lbwc-planning" bash "$SCRIPTS_DIR/compile-context.sh" 02 dev \
+    "$root/.lbwc-planning/phases" "$(plan_of "$root")"
+  context="$(phase_of "$root")/.context-dev.md"
+  expect_status "summary-target" 0
+  expect_file_line "summary-target-heading" "$context" '#### `sample.txt`'
+  expect_file_line "summary-target-body" "$context" 'sample body'
 
-  run bash "$SCRIPTS_DIR/delta-files.sh" "$TEST_TEMP_DIR/.lbwc-planning/phases/02-test-phase" \
-    "$TEST_TEMP_DIR/.lbwc-planning/phases/02-test-phase/02-01-PLAN.md"
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -qx "scripts/test.sh"
-  ! echo "$output" | grep -q "unrelated.txt"
-}
+  root="$TEST_TEMP_DIR/git-target"
+  build_workspace "$root"
+  init_repo "$root"
+  printf 'v1 body\n' > "$root/sample.txt"
+  commit_all "$root" init
+  printf 'v2 body\n' > "$root/sample.txt"
+  commit_all "$root" update
+  cd "$unrelated" || return 1
+  run env LBWC_PLANNING_DIR="$root/.lbwc-planning" bash "$SCRIPTS_DIR/compile-context.sh" 02 dev \
+    "$root/.lbwc-planning/phases" "$(plan_of "$root")"
+  context="$(phase_of "$root")/.context-dev.md"
+  expect_status "git-target" 0
+  expect_file_line "git-target-list" "$context" '- `sample.txt`'
+  expect_file_line "git-target-heading" "$context" '#### `sample.txt`'
+  expect_file_line "git-target-latest-body" "$context" 'v2 body'
+  expect_no_file_line "git-target-no-stale-body" "$context" 'v1 body'
 
-@test "delta-files.sh uses recent commits for young untagged target repos off-root" {
-  local unrelated_repo="$TEST_TEMP_DIR/unrelated-git"
+  nested="$TEST_TEMP_DIR/mono"
+  build_workspace "$nested/apps/proj"
+  init_repo "$nested"
+  printf 'v1 body\n' > "$nested/apps/proj/sample.txt"
+  commit_all "$nested" init
+  printf 'v2 body\n' > "$nested/apps/proj/sample.txt"
+  commit_all "$nested" update
+  cd "$unrelated" || return 1
+  run bash "$SCRIPTS_DIR/compile-context.sh" 02 dev "$nested/apps/proj/.lbwc-planning/phases" \
+    "$(plan_of "$nested/apps/proj")"
+  context="$(phase_of "$nested/apps/proj")/.context-dev.md"
+  expect_status "nested-target" 0
+  expect_file_line "nested-list" "$context" '- `sample.txt`'
+  expect_no_file_line "nested-no-repo-prefix" "$context" 'apps/proj/sample.txt'
+  expect_file_line "nested-body" "$context" 'v2 body'
 
-  cd "$TEST_TEMP_DIR" || return 1
-  git init -q
-  git config user.name "LBWC Test"
-  git config user.email "lbwc-tests@example.com"
+  root="$TEST_TEMP_DIR/lead-target"
+  build_workspace "$root"
+  printf '%s\n' '## Requirements' '- [REQ-01] Test requirement' > "$root/.lbwc-planning/REQUIREMENTS.md"
+  cd "$unrelated" || return 1
 
-  echo 'v1' > sample.txt
-  git add .lbwc-planning/config.json .lbwc-planning/ROADMAP.md \
-    .lbwc-planning/phases/02-test-phase/02-01-PLAN.md sample.txt
-  git commit -qm 'init target repo'
+  run bash "$SCRIPTS_DIR/compile-context.sh" 02 lead "$root/.lbwc-planning/phases" "$(plan_of "$root")"
 
-  echo 'v2' > sample.txt
-  git add sample.txt
-  git commit -qm 'update sample v2'
-
-  setup_unrelated_git_repo "$unrelated_repo"
-  cd "$unrelated_repo" || return 1
-
-  run bash "$SCRIPTS_DIR/delta-files.sh" "$TEST_TEMP_DIR/.lbwc-planning/phases/02-test-phase" \
-    "$TEST_TEMP_DIR/.lbwc-planning/phases/02-test-phase/02-01-PLAN.md"
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -qx "sample.txt"
-}
-
-@test "delta-files.sh emits workspace-relative paths for nested workspaces off-root" {
-  local unrelated_repo="$TEST_TEMP_DIR/unrelated-git"
-
-  setup_nested_git_workspace
-  mkdir -p "$NESTED_REPO_ROOT/apps/other"
-  echo 'v1' > "$NESTED_WORKSPACE_ROOT/sample.txt"
-  git add apps/proj
-  git commit -qm 'init nested workspace'
-
-  echo 'v2' > "$NESTED_WORKSPACE_ROOT/sample.txt"
-  git add apps/proj/sample.txt
-  git commit -qm 'update nested sample'
-
-  setup_unrelated_git_repo "$unrelated_repo"
-  cd "$unrelated_repo" || return 1
-
-  run bash "$SCRIPTS_DIR/delta-files.sh" "$NESTED_PHASE_DIR" "$NESTED_PLAN_PATH"
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -qx "sample.txt"
-  ! echo "$output" | grep -q "apps/proj/sample.txt"
-}
-
-@test "compile-context.sh resolves code slices against explicit target root off-root" {
-  local unrelated_repo="$TEST_TEMP_DIR/unrelated-git"
-
-  cat > "$TEST_TEMP_DIR/.lbwc-planning/phases/02-test-phase/02-01-SUMMARY.md" <<'EOF'
-# Summary
-## Files Modified
-- sample.txt
-## Deviations
-EOF
-  echo 'sample body' > "$TEST_TEMP_DIR/sample.txt"
-
-  setup_unrelated_git_repo "$unrelated_repo"
-
-  cd "$unrelated_repo" || return 1
-  run env LBWC_PLANNING_DIR="$TEST_TEMP_DIR/.lbwc-planning" \
-    bash "$SCRIPTS_DIR/compile-context.sh" 02 dev \
-    "$TEST_TEMP_DIR/.lbwc-planning/phases" \
-    "$TEST_TEMP_DIR/.lbwc-planning/phases/02-test-phase/02-01-PLAN.md"
-  [ "$status" -eq 0 ]
-  grep -q '#### `sample.txt`' "$TEST_TEMP_DIR/.lbwc-planning/phases/02-test-phase/.context-dev.md"
-  grep -q 'sample body' "$TEST_TEMP_DIR/.lbwc-planning/phases/02-test-phase/.context-dev.md"
-}
-
-@test "compile-context.sh resolves young untagged git delta code slices off-root" {
-  local unrelated_repo
-  unrelated_repo=$(mktemp -d "${TMPDIR:-/tmp}/lbwc-unrelated.XXXXXX")
-
-  cd "$TEST_TEMP_DIR" || return 1
-  git init -q
-  git config user.name "LBWC Test"
-  git config user.email "lbwc-tests@example.com"
-
-  echo 'v1 body' > sample.txt
-  git add .lbwc-planning/config.json .lbwc-planning/ROADMAP.md \
-    .lbwc-planning/phases/02-test-phase/02-01-PLAN.md sample.txt
-  git commit -qm 'init target repo'
-
-  echo 'v2 body' > sample.txt
-  git add sample.txt
-  git commit -qm 'update sample v2'
-
-  setup_unrelated_git_repo "$unrelated_repo"
-  cd "$unrelated_repo" || return 1
-
-  run env LBWC_PLANNING_DIR="$TEST_TEMP_DIR/.lbwc-planning" \
-    bash "$SCRIPTS_DIR/compile-context.sh" 02 dev \
-    "$TEST_TEMP_DIR/.lbwc-planning/phases" \
-    "$TEST_TEMP_DIR/.lbwc-planning/phases/02-test-phase/02-01-PLAN.md"
-  [ "$status" -eq 0 ]
-  grep -q -- '- `sample.txt`' "$TEST_TEMP_DIR/.lbwc-planning/phases/02-test-phase/.context-dev.md"
-  grep -q '#### `sample.txt`' "$TEST_TEMP_DIR/.lbwc-planning/phases/02-test-phase/.context-dev.md"
-  grep -q 'v2 body' "$TEST_TEMP_DIR/.lbwc-planning/phases/02-test-phase/.context-dev.md"
-
-  rm -rf "$unrelated_repo"
-}
-
-@test "compile-context.sh resolves planning metadata from explicit target paths off-root" {
-  local unrelated_repo="$TEST_TEMP_DIR/unrelated-git"
-
-  cat > "$TEST_TEMP_DIR/.lbwc-planning/ROADMAP.md" <<'EOF'
-# Test Roadmap
-## Phase 2: Test Phase
-**Goal:** Test goal
-**Reqs:** REQ-01
-**Success:** Tests pass
-EOF
-
-  cat > "$TEST_TEMP_DIR/.lbwc-planning/REQUIREMENTS.md" <<'EOF'
-## Requirements
-- [REQ-01] Test requirement
-EOF
-
-  setup_unrelated_git_repo "$unrelated_repo"
-  cd "$unrelated_repo" || return 1
-
-  run bash "$SCRIPTS_DIR/compile-context.sh" 02 lead \
-    "$TEST_TEMP_DIR/.lbwc-planning/phases" \
-    "$TEST_TEMP_DIR/.lbwc-planning/phases/02-test-phase/02-01-PLAN.md"
-  [ "$status" -eq 0 ]
-  grep -q 'Test goal' "$TEST_TEMP_DIR/.lbwc-planning/phases/02-test-phase/.context-lead.md"
-  grep -q 'Test requirement' "$TEST_TEMP_DIR/.lbwc-planning/phases/02-test-phase/.context-lead.md"
-}
-
-@test "compile-context.sh resolves nested workspace code slices off-root" {
-  local unrelated_repo="$TEST_TEMP_DIR/unrelated-git"
-
-  setup_nested_git_workspace
-  echo 'v1 body' > "$NESTED_WORKSPACE_ROOT/sample.txt"
-  git add apps/proj
-  git commit -qm 'init nested workspace'
-
-  echo 'v2 body' > "$NESTED_WORKSPACE_ROOT/sample.txt"
-  git add apps/proj/sample.txt
-  git commit -qm 'update nested sample'
-
-  setup_unrelated_git_repo "$unrelated_repo"
-  cd "$unrelated_repo" || return 1
-
-  run bash "$SCRIPTS_DIR/compile-context.sh" 02 dev "$NESTED_PLANNING_DIR/phases" "$NESTED_PLAN_PATH"
-  [ "$status" -eq 0 ]
-  grep -q -- '- `sample.txt`' "$NESTED_PHASE_DIR/.context-dev.md"
-  ! grep -q 'apps/proj/sample.txt' "$NESTED_PHASE_DIR/.context-dev.md"
-  grep -q 'v2 body' "$NESTED_PHASE_DIR/.context-dev.md"
-}
-
-@test "compile-context.sh includes delta files when v3_delta_context=true" {
-  cd "$TEST_TEMP_DIR"
-
-  # Create a SUMMARY with file list for delta source
-  cat > ".lbwc-planning/phases/02-test-phase/02-01-SUMMARY.md" <<'EOF'
-# Summary
-## Files Modified
-- scripts/delta-test.sh
-EOF
+  context="$(phase_of "$root")/.context-lead.md"
+  expect_status "lead" 0
+  expect_file_line "lead-goal" "$context" 'Test goal'
+  expect_file_line "lead-requirement" "$context" 'Test requirement'
+  root="$TEST_TEMP_DIR/active-plan"
+  build_workspace "$root"
+  write_summary "$(phase_of "$root")" '- scripts/delta-test.sh'
+  cd "$root" || return 1
 
   run bash "$SCRIPTS_DIR/compile-context.sh" 02 dev ".lbwc-planning/phases" ".lbwc-planning/phases/02-test-phase/02-01-PLAN.md"
-  [ "$status" -eq 0 ]
-  # Should include Active Plan section (always included with delta)
-  grep -q "Active Plan" ".lbwc-planning/phases/02-test-phase/.context-dev.md"
-}
 
+  context="$(phase_of "$root")/.context-dev.md"
+  expect_status "active-plan" 0
+  expect_file_line "active-plan-heading" "$context" "Active Plan"
+  expect_file_line "delta-file-listed" "$context" 'scripts/delta-test.sh'
+  assert_no_case_failures
+}
