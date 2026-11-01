@@ -46,70 +46,28 @@ lbwc_generate_plugin_isolation_section() {
   cat "$LBWC_LIB_DIR/claude-md-plugin-isolation.txt"
 }
 
+lbwc_markdown_scan_outside_fences() {
+  local scan_file="$1"
+  local scan_mode="$2"
+  local scan_needle="$3"
+
+  [ -f "$scan_file" ] || return 1
+
+  awk -v mode="$scan_mode" -v needle="$scan_needle" \
+    -f "$LBWC_LIB_DIR/claude-md-fence.awk" \
+    -f "$LBWC_LIB_DIR/claude-md-markdown-scan.awk" "$scan_file"
+}
+
 lbwc_markdown_has_exact_heading() {
-  local file="$1"
-  local heading="$2"
-
-  [ -f "$file" ] || return 1
-
-  awk -v heading="$heading" '
-    BEGIN { in_fence = 0; found = 0 }
-    /^[[:space:]]*```/ || /^[[:space:]]*~~~/ { in_fence = !in_fence; next }
-    in_fence { next }
-    {
-      line = $0
-      sub(/[[:space:]]+$/, "", line)
-      if (line == heading) {
-        found = 1
-        exit 0
-      }
-    }
-    END { exit found ? 0 : 1 }
-  ' "$file"
+  lbwc_markdown_scan_outside_fences "$1" exact "$2"
 }
 
 lbwc_markdown_has_heading_title() {
-  local file="$1"
-  local title="$2"
-
-  [ -f "$file" ] || return 1
-
-  awk -v title="$title" '
-    BEGIN { in_fence = 0; found = 0 }
-    /^[[:space:]]*```/ || /^[[:space:]]*~~~/ { in_fence = !in_fence; next }
-    in_fence { next }
-    /^#+[[:space:]]/ {
-      marks = $0
-      sub(/[^#].*$/, "", marks)
-      if (length(marks) > 6) { next }
-      line = $0
-      sub(/^#+[[:space:]]+/, "", line)
-      sub(/[[:space:]]+$/, "", line)
-      if (line == title) {
-        found = 1
-        exit 0
-      }
-    }
-    END { exit found ? 0 : 1 }
-  ' "$file"
+  lbwc_markdown_scan_outside_fences "$1" title "$2"
 }
 
 lbwc_markdown_has_text_outside_fences() {
-  local file="$1"
-  local needle="$2"
-
-  [ -f "$file" ] || return 1
-
-  awk -v needle="$needle" '
-    BEGIN { in_fence = 0; found = 0 }
-    /^[[:space:]]*```/ || /^[[:space:]]*~~~/ { in_fence = !in_fence; next }
-    in_fence { next }
-    index($0, needle) > 0 {
-      found = 1
-      exit 0
-    }
-    END { exit found ? 0 : 1 }
-  ' "$file"
+  lbwc_markdown_scan_outside_fences "$1" text "$2"
 }
 
 lbwc_markdown_has_code_intelligence() {
@@ -161,5 +119,5 @@ lbwc_strip_legacy_refresh_sections() {
   local output="$2"
   local awk_program="$LBWC_LIB_DIR/claude-md-strip-legacy.awk"
 
-  awk -f "$awk_program" "$input" > "$output"
+  awk -f "$LBWC_LIB_DIR/claude-md-fence.awk" -f "$awk_program" "$input" > "$output"
 }
