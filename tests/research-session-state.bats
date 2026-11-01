@@ -6,7 +6,6 @@ setup() {
   setup_temp_dir
   export LBWC_PLANNING_DIR="$TEST_TEMP_DIR/.lbwc-planning"
   mkdir -p "$LBWC_PLANNING_DIR"
-  # Init a git repo so base_commit works
   git -C "$TEST_TEMP_DIR" init --quiet 2>/dev/null || true
   git -C "$TEST_TEMP_DIR" config user.email "test@test.com" 2>/dev/null || true
   git -C "$TEST_TEMP_DIR" config user.name "Test" 2>/dev/null || true
@@ -19,455 +18,282 @@ teardown() {
   teardown_temp_dir
 }
 
-# ── start ────────────────────────────────────────────────
+rss() {
+  bash "$SCRIPTS_DIR/research-session-state.sh" "$@"
+}
 
-@test "start creates research file in research/ directory" {
+fail_case() {
+  printf 'case=%s %s\nactual=[%s]\n' "$1" "$2" "$3" >&2
+  return 1
+}
+
+expect_eq() {
+  [ "$2" = "$3" ] || fail_case "$1" "expected=[$2]" "$3"
+}
+
+expect_has() {
+  case "$3" in
+    *"$2"*) ;;
+    *) fail_case "$1" "expected to contain=[$2]" "$3" ;;
+  esac
+}
+
+expect_lacks() {
+  case "$3" in
+    *"$2"*) fail_case "$1" "expected to lack=[$2]" "$3" ;;
+  esac
+}
+
+# Body text can repeat field names, so only lines inside the frontmatter count.
+fm_get() {
+  awk -v field="$2" '
+    /^---$/ { if (!s) { s=1; next } exit }
+    s && index($0, field ":") == 1 {
+      v = substr($0, length(field) + 2)
+      sub(/^[[:space:]]*/, "", v)
+      print v
+      exit
+    }
+  ' "$1"
+}
+
+start_session() {
   cd "$TEST_TEMP_DIR"
-  run bash "$SCRIPTS_DIR/research-session-state.sh" start "$LBWC_PLANNING_DIR" "test-topic"
+  eval "$(rss start "$LBWC_PLANNING_DIR" "$1")"
+}
+
+write_session() {
+  mkdir -p "$LBWC_PLANNING_DIR/research"
+  printf -- '---\ntitle: %s\nstatus: %s\n---\n' "$2" "$3" > "$LBWC_PLANNING_DIR/research/$1.md"
+}
+
+@test "start creates an active research file stamped with the git HEAD commit" {
+  cd "$TEST_TEMP_DIR"
+  local head_commit
+  head_commit=$(git rev-parse HEAD)
+  run rss start "$LBWC_PLANNING_DIR" "test-topic"
   [ "$status" -eq 0 ]
+  expect_has "output ids" "research_id=" "$output"
+  expect_has "output file" "research_file=" "$output"
 
-  # Should output research_id and research_file
-  [[ "$output" == *"research_id="* ]]
-  [[ "$output" == *"research_file="* ]]
-
-  # Research directory should exist
-  [ -d "$LBWC_PLANNING_DIR/research" ]
-
-  # Session file should exist
   eval "$output"
   [ -f "$research_file" ]
-  [[ "$research_file" == *"/research/"* ]]
-
-  # File should have correct frontmatter
-  grep -q '^status: active$' "$research_file"
-  grep -q '^type: standalone-research$' "$research_file"
-  grep -q '^base_commit:' "$research_file"
+  expect_has "file location" "/research/" "$research_file"
+  expect_eq "status" "active" "$(fm_get "$research_file" status)"
+  expect_eq "type" "standalone-research" "$(fm_get "$research_file" type)"
+  expect_eq "base_commit" "$head_commit" "$(fm_get "$research_file" base_commit)"
 }
 
-@test "start sanitizes slug to lowercase with dashes" {
-  cd "$TEST_TEMP_DIR"
-  run bash "$SCRIPTS_DIR/research-session-state.sh" start "$LBWC_PLANNING_DIR" "My Research Has Spaces & Symbols!"
+@test "start sanitizes the slug" {
+  local label input expected slug_part
+  while IFS='|' read -r label input expected; do
+    [ -n "$label" ] || continue
+    cd "$TEST_TEMP_DIR"
+    run rss start "$LBWC_PLANNING_DIR" "$input"
+    [ "$status" -eq 0 ] || fail_case "$label" "status=0" "status=$status output=$output"
+    eval "$output"
+    slug_part="${research_id#*-*-}"
+    expect_eq "$label" "$expected" "$slug_part"
+  done <<'CASES'
+lowercase-and-dashes|My Research Has Spaces & Symbols!|my-research-has-spaces-symbols
+truncated-at-50|this-is-a-very-long-slug-that-exceeds-fifty-characters-and-should-be-truncated|this-is-a-very-long-slug-that-exceeds-fifty-charac
+all-symbols-fall-back|!!!|research
+CASES
+}
+
+@test "start migrates root-level RESEARCH files first" {
+  printf '# Legacy Research\nOld findings.\n' > "$LBWC_PLANNING_DIR/RESEARCH-legacy.md"
+
+  start_session "new-session"
+
+  [ ! -f "$LBWC_PLANNING_DIR/RESEARCH-legacy.md" ]
+  [ -f "$research_file" ]
+  expect_eq "files in research/" "2" "$(find "$LBWC_PLANNING_DIR/research" -name '*.md' | wc -l | tr -d ' ')"
+}
+
+@test "complete marks the session complete" {
+  start_session "complete-test"
+
+  run rss complete "$LBWC_PLANNING_DIR" "$research_id"
   [ "$status" -eq 0 ]
-  eval "$output"
-  # Slug should be sanitized
-  [[ "$research_id" == *"-my-research-has-spaces-symbols"* ]]
+  expect_eq "output" "complete" "$output"
+  expect_eq "frontmatter status" "complete" "$(fm_get "$research_file" status)"
 }
-
-@test "start truncates slug at 50 chars" {
-  cd "$TEST_TEMP_DIR"
-  LONG_SLUG="this-is-a-very-long-slug-that-exceeds-fifty-characters-and-should-be-truncated"
-  run bash "$SCRIPTS_DIR/research-session-state.sh" start "$LBWC_PLANNING_DIR" "$LONG_SLUG"
-  [ "$status" -eq 0 ]
-  eval "$output"
-  # The slug portion (after YYYYMMDD-HHMMSS-) should be max 50 chars
-  slug_part="${research_id#*-*-}"  # strip YYYYMMDD-HHMMSS-
-  [ "${#slug_part}" -le 50 ]
-}
-
-@test "start fails without slug" {
-  run bash "$SCRIPTS_DIR/research-session-state.sh" start "$LBWC_PLANNING_DIR"
-  [ "$status" -eq 1 ]
-}
-
-@test "start records base_commit from git HEAD" {
-  cd "$TEST_TEMP_DIR"
-  EXPECTED_COMMIT=$(git rev-parse HEAD)
-  eval "$(bash "$SCRIPTS_DIR/research-session-state.sh" start "$LBWC_PLANNING_DIR" "commit-test")"
-  BASE=$(grep '^base_commit:' "$research_file" | sed 's/^base_commit:[[:space:]]*//')
-  [ "$BASE" = "$EXPECTED_COMMIT" ]
-}
-
-# ── complete ─────────────────────────────────────────────
-
-@test "complete marks session as complete" {
-  cd "$TEST_TEMP_DIR"
-  eval "$(bash "$SCRIPTS_DIR/research-session-state.sh" start "$LBWC_PLANNING_DIR" "complete-test")"
-
-  run bash "$SCRIPTS_DIR/research-session-state.sh" complete "$LBWC_PLANNING_DIR" "$research_id"
-  [ "$status" -eq 0 ]
-  [[ "$output" == "complete" ]]
-
-  # Status in frontmatter should be complete
-  grep -q '^status: complete$' "$research_file"
-}
-
-@test "complete fails for nonexistent session" {
-  run bash "$SCRIPTS_DIR/research-session-state.sh" complete "$LBWC_PLANNING_DIR" "nonexistent-id"
-  [ "$status" -eq 1 ]
-}
-
-# ── list ─────────────────────────────────────────────────
-
-@test "list returns empty when no research exists" {
-  run bash "$SCRIPTS_DIR/research-session-state.sh" list "$LBWC_PLANNING_DIR"
-  [ "$status" -eq 0 ]
-  [ -z "$output" ]
-}
-
-@test "list returns JSON for each research session" {
-  cd "$TEST_TEMP_DIR"
-  eval "$(bash "$SCRIPTS_DIR/research-session-state.sh" start "$LBWC_PLANNING_DIR" "list-test-one")"
-  eval "$(bash "$SCRIPTS_DIR/research-session-state.sh" start "$LBWC_PLANNING_DIR" "list-test-two")"
-
-  run bash "$SCRIPTS_DIR/research-session-state.sh" list "$LBWC_PLANNING_DIR"
-  [ "$status" -eq 0 ]
-  # Should have 2 lines of JSON
-  line_count=$(echo "$output" | wc -l | tr -d ' ')
-  [ "$line_count" -eq 2 ]
-  [[ "$output" == *'"status":"active"'* ]]
-}
-
-@test "list filters by status" {
-  cd "$TEST_TEMP_DIR"
-  eval "$(bash "$SCRIPTS_DIR/research-session-state.sh" start "$LBWC_PLANNING_DIR" "active-one")"
-  local active_id="$research_id"
-  eval "$(bash "$SCRIPTS_DIR/research-session-state.sh" start "$LBWC_PLANNING_DIR" "complete-one")"
-  bash "$SCRIPTS_DIR/research-session-state.sh" complete "$LBWC_PLANNING_DIR" "$research_id" > /dev/null
-
-  # Filter for complete only
-  run bash "$SCRIPTS_DIR/research-session-state.sh" list "$LBWC_PLANNING_DIR" --status complete
-  [ "$status" -eq 0 ]
-  line_count=$(echo "$output" | wc -l | tr -d ' ')
-  [ "$line_count" -eq 1 ]
-  [[ "$output" == *'"status":"complete"'* ]]
-
-  # Filter for active only
-  run bash "$SCRIPTS_DIR/research-session-state.sh" list "$LBWC_PLANNING_DIR" --status active
-  [ "$status" -eq 0 ]
-  line_count=$(echo "$output" | wc -l | tr -d ' ')
-  [ "$line_count" -eq 1 ]
-  [[ "$output" == *'"status":"active"'* ]]
-}
-
-# ── get ──────────────────────────────────────────────────
 
 @test "get returns session metadata" {
-  cd "$TEST_TEMP_DIR"
-  eval "$(bash "$SCRIPTS_DIR/research-session-state.sh" start "$LBWC_PLANNING_DIR" "get-test")"
+  start_session "get-test"
 
-  run bash "$SCRIPTS_DIR/research-session-state.sh" get "$LBWC_PLANNING_DIR" "$research_id"
+  run rss get "$LBWC_PLANNING_DIR" "$research_id"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"research_id="* ]]
-  [[ "$output" == *"research_status=active"* ]]
-  [[ "$output" == *"research_base_commit="* ]]
+  expect_has "id" "research_id=" "$output"
+  expect_has "status" "research_status=active" "$output"
+  expect_has "base commit" "research_base_commit=" "$output"
 }
 
-@test "get fails for nonexistent session" {
-  run bash "$SCRIPTS_DIR/research-session-state.sh" get "$LBWC_PLANNING_DIR" "nonexistent"
-  [ "$status" -eq 1 ]
+@test "commands reject bad input with status 1 and a message" {
+  local label args fragment
+  start_session "reject-fixture"
+  while IFS='|' read -r label args fragment; do
+    [ -n "$label" ] || continue
+    args="${args//@PD@/$LBWC_PLANNING_DIR}"
+    run rss $args
+    [ "$status" -eq 1 ] || fail_case "$label" "status=1" "status=$status output=$output"
+    expect_has "$label" "$fragment" "$output"
+  done <<'CASES'
+get-traversal|get @PD@ ../../etc/passwd|invalid session name
+complete-traversal|complete @PD@ ../foo|invalid session name
+get-malformed-format|get @PD@ not-valid-format|invalid session name
+complete-malformed-format|complete @PD@ nonexistent-id|invalid session name
+get-missing-session|get @PD@ 20200101-000000-missing|not found
+complete-missing-session|complete @PD@ 20200101-000000-missing|not found
+get-without-id|get @PD@|Usage
+complete-without-id|complete @PD@|Usage
+start-without-slug|start @PD@|Usage
+list-invalid-filter|list @PD@ --status bogus|invalid status filter
+no-planning-dir|start|Usage
+unknown-command|bogus @PD@|unknown command
+CASES
 }
 
-# ── latest ───────────────────────────────────────────────
-
-@test "latest returns empty research_file when no sessions exist" {
-  run bash "$SCRIPTS_DIR/research-session-state.sh" latest "$LBWC_PLANNING_DIR"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"research_file="* ]]
+@test "list prints one JSON line per session and honours the status filter" {
+  local label setup_kind args want_lines present absent
+  while IFS='|' read -r label setup_kind args want_lines present absent; do
+    [ -n "$label" ] || continue
+    rm -rf "$LBWC_PLANNING_DIR/research"
+    if [ "$setup_kind" = "sessions" ]; then
+      write_session "20200101-000000-one" "one" "active"
+      write_session "20200102-000000-two" "two" "complete"
+    fi
+    run rss list "$LBWC_PLANNING_DIR" $args
+    [ "$status" -eq 0 ] || fail_case "$label" "status=0" "status=$status output=$output"
+    if [ "$want_lines" = "0" ]; then
+      expect_eq "$label output" "" "$output"
+      continue
+    fi
+    expect_eq "$label line count" "$want_lines" "$(printf '%s\n' "$output" | wc -l | tr -d ' ')"
+    expect_has "$label present" "$present" "$output"
+    [ -z "$absent" ] || expect_lacks "$label absent" "$absent" "$output"
+  done <<'CASES'
+no-research|none||0||
+unfiltered|sessions||2|"status":"active"|
+only-complete|sessions|--status complete|1|"status":"complete"|"status":"active"
+only-active|sessions|--status active|1|"status":"active"|"status":"complete"
+CASES
 }
 
-@test "latest returns most recent session" {
-  cd "$TEST_TEMP_DIR"
-  eval "$(bash "$SCRIPTS_DIR/research-session-state.sh" start "$LBWC_PLANNING_DIR" "first")"
-  sleep 1
-  eval "$(bash "$SCRIPTS_DIR/research-session-state.sh" start "$LBWC_PLANNING_DIR" "second")"
-  local second_id="$research_id"
-
-  run bash "$SCRIPTS_DIR/research-session-state.sh" latest "$LBWC_PLANNING_DIR"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"$second_id"* ]]
+@test "latest prints blank fields when no session file exists" {
+  local label prepare field
+  while IFS='|' read -r label prepare; do
+    [ -n "$label" ] || continue
+    rm -rf "$LBWC_PLANNING_DIR/research"
+    [ "$prepare" != "empty-dir" ] || mkdir -p "$LBWC_PLANNING_DIR/research"
+    run rss latest "$LBWC_PLANNING_DIR"
+    [ "$status" -eq 0 ] || fail_case "$label" "status=0" "status=$status output=$output"
+    for field in id file title status confidence base_commit created updated; do
+      printf '%s\n' "$output" | grep -qx "research_$field=" \
+        || fail_case "$label" "line research_$field= present" "$output"
+    done
+  done <<'CASES'
+no-research-dir|none
+empty-research-dir|empty-dir
+CASES
 }
 
-# ── migrate ──────────────────────────────────────────────
+@test "latest returns the session that sorts last by timestamp" {
+  write_session "20200101-000000-zzz" "older" "active"
+  write_session "20210101-000000-aaa" "newer" "active"
 
-@test "migrate moves root-level RESEARCH-*.md files into research/" {
-  # Create a root-level research file
-  cat > "$LBWC_PLANNING_DIR/RESEARCH-old-topic.md" << 'EOF'
-# Old Research
-Some findings.
-EOF
-
-  run bash "$SCRIPTS_DIR/research-session-state.sh" migrate "$LBWC_PLANNING_DIR"
+  run rss latest "$LBWC_PLANNING_DIR"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"migrated=1"* ]]
-
-  # Original should be gone
-  [ ! -f "$LBWC_PLANNING_DIR/RESEARCH-old-topic.md" ]
-
-  # Should exist under research/
-  [ -d "$LBWC_PLANNING_DIR/research" ]
-  file_count=$(find "$LBWC_PLANNING_DIR/research" -name "*.md" | wc -l | tr -d ' ')
-  [ "$file_count" -eq 1 ]
-
-  # Migrated file should have frontmatter injected
-  local migrated_file
-  migrated_file=$(find "$LBWC_PLANNING_DIR/research" -name "*.md" | head -1)
-  head -1 "$migrated_file" | grep -q '^---$'
-  grep -q '^status: complete$' "$migrated_file"
-  grep -q '^type: standalone-research$' "$migrated_file"
-  grep -q '^base_commit: unknown$' "$migrated_file"
+  expect_has "newest id" "research_id=20210101-000000-aaa" "$output"
+  expect_lacks "older id" "20200101-000000-zzz" "$output"
 }
 
-@test "migrate handles no files gracefully" {
-  run bash "$SCRIPTS_DIR/research-session-state.sh" migrate "$LBWC_PLANNING_DIR"
+@test "migrate wraps a file without frontmatter and takes the title from its heading" {
+  printf '# My Custom Title\nSome content here.\n' > "$LBWC_PLANNING_DIR/RESEARCH-titled.md"
+
+  run rss migrate "$LBWC_PLANNING_DIR"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"migrated=0"* ]]
-}
-
-@test "migrate skips non-RESEARCH files" {
-  # Create files that should NOT be migrated
-  echo "state" > "$LBWC_PLANNING_DIR/STATE.md"
-  echo "not-research" > "$LBWC_PLANNING_DIR/OTHER-topic.md"
-
-  run bash "$SCRIPTS_DIR/research-session-state.sh" migrate "$LBWC_PLANNING_DIR"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"migrated=0"* ]]
-
-  # Original files should still be there
-  [ -f "$LBWC_PLANNING_DIR/STATE.md" ]
-  [ -f "$LBWC_PLANNING_DIR/OTHER-topic.md" ]
-}
-
-@test "migrate preserves existing frontmatter and sets status complete" {
-  cat > "$LBWC_PLANNING_DIR/RESEARCH-has-fm.md" << 'EOF'
----
-title: Has Frontmatter
-type: standalone-research
-status: active
-confidence: high
-base_commit: abc123
----
-
-# Has Frontmatter
-Some findings.
-EOF
-
-  run bash "$SCRIPTS_DIR/research-session-state.sh" migrate "$LBWC_PLANNING_DIR"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"migrated=1"* ]]
+  expect_has "count" "migrated=1" "$output"
+  [ ! -f "$LBWC_PLANNING_DIR/RESEARCH-titled.md" ]
 
   local migrated_file
-  migrated_file=$(find "$LBWC_PLANNING_DIR/research" -name "*.md" | head -1)
-  # Should still start with frontmatter
-  head -1 "$migrated_file" | grep -q '^---$'
-  # Status should be updated to complete
-  grep -q '^status: complete$' "$migrated_file"
-  # Original fields should be preserved
-  grep -q '^base_commit: abc123$' "$migrated_file"
-  grep -q '^title: Has Frontmatter$' "$migrated_file"
+  migrated_file=$(find "$LBWC_PLANNING_DIR/research" -name '*.md')
+  expect_eq "files in research/" "1" "$(printf '%s\n' "$migrated_file" | wc -l | tr -d ' ')"
+  expect_eq "first line" "---" "$(head -1 "$migrated_file")"
+  expect_eq "title" '"My Custom Title"' "$(fm_get "$migrated_file" title)"
+  expect_eq "status" "complete" "$(fm_get "$migrated_file" status)"
+  expect_eq "type" "standalone-research" "$(fm_get "$migrated_file" type)"
+  expect_eq "base_commit" "unknown" "$(fm_get "$migrated_file" base_commit)"
 }
 
-@test "migrate backfills missing status and base_commit in existing frontmatter" {
-  cat > "$LBWC_PLANNING_DIR/RESEARCH-partial-fm.md" << 'EOF'
----
-title: Partial Frontmatter
-confidence: high
----
-
-# Partial Frontmatter
-Has frontmatter but missing status and base_commit fields.
-EOF
-
-  run bash "$SCRIPTS_DIR/research-session-state.sh" migrate "$LBWC_PLANNING_DIR"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"migrated=1"* ]]
-
-  local migrated_file
-  migrated_file=$(find "$LBWC_PLANNING_DIR/research" -name "*partial-fm*" | head -1)
-  # Should have frontmatter
-  head -1 "$migrated_file" | grep -q '^---$'
-  # Should have backfilled status
-  grep -q '^status: complete$' "$migrated_file"
-  # Should have backfilled base_commit
-  grep -q '^base_commit: unknown$' "$migrated_file"
-  # Should have backfilled type
-  grep -q '^type: standalone-research$' "$migrated_file"
-  # Original fields should be preserved
-  grep -q '^title: Partial Frontmatter$' "$migrated_file"
-  grep -q '^confidence: high$' "$migrated_file"
+@test "migrate leaves nothing to move when no RESEARCH file exists" {
+  local label files file
+  while IFS='|' read -r label files; do
+    [ -n "$label" ] || continue
+    for file in $files; do
+      echo "content" > "$LBWC_PLANNING_DIR/$file"
+    done
+    run rss migrate "$LBWC_PLANNING_DIR"
+    [ "$status" -eq 0 ] || fail_case "$label" "status=0" "status=$status output=$output"
+    expect_has "$label" "migrated=0" "$output"
+    for file in $files; do
+      [ -f "$LBWC_PLANNING_DIR/$file" ] || fail_case "$label" "$file kept in place" "$(ls "$LBWC_PLANNING_DIR")"
+    done
+    find "$LBWC_PLANNING_DIR" -maxdepth 1 -name '*.md' -delete
+  done <<'CASES'
+empty-dir|
+non-research-files|STATE.md OTHER-topic.md
+CASES
 }
 
-@test "migrate backfills all template fields in partial frontmatter" {
-  cat > "$LBWC_PLANNING_DIR/RESEARCH-allfields.md" << 'EOF'
----
-title: Only Title
----
+@test "migrate keeps present frontmatter fields and backfills the missing or blank ones" {
+  local label slug content expectations pair field want got migrated_file
+  while IFS='|' read -r label slug content expectations; do
+    [ -n "$label" ] || continue
+    printf '%b' "$content" > "$LBWC_PLANNING_DIR/RESEARCH-$slug.md"
+    run rss migrate "$LBWC_PLANNING_DIR"
+    [ "$status" -eq 0 ] || fail_case "$label" "status=0" "status=$status output=$output"
+    expect_has "$label count" "migrated=1" "$output"
+    migrated_file=$(find "$LBWC_PLANNING_DIR/research" -name "*-$slug.md")
+    [ -f "$migrated_file" ] || fail_case "$label" "migrated file for $slug" "$(ls "$LBWC_PLANNING_DIR/research")"
+    expect_eq "$label first line" "---" "$(head -1 "$migrated_file")"
+    for pair in $(printf '%s' "$expectations" | tr ';' '\n' | tr ' ' '_'); do
+      field="${pair%%=*}"
+      want="${pair#*=}"
+      want="${want//_/ }"
+      got=$(fm_get "$migrated_file" "$field")
+      if [ "$want" = "~" ]; then
+        [ -n "$got" ] || fail_case "$label" "field $field non-empty" "$got"
+      else
+        expect_eq "$label field $field" "$want" "$got"
+      fi
+    done
+  done <<'CASES'
+keeps-existing-values|has-fm|---\ntitle: Has Frontmatter\ntype: standalone-research\nstatus: active\nconfidence: high\nbase_commit: abc123\n---\n\nBody.\n|status=complete;base_commit=abc123;title=Has Frontmatter;confidence=high
+backfills-missing-fields|partial-fm|---\ntitle: Partial Frontmatter\nconfidence: high\n---\n\nBody.\n|status=complete;base_commit=unknown;type=standalone-research;title=Partial Frontmatter;confidence=high
+backfills-every-template-field|allfields|---\ntitle: Only Title\n---\n\nBody.\n|status=complete;base_commit=unknown;type=standalone-research;confidence=medium;created=~;updated=~;linked_sessions=[];title=Only Title
+preserves-updated-timestamp|upd-preserve|---\ntitle: Updated Preserve\nstatus: active\nupdated: 2023-06-15 10:30:00\n---\n\nBody.\n|status=complete;updated=2023-06-15 10:30:00
+fills-blank-values|blank-vals|---\ntitle: Blank Values\nconfidence:\nbase_commit:\n---\n\nBody.\n|confidence=medium;base_commit=unknown;title=Blank Values
+ignores-matching-tokens-in-body|bodytoken|---\ntitle: Body Token Test\nconfidence: high\n---\n\nMentions status: active and base_commit: abc123 in prose.\n|status=complete;base_commit=unknown;confidence=high
+CASES
+}
 
-# Only Title
-Content with only title in frontmatter.
-EOF
-
-  run bash "$SCRIPTS_DIR/research-session-state.sh" migrate "$LBWC_PLANNING_DIR"
+@test "get reads a migrated file back with non-blank values" {
+  printf -- '---\ntitle: Only Title\n---\n\nBody.\n' > "$LBWC_PLANNING_DIR/RESEARCH-roundtrip.md"
+  run rss migrate "$LBWC_PLANNING_DIR"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"migrated=1"* ]]
 
-  local migrated_file
-  migrated_file=$(find "$LBWC_PLANNING_DIR/research" -name "*allfields*" | head -1)
-  # All 7 template fields should be present
-  grep -q '^status: complete$' "$migrated_file"
-  grep -q '^base_commit: unknown$' "$migrated_file"
-  grep -q '^type: standalone-research$' "$migrated_file"
-  grep -q '^confidence: medium$' "$migrated_file"
-  grep -q '^created: ' "$migrated_file"
-  grep -q '^updated: ' "$migrated_file"
-  grep -q '^linked_sessions: \[\]$' "$migrated_file"
-  # Original title preserved
-  grep -q '^title: Only Title$' "$migrated_file"
-
-  # Verify get returns non-blank values for all fields
-  local session_id="${migrated_file##*/}"
+  local migrated_file session_id
+  migrated_file=$(find "$LBWC_PLANNING_DIR/research" -name '*-roundtrip.md')
+  session_id="${migrated_file##*/}"
   session_id="${session_id%.md}"
-  run bash "$SCRIPTS_DIR/research-session-state.sh" get "$LBWC_PLANNING_DIR" "$session_id"
+
+  run rss get "$LBWC_PLANNING_DIR" "$session_id"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"research_status=complete"* ]]
-  [[ "$output" == *"research_confidence=medium"* ]]
-  # created and updated should not be empty
-  [[ "$output" != *"research_created=''"* ]]
-  [[ "$output" != *"research_updated=''"* ]]
-}
-
-@test "migrate preserves existing updated timestamp when status changes" {
-  cat > "$LBWC_PLANNING_DIR/RESEARCH-upd-preserve.md" << 'EOF'
----
-title: Updated Preserve
-status: active
-updated: 2023-06-15 10:30:00
----
-
-# Updated Preserve
-Legacy file with explicit updated timestamp.
-EOF
-
-  run bash "$SCRIPTS_DIR/research-session-state.sh" migrate "$LBWC_PLANNING_DIR"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"migrated=1"* ]]
-
-  local migrated_file
-  migrated_file=$(find "$LBWC_PLANNING_DIR/research" -name "*upd-preserve*" | head -1)
-  # Status should be updated to complete
-  grep -q '^status: complete$' "$migrated_file"
-  # Updated should preserve the original value, not wall-clock time
-  grep -q '^updated: 2023-06-15 10:30:00$' "$migrated_file"
-}
-
-@test "migrate fills blank-but-present frontmatter values with defaults" {
-  cat > "$LBWC_PLANNING_DIR/RESEARCH-blank-vals.md" << 'EOF'
----
-title: Blank Values
-confidence:
-base_commit:
----
-
-# Blank Values
-File with blank frontmatter values.
-EOF
-
-  run bash "$SCRIPTS_DIR/research-session-state.sh" migrate "$LBWC_PLANNING_DIR"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"migrated=1"* ]]
-
-  local migrated_file
-  migrated_file=$(find "$LBWC_PLANNING_DIR/research" -name "*blank-vals*" | head -1)
-  # Blank values should be filled with defaults
-  local fm_confidence fm_base
-  fm_confidence=$(awk '/^---$/ { if (!s) { s=1; next } if (s) exit } s && /^confidence:/ { sub(/^confidence:[[:space:]]*/, ""); print }' "$migrated_file")
-  fm_base=$(awk '/^---$/ { if (!s) { s=1; next } if (s) exit } s && /^base_commit:/ { sub(/^base_commit:[[:space:]]*/, ""); print }' "$migrated_file")
-  [ "$fm_confidence" = "medium" ]
-  [ "$fm_base" = "unknown" ]
-  # Title should be preserved
-  grep -q '^title: Blank Values$' "$migrated_file"
-}
-
-@test "migrate backfills missing fields even when body contains matching tokens" {
-  cat > "$LBWC_PLANNING_DIR/RESEARCH-bodytoken.md" << 'EOF'
----
-title: Body Token Test
-confidence: high
----
-
-# Body Token Test
-This body mentions status: active and base_commit: abc123 in prose.
-EOF
-
-  run bash "$SCRIPTS_DIR/research-session-state.sh" migrate "$LBWC_PLANNING_DIR"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"migrated=1"* ]]
-
-  local migrated_file
-  migrated_file=$(find "$LBWC_PLANNING_DIR/research" -name "*bodytoken*" | head -1)
-  # Frontmatter should have the injected fields (not confused by body content)
-  # Read only frontmatter to verify
-  local fm_status fm_base_commit
-  fm_status=$(awk '/^---$/ { if (!s) { s=1; next } if (s) exit } s && /^status:/ { sub(/^status:[[:space:]]*/, ""); print }' "$migrated_file")
-  fm_base_commit=$(awk '/^---$/ { if (!s) { s=1; next } if (s) exit } s && /^base_commit:/ { sub(/^base_commit:[[:space:]]*/, ""); print }' "$migrated_file")
-  [ "$fm_status" = "complete" ]
-  [ "$fm_base_commit" = "unknown" ]
-}
-
-@test "migrate extracts title from heading when no frontmatter" {
-  cat > "$LBWC_PLANNING_DIR/RESEARCH-titled.md" << 'EOF'
-# My Custom Title
-Some content here.
-EOF
-
-  run bash "$SCRIPTS_DIR/research-session-state.sh" migrate "$LBWC_PLANNING_DIR"
-  [ "$status" -eq 0 ]
-
-  local migrated_file
-  migrated_file=$(find "$LBWC_PLANNING_DIR/research" -name "*.md" | head -1)
-  grep -q '^title: "My Custom Title"$' "$migrated_file"
-}
-
-# ── validate_session_name ────────────────────────────────
-
-@test "get rejects invalid session name with path traversal" {
-  cd "$TEST_TEMP_DIR"
-  run bash "$SCRIPTS_DIR/research-session-state.sh" get "$LBWC_PLANNING_DIR" "../../etc/passwd"
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"invalid session name"* ]]
-}
-
-@test "complete rejects invalid session name with path traversal" {
-  cd "$TEST_TEMP_DIR"
-  run bash "$SCRIPTS_DIR/research-session-state.sh" complete "$LBWC_PLANNING_DIR" "../foo"
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"invalid session name"* ]]
-}
-
-@test "get rejects malformed session name format" {
-  cd "$TEST_TEMP_DIR"
-  run bash "$SCRIPTS_DIR/research-session-state.sh" get "$LBWC_PLANNING_DIR" "not-valid-format"
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"invalid session name"* ]]
-}
-
-# ── start triggers opportunistic migration ───────────────
-
-@test "start automatically migrates root-level RESEARCH files" {
-  cd "$TEST_TEMP_DIR"
-  cat > "$LBWC_PLANNING_DIR/RESEARCH-legacy.md" << 'EOF'
-# Legacy Research
-Old findings.
-EOF
-
-  eval "$(bash "$SCRIPTS_DIR/research-session-state.sh" start "$LBWC_PLANNING_DIR" "new-session")"
-
-  # Legacy file should be migrated
-  [ ! -f "$LBWC_PLANNING_DIR/RESEARCH-legacy.md" ]
-  # New session should exist
-  [ -f "$research_file" ]
-  # Research dir should have both files
-  file_count=$(find "$LBWC_PLANNING_DIR/research" -name "*.md" | wc -l | tr -d ' ')
-  [ "$file_count" -eq 2 ]
-}
-
-# ── error handling ───────────────────────────────────────
-
-@test "fails with unknown command" {
-  run bash "$SCRIPTS_DIR/research-session-state.sh" bogus "$LBWC_PLANNING_DIR"
-  [ "$status" -eq 1 ]
-}
-
-@test "fails without planning dir" {
-  run bash "$SCRIPTS_DIR/research-session-state.sh" start
-  [ "$status" -eq 1 ]
+  eval "$output"
+  expect_eq "status" "complete" "$research_status"
+  expect_eq "confidence" "medium" "$research_confidence"
+  [ -n "$research_created" ] || fail_case "created" "non-empty" "$output"
+  [ -n "$research_updated" ] || fail_case "updated" "non-empty" "$output"
 }
