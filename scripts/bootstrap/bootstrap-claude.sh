@@ -17,8 +17,8 @@ source "$SCRIPT_DIR/lib/bootstrap-claude-migration.sh"
 LBWC_SECTIONS=("${LBWC_CANONICAL_HEADERS[@]}")
 
 LBWC_DEPRECATED_SECTIONS=(
-  "## Key Decisions"  # Removed, tracked in .lbwc-planning/PROJECT.md and STATE.md
-  "## Installed Skills"  # Removed, skills surfaced through runtime activation pipeline
+  "## Key Decisions"  # stale because .lbwc-planning/PROJECT.md and STATE.md track decisions
+  "## Installed Skills"  # stale because the runtime activation pipeline surfaces skills
 )
 
 GSD_STRONG_SECTIONS=(
@@ -122,6 +122,32 @@ is_deprecated_lbwc_section() {
   return 1
 }
 
+IN_FENCE=false
+FENCE_CHAR=""
+FENCE_LENGTH=0
+
+update_fence_state() {
+  local text="${1#"${1%%[![:space:]]*}"}"
+  local mark="${text:0:1}"
+  local rest="$text"
+  local run=0
+
+  [[ "$mark" == '`' || "$mark" == '~' ]] || return 0
+  while [[ "${rest:0:1}" == "$mark" ]]; do
+    rest="${rest:1}"
+    run=$((run + 1))
+  done
+  [[ "$run" -ge 3 ]] || return 0
+
+  if [[ "$IN_FENCE" == false ]]; then
+    IN_FENCE=true
+    FENCE_CHAR="$mark"
+    FENCE_LENGTH="$run"
+  elif [[ "$mark" == "$FENCE_CHAR" && "$run" -ge "$FENCE_LENGTH" && ! "$rest" =~ [^[:space:]] ]]; then
+    IN_FENCE=false
+  fi
+}
+
 is_managed_section() {
   is_lbwc_section "$1" || is_deprecated_lbwc_section "$1" || is_gsd_section "$1"
 }
@@ -143,7 +169,9 @@ if [[ -n "$EXISTING_PATH" && -f "$EXISTING_PATH" ]]; then
   while IFS= read -r line || [[ -n "$line" ]]; do
     line="${line%"${line##*[![:space:]]}"}"
 
-    if is_managed_section "$line"; then
+    update_fence_state "$line"
+
+    if [[ "$IN_FENCE" == false ]] && is_managed_section "$line"; then
       flush_deprecated_buffer
       if is_deprecated_lbwc_section "$line"; then
         IN_DEPRECATED_SECTION=true
@@ -154,7 +182,7 @@ if [[ -n "$EXISTING_PATH" && -f "$EXISTING_PATH" ]]; then
       continue
     fi
 
-    if [[ "$line" =~ ^##\  ]] && ! is_managed_section "$line"; then
+    if [[ "$IN_FENCE" == false && "$line" =~ ^##\  ]] && ! is_managed_section "$line"; then
       flush_deprecated_buffer
       IN_MANAGED_SECTION=false
     fi
