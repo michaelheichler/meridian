@@ -166,14 +166,23 @@ resolve_legacy_round() {
   uat_resolve_legacy_round "$PHASE_DIR" "$stored_round"
 }
 
+bare_stage_word() {
+  local word
+  word=$(tr -d '[:space:]' < "$1")
+  case "$word" in
+    *=*) echo "none" ;;
+    *) echo "$word" ;;
+  esac
+}
+
 get_stage() {
   if [ -f "$STATE_FILE" ]; then
     local _val
-    _val=$(grep '^stage=' "$STATE_FILE" 2>/dev/null | head -1 | cut -d= -f2 | tr -d '[:space:]')
+    _val=$(grep '^stage=' "$STATE_FILE" 2>/dev/null | head -1 | cut -d= -f2 | tr -d '[:space:]' || true)
     if [ -n "$_val" ]; then
       echo "$_val"
     else
-      tr -d '[:space:]' < "$STATE_FILE"
+      bare_stage_word "$STATE_FILE"
     fi
   elif [ -f "$LEGACY_STATE_FILE" ]; then
     local _val
@@ -181,7 +190,7 @@ get_stage() {
     if [ -n "$_val" ]; then
       echo "$_val"
     else
-      cat "$LEGACY_STATE_FILE" | tr -d '[:space:]'
+      bare_stage_word "$LEGACY_STATE_FILE"
     fi
   else
     echo "none"
@@ -192,7 +201,7 @@ get_round() {
   local _val=""
 
   if [ -f "$STATE_FILE" ]; then
-    _val=$(grep '^round=' "$STATE_FILE" 2>/dev/null | head -1 | cut -d= -f2 | tr -d '[:space:]')
+    _val=$(grep '^round=' "$STATE_FILE" 2>/dev/null | head -1 | cut -d= -f2 | tr -d '[:space:]' || true)
     if [ -n "$_val" ]; then
       if [ "$(get_layout)" = "legacy" ]; then
         resolve_legacy_round "$_val"
@@ -217,7 +226,7 @@ get_round() {
 get_layout() {
   if [ -f "$STATE_FILE" ]; then
     local _val
-    _val=$(grep '^layout=' "$STATE_FILE" 2>/dev/null | head -1 | cut -d= -f2 | tr -d '[:space:]')
+    _val=$(grep '^layout=' "$STATE_FILE" 2>/dev/null | head -1 | cut -d= -f2 | tr -d '[:space:]' || true)
     echo "${_val:-round-dir}"
   else
     if [ -f "$LEGACY_STATE_FILE" ]; then
