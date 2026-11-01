@@ -114,8 +114,8 @@ resolve_phase_number_from_phase_dir() {
 if [ -f "$_SCRIPT_DIR_PD/summary-utils.sh" ]; then
   . "$_SCRIPT_DIR_PD/summary-utils.sh"
 fi
-if [ -f "$_SCRIPT_DIR_PD/uat-utils.sh" ]; then
-  . "$_SCRIPT_DIR_PD/uat-utils.sh"
+if [ -f "$_SCRIPT_DIR_PD/lib/uat-utils.sh" ]; then
+  . "$_SCRIPT_DIR_PD/lib/uat-utils.sh"
 fi
 if [ -f "$_SCRIPT_DIR_PD/verification-freshness.sh" ]; then
   . "$_SCRIPT_DIR_PD/verification-freshness.sh"

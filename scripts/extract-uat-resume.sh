@@ -4,8 +4,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-if [ -f "$SCRIPT_DIR/uat-utils.sh" ]; then
-  source "$SCRIPT_DIR/uat-utils.sh"
+if [ -f "$SCRIPT_DIR/lib/uat-utils.sh" ]; then
+  source "$SCRIPT_DIR/lib/uat-utils.sh"
 fi
 
 PHASE_DIR="${1:?Usage: extract-uat-resume.sh <phase-dir>}"

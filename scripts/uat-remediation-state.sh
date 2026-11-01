@@ -3,8 +3,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd)"
-if [ -f "$SCRIPT_DIR/uat-utils.sh" ]; then
-  source "$SCRIPT_DIR/uat-utils.sh"
+if [ -f "$SCRIPT_DIR/lib/uat-utils.sh" ]; then
+  source "$SCRIPT_DIR/lib/uat-utils.sh"
 fi
 CMD="${1:-}"
 PHASE_DIR="${2:-}"

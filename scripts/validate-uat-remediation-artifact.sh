@@ -8,8 +8,8 @@ SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd)"
 EXPECTED_ARTIFACT_ROUND=""
 REMEDIATION_KIND=""
 
-if [ -f "$SCRIPT_DIR/uat-utils.sh" ]; then
-  source "$SCRIPT_DIR/uat-utils.sh"
+if [ -f "$SCRIPT_DIR/lib/uat-utils.sh" ]; then
+  source "$SCRIPT_DIR/lib/uat-utils.sh"
 fi
 . "$SCRIPT_DIR/lib/validate-uat-remediation-paths.sh"
 . "$SCRIPT_DIR/lib/validate-uat-remediation-checks.sh"

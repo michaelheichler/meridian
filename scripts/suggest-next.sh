@@ -9,7 +9,7 @@ PLANNING_DIR="${LBWC_PLANNING_DIR:-.lbwc-planning}"
 SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd)"
 RESOLVE_VERIF_SCRIPT="$SCRIPT_DIR/resolve-verification-path.sh"
 
-. "$SCRIPT_DIR/uat-utils.sh"
+. "$SCRIPT_DIR/lib/uat-utils.sh"
 read_status_field() { extract_status_value "$@"; }
 
 if [ -f "$SCRIPT_DIR/summary-utils.sh" ]; then

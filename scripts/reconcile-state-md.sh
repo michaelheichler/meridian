@@ -38,8 +38,8 @@ fi
 if [ -f "$SCRIPT_DIR/phase-state-utils.sh" ]; then
   . "$SCRIPT_DIR/phase-state-utils.sh" || { quiet_json "skipped" "phase-state-utils unavailable"; exit 0; }
 fi
-if [ -f "$SCRIPT_DIR/uat-utils.sh" ]; then
-  . "$SCRIPT_DIR/uat-utils.sh" || { quiet_json "skipped" "uat-utils unavailable"; exit 0; }
+if [ -f "$SCRIPT_DIR/lib/uat-utils.sh" ]; then
+  . "$SCRIPT_DIR/lib/uat-utils.sh" || { quiet_json "skipped" "uat-utils unavailable"; exit 0; }
 fi
 
 REQUIRED_FUNCTIONS=(
