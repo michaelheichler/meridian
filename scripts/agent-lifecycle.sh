@@ -11,6 +11,7 @@ SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname "$0")" && pwd)
 [ -f "$SCRIPT_DIR/lib/agent-manifest.sh" ] || lifecycle_manifest_error unavailable
 . "$SCRIPT_DIR/lib/agent-manifest.sh" || lifecycle_manifest_error unavailable
 . "$SCRIPT_DIR/lib/lbwc-control-root.sh" || lifecycle_manifest_error unavailable
+. "$SCRIPT_DIR/lib/iso-epoch.sh" || lifecycle_manifest_error unavailable
 
 PLANNING_DIR=$(lbwc_resolve_control_root "${LBWC_CONTROL_ROOT:-}" "" "$PWD" 2>/dev/null || true)
 [ -n "$PLANNING_DIR" ] || PLANNING_DIR="${LBWC_PLANNING_DIR:-.lbwc-planning}"
@@ -40,17 +41,11 @@ lifecycle_epoch_iso() {
 }
 
 lifecycle_timestamp_epoch() {
-  local value="$1" result=""
+  local value="$1"
   case "$value" in
-    ''|*[!0-9]*) ;;
-    *) printf '%s\n' "$value"; return 0 ;;
+    ''|*[!0-9]*) iso_utc_to_epoch "$value" ;;
+    *) printf '%s\n' "$value" ;;
   esac
-  if [ "$(uname)" = "Darwin" ]; then
-    result=$(date -j -u -f "%Y-%m-%dT%H:%M:%SZ" "$value" +%s 2>/dev/null || true)
-  fi
-  [ -n "$result" ] || result=$(date -u -d "$value" +%s 2>/dev/null || true)
-  [ -n "$result" ] || return 1
-  printf '%s\n' "$result"
 }
 
 lifecycle_manifest_failure_status() {
