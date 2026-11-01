@@ -24,8 +24,8 @@ elif [ -f "${PHASE_DIR%/}/.uat-remediation-stage" ]; then
   _state_file="${PHASE_DIR%/}/.uat-remediation-stage"
 fi
 if [ -f "$_state_file" ]; then
-  _layout=$(grep '^layout=' "$_state_file" 2>/dev/null | head -1 | cut -d= -f2 | tr -d '[:space:]')
-  _round=$(grep '^round=' "$_state_file" 2>/dev/null | head -1 | cut -d= -f2 | tr -d '[:space:]')
+  _layout=$(sed -n 's/^layout=//p' "$_state_file" | head -1 | tr -d '[:space:]')
+  _round=$(sed -n 's/^round=//p' "$_state_file" | head -1 | tr -d '[:space:]')
   case "$_state_file" in
     */remediation/.uat-remediation-stage|*/.uat-remediation-stage)
       _layout="${_layout:-legacy}"
