@@ -26,7 +26,7 @@ normalize_agent_role() {
 
 role_uses_worktree() {
   case "$1" in
-    coding-dijkstra|python-engineer|web-engineer|test-dev|debugger|docs) return 0 ;;
+    coding-dijkstra|python-engineer|web-engineer|test-dev|qa-author|debugger|docs) return 0 ;;
     *) return 1 ;;
   esac
 }
