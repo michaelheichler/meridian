@@ -382,8 +382,8 @@ make_team() {
   assert_no_case_failures
 }
 
-@test "doctor-cleanup cleanup removes only stale state and logs each action" {
-  local log runs
+@test "doctor-cleanup cleanup removes only stale state, logs each action, rejects unknown actions, and skips missing helpers" {
+  local log runs isolated script_path
 
   cleanup_world markers
   log="$W_PLANNING/.hook-errors.log"
@@ -447,12 +447,6 @@ make_team() {
   expect_file_line "log-run-removed" "$log" 'temporary_run_removed|done-old'
   expect_file_line "log-run-summary" "$log" 'process_records=1, markers=0, worktrees=0, temporary_runs=2'
 
-  assert_no_case_failures
-}
-
-@test "doctor-cleanup rejects unknown actions and degrades without optional helpers" {
-  local isolated script_path
-
   cleanup_world usage
   run_cleanup bogus
   expect_case "unknown-action" 1 "Usage:"
@@ -476,6 +470,14 @@ make_team() {
   rm -f "$isolated/cleanup-temporary-agent-runfiles.sh"
   CLEANUP_SCRIPT="$isolated/doctor-cleanup.sh" run_cleanup scan
   expect_case_silent "run-helper-missing-scan" 0
+
+  cleanup_world no-run-helper-cleanup
+  mkdir -p "$W_PROJECT/.temporary-agent-runfiles/runs/busy"
+  CLEANUP_SCRIPT="$isolated/doctor-cleanup.sh" run_cleanup cleanup
+  expect_status "run-helper-missing-cleanup" 0
+  expect_output_lacks "run-helper-missing-cleanup-output" "No such file"
+  expect_file_line "run-helper-missing-cleanup-summary" "$W_PLANNING/.hook-errors.log" 'cleanup complete'
+  expect_no_file_line "run-helper-missing-cleanup-log" "$W_PLANNING/.hook-errors.log" 'No such file'
 
   assert_no_case_failures
 }

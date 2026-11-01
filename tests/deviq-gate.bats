@@ -33,8 +33,8 @@ open_block() {
   record_block p1 roleA --field trigger="$1" --field consequence=c --field fix=f --field status=open
 }
 
-@test "gate rejects malformed or unresolved block records with exit 2" {
-  local count
+@test "gate exits 2 on malformed or open blocks, 0 on resolved or absent ledgers, 1 without a phase, and never sees a 9th block" {
+  local count id i
   reset_case_failures
 
   fresh_deviq
@@ -58,13 +58,6 @@ open_block() {
   count=$(grep -c 'flaky test' <<< "$output")
   [ "$count" -eq 1 ] || record_case_failure duplicate-open-appends "blocking entry count=$count"
 
-  assert_no_case_failures
-}
-
-@test "gate accepts a resolved block or an absent ledger with exit 0" {
-  local id
-  reset_case_failures
-
   fresh_deviq
   id=$(open_block "stale cache")
   record_block p1 roleA --field id="$id" --field trigger="stale cache" --field consequence=c --field fix=f --field status=resolved > /dev/null
@@ -75,28 +68,20 @@ open_block() {
   run bash "$GATE" p1 --root "$DEVIQ"
   expect_case_silent absent-ledger 0
 
-  assert_no_case_failures
-}
-
-@test "gate rejects a call without a phase with exit 1 and a usage line" {
   run bash "$GATE" --root "$DEVIQ"
+  expect_case missing-phase 1 "usage: deviq-build-gate.sh"
 
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"usage: deviq-build-gate.sh"* ]]
-}
-
-@test "a 9th distinct open block is refused by the recorder before it ever reaches the gate" {
-  local i count
+  fresh_deviq
   for i in 1 2 3 4 5 6 7 8; do
     open_block "issue-$i" > /dev/null
   done
-
   run open_block "issue-9"
-  [ "$status" -eq 1 ]
-
+  expect_case ninth-open-block-refused 1
   run bash "$GATE" p1 --root "$DEVIQ"
-  [ "$status" -eq 2 ]
-  [[ "$output" != *"issue-9"* ]]
+  expect_case eight-open-blocks-gate 2
+  [[ "$output" != *"issue-9"* ]] || record_case_failure eight-open-blocks-gate "refused block reached the gate output=$output"
   count=$(grep -oc 'issue-[0-9]' <<< "$output")
-  [ "$count" -eq 8 ]
+  [ "$count" -eq 8 ] || record_case_failure eight-open-blocks-gate "blocking entry count=$count"
+
+  assert_no_case_failures
 }

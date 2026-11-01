@@ -205,9 +205,16 @@ exec "'"$(command -v git)"'" "$@"'
   esac
 }
 
-@test "UAT remediation stage state decides routing without rewriting the stage file" {
+@test "UAT remediation state routes phases, caps block unrelated QA, and terminal UAT keeps stale QA dormant" {
   local legacy="$PD_PHASES/01-legacy"
   local round_dir="$PD_FEATURE/remediation/uat"
+  local uat_stage="$PD_PHASES/01-uat/remediation/uat/.uat-remediation-stage"
+  local capped_qa_stage="$PD_PHASES/02-qa/remediation/qa/.qa-remediation-stage"
+  local blocked="next_phase=01~next_phase_slug=01-uat~next_phase_state=needs_reverification~uat_issues_phase=01~uat_file=remediation/uat/round-01/R01-UAT.md~!next_phase_state=needs_qa_remediation"
+  local untouched="@$uat_stage@stage=verify~@$uat_stage@round=01~@$uat_stage@layout=round-dir~-$PD_PHASES/01-uat/remediation/uat/round-02~@$capped_qa_stage@stage=execute~@$capped_qa_stage@round=01"
+  local qa_stage="$PD_PHASES/01-test/remediation/qa/.qa-remediation-stage"
+  local dormant="^first_qa_attention_phase=~qa_attention_status=none~next_phase=none~next_phase_slug=none~next_phase_state=all_done"
+  local layout_tokens="!next_phase_state=needs_qa_remediation~qa_after_uat_dormant=true~@$qa_stage@stage=execute~@$qa_stage@round=01"
   pd_table <<CASES
 legacy-key-value-state-reverifies#sc_legacy_state root_done#next_phase_state=needs_reverification
 stale-execute-state-not-rewritten#sc_legacy_state stale_execute#next_phase_state=needs_reverification~@$legacy/remediation/.uat-remediation-stage@stage=execute
@@ -222,26 +229,9 @@ done-with-round-issues-routes-remediation#sc_stage_round done_round_issues#next_
 done-without-round-uat-reverifies#sc_stage_round done_no_round_uat#next_phase_state=needs_reverification~@$PD_UAT_STAGE@stage=done~@$PD_UAT_STAGE@round=02
 done-with-passing-round-ends-remediation#sc_stage_round done_round_complete#!next_phase_state=needs_uat_remediation~next_phase_state=all_done~qa_status=none~@$PD_UAT_STAGE@stage=done~@$PD_UAT_STAGE@round=01
 done-legacy-layout-keeps-legacy-paths#sc_stage_round done_legacy_layout#next_phase_state=needs_uat_remediation~@$PD_FEATURE/.uat-remediation-stage@stage=done~@$PD_FEATURE/.uat-remediation-stage@round=01~!@$PD_FEATURE/.uat-remediation-stage@layout=~-$PD_FEATURE/remediation/round-02~-$round_dir/round-02
-CASES
-}
-
-@test "a capped UAT lane blocks unrelated active QA remediation" {
-  local uat_stage="$PD_PHASES/01-uat/remediation/uat/.uat-remediation-stage"
-  local qa_stage="$PD_PHASES/02-qa/remediation/qa/.qa-remediation-stage"
-  local blocked="next_phase=01~next_phase_slug=01-uat~next_phase_state=needs_reverification~uat_issues_phase=01~uat_file=remediation/uat/round-01/R01-UAT.md~!next_phase_state=needs_qa_remediation"
-  local untouched="@$uat_stage@stage=verify~@$uat_stage@round=01~@$uat_stage@layout=round-dir~-$PD_PHASES/01-uat/remediation/uat/round-02~@$qa_stage@stage=execute~@$qa_stage@round=01"
-  pd_table <<CASES
 cap-reached#sc_cap_blocks_qa plain#$blocked~$untouched
 cap-helper-failure#sc_cap_blocks_qa helper_nonzero#$blocked~$untouched
 cap-helper-malformed#sc_cap_blocks_qa helper_malformed#$blocked~$untouched
-CASES
-}
-
-@test "terminal or cut-over UAT keeps stale QA remediation dormant" {
-  local qa_stage="$PD_PHASES/01-test/remediation/qa/.qa-remediation-stage"
-  local dormant="^first_qa_attention_phase=~qa_attention_status=none~next_phase=none~next_phase_slug=none~next_phase_state=all_done"
-  local layout_tokens="!next_phase_state=needs_qa_remediation~qa_after_uat_dormant=true~@$qa_stage@stage=execute~@$qa_stage@round=01"
-  pd_table <<CASES
 stale-pass-after-later-commit#sc_dormant stale_pass#$dormant~qa_attention_reason=none~qa_reason=none
 failed-authoritative-qa#sc_dormant failed_authoritative#$dormant~qa_status=none
 phase-sorting-helper-fails#sc_dormant sort_helper_fails#$dormant~phase_detect_complete=true~phase_count=2

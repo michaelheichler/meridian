@@ -2,11 +2,15 @@
 
 bats_require_minimum_version 1.5.0
 load test_helper
+load gate_case_helper
 
 setup() {
   setup_temp_dir
-  mkdir -p "$TEST_TEMP_DIR/decoy/scripts"
-  cd "$PROJECT_ROOT"
+  reset_case_failures
+  mkdir -p "$TEST_TEMP_DIR/decoy/scripts" "$TEST_TEMP_DIR/work"
+  git -C "$TEST_TEMP_DIR/work" init -q
+  ln -s "$SCRIPTS_DIR" "$TEST_TEMP_DIR/work/scripts"
+  cd "$TEST_TEMP_DIR/work"
 }
 
 teardown() {
@@ -19,8 +23,9 @@ invoke_script() {
   printf '%s' "$stdin_payload" | LBWC_PLANNING_DIR="$TEST_TEMP_DIR/.lbwc-planning" bash "$@"
 }
 
-assert_stdout_ignores_cdpath() {
-  local baseline baseline_status
+expect_stdout_ignores_cdpath() {
+  local label=$1 baseline baseline_status
+  shift
 
   run --separate-stderr invoke_script "$@"
   baseline="$output"
@@ -28,11 +33,17 @@ assert_stdout_ignores_cdpath() {
 
   CDPATH="$TEST_TEMP_DIR/decoy" run --separate-stderr invoke_script "$@"
 
-  [ "$status" -eq "$baseline_status" ]
-  [ "$output" = "$baseline" ]
+  [ "$status" -eq "$baseline_status" ] \
+    || record_case_failure "$label" "status=$status baseline=$baseline_status"
+  [ "$output" = "$baseline" ] \
+    || record_case_failure "$label" "stdout=[$output] baseline=[$baseline]"
 }
 
-bats_test_function --description "bash-guard stdout is unchanged by a CDPATH that shadows the scripts dir" -- assert_stdout_ignores_cdpath '{"tool_input":{"command":"rm -rf /var/lib/mysql"}}' scripts/bash-guard.sh
-bats_test_function --description "state-updater stdout is unchanged by a CDPATH that shadows the scripts dir" -- assert_stdout_ignores_cdpath '{"tool_input":{"file_path":"x.md"}}' scripts/state-updater.sh
-bats_test_function --description "agent-lifecycle stdout is unchanged by a CDPATH that shadows the scripts dir" -- assert_stdout_ignores_cdpath '{}' scripts/agent-lifecycle.sh sweep
-bats_test_function --description "todo-lifecycle stdout is unchanged by a CDPATH that shadows the scripts dir" -- assert_stdout_ignores_cdpath '' scripts/todo-lifecycle.sh bogus-command
+@test "hook and lifecycle scripts keep their stdout when a CDPATH shadows the scripts dir" {
+  expect_stdout_ignores_cdpath bash-guard '{"tool_input":{"command":"rm -rf /var/lib/mysql"}}' scripts/bash-guard.sh
+  expect_stdout_ignores_cdpath state-updater '{"tool_input":{"file_path":"x.md"}}' scripts/state-updater.sh
+  expect_stdout_ignores_cdpath agent-lifecycle '{}' scripts/agent-lifecycle.sh sweep
+  expect_stdout_ignores_cdpath todo-lifecycle '' scripts/todo-lifecycle.sh bogus-command
+
+  assert_no_case_failures
+}

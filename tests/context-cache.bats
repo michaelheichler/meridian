@@ -1,6 +1,7 @@
 #!/usr/bin/env bats
 
 load test_helper
+load gate_case_helper
 
 build_workspace() {
   WS="${1:-$TEST_TEMP_DIR}"
@@ -129,7 +130,7 @@ explicit-paths-beat-conflicting-planning-dir|dev|mut_env_planning_dir|same|ws-m|
 CASES
 }
 
-@test "cache-context follows the target repo off-root across committed changes" {
+@test "cache-context follows the target repo off-root across committed changes and reports a hit only for a matching cache file" {
   while IFS='|' read -r label layout mutation expect; do
     [ -n "$label" ] || continue
     unrelated_repo="$TEST_TEMP_DIR/unrelated-git"
@@ -185,9 +186,8 @@ flat-repo-committed-content|flat|sample|differs
 nested-workspace-committed-content|nested|sample|differs
 nested-workspace-sibling-noise|nested|sibling|same
 CASES
-}
 
-@test "cache-context reports hit only when a cache file matches the hash" {
+  RUN_FROM=""
   while IFS='|' read -r label seed expected_status; do
     [ -n "$label" ] || continue
     build_workspace "$TEST_TEMP_DIR/hit-$label"
@@ -205,94 +205,100 @@ matching-cache-file|yes|hit
 CASES
 }
 
-@test "compile-context populates the cache and one index entry per role" {
-  cd "$TEST_TEMP_DIR"
-  run bash "$SCRIPTS_DIR/compile-context.sh" 02 lead .lbwc-planning/phases .lbwc-planning/phases/02-test-phase/02-01-PLAN.md
-  [ "$status" -eq 0 ]
-  run bash "$SCRIPTS_DIR/compile-context.sh" 02 dev .lbwc-planning/phases .lbwc-planning/phases/02-test-phase/02-01-PLAN.md
-  [ "$status" -eq 0 ]
-  run bash "$SCRIPTS_DIR/compile-context.sh" 02 qa .lbwc-planning/phases .lbwc-planning/phases/02-test-phase/02-01-PLAN.md
-  [ "$status" -eq 0 ]
-
-  index="$PLANNING/.cache/context-index.json"
-  [ "$(ls "$PLANNING/.cache/context/" | wc -l | tr -d ' ')" -eq 3 ]
-  [ "$(jq '.entries | keys | length' "$index")" -eq 3 ]
-
-  dev_entry=$(jq -c '.entries | to_entries[] | select(.value.role == "dev") | .value' "$index")
-  [ "$(echo "$dev_entry" | jq -r '.phase')" = "02" ]
-  [ "$(echo "$dev_entry" | jq 'has("path") and has("role") and has("phase") and has("timestamp")')" = "true" ]
-  [ -f "$(echo "$dev_entry" | jq -r '.path')" ]
-  [ -n "$(echo "$dev_entry" | jq -r '.timestamp | select(. != null)')" ]
+compile_in_workspace() {
+  run bash "$SCRIPTS_DIR/compile-context.sh" 02 "$1" .lbwc-planning/phases .lbwc-planning/phases/02-test-phase/02-01-PLAN.md
 }
 
-@test "compile-context serves a repeat run from cache and refreshes the index timestamp" {
-  cd "$TEST_TEMP_DIR"
-  run bash "$SCRIPTS_DIR/compile-context.sh" 02 lead .lbwc-planning/phases .lbwc-planning/phases/02-test-phase/02-01-PLAN.md
-  [ "$status" -eq 0 ]
-  first_stamp=$(jq -r '.entries | to_entries[0].value.timestamp' "$PLANNING/.cache/context-index.json")
+expect_context_has() {
+  grep -qF -- "$3" "$PHASE_DIR/.context-$2.md" \
+    || record_case_failure "$1" "context-$2 lacks [$3]"
+}
 
+expect_context_lacks() {
+  run grep -qF -- "$3" "$PHASE_DIR/.context-$2.md"
+  [ "$status" -eq 1 ] || record_case_failure "$1" "context-$2 holds [$3] grep status=$status"
+}
+
+@test "compile-context caches each role, refreshes the index, survives a corrupt index, and selects its inputs" {
+  local index dev_entry first_stamp second_stamp label write_research expected_count heading_count finding_count
+  reset_case_failures
+
+  build_workspace "$TEST_TEMP_DIR/populate"
+  cd "$WS" || return 1
+  compile_in_workspace lead
+  expect_case populate-lead 0
+  compile_in_workspace dev
+  expect_case populate-dev 0
+  compile_in_workspace qa
+  expect_case populate-qa 0
+  index="$PLANNING/.cache/context-index.json"
+  [ "$(ls "$PLANNING/.cache/context/" | wc -l | tr -d ' ')" -eq 3 ] || record_case_failure populate-files "expected 3 cache files"
+  [ "$(jq '.entries | keys | length' "$index")" -eq 3 ] || record_case_failure populate-index "expected 3 index entries"
+  dev_entry=$(jq -c '.entries | to_entries[] | select(.value.role == "dev") | .value' "$index")
+  [ "$(echo "$dev_entry" | jq -r '.phase')" = "02" ] || record_case_failure populate-dev-entry "phase is not 02 entry=$dev_entry"
+  [ "$(echo "$dev_entry" | jq 'has("path") and has("role") and has("phase") and has("timestamp")')" = "true" ] \
+    || record_case_failure populate-dev-entry "entry lacks a key entry=$dev_entry"
+  [ -f "$(echo "$dev_entry" | jq -r '.path')" ] || record_case_failure populate-dev-entry "entry path is missing"
+  [ -n "$(echo "$dev_entry" | jq -r '.timestamp | select(. != null)')" ] || record_case_failure populate-dev-entry "entry timestamp is null"
+
+  build_workspace "$TEST_TEMP_DIR/repeat"
+  cd "$WS" || return 1
+  compile_in_workspace lead
+  expect_case repeat-first 0
+  first_stamp=$(jq -r '.entries | to_entries[0].value.timestamp' "$PLANNING/.cache/context-index.json")
   # Timestamps have one-second resolution, so the repeat run must wait to differ
   sleep 1
-
-  run bash "$SCRIPTS_DIR/compile-context.sh" 02 lead .lbwc-planning/phases .lbwc-planning/phases/02-test-phase/02-01-PLAN.md
-  [ "$status" -eq 0 ]
+  compile_in_workspace lead
+  expect_case repeat-second 0
   second_stamp=$(jq -r '.entries | to_entries[0].value.timestamp' "$PLANNING/.cache/context-index.json")
+  expect_context_has repeat-from-cache lead "Test goal"
+  [ "$first_stamp" != "$second_stamp" ] || record_case_failure repeat-timestamp "timestamp stayed $first_stamp"
 
-  grep -q "Test goal" "$PHASE_DIR/.context-lead.md"
-  [ "$first_stamp" != "$second_stamp" ]
-}
-
-@test "compile-context still compiles when the index file is corrupt" {
-  cd "$TEST_TEMP_DIR"
+  build_workspace "$TEST_TEMP_DIR/corrupt-index"
+  cd "$WS" || return 1
   mkdir -p "$PLANNING/.cache"
   echo "NOT VALID JSON{{{{" > "$PLANNING/.cache/context-index.json"
+  compile_in_workspace dev
+  expect_case corrupt-index 0
+  [ -f "$PHASE_DIR/.context-dev.md" ] || record_case_failure corrupt-index "dev context missing"
 
-  run bash "$SCRIPTS_DIR/compile-context.sh" 02 dev .lbwc-planning/phases .lbwc-planning/phases/02-test-phase/02-01-PLAN.md
-  [ "$status" -eq 0 ]
-  [ -f "$PHASE_DIR/.context-dev.md" ]
-}
-
-@test "compile-context includes research findings only when RESEARCH.md exists" {
   while IFS='|' read -r label write_research expected_count; do
     [ -n "$label" ] || continue
     build_workspace "$TEST_TEMP_DIR/research-$label"
     cd "$WS" || return 1
-    [ "$write_research" = yes ] && printf '## Findings\n- Test finding\n' > "$PHASE_DIR/02-RESEARCH.md"
-
+    [ "$write_research" = no ] || printf '## Findings\n- Test finding\n' > "$PHASE_DIR/02-RESEARCH.md"
     run bash "$SCRIPTS_DIR/compile-context.sh" 02 lead .lbwc-planning/phases
-    [ "$status" -eq 0 ] || { case_fail "$label" "compile failed status=$status"; return 1; }
+    expect_case "$label" 0
     heading_count=$(grep -c "Research Findings" "$PHASE_DIR/.context-lead.md" || true)
     finding_count=$(grep -c "Test finding" "$PHASE_DIR/.context-lead.md" || true)
-    [ "$heading_count" -eq "$expected_count" ] || { case_fail "$label" "heading count $heading_count, expected $expected_count"; return 1; }
-    [ "$finding_count" -eq "$expected_count" ] || { case_fail "$label" "finding count $finding_count, expected $expected_count"; return 1; }
+    [ "$heading_count" -eq "$expected_count" ] || record_case_failure "$label" "heading count $heading_count, expected $expected_count"
+    [ "$finding_count" -eq "$expected_count" ] || record_case_failure "$label" "finding count $finding_count, expected $expected_count"
   done <<'CASES'
 with-research|yes|1
 without-research|no|0
 CASES
-}
 
-@test "compile-context lead reads the legacy Decisions heading and strips skills and todos" {
-  cd "$TEST_TEMP_DIR"
+  build_workspace "$TEST_TEMP_DIR/legacy-decisions"
+  cd "$WS" || return 1
   printf '%s\n' '# State' '' '## Decisions' '- Keep feature flags conservative' '' \
     '### skills' '**Installed:** foo, bar' '**Suggested:** baz' '' \
     '### Pending Todos' '- Migrate session store' > .lbwc-planning/STATE.md
+  compile_in_workspace lead
+  expect_case legacy-decisions 0
+  expect_context_has legacy-decisions lead 'Keep feature flags conservative'
+  expect_context_lacks legacy-decisions-strips-installed lead 'Installed:'
+  expect_context_lacks legacy-decisions-strips-suggested lead 'Suggested:'
+  expect_context_lacks legacy-decisions-strips-todos lead 'Migrate session store'
 
-  run bash "$SCRIPTS_DIR/compile-context.sh" 02 lead .lbwc-planning/phases .lbwc-planning/phases/02-test-phase/02-01-PLAN.md
-  [ "$status" -eq 0 ]
-  grep -q 'Keep feature flags conservative' "$PHASE_DIR/.context-lead.md"
-  ! grep -q 'Installed:' "$PHASE_DIR/.context-lead.md"
-  ! grep -q 'Suggested:' "$PHASE_DIR/.context-lead.md"
-  ! grep -q 'Migrate session store' "$PHASE_DIR/.context-lead.md"
-}
-
-@test "compile-context explicit phase and plan beat a conflicting LBWC_PLANNING_DIR" {
+  build_workspace "$TEST_TEMP_DIR/explicit-paths"
   create_alternate_context_workspace
-
-  cd "$TEST_TEMP_DIR" || return 1
+  cd "$WS" || return 1
   run env LBWC_PLANNING_DIR="$ALT_PLANNING_DIR" \
     bash "$SCRIPTS_DIR/compile-context.sh" 02 lead .lbwc-planning/phases \
     .lbwc-planning/phases/02-test-phase/02-01-PLAN.md
-  [ "$status" -eq 0 ]
-  grep -q 'Test goal' "$PHASE_DIR/.context-lead.md"
-  ! grep -q 'Alternate goal' "$PHASE_DIR/.context-lead.md"
+  expect_case explicit-paths 0
+  expect_context_has explicit-paths lead 'Test goal'
+  expect_context_lacks explicit-paths-ignores-alternate lead 'Alternate goal'
+
+  assert_no_case_failures
 }

@@ -116,21 +116,6 @@ backend_row() {
     || record_case_failure "$label" "expected output=[$want_output] got=[$output]"
 }
 
-@test "Linux and macOS select descriptor lock backends with the correct arguments" {
-  local fake_tool="$TEST_TEMP_DIR/fake-lock-tool"
-  printf '%s\n' '#!/usr/bin/env bash' 'printf '"'"'%s\n'"'"' "$*"' > "$fake_tool"
-  chmod +x "$fake_tool"
-
-  backend_row darwin-uses-lockf 0 lockf lock_backend_for_system Darwin
-  backend_row linux-uses-flock 0 flock lock_backend_for_system Linux
-  backend_row lockf-arguments 0 '-s -t 0 9' invoke_lock_backend lockf "$fake_tool" 9
-  backend_row flock-arguments 0 '-n 9' invoke_lock_backend flock "$fake_tool" 9
-  run bash -c 'source "$1"; lock_backend_for_system Windows' _ "$ROUTING"
-  [ "$status" -ne 0 ] || record_case_failure unsupported-system-fails "unexpected success output=$output"
-
-  assert_no_case_failures
-}
-
 @test "the real platform descriptor backend holds the guard for the owning shell lifetime" {
   local platform guard ready backend expected_backend
   platform=$(system_platform)
@@ -193,22 +178,6 @@ backend_row() {
   [ "$status" -eq 0 ]
 }
 
-@test "lock owner records use a 128-bit hexadecimal token" {
-  local lock="$PLANNING/.routing.lock" owner_record owner_pid created token writer_pid
-  install_blocking_jq
-
-  start_blocked_writer
-  writer_pid=$!
-  owner_record=$(<"$lock/owner")
-  IFS=$'\t' read -r owner_pid created token <<< "$owner_record"
-  : > "$TEST_TEMP_DIR/release-first-transform"
-  wait "$writer_pid"
-
-  [ "$owner_pid" = "$writer_pid" ]
-  [[ "$created" =~ ^[1-9][0-9]*$ ]]
-  [[ "$token" =~ ^[0-9a-f]{32}$ ]]
-}
-
 swap_lock_owner() {
   local lock="$PLANNING/.routing.lock"
   rm "$lock/owner"
@@ -254,9 +223,30 @@ replayed_owner_row() {
   finish_recreated_lock replayed-genuine-owner "$writer_pid" "$before" "$original"
 }
 
-@test "a recreated lock with a forged or replayed owner record is never trusted or cleaned up" {
+@test "lock owners carry a 128-bit token, every resolution builds one, and forged or replayed owners are never trusted" {
+  local lock="$PLANNING/.routing.lock" owner_record owner_pid created token writer_pid writer_rc=0 attempt failures=0
   install_blocking_jq
   snapshot_planning
+
+  start_blocked_writer
+  writer_pid=$!
+  owner_record=$(<"$lock/owner")
+  IFS=$'\t' read -r owner_pid created token <<< "$owner_record"
+  : > "$TEST_TEMP_DIR/release-first-transform"
+  wait "$writer_pid" || writer_rc=$?
+  [ "$writer_rc" -eq 0 ] || record_case_failure owner-token-format "blocked writer exited $writer_rc"
+  [ "$owner_pid" = "$writer_pid" ] || record_case_failure owner-token-format "owner pid=$owner_pid writer=$writer_pid"
+  [[ "$created" =~ ^[1-9][0-9]*$ ]] || record_case_failure owner-token-format "created=$created"
+  [[ "$token" =~ ^[0-9a-f]{32}$ ]] || record_case_failure owner-token-format "token=$token"
+
+  restore_planning
+  bash "$ROUTING" set "$PLANNING" balanced docs ember-path '"swift"' >/dev/null \
+    || record_case_failure repeated-resolution "seed set failed"
+  for ((attempt = 0; attempt < 100; attempt++)); do
+    bash "$ROUTING" resolve "$PLANNING" docs >/dev/null 2>&1 \
+      || failures=$((failures + 1))
+  done
+  [ "$failures" -eq 0 ] || record_case_failure repeated-resolution "$failures of 100 resolutions failed"
 
   forged_owner_row
   replayed_owner_row
@@ -281,8 +271,8 @@ contention_row() {
     || record_case_failure "$label" "lock owner record was changed"
 }
 
-@test "a lock the writer does not own is never reclaimed or removed" {
-  local owner_record writer_pid waiter_rc=0
+@test "a lock the writer does not own is never reclaimed or removed, and a dead stale lock is reclaimed" {
+  local owner_record writer_pid waiter_rc=0 dead_pid
   install_blocking_jq
   snapshot_planning
 
@@ -318,26 +308,22 @@ contention_row() {
   [ ! -e "$PLANNING/.routing.lock" ] \
     || record_case_failure owner-removes-its-own-lock "lock directory remained after the owner finished"
 
-  assert_no_case_failures
-}
-
-@test "a dead stale lock is reclaimed before updating configuration" {
-  local lock="$PLANNING/.routing.lock" dead_pid
+  restore_planning
   sleep 30 &
   dead_pid=$!
   kill -TERM "$dead_pid"
   wait "$dead_pid" 2>/dev/null || true
-  mkdir "$lock"
-  printf '%s\t%s\t%s\n' "$dead_pid" "$(($(date +%s) - 120))" "dead-owner" > "$lock/owner"
-
+  mkdir "$PLANNING/.routing.lock"
+  printf '%s\t%s\t%s\n' "$dead_pid" "$(($(date +%s) - 120))" "dead-owner" > "$PLANNING/.routing.lock/owner"
   run bash "$ROUTING" set "$PLANNING" balanced docs ember-path '"swift"'
-
-  [ "$status" -eq 0 ]
-  [ ! -e "$lock" ]
-  jq -e '
+  expect_case dead-stale-lock-reclaimed 0
+  [ ! -e "$PLANNING/.routing.lock" ] || record_case_failure dead-stale-lock-reclaimed "stale lock remained"
+  expect_jq dead-stale-lock-reclaimed "$PLANNING/config.json" '
     .routing.profiles.balanced.roles.docs
     == {model: "ember-path", reasoning: "swift", status: "resolved"}
-  ' "$PLANNING/config.json" >/dev/null
+  '
+
+  assert_no_case_failures
 }
 
 od_ignored_row() {
@@ -364,8 +350,19 @@ od_ignored_row() {
   [ ! -e "$PLANNING/.routing.lock" ] || record_case_failure "$label" "lock directory remained"
 }
 
-@test "mutations ignore short failing and valid-length od programs on PATH" {
+@test "lock backends follow the platform, entropy and od failures precede mutation, and od on PATH or a benign od warning is harmless" {
+  local fake_tool="$TEST_TEMP_DIR/fake-lock-tool" operation behavior label mode fixture
+  local entropy_text='could not create secure routing lock owner token: '
+  printf '%s\n' '#!/usr/bin/env bash' 'printf '"'"'%s\n'"'"' "$*"' > "$fake_tool"
+  chmod +x "$fake_tool"
   snapshot_planning
+
+  backend_row darwin-uses-lockf 0 lockf lock_backend_for_system Darwin
+  backend_row linux-uses-flock 0 flock lock_backend_for_system Linux
+  backend_row lockf-arguments 0 '-s -t 0 9' invoke_lock_backend lockf "$fake_tool" 9
+  backend_row flock-arguments 0 '-n 9' invoke_lock_backend flock "$fake_tool" 9
+  run bash -c 'source "$1"; lock_backend_for_system Windows' _ "$ROUTING"
+  [ "$status" -ne 0 ] || record_case_failure unsupported-system-fails "unexpected success output=$output"
 
   while IFS='|' read -r operation behavior; do
     [ -n "$operation" ] || continue
@@ -385,26 +382,6 @@ migrate|failing
 migrate|valid
 CASES
 
-  assert_no_case_failures
-}
-
-failure_before_mutation_row() {
-  local label="$1" mode="$2" operation="$3" fixture before
-  restore_planning
-  fixture=$(create_routing_failure_fixture "$mode")
-  before=$(config_digest)
-
-  run_operation "$fixture" "$operation"
-
-  expect_rejected "$label" ""
-  expect_digest "$label" "$before" "$(config_digest)"
-  expect_no_lock_files "$label"
-}
-
-@test "entropy and platform backend failures precede every routing mutation" {
-  local entropy_text='could not create secure routing lock owner token: '
-  snapshot_planning
-
   while IFS='|' read -r label mode operation; do
     [ -n "$label" ] || continue
     failure_before_mutation_row "$label" "$mode" "$operation"
@@ -423,7 +400,41 @@ CASES
   expect_fragment entropy-message "exited 1"
   expect_fragment entropy-message "No such file or directory"
 
+  od_failure_row silent-od silent "" ""
+  expect_fragment silent-od "(no output captured)"
+
+  od_failure_row labelled-od labelled ZZSTDOUTZZ ZZSTDERRZZ
+  expect_fragment labelled-od "(od stdout: ZZSTDOUTZZ)"
+  expect_fragment labelled-od "(captured stderr: ZZSTDERRZZ)"
+  [[ "$output" != *"(od stdout: ZZSTDERRZZ)"* ]] \
+    || record_case_failure labelled-od "stderr landed in the stdout field"
+  [[ "$output" != *"(captured stderr: ZZSTDOUTZZ)"* ]] \
+    || record_case_failure labelled-od "stdout landed in the stderr field"
+
+  restore_planning
+  write_od_stub "$TEST_TEMP_DIR/warn-bin" 00112233445566778899aabbccddeeff "'od: warning: benign notice'" 0
+  fixture=$(create_od_fixture warn)
+  run_operation "$fixture" set
+  expect_case od-benign-warning 0
+  expect_jq od-benign-warning "$PLANNING/config.json" '
+    .routing.profiles.balanced.roles.docs
+    == {model: "ember-path", reasoning: "swift", status: "resolved"}
+  '
+
   assert_no_case_failures
+}
+
+failure_before_mutation_row() {
+  local label="$1" mode="$2" operation="$3" fixture before
+  restore_planning
+  fixture=$(create_routing_failure_fixture "$mode")
+  before=$(config_digest)
+
+  run_operation "$fixture" "$operation"
+
+  expect_rejected "$label" ""
+  expect_digest "$label" "$before" "$(config_digest)"
+  expect_no_lock_files "$label"
 }
 
 od_failure_row() {
@@ -439,47 +450,4 @@ od_failure_row() {
   expect_fragment "$label" "exited 1"
   expect_digest "$label" "$before" "$(config_digest)"
   expect_no_lock_files "$label"
-}
-
-@test "a failing od names the failure with its stdout and stderr in separate labelled fields" {
-  snapshot_planning
-
-  od_failure_row silent-od silent "" ""
-  expect_fragment silent-od "(no output captured)"
-
-  od_failure_row labelled-od labelled ZZSTDOUTZZ ZZSTDERRZZ
-  expect_fragment labelled-od "(od stdout: ZZSTDOUTZZ)"
-  expect_fragment labelled-od "(captured stderr: ZZSTDERRZZ)"
-  [[ "$output" != *"(od stdout: ZZSTDERRZZ)"* ]] \
-    || record_case_failure labelled-od "stderr landed in the stdout field"
-  [[ "$output" != *"(captured stderr: ZZSTDOUTZZ)"* ]] \
-    || record_case_failure labelled-od "stdout landed in the stderr field"
-
-  assert_no_case_failures
-}
-
-@test "od success with a benign stderr warning still completes the routing mutation" {
-  local fixture
-  write_od_stub "$TEST_TEMP_DIR/warn-bin" 00112233445566778899aabbccddeeff "'od: warning: benign notice'" 0
-  fixture=$(create_od_fixture warn)
-
-  run_operation "$fixture" set
-
-  [ "$status" -eq 0 ]
-  jq -e '
-    .routing.profiles.balanced.roles.docs
-    == {model: "ember-path", reasoning: "swift", status: "resolved"}
-  ' "$PLANNING/config.json" >/dev/null
-}
-
-@test "repeated resolution always builds a lock owner token" {
-  local attempt failures=0
-  bash "$ROUTING" set "$PLANNING" balanced docs ember-path '"swift"' >/dev/null
-
-  for ((attempt = 0; attempt < 100; attempt++)); do
-    bash "$ROUTING" resolve "$PLANNING" docs >/dev/null 2>&1 \
-      || failures=$((failures + 1))
-  done
-
-  [ "$failures" -eq 0 ]
 }

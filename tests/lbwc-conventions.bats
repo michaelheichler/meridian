@@ -10,6 +10,7 @@ setup() {
   PLANNING_DIR="$PROJECT_DIR/.lbwc-planning"
   ARTIFACT="$PLANNING_DIR/conventions.json"
   mkdir -p "$PLANNING_DIR/codebase"
+  SEED_COUNT=0
   reset_case_failures
 }
 
@@ -38,7 +39,8 @@ artifact_digest() {
 
 seed_convention() {
   run_conventions add "$PLANNING_DIR" "$1" "$2"
-  expect_case "seed-$2" 0
+  SEED_COUNT=$((SEED_COUNT + 1))
+  expect_case "seed-$SEED_COUNT-$2" 0
 }
 
 expect_count() {
@@ -57,7 +59,18 @@ expect_artifact_jq() {
   jq -e "$program" "$ARTIFACT" >/dev/null || record_case_failure "$label" "artifact did not satisfy: $program"
 }
 
-@test "add records user conventions and honours an explicit conflict resolution" {
+add_rejected_row() {
+  local label="$1" want_status="$2" fragment="$3" before
+  shift 3
+  before=$(artifact_digest)
+  run_conventions add "$PLANNING_DIR" "$@"
+  expect_case "$label" "$want_status" "$fragment"
+  [ "$(artifact_digest)" = "$before" ] || record_case_failure "$label" "artifact changed"
+}
+
+@test "add records user conventions, honours conflict resolution, and rejects invalid input untouched" {
+  local target="$TEST_ROOT/target.json"
+
   run_conventions --json add "$PLANNING_DIR" naming "Components use PascalCase"
   expect_case add-json 0
   expect_artifact_jq add-projection '.conventions == [{
@@ -90,21 +103,7 @@ expect_artifact_jq() {
   expect_count replace-selected 1
   expect_artifact_jq replace-selected '.conventions[0].rule == "Use pnpm" and .conventions[0].source == "user-defined"'
 
-  assert_no_case_failures
-}
-
-add_rejected_row() {
-  local label="$1" want_status="$2" fragment="$3" before
-  shift 3
-  before=$(artifact_digest)
-  run_conventions add "$PLANNING_DIR" "$@"
-  expect_case "$label" "$want_status" "$fragment"
-  [ "$(artifact_digest)" = "$before" ] || record_case_failure "$label" "artifact changed"
-}
-
-@test "add rejects invalid input and leaves the convention state untouched" {
-  local target="$TEST_ROOT/target.json" before
-
+  reset_planning
   seed_convention naming "Components use PascalCase"
   add_rejected_row multiline-rule 2 "convention rule must be one non-empty line" style $'Use formatter\nUse linter'
   expect_exact_output multiline-rule "Error: convention rule must be one non-empty line"
@@ -154,7 +153,9 @@ add_rejected_row() {
   assert_no_case_failures
 }
 
-@test "list and group emit stable JSON and migrate legacy entries" {
+@test "list and group emit stable JSON, migrate legacy entries, and fail closed on bad artifacts and paths" {
+  local physical_project="$TEST_ROOT/physical-project"
+
   run_conventions --json list "$PLANNING_DIR"
   expect_case empty-list 0
   expect_exact_output empty-list '{"conventions":[],"schema_version":1}'
@@ -174,10 +175,37 @@ add_rejected_row() {
   [ "$(jq -r '.conventions[0] | [.tag, .rule, .source, .category] | @tsv' <<< "$output")" = $'STYLE\tUse formatter\tuser-defined\tstyle' ] \
     || record_case_failure legacy-migration "unexpected migrated entry: $output"
 
+  reset_planning
+  printf '%s\n' '{"schema_version":2,"conventions":[]}' > "$ARTIFACT"
+  run_conventions --json list "$PLANNING_DIR"
+  expect_case artifact-schema-version 2
+  expect_exact_output artifact-schema-version "Error: invalid conventions artifact"
+
+  printf '%s\n' '{"conventions":[{"id":"CONV-001","tag":"STYLE","rule":"Use formatter","source":"user-defined","category":"style","confidence":null,"detected_from":null,"added":"2026-08-10"}]}' > "$ARTIFACT"
+  run_conventions --json list "$PLANNING_DIR"
+  expect_case artifact-without-schema-version 2
+  expect_exact_output artifact-without-schema-version "Error: invalid conventions artifact"
+
+  reset_planning
+  run_conventions list "$PROJECT_DIR/child/../.lbwc-planning"
+  expect_case traversal 2 traversal
+
+  mv "$PLANNING_DIR" "$PROJECT_DIR/real-planning"
+  ln -s "$PROJECT_DIR/real-planning" "$PLANNING_DIR"
+  run_conventions list "$PLANNING_DIR"
+  expect_case symlinked-planning-directory 2 "symbolic link"
+
+  mkdir -p "$physical_project/.lbwc-planning"
+  ln -s "$physical_project" "$TEST_ROOT/linked-project"
+  run_conventions list "$TEST_ROOT/linked-project/.lbwc-planning"
+  expect_case ancestor-symlink 2 "symbolic link paths are not allowed:"
+  [[ "$output" == *"linked-project"* ]] \
+    || record_case_failure ancestor-symlink "output does not name the linked ancestor: $output"
+
   assert_no_case_failures
 }
 
-@test "refresh and reconcile apply detected candidates without losing user conventions" {
+@test "refresh and reconcile apply detected candidates without losing user conventions and reject malformed ones atomically" {
   local candidates="$TEST_ROOT/candidates.json" before first second
 
   seed_convention naming "Components use PascalCase"
@@ -244,12 +272,7 @@ add_rejected_row() {
     || record_case_failure reconcile-preview "preview does not hold both conventions"
   [ "$(artifact_digest)" = "$before" ] || record_case_failure reconcile-preview "preview mutated the artifact"
 
-  assert_no_case_failures
-}
-
-@test "refresh and list reject malformed candidates and artifacts atomically" {
-  local before
-
+  reset_planning
   seed_convention testing "Tests use fixtures"
   before="$(artifact_digest)"
   printf '%s\n' '{broken' > "$TEST_ROOT/broken.json"
@@ -270,37 +293,6 @@ add_rejected_row() {
   run_conventions refresh "$PLANNING_DIR" "$TEST_ROOT/unknown-conflict.json"
   expect_case unknown-conflict-reference 2 "unknown conflict reference: CONV-999"
   [ ! -e "$ARTIFACT" ] || record_case_failure unknown-conflict-reference "artifact was written"
-
-  printf '%s\n' '{"schema_version":2,"conventions":[]}' > "$ARTIFACT"
-  run_conventions --json list "$PLANNING_DIR"
-  expect_case artifact-schema-version 2
-  expect_exact_output artifact-schema-version "Error: invalid conventions artifact"
-
-  printf '%s\n' '{"conventions":[{"id":"CONV-001","tag":"STYLE","rule":"Use formatter","source":"user-defined","category":"style","confidence":null,"detected_from":null,"added":"2026-08-10"}]}' > "$ARTIFACT"
-  run_conventions --json list "$PLANNING_DIR"
-  expect_case artifact-without-schema-version 2
-  expect_exact_output artifact-without-schema-version "Error: invalid conventions artifact"
-
-  assert_no_case_failures
-}
-
-@test "planning traversal and symbolic link boundaries fail closed" {
-  local physical_project="$TEST_ROOT/physical-project"
-
-  run_conventions list "$PROJECT_DIR/child/../.lbwc-planning"
-  expect_case traversal 2 traversal
-
-  mv "$PLANNING_DIR" "$PROJECT_DIR/real-planning"
-  ln -s "$PROJECT_DIR/real-planning" "$PLANNING_DIR"
-  run_conventions list "$PLANNING_DIR"
-  expect_case symlinked-planning-directory 2 "symbolic link"
-
-  mkdir -p "$physical_project/.lbwc-planning"
-  ln -s "$physical_project" "$TEST_ROOT/linked-project"
-  run_conventions list "$TEST_ROOT/linked-project/.lbwc-planning"
-  expect_case ancestor-symlink 2 "symbolic link paths are not allowed:"
-  [[ "$output" == *"linked-project"* ]] \
-    || record_case_failure ancestor-symlink "output does not name the linked ancestor: $output"
 
   assert_no_case_failures
 }

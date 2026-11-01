@@ -1,16 +1,12 @@
 #!/usr/bin/env bats
 
 load test_helper
+load gate_case_helper
 
 setup() { setup_temp_dir; cd "$TEST_TEMP_DIR"; LOG=".lbwc-planning/telemetry/session.jsonl"; }
 teardown() { cd "$PROJECT_ROOT"; teardown_temp_dir; }
 
 writer() { python3 "$PROJECT_ROOT/scripts/lib/session-telemetry.py" "$@"; }
-
-fail_case() {
-  printf 'case=%s %s\nactual=[%s]\n' "$1" "$2" "$3" >&2
-  return 1
-}
 
 forged_genesis_log() {
   mkdir -p .lbwc-planning/telemetry
@@ -57,13 +53,16 @@ release_lock() {
   wait "$LOCKER" 2>/dev/null || true
 }
 
-@test "writer chains canonical main-session events by hash" {
+@test "writer chains main-session events, follows a planning alias, and rejects bad input without appending" {
+  local label prior args size_before long_value
+  reset_case_failures
+
   run writer record --event session_start --outcome success --duration-ms 12 --session-id s1
-  [ "$status" -eq 0 ]
+  expect_case chain-start 0
   run writer record --event command --outcome success
-  [ "$status" -eq 0 ]
+  expect_case chain-command 0
   run writer record --event session_stop --outcome success
-  [ "$status" -eq 0 ]
+  expect_case chain-stop 0
 
   run python3 -c '
 import json, sys
@@ -74,11 +73,14 @@ assert len(first["sha256"]) == 64, first
 assert second["prev_sha256"] == first["sha256"], second
 assert third["prev_sha256"] == second["sha256"], third
 ' "$TEST_TEMP_DIR/$LOG"
-  [ "$status" -eq 0 ]
-}
+  expect_case chain-hashes 0
 
-@test "writer rejects invalid input or a tampered log and appends nothing" {
-  local label prior args size_before long_value
+  mkdir -p canonical
+  ln -s canonical alias
+  run env LBWC_PLANNING_DIR="$TEST_TEMP_DIR/alias" python3 "$PROJECT_ROOT/scripts/lib/session-telemetry.py" record --event session_start --outcome success
+  expect_case planning-alias 0
+  [ -f canonical/telemetry/session.jsonl ] || record_case_failure planning-alias "canonical log missing"
+
   long_value=$(printf 'x%.0s' {1..257})
   while IFS='~' read -r label prior args; do
     [ -n "$label" ] || continue
@@ -89,8 +91,8 @@ assert third["prev_sha256"] == second["sha256"], third
 
     run writer record $args
 
-    [ "$status" -eq 2 ] || fail_case "$label" "status=2" "status=$status output=$output"
-    [ "$(log_size)" = "$size_before" ] || fail_case "$label" "log size $size_before" "$(log_size)"
+    expect_case "$label" 2
+    [ "$(log_size)" = "$size_before" ] || record_case_failure "$label" "log size $(log_size) want $size_before"
   done <<'CASES'
 agent-actor~none~--event session_start --outcome success --actor agent
 arbitrary-field~none~--event session_start --outcome success --field transcript=secret
@@ -101,36 +103,27 @@ malformed-prior-record~schema-garbage~--event session_start --outcome success
 unparsable-prior-line~malformed-json~--event session_start --outcome success
 forged-genesis-prev-hash~forged-genesis~--event command --outcome success
 CASES
-}
 
-@test "writer uses the canonical planning root when addressed through an alias" {
-  mkdir -p canonical
-  ln -s canonical alias
-
-  run env LBWC_PLANNING_DIR="$TEST_TEMP_DIR/alias" python3 "$PROJECT_ROOT/scripts/lib/session-telemetry.py" record --event session_start --outcome success
-
-  [ "$status" -eq 0 ]
-  [ -f canonical/telemetry/session.jsonl ]
+  assert_no_case_failures
 }
 
 @test "writer fails closed on lock contention for every timeout setting" {
   local label timeout
+  reset_case_failures
   while IFS='~' read -r label timeout; do
     [ -n "$label" ] || continue
     rm -rf .lbwc-planning "$TEST_TEMP_DIR/locked"
-    hold_lock
+    hold_lock || record_case_failure "$label" "lock holder did not start"
 
     run env LBWC_TELEMETRY_LOCK_TIMEOUT="$timeout" python3 "$PROJECT_ROOT/scripts/lib/session-telemetry.py" record --event command --outcome success
 
     release_lock
-    [ "$status" -eq 2 ] || fail_case "$label" "status=2" "status=$status output=$output"
-    case "$output" in
-      *"timed out waiting for telemetry lock"*) ;;
-      *) fail_case "$label" "lock timeout message" "$output" ;;
-    esac
+    expect_case "$label" 2 "timed out waiting for telemetry lock"
   done <<'CASES'
 short-timeout~0.05
 nonfinite-timeout-uses-default~nan
 unparsable-timeout-uses-default~abc
 CASES
+
+  assert_no_case_failures
 }

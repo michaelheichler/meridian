@@ -11,7 +11,7 @@ teardown() {
   teardown_temp_dir
 }
 
-@test "compile-verify-context selects the plans, round, header, and uat_path for each scope" {
+@test "compile-verify-context selects plans, round, header and uat_path per scope and kind, and rejects a bad kind" {
   cvc_run_cases <<'CASES'
 == remediation-only-completed-round-emits-only-round-plans
 @plan 03-01-PLAN.md|01|Original login form|Email field validates format
@@ -169,11 +169,6 @@ teardown() {
 ?+ Original feature
 ?+ Fix UAT issues
 ?+ Fix QA deviations
-CASES
-}
-
-@test "compile-verify-context rejects a missing or invalid remediation kind" {
-  cvc_run_cases <<'CASES'
 == invalid-kind-value
 ?f --remediation-only --remediation-kind invalid
 ?s 1
@@ -190,11 +185,6 @@ CASES
 ?f --remediation-kind --remediation-only
 ?s 1
 ?+ requires a value
-CASES
-}
-
-@test "compile-verify-context limits remediation rounds to the requested kind" {
-  cvc_run_cases <<'CASES'
 == kind-uat-skips-qa-when-both-dirs-exist
 @plan 03-01-PLAN.md|01|Root plan|
 @sum 03-01-SUMMARY.md|complete|Root feature

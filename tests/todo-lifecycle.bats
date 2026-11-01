@@ -192,7 +192,10 @@ expect_snapshot_invalid_everywhere() {
   expect_json "$label" '.status' error
 }
 
-@test "snapshot-show classifies stored payloads and reports a missing snapshot" {
+@test "snapshot-save and snapshot-show keep payloads per sanitized session without masking list errors" {
+  local error_json='{"status":"error","message":"STATE.md not found at .lbwc-planning/STATE.md. Run /lbwc:init to set up your project."}'
+  local session_a session_b planning_dir_a planning_dir_b
+  local snapshot_path_a snapshot_path_b output_a output_b snapshot_a snapshot_b
   while IFS='|' read -r label payload expected_status expected_code; do
     [ -n "$label" ] || continue
     rm -f "$TEST_SNAPSHOT_PATH"
@@ -209,41 +212,16 @@ missing-snapshot|-|error|snapshot_missing
 valid-empty-payload|{"status":"empty","state_path":".lbwc-planning/STATE.md","section":null,"count":0,"filter":null,"display":"No pending todos.","items":[]}|empty|-
 valid-no-match-payload|{"status":"no-match","state_path":".lbwc-planning/STATE.md","section":"## Todos","count":0,"filter":"high","display":"No high-priority todos found.","items":[]}|no-match|-
 CASES
-}
 
-@test "snapshot-save preserves list error payloads without masking them" {
-  local error_json='{"status":"error","message":"STATE.md not found at .lbwc-planning/STATE.md. Run /lbwc:init to set up your project."}'
-
+  rm -f "$TEST_SNAPSHOT_PATH"
   run_piped "$error_json" "$SCRIPT" snapshot-save
-  expect_status save 0
-  expect_json save '.status' ok
-
+  expect_status error-payload-save 0
+  expect_json error-payload-save '.status' ok
   run bash "$SCRIPT" snapshot-show
-  expect_status show 0
-  expect_json show '.status' error
-  expect_json show '.message | contains("STATE.md not found")' true
-}
+  expect_status error-payload-show 0
+  expect_json error-payload-show '.status' error
+  expect_json error-payload-show '.message | contains("STATE.md not found")' true
 
-@test "snapshot path sanitizes CLAUDE_SESSION_ID" {
-  write_state_recent_activity
-  export CLAUDE_SESSION_ID="../unsafe session id $(unique_session_id sanitize)"
-
-  run bash "$LIST_SCRIPT"
-  [ "$status" -eq 0 ]
-  run_piped "$output" "$SCRIPT" snapshot-save
-  expect_status save 0
-  expect_json save '.status' ok
-  expect_json save '.path | startswith("/tmp/.lbwc-last-list-view-")' true
-  expect_json save '.path | contains("../")' false
-
-  run bash "$SCRIPT" snapshot-show
-  expect_status show 0
-  expect_json show '.status' ok
-}
-
-@test "distinct session ids isolate snapshot files" {
-  local session_a session_b planning_dir_a planning_dir_b
-  local snapshot_path_a snapshot_path_b output_a output_b snapshot_a snapshot_b
   session_a="$(unique_session_id a)"
   session_b="$(unique_session_id b)"
   planning_dir_a="$TEST_TEMP_DIR/session-a/.lbwc-planning"
@@ -263,7 +241,7 @@ EOF
   snapshot_path_a=$(snapshot_path_for_session_id "$session_a")
   snapshot_path_b=$(snapshot_path_for_session_id "$session_b")
   EXTRA_SNAPSHOT_PATHS="$snapshot_path_a $snapshot_path_b"
-  [ "$snapshot_path_a" != "$snapshot_path_b" ]
+  [ "$snapshot_path_a" != "$snapshot_path_b" ] || fail_case session-isolation "both sessions share $snapshot_path_a"
 
   output_a=$(CLAUDE_SESSION_ID="$session_a" LBWC_PLANNING_DIR="$planning_dir_a" bash "$SCRIPT" list-with-snapshot high)
   output_b=$(CLAUDE_SESSION_ID="$session_b" LBWC_PLANNING_DIR="$planning_dir_b" bash "$SCRIPT" list-with-snapshot high)
@@ -272,11 +250,26 @@ EOF
 
   expect_same_json session-a "$snapshot_a" "$output_a"
   expect_same_json session-b "$snapshot_b" "$output_b"
-  [ "$(printf '%s' "$snapshot_a" | jq -r '.items[0].command_text')" = "Refactor auth module" ]
-  [ "$(printf '%s' "$snapshot_b" | jq -r '.items[0].command_text')" = "Different task" ]
+  [ "$(printf '%s' "$snapshot_a" | jq -r '.items[0].command_text')" = "Refactor auth module" ] \
+    || fail_case session-a "unexpected first item in $snapshot_a"
+  [ "$(printf '%s' "$snapshot_b" | jq -r '.items[0].command_text')" = "Different task" ] \
+    || fail_case session-b "unexpected first item in $snapshot_b"
+
+  write_state_recent_activity
+  export CLAUDE_SESSION_ID="../unsafe session id $(unique_session_id sanitize)"
+  run bash "$LIST_SCRIPT"
+  expect_status sanitize-list 0
+  run_piped "$output" "$SCRIPT" snapshot-save
+  expect_status sanitize-save 0
+  expect_json sanitize-save '.status' ok
+  expect_json sanitize-save '.path | startswith("/tmp/.lbwc-last-list-view-")' true
+  expect_json sanitize-save '.path | contains("../")' false
+  run bash "$SCRIPT" snapshot-show
+  expect_status sanitize-show 0
+  expect_json sanitize-show '.status' ok
 }
 
-@test "list-with-snapshot returns the list output and stores exactly that snapshot" {
+@test "list-with-snapshot stores its output, snapshot consumers read it back, and every consumer rejects a malformed snapshot" {
   while IFS='|' read -r label state filter expected_status count section display first_text first_index; do
     [ -n "$label" ] || continue
     rm -f "$TEST_SNAPSHOT_PATH"
@@ -304,9 +297,25 @@ EOF
 filtered-match|recent_activity|high|ok|1|## Todos|-|Refactor auth module|2
 filtered-empty|no_todos|high|empty|0|null|No pending todos.|-|-
 CASES
-}
 
-@test "snapshot schema validation rejects malformed stored snapshots on every consumer" {
+  rm -f "$TEST_SNAPSHOT_PATH"
+  write_state_recent_activity
+  run bash "$SCRIPT" list-with-snapshot
+  expect_status resolve-list 0
+  run bash "$RESOLVE_SCRIPT" 1 --session-snapshot --validate-live
+  expect_status resolve 0
+  expect_json resolve '.status' ok
+  expect_json resolve '.selection_source' snapshot
+
+  save_snapshot high
+  run bash "$SCRIPT" snapshot-select 1
+  expect_status select 0
+  expect_json select '.status' ok
+  expect_json select '.priority' high
+  expect_json select '.num' 1
+  expect_json select '.section_index' 2
+  expect_json select '.normalized_text' "Refactor auth module"
+
   while IFS='|' read -r label payload; do
     [ -n "$label" ] || continue
     write_raw_snapshot "$payload"
@@ -344,32 +353,7 @@ raw-displayed-line-changes|- [HIGH] Change me (added 2026-04-01)|- Change me (ad
 CASES
 }
 
-@test "resolve-todo-item validate-live returns ok for a matching snapshot selection" {
-  write_state_recent_activity
-
-  run bash "$SCRIPT" list-with-snapshot
-  [ "$status" -eq 0 ]
-
-  run bash "$RESOLVE_SCRIPT" 1 --session-snapshot --validate-live
-  expect_status resolve 0
-  expect_json resolve '.status' ok
-  expect_json resolve '.selection_source' snapshot
-}
-
-@test "snapshot-select preserves filtered numbering and section index" {
-  write_state_recent_activity
-  save_snapshot high
-
-  run bash "$SCRIPT" snapshot-select 1
-  expect_status select 0
-  expect_json select '.status' ok
-  expect_json select '.priority' high
-  expect_json select '.num' 1
-  expect_json select '.section_index' 2
-  expect_json select '.normalized_text' "Refactor auth module"
-}
-
-@test "remove and pickup rewrite only the Todos section and log the change" {
+@test "remove and pickup rewrite only the Todos section, log the change, and clean the detail sidecar only when safe" {
   while IFS='|' read -r label state source invocation expected_status present absent; do
     [ -n "$label" ] || continue
     rm -f "$TEST_SNAPSHOT_PATH"
@@ -387,9 +371,7 @@ remove-from-filtered-snapshot|recent_activity|snapshot-high|remove none safe|ok|
 pickup-restores-none-and-creates-activity-log|without_activity|list-first|pickup /lbwc:fix none keep|ok|=## Activity Log~=None.~Picked up todo via /lbwc:fix: Only todo item|- Only todo item (added 2026-04-01)
 remove-leaves-legacy-completed-todos|legacy|list-first|remove none keep|partial|=### Completed Todos~Already completed item~Follow-up todo|- [KNOWN-ISSUE] TestCrash (CrashTests.swift): signal trap (phase 03, seen 1x) (added 2026-04-01) (ref:abc12345)
 CASES
-}
 
-@test "remove and pickup clean the detail sidecar only when it is safe" {
   while IFS='|' read -r label invocation sidecar expected_status warned sidecar_after; do
     [ -n "$label" ] || continue
     rm -f "$LBWC_PLANNING_DIR/todo-details.json"
@@ -449,7 +431,7 @@ remove_known_issue_case() {
   run_piped "$item_json" "$SCRIPT" remove none keep
 }
 
-@test "removing a known-issue todo backed by the registry ends ok and blocks re-promotion" {
+@test "removing a known-issue todo ends ok and blocks re-promotion with a registry, and ends partial with a warning without one" {
   while IFS='|' read -r label todo_line sidecar; do
     [ -n "$label" ] || continue
     rm -f "$LBWC_PLANNING_DIR/todo-details.json" "$LBWC_PLANNING_DIR/phases/03-test-phase/known-issues.json"
@@ -465,9 +447,8 @@ remove_known_issue_case() {
 remove-with-signature-in-sidecar|$KNOWN_ISSUE_REF_LINE|yes
 remove-legacy-line-resolved-through-registry|$KNOWN_ISSUE_LEGACY_LINE|no
 CASES
-}
 
-@test "removing a known-issue todo without a usable registry ends partial with a re-promotion warning" {
+  rm -f "$LBWC_PLANNING_DIR/phases/03-test-phase/03-01-SUMMARY.md"
   while IFS='|' read -r label todo_line sidecar; do
     [ -n "$label" ] || continue
     rm -f "$LBWC_PLANNING_DIR/todo-details.json" "$LBWC_PLANNING_DIR/phases/03-test-phase/known-issues.json"

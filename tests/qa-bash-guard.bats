@@ -64,51 +64,14 @@ registered-worker-template-bash|lbwc-python-engineer-a|python-engineer|registere
 running-worker-ordinary-bash|lbwc-docs-a|docs|running|-|printf '%s\n' ready
 forged-identity-ordinary-command|lbwc-forged-agent|-|-|-|printf x
 CASES
-}
 
-@test "bash-guard allows an empty stdin payload" {
   run bash -c "printf '' | bash '$SCRIPTS_DIR/bash-guard.sh'"
-
   expect_status empty-stdin 0
   expect_output_empty empty-stdin
 }
 
-@test "bash-guard blocks commands on the destructive list unless overridden" {
-  while IFS='|' read -r label setup reason command; do
-    [ -n "$label" ] || continue
-    apply_setup "$setup"
-    run run_guard "$command" "" "$(override_for "$setup")"
-    expect_status "$label" 2
-    expect_output_has "$label" "$reason"
-    expect_output_has "$label" "Hint: Use LBWC_ALLOW_DESTRUCTIVE=1 to override."
-  done <<'CASES'
-recursive-delete|-|destructive command detected|rm -rf /var/lib/mysql
-force-push|-|destructive command detected|git push --force origin main
-local-list-entry|local-list|destructive command detected (frobnicate --all|frobnicate --all
-CASES
-}
-
-@test "bash-guard keeps scout and qa read-only even with the destructive override" {
-  while IFS='|' read -r label id role setup reason command; do
-    [ -n "$label" ] || continue
-    register_agent "$id" "$role" "-"
-    run run_guard "$command" "$id" "$(override_for "$setup")"
-    expect_status "$label" 2
-    expect_output_has "$label" "$reason"
-  done <<'CASES'
-scout-write-redirect|scout-1|scout|-|write redirection, substitution, or eval|echo hi > out.txt
-scout-append-redirect|scout-1|scout|-|write redirection, substitution, or eval|echo hi >> out.txt
-scout-command-substitution|scout-1|scout|-|write redirection, substitution, or eval|echo $(whoami)
-scout-backtick-substitution|scout-1|scout|-|write redirection, substitution, or eval|echo `whoami`
-scout-eval|scout-1|scout|-|write redirection, substitution, or eval|eval ls
-scout-nested-shell|scout-1|scout|-|nested shell execution|bash -c ls
-scout-filesystem-mutation-in-pipe|scout-1|scout|-|filesystem mutation command|echo hi | tee out.txt
-qa-filesystem-mutation|qa-1|qa|-|filesystem mutation command|mkdir newdir
-scout-redirect-with-destructive-override|scout-1|scout|override|write redirection, substitution, or eval|echo hi > out.txt
-CASES
-}
-
-@test "bash-guard confines generated agents to the main-session command policy" {
+@test "bash-guard blocks read-only roles, generated agents and destructive commands, and fails closed without policy or jq" {
+  local isolated_plugin="$TEST_TEMP_DIR/isolated-plugin" no_jq_path="$TEST_TEMP_DIR/no-jq-bin"
   while IFS='|' read -r label id role state setup reason command; do
     [ -n "$label" ] || continue
     register_agent "$id" "$role" "$state"
@@ -116,6 +79,15 @@ CASES
     expect_status "$label" 2
     expect_output_has "$label" "$reason"
   done <<'CASES'
+scout-write-redirect|scout-1|scout|-|-|write redirection, substitution, or eval|echo hi > out.txt
+scout-append-redirect|scout-1|scout|-|-|write redirection, substitution, or eval|echo hi >> out.txt
+scout-command-substitution|scout-1|scout|-|-|write redirection, substitution, or eval|echo $(whoami)
+scout-backtick-substitution|scout-1|scout|-|-|write redirection, substitution, or eval|echo `whoami`
+scout-eval|scout-1|scout|-|-|write redirection, substitution, or eval|eval ls
+scout-nested-shell|scout-1|scout|-|-|nested shell execution|bash -c ls
+scout-filesystem-mutation-in-pipe|scout-1|scout|-|-|filesystem mutation command|echo hi | tee out.txt
+qa-filesystem-mutation|qa-1|qa|-|-|filesystem mutation command|mkdir newdir
+scout-redirect-with-destructive-override|scout-1|scout|-|override|write redirection, substitution, or eval|echo hi > out.txt
 protected-policy-read|lbwc-docs-a|docs|running|-|protected control path|cat config/subagent-critical-execution.txt
 protected-policy-redirect|lbwc-docs-a|docs|running|-|protected control path|printf x > config/subagent-critical-execution.txt
 protected-python-policy|lbwc-docs-a|docs|running|-|protected control path|python3 -c "open('config/subagent-critical-execution.txt', 'w')"
@@ -161,22 +133,28 @@ critical-remote-transfer-escaped|lbwc-docs-a|docs|running|-|critical execution c
 critical-privilege|lbwc-docs-a|docs|running|-|critical execution command|sudo true
 critical-termination|lbwc-docs-a|docs|running|-|critical execution command|kill 123
 CASES
-}
 
-@test "bash-guard blocks generated agents when the critical execution policy file is missing" {
-  local isolated_plugin="$TEST_TEMP_DIR/isolated-plugin"
+  register_agent "" "-" "-"
+  while IFS='|' read -r label setup reason command; do
+    [ -n "$label" ] || continue
+    apply_setup "$setup"
+    run run_guard "$command" "" "$(override_for "$setup")"
+    expect_status "$label" 2
+    expect_output_has "$label" "$reason"
+    expect_output_has "$label" "Hint: Use LBWC_ALLOW_DESTRUCTIVE=1 to override."
+  done <<'CASES'
+recursive-delete|-|destructive command detected|rm -rf /var/lib/mysql
+force-push|-|destructive command detected|git push --force origin main
+local-list-entry|local-list|destructive command detected (frobnicate --all|frobnicate --all
+CASES
+
   mkdir -p "$isolated_plugin/scripts"
   cp "$SCRIPTS_DIR/bash-guard.sh" "$isolated_plugin/scripts/bash-guard.sh"
   register_agent lbwc-docs-a docs running
-
   run bash -c 'jq -cn "{tool_input:{command:\"printf x\"},agent_id:\"lbwc-docs-a\"}" | bash "$1"' _ "$isolated_plugin/scripts/bash-guard.sh"
-
   expect_status policy-file-missing 2
   expect_output_has policy-file-missing "critical execution policy is unavailable"
-}
 
-@test "bash-guard fails closed when jq is missing" {
-  local no_jq_path="$TEST_TEMP_DIR/no-jq-bin"
   mkdir -p "$no_jq_path"
   ln -s "$(command -v bash)" "$no_jq_path/bash"
 
