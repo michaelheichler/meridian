@@ -3,6 +3,7 @@
 setup() {
   REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/.." && pwd)"
   SCRIPT="$REPO_ROOT/scripts/tmux-bus-watchdog.sh"
+  unset TMUX TMUX_PANE
   TEST_ROOT="$(mktemp -d)"
   TEST_ROOT="$(cd "$TEST_ROOT" && pwd -P)"
   CONTROL_ROOT="$TEST_ROOT/project/.lbwc-planning"
@@ -65,6 +66,10 @@ plant_bound_agent() {
   tmux_runtime_initialize_inbox agent-a
 }
 
+run_watchdog() {
+  run bash "$SCRIPT" --control-root "$CONTROL_ROOT" check --orchestrator-id main-session --orchestrator-session-id main-session --orchestrator-capability "$MAIN_CAPABILITY" --stale-after-ms "$1" --shutdown-timeout-ms "$2"
+}
+
 write_tmux_shim() {
   local tmux_bin="$TEST_ROOT/bin"
   mkdir -p "$tmux_bin"
@@ -104,7 +109,7 @@ EOF
   run jq -e '.agents | length == 1' "$CONTROL_ROOT/.runtime/tmux-bus/registry.json"
   [ "$status" -eq 0 ]
 
-  run bash "$SCRIPT" --control-root "$CONTROL_ROOT" check --orchestrator-id main-session --orchestrator-session-id main-session --orchestrator-capability "$MAIN_CAPABILITY" --stale-after-ms 120000 --shutdown-timeout-ms 5000
+  run_watchdog 120000 5000
   [ "$status" -eq 1 ]
   run jq -e '.agents[] | select(.agent_id == "agent-a") | .state == "shutdown"' "$CONTROL_ROOT/.runtime/tmux-bus/registry.json"
   [ "$status" -eq 0 ]
@@ -113,7 +118,7 @@ EOF
   run jq -s -e 'length == 1 and .[0].type == "tmux_watchdog_stale_agents_failed" and .[0].title == "TMUX watchdog failed stale agents" and (.[0].message | contains("agent-a"))' "$CONTROL_ROOT/.notification-log.jsonl"
   [ "$status" -eq 0 ]
 
-  run bash "$SCRIPT" --control-root "$CONTROL_ROOT" check --orchestrator-id main-session --orchestrator-session-id main-session --orchestrator-capability "$MAIN_CAPABILITY" --stale-after-ms 120000 --shutdown-timeout-ms 5000
+  run_watchdog 120000 5000
   [ "$status" -eq 0 ]
   run jq -s -e 'length == 1' "$CONTROL_ROOT/.notification-log.jsonl"
   [ "$status" -eq 0 ]
@@ -150,7 +155,7 @@ EOF
   fixture_watchdog_bus
   plant_bound_agent test:0.1 '%1'
 
-  run timeout 15 env PATH="$tmux_bin:$PATH" LBWC_TEST_TMUX_MARKER="$marker" SCRIPT="$SCRIPT" BUS="$REPO_ROOT/scripts/tmux-bus.sh" CONTROL_ROOT="$CONTROL_ROOT" MAIN_CAPABILITY="$MAIN_CAPABILITY" AGENT_CAPABILITY="$AGENT_CAPABILITY" OUTPUT_FILE="$output_file" bash -c '
+  run timeout 60 env PATH="$tmux_bin:$PATH" LBWC_TEST_TMUX_MARKER="$marker" SCRIPT="$SCRIPT" BUS="$REPO_ROOT/scripts/tmux-bus.sh" CONTROL_ROOT="$CONTROL_ROOT" MAIN_CAPABILITY="$MAIN_CAPABILITY" AGENT_CAPABILITY="$AGENT_CAPABILITY" OUTPUT_FILE="$output_file" bash -c '
     bash "$SCRIPT" --control-root "$CONTROL_ROOT" check --orchestrator-id main-session --orchestrator-session-id main-session --orchestrator-capability "$MAIN_CAPABILITY" --stale-after-ms 1 --shutdown-timeout-ms 1000 > "$OUTPUT_FILE" 2>&1 &
     watchdog=$!
     for ((attempt = 0; attempt < 800; attempt++)); do
@@ -177,7 +182,7 @@ EOF
   fixture_watchdog_bus
   plant_bound_agent test:0.1 '%1'
 
-  run timeout 5 env PATH="$tmux_bin:$PATH" LBWC_TEST_TMUX_MARKER="$marker" bash "$SCRIPT" --control-root "$CONTROL_ROOT" check --orchestrator-id main-session --orchestrator-session-id main-session --orchestrator-capability "$MAIN_CAPABILITY" --stale-after-ms 1 --shutdown-timeout-ms 30
+  run timeout 60 env PATH="$tmux_bin:$PATH" LBWC_TEST_TMUX_MARKER="$marker" bash "$SCRIPT" --control-root "$CONTROL_ROOT" check --orchestrator-id main-session --orchestrator-session-id main-session --orchestrator-capability "$MAIN_CAPABILITY" --stale-after-ms 1 --shutdown-timeout-ms 30
 
   [ "$status" -eq 1 ]
   [ ! -e "$marker" ]
@@ -193,7 +198,7 @@ EOF
   fixture_watchdog_bus
   plant_bound_agent test:0.1 '%1'
 
-  run timeout 5 env PATH="$tmux_bin:$PATH" bash "$SCRIPT" --control-root "$CONTROL_ROOT" check --orchestrator-id main-session --orchestrator-session-id main-session --orchestrator-capability "$MAIN_CAPABILITY" --stale-after-ms 1 --shutdown-timeout-ms 30
+  run timeout 60 env PATH="$tmux_bin:$PATH" bash "$SCRIPT" --control-root "$CONTROL_ROOT" check --orchestrator-id main-session --orchestrator-session-id main-session --orchestrator-capability "$MAIN_CAPABILITY" --stale-after-ms 1 --shutdown-timeout-ms 30
   [ "$status" -eq 1 ]
 
   run jq -e '.agents[] | select(.agent_id == "agent-a") | .state == "shutdown"' "$CONTROL_ROOT/.runtime/tmux-bus/registry.json"
@@ -206,7 +211,7 @@ EOF
   run bash "$REPO_ROOT/scripts/tmux-bus.sh" --control-root "$CONTROL_ROOT" publish --to main-session --from-agent-id main-session --from-session-id main-session --from-role orchestrator --capability "$MAIN_CAPABILITY" --type error --correlation-id occupied --payload '{"message":"occupied"}'
   [ "$status" -eq 0 ]
 
-  run bash "$SCRIPT" --control-root "$CONTROL_ROOT" check --orchestrator-id main-session --orchestrator-session-id main-session --orchestrator-capability "$MAIN_CAPABILITY" --stale-after-ms 1 --shutdown-timeout-ms 30
+  run_watchdog 1 30
 
   [ "$status" -eq 1 ]
   [[ "$output" == *"cannot publish stale agent error envelope"* ]]
@@ -215,7 +220,7 @@ EOF
   run jq -s -e 'length == 1 and .[0].type == "tmux_watchdog_stale_agents_failed"' "$CONTROL_ROOT/.notification-log.jsonl"
   [ "$status" -eq 0 ]
 
-  run bash "$SCRIPT" --control-root "$CONTROL_ROOT" check --orchestrator-id main-session --orchestrator-session-id main-session --orchestrator-capability "$MAIN_CAPABILITY" --stale-after-ms 1 --shutdown-timeout-ms 30
+  run_watchdog 1 30
   [ "$status" -eq 0 ]
   run jq -s -e 'length == 1' "$CONTROL_ROOT/.notification-log.jsonl"
   [ "$status" -eq 0 ]

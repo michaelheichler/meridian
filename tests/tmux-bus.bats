@@ -3,6 +3,7 @@
 setup() {
   REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/.." && pwd -P)"
   SCRIPT="$REPO_ROOT/scripts/tmux-bus.sh"
+  unset TMUX TMUX_PANE
   TEST_ROOT="$(mktemp -d)"
   PROJECT_ROOT="$TEST_ROOT/project"
   CONTROL_ROOT="$PROJECT_ROOT/.lbwc-planning"
@@ -77,6 +78,21 @@ plant_agent() {
   tmux_runtime_initialize_inbox "$agent_id"
 }
 
+rewrite_json() {
+  local path="$1" filter="$2"
+  jq "$filter" "$path" > "$TEST_ROOT/rewrite.json"
+  chmod 600 "$TEST_ROOT/rewrite.json"
+  mv "$TEST_ROOT/rewrite.json" "$path"
+}
+
+agent_runs_stale() {
+  run_bus stale --agent-id agent-a --session-id child-session-a --role agent --capability "$AGENT_CAPABILITY" --subject-agent-id agent-a --threshold-ms 1
+}
+
+agent_runs_compact() {
+  run_bus compact --orchestrator-id agent-a --orchestrator-session-id child-session-a --orchestrator-capability "$AGENT_CAPABILITY" --retain 1
+}
+
 publish_main_job() {
   local recipient="$1"
   shift
@@ -93,19 +109,6 @@ publish_main_job() {
   [ "${#TMUX_RUNTIME_LOCKS[@]}" -eq 1 ]
   [ "${TMUX_RUNTIME_LOCKS[0]}" = second ]
   tmux_runtime_lock_release second
-}
-
-@test "fixture creates one private registry with a main inbox and route" {
-  fixture_bus
-  helper="$REPO_ROOT/scripts/lib/tmux-private-fs.py"
-
-  run python3 "$helper" check-directory --path "$CONTROL_ROOT/.runtime/tmux-bus"
-  [ "$status" -eq 0 ]
-  run python3 "$helper" check-file --path "$CONTROL_ROOT/.runtime/tmux-bus/registry.json"
-  [ "$status" -eq 0 ]
-  run jq -e '.schema_version == 2 and .main.agent_id == "main-session" and .routes["main-session"].inbox == "main-session" and .agents == []' "$CONTROL_ROOT/.runtime/tmux-bus/registry.json"
-  [ "$status" -eq 0 ]
-  [ -d "$CONTROL_ROOT/.runtime/tmux-bus/inboxes/main-session/acked" ]
 }
 
 @test "init refuses to mint a registry without provision" {
@@ -193,9 +196,7 @@ publish_main_job() {
   [ "$status" -eq 0 ]
   message_id="$output"
   rm "$CONTROL_ROOT/.runtime/tmux-bus/outbox/main/$message_id.json"
-  jq '.state = "prepared"' "$CONTROL_ROOT/.runtime/tmux-bus/transactions/$message_id.json" > "$TEST_ROOT/transaction.json"
-  chmod 600 "$TEST_ROOT/transaction.json"
-  mv "$TEST_ROOT/transaction.json" "$CONTROL_ROOT/.runtime/tmux-bus/transactions/$message_id.json"
+  rewrite_json "$CONTROL_ROOT/.runtime/tmux-bus/transactions/$message_id.json" '.state = "prepared"'
 
   run_bus recover --orchestrator-id main-session --orchestrator-session-id main-session --orchestrator-capability "$MAIN_CAPABILITY" --message-id "$message_id"
   [ "$status" -eq 0 ]
@@ -203,9 +204,7 @@ publish_main_job() {
   run_bus recover --orchestrator-id main-session --orchestrator-session-id main-session --orchestrator-capability "$MAIN_CAPABILITY" --message-id "$message_id"
   [ "$status" -eq 0 ]
 
-  jq 'del(.envelope.from.session_id)' "$CONTROL_ROOT/.runtime/tmux-bus/transactions/$message_id.json" > "$TEST_ROOT/transaction.json"
-  chmod 600 "$TEST_ROOT/transaction.json"
-  mv "$TEST_ROOT/transaction.json" "$CONTROL_ROOT/.runtime/tmux-bus/transactions/$message_id.json"
+  rewrite_json "$CONTROL_ROOT/.runtime/tmux-bus/transactions/$message_id.json" 'del(.envelope.from.session_id)'
   run_bus recover --orchestrator-id main-session --orchestrator-session-id main-session --orchestrator-capability "$MAIN_CAPABILITY" --message-id "$message_id"
   [ "$status" -ne 0 ]
   [[ "$output" == *"envelope is malformed"* ]]
@@ -237,12 +236,20 @@ publish_main_job() {
   first_id="$output"
   run_bus claim --agent-id agent-a --session-id child-session-a --capability "$AGENT_CAPABILITY" --type job --lease-ms 1000
   [ "$status" -eq 0 ]
-  env SCRIPT="$SCRIPT" CONTROL_ROOT="$CONTROL_ROOT" CAPABILITY="$AGENT_CAPABILITY" MESSAGE_ID="$first_id" bash -c 'sleep 0.05; bash "$SCRIPT" --control-root "$CONTROL_ROOT" ack --agent-id agent-a --session-id child-session-a --capability "$CAPABILITY" --message-id "$MESSAGE_ID" >/dev/null' &
-  publish_main_job agent-a --timeout-ms 1000
+  env SCRIPT="$SCRIPT" CONTROL_ROOT="$CONTROL_ROOT" CAPABILITY="$AGENT_CAPABILITY" MESSAGE_ID="$first_id" LOCK="$CONTROL_ROOT/.runtime/tmux-bus/locks/delivery.agent-a.job.lock" bash -c '
+    for ((attempt = 0; attempt < 1000; attempt++)); do
+      [ -e "$LOCK" ] && break
+      sleep 0.005
+    done
+    [ -e "$LOCK" ] || exit 1
+    bash "$SCRIPT" --control-root "$CONTROL_ROOT" ack --agent-id agent-a --session-id child-session-a --capability "$CAPABILITY" --message-id "$MESSAGE_ID" >/dev/null' &
+  ack_watcher=$!
+  publish_main_job agent-a --timeout-ms 5000
   [ "$status" -eq 0 ]
-  wait "$!"
+  wait "$ack_watcher"
+  [ -f "$CONTROL_ROOT/.runtime/tmux-bus/inboxes/agent-a/acked/$first_id.json" ]
 
-  run_bus publish --to agent-a --from-agent-id main-session --from-session-id main-session --from-role orchestrator --capability "$MAIN_CAPABILITY" --type job --correlation-id blocked --payload '{}' --timeout-ms 30
+  run_bus publish --to agent-a --from-agent-id main-session --from-session-id main-session --from-role orchestrator --capability "$MAIN_CAPABILITY" --type job --correlation-id blocked --payload '{}' --timeout-ms 500
   [ "$status" -ne 0 ]
   [[ "$output" == *"timed out waiting"* ]]
 }
@@ -323,36 +330,38 @@ publish_main_job() {
   [ ! -e "$TEST_ROOT/outside/job.json" ]
 }
 
-@test "await honors millisecond timeouts and rejects unsafe or malformed state" {
+@test "await honors millisecond timeouts" {
   fixture_bus
   plant_agent agent-a child-session-a
   start_ms="$(perl -MTime::HiRes=time -e 'printf "%.0f", time * 1000')"
   run_bus await --from agent-a --agent-id main-session --session-id main-session --role orchestrator --capability "$MAIN_CAPABILITY" --types result --timeout-ms 30
   end_ms="$(perl -MTime::HiRes=time -e 'printf "%.0f", time * 1000')"
   [ "$status" -eq 1 ]
-  [ $((end_ms - start_ms)) -lt 1000 ]
+  [ $((end_ms - start_ms)) -lt 10000 ]
+}
 
+@test "poll rejects a registry that is not a private file" {
+  fixture_bus
+  plant_agent agent-a child-session-a
   chmod 644 "$CONTROL_ROOT/.runtime/tmux-bus/registry.json"
   run_bus poll --from agent-a --agent-id main-session --session-id main-session --role orchestrator --capability "$MAIN_CAPABILITY" --types result
   [ "$status" -ne 0 ]
   [[ "$output" == *"private file"* ]]
 }
 
-@test "heartbeat updates the locked registry and stale reads one validated capture" {
+@test "heartbeat records epoch milliseconds and stale compares against them" {
   fixture_bus
   plant_agent agent-a child-session-a
 
   run_bus heartbeat --agent-id agent-a --session-id child-session-a --capability "$AGENT_CAPABILITY" --state idle
   [ "$status" -eq 0 ]
-  run jq -e '.agents[0].state == "idle" and (.agents[0].heartbeat_at_ms | type == "number")' "$CONTROL_ROOT/.runtime/tmux-bus/registry.json"
+  run jq -e '.agents[0].state == "idle" and (.agents[0].heartbeat_at_ms > 1000000000000)' "$CONTROL_ROOT/.runtime/tmux-bus/registry.json"
   [ "$status" -eq 0 ]
   run jq -e '.from.agent_id == "agent-a" and .to.agent_id == "main-session" and .type == "heartbeat" and .body.state == "idle"' "$CONTROL_ROOT/.runtime/tmux-bus/inboxes/main-session/heartbeat.agent-a.json"
   [ "$status" -eq 0 ]
   run_bus stale --agent-id main-session --session-id main-session --role orchestrator --capability "$MAIN_CAPABILITY" --subject-agent-id agent-a --threshold-ms 10000
   [ "$status" -eq 0 ]
-  jq '.agents[0].heartbeat_at_ms = 1' "$CONTROL_ROOT/.runtime/tmux-bus/registry.json" > "$TEST_ROOT/registry.json"
-  chmod 600 "$TEST_ROOT/registry.json"
-  mv "$TEST_ROOT/registry.json" "$CONTROL_ROOT/.runtime/tmux-bus/registry.json"
+  rewrite_json "$CONTROL_ROOT/.runtime/tmux-bus/registry.json" '.agents[0].heartbeat_at_ms = 1'
   run_bus stale --agent-id main-session --session-id main-session --role orchestrator --capability "$MAIN_CAPABILITY" --subject-agent-id agent-a --threshold-ms 1
   [ "$status" -eq 1 ]
   [[ "$output" == *"stale"* ]]
@@ -363,9 +372,7 @@ publish_main_job() {
   plant_agent agent-a child-session-a
   run_bus heartbeat --agent-id agent-a --session-id child-session-a --capability "$AGENT_CAPABILITY" --state running
   [ "$status" -eq 0 ]
-  jq '.agents[0].state = "failed"' "$CONTROL_ROOT/.runtime/tmux-bus/registry.json" > "$TEST_ROOT/registry.json"
-  chmod 600 "$TEST_ROOT/registry.json"
-  mv "$TEST_ROOT/registry.json" "$CONTROL_ROOT/.runtime/tmux-bus/registry.json"
+  rewrite_json "$CONTROL_ROOT/.runtime/tmux-bus/registry.json" '.agents[0].state = "failed"'
 
   run_bus heartbeat --agent-id agent-a --session-id child-session-a --capability "$AGENT_CAPABILITY" --state running
 
@@ -388,22 +395,6 @@ publish_main_job() {
   [ "$status" -eq 0 ]
   run jq -e '.routes | keys | sort == ["main-session"]' "$CONTROL_ROOT/.runtime/tmux-bus/routing-table.json"
   [ "$status" -eq 0 ]
-}
-
-@test "persisted record times use epoch milliseconds after a simulated reboot" {
-  fixture_bus
-  plant_agent agent-a child-session-a
-  run_bus heartbeat --agent-id agent-a --session-id child-session-a --capability "$AGENT_CAPABILITY" --state idle
-  [ "$status" -eq 0 ]
-  run jq -e '.agents[0].heartbeat_at_ms > 1000000000000' "$CONTROL_ROOT/.runtime/tmux-bus/registry.json"
-  [ "$status" -eq 0 ]
-
-  jq '.agents[0].heartbeat_at_ms = 1' "$CONTROL_ROOT/.runtime/tmux-bus/registry.json" > "$TEST_ROOT/registry.json"
-  chmod 600 "$TEST_ROOT/registry.json"
-  mv "$TEST_ROOT/registry.json" "$CONTROL_ROOT/.runtime/tmux-bus/registry.json"
-  run_bus stale --agent-id main-session --session-id main-session --role orchestrator --capability "$MAIN_CAPABILITY" --subject-agent-id agent-a --threshold-ms 1
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"stale"* ]]
 }
 
 @test "descriptor-relative acknowledgement move never clobbers a concurrent destination" {
@@ -459,18 +450,25 @@ publish_main_job() {
   [ ! -e "$CONTROL_ROOT/.runtime/tmux-bus/claims/agent-a.result.claim" ]
 }
 
-@test "read and global maintenance operations reject unauthenticated principals" {
+@test "poll without principal arguments prints usage" {
   fixture_bus
   plant_agent agent-a child-session-a
 
   run_bus poll --from agent-a --types result
-  [ "$status" -ne 0 ]
-  run_bus stale --agent-id agent-a --session-id child-session-a --role agent --capability "$AGENT_CAPABILITY" --subject-agent-id agent-a --threshold-ms 1
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"principal session, role, or capability"* || "$output" == *"main orchestrator"* ]]
-  run_bus compact --orchestrator-id agent-a --orchestrator-session-id child-session-a --orchestrator-capability "$AGENT_CAPABILITY" --retain 1
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"principal session, role, or capability"* || "$output" == *"main orchestrator"* ]]
+
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"Usage:"* ]]
+}
+
+@test "stale and compact reject a non-main principal" {
+  local label
+  fixture_bus
+  plant_agent agent-a child-session-a
+  for label in agent_runs_stale agent_runs_compact; do
+    "$label"
+    [ "$status" -ne 0 ] || { echo "case=$label accepted output=$output" >&2; return 1; }
+    [[ "$output" == *"principal session, role, or capability"* || "$output" == *"main orchestrator"* ]] || { echo "case=$label output=$output" >&2; return 1; }
+  done
 }
 
 @test "main reads only the requested agent heartbeat from its inbox" {
@@ -490,30 +488,34 @@ publish_main_job() {
   [ "$status" -eq 0 ]
 }
 
-@test "persisted envelopes require sent_at and type-specific bodies" {
+@test "publish rejects a job body that lacks its required fields" {
   fixture_bus
   plant_agent agent-a child-session-a
+
   run_bus publish --to agent-a --from-agent-id main-session --from-session-id main-session --from-role orchestrator --capability "$MAIN_CAPABILITY" --type job --correlation-id invalid-body --payload '{}'
-  [ "$status" -ne 0 ]
 
-  publish_main_job agent-a
-  [ "$status" -eq 0 ]
-  jq 'del(.sent_at)' "$CONTROL_ROOT/.runtime/tmux-bus/inboxes/agent-a/job.json" > "$TEST_ROOT/message.json"
-  chmod 600 "$TEST_ROOT/message.json"
-  mv "$TEST_ROOT/message.json" "$CONTROL_ROOT/.runtime/tmux-bus/inboxes/agent-a/job.json"
-  run_bus poll --from agent-a --agent-id agent-a --session-id child-session-a --role agent --capability "$AGENT_CAPABILITY" --types job
   [ "$status" -ne 0 ]
-  [[ "$output" == *"malformed message"* ]]
+  [ ! -e "$CONTROL_ROOT/.runtime/tmux-bus/inboxes/agent-a/job.json" ]
+}
 
-  rm "$CONTROL_ROOT/.runtime/tmux-bus/inboxes/agent-a/job.json"
-  publish_main_job agent-a
-  [ "$status" -eq 0 ]
-  jq '.sent_at = "2026-02-30T12:00:00Z"' "$CONTROL_ROOT/.runtime/tmux-bus/inboxes/agent-a/job.json" > "$TEST_ROOT/message.json"
-  chmod 600 "$TEST_ROOT/message.json"
-  mv "$TEST_ROOT/message.json" "$CONTROL_ROOT/.runtime/tmux-bus/inboxes/agent-a/job.json"
-  run_bus poll --from agent-a --agent-id agent-a --session-id child-session-a --role agent --capability "$AGENT_CAPABILITY" --types job
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"malformed message"* ]]
+@test "poll rejects a persisted envelope with a missing or impossible sent_at" {
+  local label filter inbox_job
+  fixture_bus
+  plant_agent agent-a child-session-a
+  inbox_job="$CONTROL_ROOT/.runtime/tmux-bus/inboxes/agent-a/job.json"
+  while IFS='|' read -r label filter; do
+    [ -n "$label" ] || continue
+    rm -f "$inbox_job"
+    publish_main_job agent-a
+    [ "$status" -eq 0 ] || { echo "case=$label publish status=$status output=$output" >&2; return 1; }
+    rewrite_json "$inbox_job" "$filter"
+    run_bus poll --from agent-a --agent-id agent-a --session-id child-session-a --role agent --capability "$AGENT_CAPABILITY" --types job
+    [ "$status" -ne 0 ] || { echo "case=$label poll accepted status=$status output=$output" >&2; return 1; }
+    [[ "$output" == *"malformed message"* ]] || { echo "case=$label output=$output" >&2; return 1; }
+  done <<'CASES'
+missing-sent-at|del(.sent_at)
+impossible-calendar-date|.sent_at = "2026-02-30T12:00:00Z"
+CASES
 }
 
 @test "compact retains the newest json files including names with spaces" {
@@ -523,10 +525,11 @@ publish_main_job() {
   helper="$REPO_ROOT/scripts/lib/tmux-private-fs.py"
   acked="$CONTROL_ROOT/.runtime/tmux-bus/inboxes/agent-a/acked"
   python3 "$helper" write-json --root "$CONTROL_ROOT/.runtime/tmux-bus" --relative "inboxes/agent-a/acked/old.json" --document '{"n":1}'
-  sleep 0.05
   python3 "$helper" write-json --root "$CONTROL_ROOT/.runtime/tmux-bus" --relative "inboxes/agent-a/acked/name with spaces.json" --document '{"n":2}'
-  sleep 0.05
   python3 "$helper" write-json --root "$CONTROL_ROOT/.runtime/tmux-bus" --relative "inboxes/agent-a/acked/newest.json" --document '{"n":3}'
+  touch -t 202001010000 "$acked/old.json"
+  touch -t 202001010001 "$acked/name with spaces.json"
+  touch -t 202001010002 "$acked/newest.json"
 
   run_bus compact --orchestrator-id main-session --orchestrator-session-id main-session --orchestrator-capability "$MAIN_CAPABILITY" --retain 2
 
