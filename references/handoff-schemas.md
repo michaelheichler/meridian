@@ -221,9 +221,6 @@ Structured verification results.
     "tier": "quick|standard|deep",
     "result": "PASS|FAIL|PARTIAL",
     "checks": {"passed": 18, "failed": 2, "total": 20},
-    "failures": [
-      {"check": "Link integrity", "expected": "All resolve", "actual": "broken ref", "evidence": "line 42"}
-    ],
     "checks_detail": [
       {"id": "MH-01", "category": "must_have", "description": "Feature exists", "status": "PASS", "evidence": "File found at src/feature.js"},
       {"id": "MH-02", "category": "must_have", "description": "Tests pass", "status": "FAIL", "evidence": "2 failures in test suite"},
@@ -232,7 +229,6 @@ Structured verification results.
       {"id": "CC-01", "category": "convention", "description": "kebab-case naming", "status": "PASS", "file": "src/my-module.js", "detail": "follows pattern"},
       {"id": "RM-01", "category": "requirement", "description": "REQ-01 implemented", "status": "PASS", "plan_ref": "PLAN.md §3", "evidence": "function at line 42"}
     ],
-    "body": "## Must-Have Checks\n...",
     "recommendations": ["Fix broken cross-reference before shipping"],
     "pre_existing_issues": [
       {"test": "testName", "file": "path/to/file", "error": "failure message"}
