@@ -282,7 +282,7 @@ Note: `auto_commit` controls source-task commits during Execute mode. Planning a
 | plain_summary | boolean | true/false | true |
 | active_profile | string | profile name or "custom" | default |
 | custom_profiles | object | user-defined profiles | {} |
-| agent_max_turns | object | per-agent turns (number), 0/false = unlimited | scout=15, qa=25, architect=30, debugger=80, lead=50, dev=75 |
+| agent_max_turns | object | per-agent turns (number), 0/false = unlimited | scout=30, qa=20, architect=50, debugger=40, lead=50, engineers=50, test-dev=40 |
 | qa_skip_agents | array | array of agent role names | ["docs"] |
 | context_compiler | boolean | true/false | true |
 | metrics | boolean | true/false | true |
@@ -331,6 +331,15 @@ Four flags control what the LBWC statusline shows:
 ### agent_max_turns
 
 Controls the generated agent definition's internal turn limit. `scripts/resolve-agent-settings.sh` resolves and validates the value before generation. The Agent call itself receives no unsupported turn-limit field.
+
+The resolver picks the turn limit from the first source that has a value:
+
+1. The CLI `--max-turns` flag.
+2. `agent_max_turns.<role>`, used as an absolute number that effort does not scale.
+3. `roles.<role>.max_turns`, scaled by the active effort.
+4. The role default in `templates/agent-roles/defaults.json`, scaled by the active effort.
+
+The key `dev` is an alias for the four engineer roles `coding-dijkstra`, `python-engineer`, `web-engineer`, and `test-dev`. An exact role name always wins over `dev`, so `agent_max_turns.python-engineer` overrides `agent_max_turns.dev` for that role. An object value picks the number for the active effort. When the object has no entry for the active effort, the resolver moves on to the next source.
 
 Set a per-agent value to `false` or `0` for no generated turn limit:
 
