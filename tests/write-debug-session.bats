@@ -84,6 +84,9 @@ issues-as-plain-strings~{"mode":"uat","round":1,"result":"issues_found","issues"
 skipped-and-passed-checkpoints-with-responses~{"mode":"uat","round":1,"result":"pass","checkpoints":[{"description":"Skipped check","result":"skip","user_response":"Not applicable to this flow"},{"description":"Passed check","result":"pass","user_response":"Looks good"}]}~mode=uat~[-] Skipped check (**SKIPPED**);;[x] Passed check;;> Not applicable to this flow;;> Looks good~uat_last_result: pass
 issue-checkpoint~{"mode":"uat","round":1,"result":"issues_found","checkpoints":[{"description":"Broken flow","result":"issue","user_response":"Crashes on click"}]}~mode=uat~Broken flow (**ISSUE**);;> Crashes on click~
 status-frontmatter~{"mode":"status","status":"qa_pending"}~status=qa_pending~~status: qa_pending
+source-todo-without-files-or-context~{"mode":"source-todo","text":"Fix the parser"}~mode=source-todo~**Text:** Fix the parser;;**Raw Line:** none;;**Ref:** none;;**Detail Status:** none;;None recorded.;;No persisted detail context.~
+legacy-checks-with-failures-and-details~{"mode":"qa","round":3,"result":"FAIL","checks":{"passed":1,"failed":2,"total":3},"details":[{"name":"Lint","status":"FAIL","detail":"a|b differ"},{"status":"PASS","detail":"ok"}]}~mode=qa;;round=3;;result=FAIL~1/3 passed, 2 failed;;| Check | Status | Detail |;;| Lint | FAIL | a\|b differ |;;| Check 2 | PASS | ok |~qa_round: 3;;qa_last_result: fail
+failed-and-unmarked-checkpoints~{"mode":"uat","round":2,"result":"issues_found","checkpoints":[{"description":"Save flow","result":"fail"},{"description":"Export flow"}],"issues":[{"description":"Export hangs"}]}~mode=uat;;round=2~- [ ] Save flow (**FAILED**);;- [ ] Export flow;;- Export hangs~uat_round: 2;;uat_last_result: issues_found
 CASES
 }
 
@@ -124,6 +127,7 @@ CASES
     case "$target" in
       MISSING) request_target="/nonexistent/file.md" ;;
       SYMLINK) request_target="$TEST_TEMP_DIR/link.md" ;;
+      NONE) request_target="" ;;
       *) request_target="$SESSION_FILE" ;;
     esac
     before=$(cksum < "$SESSION_FILE")
@@ -134,6 +138,7 @@ CASES
     expect_all "$label" output "$fragments" "$output"
     [ "$(cksum < "$SESSION_FILE")" = "$before" ] || fail_case "$label" "session file unchanged" "$(cat "$SESSION_FILE")"
   done <<'CASES'
+no-session-argument~NONE~{"mode":"status","status":"investigating"}~Usage: write-debug-session.sh <session-file>
 invalid-json~SESSION~not json~invalid JSON
 missing-mode~SESSION~{"status":"qa_pending"}~missing required field 'mode'
 source-todo-underscore-alias~SESSION~{"mode":"source_todo","text":"Investigate parser crash"}~unknown mode 'source_todo';;Valid: source-todo, investigation, qa, uat, status

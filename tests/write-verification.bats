@@ -98,6 +98,11 @@ pass-downgraded-by-failed-detail~.result = "PASS" | .checks = {passed: 0, failed
 rich-failed-artifact-check~.result = "FAIL" | .checks = {passed: 0, failed: 1, total: 1} | .checks_detail[0] = {id: "artifact-docs", status: "FAIL", category: "artifact", description: "docs/api.md", exists: false, contains: "retry guidance", evidence: "docs/api.md is missing, so add the retry guidance."}~-~| NUM | ID | Artifact | Exists | Contains | Evidence | Status |;;| 1 | artifact-docs | docs/api.md | No | retry guidance | docs/api.md is missing, so add the retry guidance. | FAIL |
 rich-failed-key-link-check~.result = "FAIL" | .checks = {passed: 0, failed: 1, total: 1} | .checks_detail[0] = {id: "qa-route", status: "FAIL", category: "key_link", description: "QA command invokes the writer", from: "commands/qa.md", to: "scripts/write-verification.sh", via: "subprocess call", evidence: "commands/qa.md bypasses the writer, so route QA through it."}~-~| NUM | ID | From | To | Via | Evidence | Status |;;| 1 | qa-route | commands/qa.md | scripts/write-verification.sh | subprocess call | commands/qa.md bypasses the writer, so route QA through it. | FAIL |
 each-canonical-plan-id-once~.checks = {passed: 2, failed: 0, total: 2} | .plans_verified = ["01-01", "01-02"] | .checks_detail[0].plan_ref = "01-01" | .checks_detail += [{"id":"artifact","status":"PASS","plan_ref":"01-02"}]~01-01-PLAN.md,01-02-PLAN.md~  - 01-01;;  - 01-02
+envelope-phase~raw:{"phase":"02","payload":{"tier":"quick","result":"PASS","checks":{"passed":1,"failed":0,"total":1},"checks_detail":[{"id":"c1","status":"PASS","category":"must_have"}]}}~-~phase: 02;;tier: quick
+phase-omitted~del(.phase)~-~phase: unknown
+legacy-plan-without-id~.plans_verified = ["PLAN"] | .checks_detail[0].plan_ref = "PLAN"~PLAN.md=~  - PLAN
+rich-requirement-and-convention-checks~.checks = {passed: 2, failed: 0, total: 2} | .checks_detail = [{id: "REQ-1", status: "PASS", category: "requirement", description: "Retry policy", plan_ref: "R9", evidence: "docs"}, {id: "CV-1", status: "PASS", category: "convention", description: "Naming", file: "src/a.sh", detail: "camelCase"}]~-~| NUM | ID | Requirement | Plan Ref | Evidence | Status |;;| 1 | REQ-1 | Retry policy | R9 | docs | PASS |;;| NUM | ID | Convention | File | Status | Detail |;;| 1 | CV-1 | Naming | src/a.sh | PASS | camelCase |
+pre-existing-issues~.pre_existing_issues = [{test: "t1", file: "f1.sh", error: "bo|om"}]~-~## Pre-existing Issues;;| t1 | f1.sh | bo&#124;om |
 CASES
 
   reset_phase_dir
@@ -155,5 +160,16 @@ unknown-plan-ref-beside-verified-one~no~01-01-PLAN.md~.checks = {passed: 2, fail
 plans-verified-without-plan-files~no~-~.plans_verified = ["01-01"]~must be empty
 plan-file-missing-from-plans-verified~no~01-01-PLAN.md,01-02-PLAN.md~.plans_verified = ["01-01"] | .checks_detail[0].plan_ref = "01-01"~plans_verified has
 phase-frontmatter-injection~yes~-~.phase = "01\\nwriter: forged"~phase
+top-level-array~no~-~raw:[]~must be a JSON object
+tier-not-string~no~-~.tier = 5~tier must be quick, standard, or deep
+result-missing~no~-~del(.result)~missing required field (result)
+phase-not-string~no~-~.phase = 1~phase must be a string
+envelope-phase-not-string~no~-~raw:{"phase":7,"payload":{"tier":"quick","result":"PASS","checks":{"passed":1,"failed":0,"total":1},"checks_detail":[{"id":"c1","status":"PASS"}]}}~phase must be a string
+detail-not-array~no~-~.checks_detail = {}~checks_detail must be an array
+unsafe-discovered-plan-id~no~PLAN.md=bad/id~.~unsafe canonical plan ID 'bad/id'
+duplicate-discovered-plan-id~no~01-01-PLAN.md,PLAN.md=01-01~.~duplicate canonical plan ID '01-01'
+non-canonical-verified-plan~no~01-01-PLAN.md~.plans_verified = ["bad id"] | .checks_detail[0].plan_ref = "01-01"~plan 'bad id' in plans_verified is not a canonical plan ID
+non-canonical-plan-ref~no~01-01-PLAN.md~.plans_verified = ["01-01"] | .checks_detail[0].plan_ref = "bad ref"~plan_ref 'bad ref' is not a canonical plan ID
+verified-plan-without-check~no~01-01-PLAN.md,01-02-PLAN.md~.plans_verified = ["01-01", "01-02"] | .checks_detail[0].plan_ref = "01-01"~no check in checks_detail has plan_ref='01-02'
 CASES
 }
