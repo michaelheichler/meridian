@@ -149,6 +149,18 @@ run_verify() {
   run run_verify
   expect_case manifest-no-timestamp 1 "DRIFT agent_manifest: worker-1 has active state running without timestamp"
 
+  fresh_planning manifest-stale
+  make_minimal_project
+  printf '{"agents":[{"id":"worker-2","state":"running","timestamp":"2020-01-01T00:00:00Z"}]}\n' > "$PLANNING_DIR/.agent-manifest.json"
+  run run_verify
+  expect_case manifest-stale 1 "DRIFT agent_manifest: worker-2 is running and older than 24h"
+
+  fresh_planning manifest-bogus-timestamp
+  make_minimal_project
+  printf '{"agents":[{"id":"worker-3","state":"running","timestamp":"yesterday"}]}\n' > "$PLANNING_DIR/.agent-manifest.json"
+  run run_verify
+  expect_case manifest-bogus-timestamp 1 "DRIFT agent_manifest: worker-3 has invalid timestamp yesterday"
+
   fresh_planning deviq-chain
   make_minimal_project
   mkdir -p "$PLANNING_DIR/deviq"
@@ -177,6 +189,27 @@ run_verify() {
   printf 'stage=verify\nround=01\n' > "$PLANNING_DIR/phases/01-test/remediation/uat/.uat-remediation-stage"
   run run_verify
   expect_case remediation-verify-no-summary 1 "is verify without"
+
+  assert_no_case_failures
+}
+
+@test "iso_utc_to_epoch: converts UTC timestamps and rejects malformed ones" {
+  source "$REPO_ROOT/scripts/lib/iso-epoch.sh"
+
+  run iso_utc_to_epoch "2020-01-01T00:00:00Z"
+  expect_case with-z 0 "1577836800"
+
+  run iso_utc_to_epoch "2020-01-01T00:00:00.789Z"
+  expect_case fractional-seconds 0 "1577836800"
+
+  run iso_utc_to_epoch "2020-01-01T00:00:00"
+  expect_case without-z 0 "1577836800"
+
+  run iso_utc_to_epoch "not-a-timestamp"
+  expect_case_silent garbage 1
+
+  run iso_utc_to_epoch "2020-13-45T99:99:99Z"
+  expect_case_silent impossible-date 1
 
   assert_no_case_failures
 }
