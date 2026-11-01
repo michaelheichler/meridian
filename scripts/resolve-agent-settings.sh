@@ -76,15 +76,6 @@ normalize_workflow_effort() {
   esac
 }
 
-multiplier_for_effort() {
-  case "$1" in
-    thorough) echo "3 2" ;;
-    balanced) echo "1 1" ;;
-    fast) echo "4 5" ;;
-    turbo) echo "3 5" ;;
-  esac
-}
-
 if [ "$TEMPORARY_ROUTING_MODE" = true ]; then
   if [ -n "$CLI_MODEL" ] || [ -n "$CLI_REASONING" ]; then
     fail '--model and --reasoning require saved routing state; temporary control roots have none'
@@ -110,13 +101,8 @@ if [ "$TEMPORARY_ROUTING_MODE" = true ]; then
       MERGED_SETTINGS=$(lbwc_merged_config "$CONFIG_PATH")
       WORKFLOW_EFFORT=$(normalize_workflow_effort "$(jq -r '.effort // "balanced"' <<< "$MERGED_SETTINGS")" 2>/dev/null || printf 'balanced')
     fi
-    read -r NUM DEN <<< "$(multiplier_for_effort "$WORKFLOW_EFFORT")"
-    BASE_TURNS=$(jq -r --arg r "$ROLE" '.[$r].maxTurns // empty' "$TEMPLATE_DEFAULTS")
-    case "$BASE_TURNS" in
-      ''|*[!0-9]*) fail "no maxTurns default for role '$ROLE' in $TEMPLATE_DEFAULTS" ;;
-    esac
-    RESOLVED_MAX_TURNS=$(( (BASE_TURNS * NUM + DEN / 2) / DEN ))
-    [ "$RESOLVED_MAX_TURNS" -ge 1 ] || RESOLVED_MAX_TURNS=1
+    role_default_turns "$TEMPLATE_DEFAULTS" "$ROLE" BASE_TURNS || fail "no maxTurns default for role '$ROLE' in $TEMPLATE_DEFAULTS"
+    scale_turn_value "$BASE_TURNS" "$WORKFLOW_EFFORT" RESOLVED_MAX_TURNS
   fi
   emit() {
     local name="$1" value="$2" quoted
@@ -127,6 +113,7 @@ if [ "$TEMPORARY_ROUTING_MODE" = true ]; then
   emit RESOLVED_AGENT_MODEL "$AGENT_MODEL"
   emit RESOLVED_MODEL "$AGENT_MODEL"
   emit RESOLVED_MAX_TURNS "$RESOLVED_MAX_TURNS"
+  emit RESOLVED_MAX_TURNS_SET 1
   emit RESOLVED_EFFORT "$EFFORT"
   emit RESOLVED_REASONING "$EFFORT"
   emit RESOLVED_REASONING_JSON "null"
@@ -167,18 +154,14 @@ else
     WORKFLOW_EFFORT=$(normalize_workflow_effort "$CFG_EFFORT" 2>/dev/null || echo "balanced")
   fi
 
-  ROLE_MAXTURNS_OVERRIDE=$(jq -r --arg r "$ROLE" '.roles[$r].max_turns // empty' <<< "$PROJECT_CONFIG")
+  ROLE_MAXTURNS_OVERRIDE=$(jq -r --arg r "$ROLE" '.roles[$r].max_turns | if . == null then "" else tostring end' <<< "$PROJECT_CONFIG")
   if [ -n "$ROLE_MAXTURNS_OVERRIDE" ]; then
-    normalize_turn_value "$ROLE_MAXTURNS_OVERRIDE" BASE || BASE=""
+    normalize_turn_value "$ROLE_MAXTURNS_OVERRIDE" BASE || fail "invalid roles.$ROLE.max_turns value '$ROLE_MAXTURNS_OVERRIDE'"
   else
-    BASE=$(jq -r --arg r "$ROLE" '.[$r].maxTurns // empty' "$TEMPLATE_DEFAULTS")
-    normalize_turn_value "$BASE" BASE || BASE=""
+    role_default_turns "$TEMPLATE_DEFAULTS" "$ROLE" BASE \
+      || fail "no max_turns resolved for role '$ROLE': set roles.$ROLE.max_turns in project config or $ROLE.maxTurns in $TEMPLATE_DEFAULTS"
   fi
-  [ -n "$BASE" ] || fail "no max_turns resolved for role '$ROLE': set roles.$ROLE.max_turns in project config or $ROLE.maxTurns in $TEMPLATE_DEFAULTS"
-
-  read -r NUM DEN <<< "$(multiplier_for_effort "$WORKFLOW_EFFORT")"
-  MAX_TURNS=$(( (BASE * NUM + DEN / 2) / DEN ))
-  [ "$MAX_TURNS" -ge 1 ] || MAX_TURNS=1
+  scale_turn_value "$BASE" "$WORKFLOW_EFFORT" MAX_TURNS
 fi
 
 emit() {
@@ -190,6 +173,7 @@ emit RESOLVED_AGENT "$ROLE"
 emit RESOLVED_AGENT_MODEL "$AGENT_MODEL"
 emit RESOLVED_MODEL "$MODEL"
 emit RESOLVED_MAX_TURNS "$MAX_TURNS"
+emit RESOLVED_MAX_TURNS_SET 1
 emit RESOLVED_EFFORT "$EFFORT"
 emit RESOLVED_REASONING "$EFFORT"
 emit RESOLVED_REASONING_JSON "$REASONING_JSON"

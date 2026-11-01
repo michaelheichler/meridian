@@ -4,6 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd -P)"
 . "$SCRIPT_DIR/lib/lbwc-control-root.sh"
 . "$SCRIPT_DIR/lib/lbwc-settings.sh"
+. "$SCRIPT_DIR/lib/turn-value.sh"
 
 SETTINGS_PATH="${LBWC_SETTINGS_PATH:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json}"
 
