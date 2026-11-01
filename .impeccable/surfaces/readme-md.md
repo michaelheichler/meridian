@@ -25,7 +25,7 @@ STORY. The visitor sees the mark and tagline, then reads one plain paragraph abo
 
 FIRST VIEWPORT. The hero art with mark and wordmark, the tagline graphic, the explainer paragraph, and the five capability pills in one row.
 
-FORM. Each loop step and each feature carries one board icon at a fixed small size beside full sentences, laid out as markdown tables with a real header row. The commands table follows the same pattern. Paragraphs stay short, with no walls of text.
+FORM. Each loop step and each feature carries one small board icon beside full sentences. Both sections use markdown tables with a real header row. The commands table follows the same pattern. Paragraphs stay short, with no walls of text.
 
 FINISH. One-line license and one-line thanks at the bottom, every image with alt text, and no word "bearing" or other origin talk.
 
