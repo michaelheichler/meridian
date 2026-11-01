@@ -81,6 +81,13 @@ write_checkpoint_uat() {
   run bash "$SCRIPTS/extract-uat-resume.sh" "$PHASE_DIR"
   expect_case unknown-layout 0 "uat_path=$PHASE_DIR/01-UAT.md"
 
+  fresh_phase stage-without-layout-or-round
+  mkdir -p "$(dirname "$UAT_STATE")"
+  printf 'stage=verify\n' > "$UAT_STATE"
+  write_issues_uat "$PHASE_DIR/remediation/round-01/R01-UAT.md"
+  run bash "$SCRIPTS/extract-uat-resume.sh" "$PHASE_DIR"
+  expect_case stage-without-layout-or-round 0 "uat_path=$PHASE_DIR/remediation/round-01/R01-UAT.md"
+
   fresh_phase no-state-skips-source
   write_issues_uat "$PHASE_DIR/01-UAT.md"
   write_issues_uat "$PHASE_DIR/01-SOURCE-UAT.md"
