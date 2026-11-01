@@ -447,4 +447,5 @@ The owner accepted these uncovered lines on 2026-11-01. No test can reach them, 
 | --- | --- |
 | Each `done < <(...)` loop end in `scripts/` | kcov marks the `done` line only when a loop body runs `continue`, so a loop that finishes normally leaves it uncovered. |
 | `scripts/lib/agent-generator-render.sh:30` | The `*)` branch of the word pool switch is a guard. Every caller passes pool `A` or `B`, so no input reaches it. |
+| Lock backend lines in `scripts/lbwc-routing.sh` | Two tests in `tests/lbwc-routing-lock.bats` source the script inside `bash -c`. The script turns on `set -u`, and kcov's trace then reads the unset `BASH_SOURCE` of the `-c` frame and fails. Both tests pass outside kcov. |
 | `scripts/lib/lbwc-routing-validate.sh:52-53` | These two lines continue a multi-line `jq` filter. kcov counts the call on line 51 and never on its continuation lines. |
