@@ -21,8 +21,9 @@ expect_file_line() {
 
 expect_no_file_line() {
   local label=$1 file=$2 pattern=$3
-  ! grep -q -- "$pattern" "$file" 2>/dev/null \
-    || record_case_failure "$label" "file=$file has pattern=[$pattern]"
+  if grep -q -- "$pattern" "$file" 2>/dev/null; then
+    record_case_failure "$label" "file=$file has pattern=[$pattern]"
+  fi
 }
 
 expect_path() {

@@ -41,7 +41,9 @@ expect_file_has_line() {
 }
 
 expect_file_lacks_line() {
-  ! grep -qxF -- "$3" "$2" || fail_case "$1" "unexpected line '$3' in $2"
+  if grep -qxF -- "$3" "$2"; then
+    fail_case "$1" "unexpected line '$3' in $2"
+  fi
 }
 
 expect_file_matches() {
