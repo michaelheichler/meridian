@@ -1,8 +1,5 @@
 #!/bin/bash
 set -u
-# Guard first, because verification-freshness.sh needs bash 4.3.
-. "$(CDPATH='' cd -- "$(dirname "$0")" && pwd)/lib/require-bash.sh"
-require_bash_43
 _pd_normal_exit=false
 _pd_output_file=
 _pd_error_reason=

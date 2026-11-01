@@ -10,8 +10,6 @@ FRESHNESS_EXCLUDE_PATHSPEC=(
   ':!.claude-plugin/plugin.json' ':!.claude-plugin/marketplace.json' ':!marketplace.json'
 )
 VERIFICATION_FRESHNESS_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-. "$VERIFICATION_FRESHNESS_DIR/lib/require-bash.sh"
-require_bash_43
 
 extract_verified_at_commit() {
   local verif_file="$1"
@@ -47,9 +45,12 @@ _freshness_recorded_paths() {
 _freshness_working_tree_dirty() {
   local phase_dir="${1:-}"
   local -a pathspec=()
+  local recorded_path
 
   if [ -n "$phase_dir" ]; then
-    mapfile -t pathspec < <(_freshness_recorded_paths "$phase_dir")
+    while IFS= read -r recorded_path; do
+      pathspec+=("$recorded_path")
+    done < <(_freshness_recorded_paths "$phase_dir")
   fi
   [ "${#pathspec[@]}" -gt 0 ] || pathspec=(.)
 

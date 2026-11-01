@@ -1,6 +1,3 @@
-#!/bin/bash
-set -u
-
 list_child_dirs_sorted_fallback() {
   local dirs=("$@")
   local sorted=()
@@ -36,7 +33,7 @@ list_child_dirs_sorted_fallback() {
       fi
     done
 
-    sorted=("${sorted[@]:0:$insert_at}" "$candidate" "${sorted[@]:$insert_at}")
+    sorted=(${sorted[@]+"${sorted[@]:0:$insert_at}"} "$candidate" ${sorted[@]+"${sorted[@]:$insert_at}"})
   done
 
   printf '%s\n' "${sorted[@]}"
