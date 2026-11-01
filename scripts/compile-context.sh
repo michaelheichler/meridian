@@ -166,7 +166,7 @@ V3_METRICS_ENABLED=true
 START_TIME=""
 
 if command -v jq &>/dev/null; then
-  V3_METRICS_ENABLED=$(jq -r 'if .metrics != null then .metrics elif .v3_metrics != null then .v3_metrics else true end' <<< "$MERGED_CONFIG" 2>/dev/null || echo "true")
+  V3_METRICS_ENABLED=$(jq -r 'if .metrics != null then .metrics else true end' <<< "$MERGED_CONFIG" 2>/dev/null || echo "true")
 fi
 
 ROLLING_SUMMARY=false
