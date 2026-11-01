@@ -2,9 +2,8 @@
 set -euo pipefail
 
 SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname "$0")" && pwd)
-. "$SCRIPT_DIR/lib/require-bash.sh"
-require_bash_43
 PLUGIN_ROOT=$(CDPATH='' cd -- "$SCRIPT_DIR/.." && pwd)
+. "$SCRIPT_DIR/lib/agent-keyed-vars.sh"
 . "$SCRIPT_DIR/lib/agent-manifest.sh"
 . "$SCRIPT_DIR/lib/agent-fields.sh"
 . "$SCRIPT_DIR/lib/lbwc-control-root.sh"
@@ -58,8 +57,10 @@ resolve_contract_context
 validate_contract
 check_write_allowance_paths
 
-load_words "$WORDLIST_A" WORDS_A
-load_words "$WORDLIST_B" WORDS_B
+load_words "$WORDLIST_A"
+WORDS_A=("${LOADED_WORDS[@]}")
+load_words "$WORDLIST_B"
+WORDS_B=("${LOADED_WORDS[@]}")
 
 resolve_team_settings
 validate_execution_backend_override

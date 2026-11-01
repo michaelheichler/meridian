@@ -4,6 +4,7 @@ NATIVE_TOOLS=""
 RENDER_ARGS=()
 WORDS_A=()
 WORDS_B=()
+LOADED_WORDS=()
 NAME_MAX_ATTEMPTS=100
 LIVE_AGENT_MAX_AGE_SECONDS=3600
 DEFAULT_AGENT_CAP=4
@@ -12,17 +13,22 @@ WORDLIST_A="${LBWC_AGENT_WORDLIST_A:-$PLUGIN_ROOT/config/agent-generator-adjecti
 WORDLIST_B="${LBWC_AGENT_WORDLIST_B:-$PLUGIN_ROOT/config/agent-generator-nouns.txt}"
 
 load_words() {
-  local file="$1" target="$2"
-  local -n words="$target"
+  local file="$1" word
   [ -f "$file" ] || fail "wordlist not found: $file"
-  mapfile -t words < <(grep -E '^[a-z0-9]+$' "$file" || true)
-  [ "${#words[@]}" -gt 0 ] || fail "wordlist is empty: $file"
+  LOADED_WORDS=()
+  while IFS= read -r word; do
+    LOADED_WORDS+=("$word")
+  done < <(grep -E '^[a-z0-9]+$' "$file" || true)
+  [ "${#LOADED_WORDS[@]}" -gt 0 ] || fail "wordlist is empty: $file"
 }
 
 pick_word() {
-  local array_name="$1" out_var="$2"
-  local -n word_array="$array_name"
-  printf -v "$out_var" '%s' "${word_array[RANDOM % ${#word_array[@]}]}"
+  local pool="$1" out_var="$2"
+  case "$pool" in
+    A) printf -v "$out_var" '%s' "${WORDS_A[RANDOM % ${#WORDS_A[@]}]}" ;;
+    B) printf -v "$out_var" '%s' "${WORDS_B[RANDOM % ${#WORDS_B[@]}]}" ;;
+    *) fail "unknown word pool '$pool'" ;;
+  esac
 }
 
 name_is_available() {
@@ -35,9 +41,9 @@ choose_name() {
   local role="$1" manifest="$2" agents_dir="$3" left right noun attempt name
   [ -n "${LBWC_AGENT_RANDOM_SEED:-}" ] && RANDOM="$LBWC_AGENT_RANDOM_SEED"
   for ((attempt = 0; attempt < NAME_MAX_ATTEMPTS; attempt++)); do
-    pick_word WORDS_A left
-    pick_word WORDS_A right
-    pick_word WORDS_B noun
+    pick_word A left
+    pick_word A right
+    pick_word B noun
     name="lbwc-$role-$left-$right-$noun"
     if name_is_available "$name" "$manifest" "$agents_dir"; then
       printf '%s\n' "$name"
@@ -59,21 +65,25 @@ native_tools_for_role() {
   for coordination_tool in SendMessage TaskGet TaskList TaskUpdate; do
     case ",$tools," in *",$coordination_tool,"*) ;; *) tools="$tools, $coordination_tool" ;; esac
   done
-  declare -g NATIVE_TOOLS="$tools"
+  printf -v NATIVE_TOOLS '%s' "$tools"
 }
 
 renderer_args_for_role() {
-  local role="$1" token
-  RENDER_ARGS=("NAME=$NAME" "JOB=$JOB" "MAX_TURNS=${ROLE_MAXTURNS[$role]}")
-  [ -n "${ROLE_MODEL[$role]}" ] || fail "no authoritative model resolved for '$role'"
-  RENDER_ARGS+=("MODEL=${ROLE_MODEL[$role]}" "EFFORT=${ROLE_EFFORT[$role]}")
+  local role="$1" token role_model role_effort role_max_turns override_value
+  keyed_get_into role_model ROLE_MODEL "$role"
+  keyed_get_into role_effort ROLE_EFFORT "$role"
+  keyed_get_into role_max_turns ROLE_MAXTURNS "$role"
+  RENDER_ARGS=("NAME=$NAME" "JOB=$JOB" "MAX_TURNS=$role_max_turns")
+  [ -n "$role_model" ] || fail "no authoritative model resolved for '$role'"
+  RENDER_ARGS+=("MODEL=$role_model" "EFFORT=$role_effort")
   if [ -n "$NATIVE_TEAM_MODE" ]; then
     native_tools_for_role "$role"
     RENDER_ARGS+=("TOOLS=$NATIVE_TOOLS")
   fi
   for token in DESCRIPTION TOOLS DISALLOWED_TOOLS PERMISSION_MODE SKILLS MCP_SERVERS MEMORY BACKGROUND ISOLATION COLOR INITIAL_PROMPT; do
-    if [ "${OVERRIDES[$token]+set}" = set ]; then
-      RENDER_ARGS+=("$token=${OVERRIDES[$token]}")
+    if keyed_has OVERRIDES "$token"; then
+      keyed_get_into override_value OVERRIDES "$token"
+      RENDER_ARGS+=("$token=$override_value")
     fi
   done
 }
@@ -81,8 +91,8 @@ renderer_args_for_role() {
 render_and_install_one() {
   local role="$1" tmp name
   name=$(choose_name "$role" "$MANIFEST" "$AGENTS_DIR") || return 1
-  declare -g NAME="$name"
-  declare -g TARGET="$AGENTS_DIR/$NAME.md"
+  printf -v NAME '%s' "$name"
+  printf -v TARGET '%s' "$AGENTS_DIR/$NAME.md"
   renderer_args_for_role "$role"
   tmp="${TARGET}.tmp.${BASHPID:-$$}"
   if ! CONTRACT_RESOLVED_BACKEND="$CONTRACT_RESOLVED_BACKEND" bash "$SCRIPT_DIR/render-agent-template.sh" "$role" "${RENDER_ARGS[@]}" > "$tmp"; then
