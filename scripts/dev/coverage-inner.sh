@@ -27,18 +27,18 @@ run_python_unit_tests() {
     >"$OUT/unittest.log" 2>&1 || echo "hook unit tests exited non-zero, see unittest.log" >&2
 }
 
-# CDPATH is unset because it hangs the suite.
+# CDPATH is unset because it hangs. /tmp is traced because tests run copies there.
 run_bats_under_kcov() {
-  (cd "$REPO" && env -u CDPATH kcov --include-path="$REPO/scripts" --exclude-path="$REPO/scripts/tests" \
+  (cd "$REPO" && env -u CDPATH kcov --include-path="$REPO/scripts,/tmp" \
+    --exclude-path="$REPO/scripts/tests,$REPO/scripts/dev,/tmp/kc,$PYDATA" \
     /tmp/kc bats --tap tests/) >"$OUT/bats-tap.log" 2>"$OUT/kcov-stderr.log" || true
 }
 
 # Output goes to a TSV because compare needs a stable format.
 bash_tables() {
-  local json
-  json=$(find /tmp/kc -path '*/bats.*/coverage.json' | head -1)
-  jq -r '.files[] | [(.file | sub("^/w/"; "")), (.covered_lines | tonumber), (.total_lines | tonumber), (.percent_covered | tonumber)] | @tsv' \
-    "$json" | sort >"$OUT/bash-files.tsv"
+  local report_dir
+  report_dir=$(find /tmp/kc -maxdepth 1 -type d -name 'bats.*' | head -1)
+  python3 "$REPO/scripts/dev/coverage-bash-merge.py" "$report_dir" "$REPO" "$OUT/bash-files.tsv"
 }
 
 # Scripts kcov never traced are absent from its totals, so they are listed apart.
