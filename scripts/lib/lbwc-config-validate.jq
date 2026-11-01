@@ -104,7 +104,7 @@ and (
     or $active == "yolo"
     or ($config.custom_profiles | has($active))
 )
-and (.agent_max_turns | type == "object" and all(to_entries[]; (.key | role_name) and (.value | turn_setting)))
+and (.agent_max_turns | type == "object" and all(to_entries[]; (.key | (role_name or . == "dev")) and (.value | turn_setting)))
 and (.qa_skip_agents | type == "array" and length == ([.[]] | unique | length) and all(.[]; role_name))
 and (.auto_uat | type == "boolean")
 and (.require_phase_discussion | type == "boolean")
