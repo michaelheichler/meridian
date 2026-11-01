@@ -1,103 +1,135 @@
 #!/usr/bin/env bats
 
+load test_helper
+load gate_case_helper
+load gate_case_files
+
 setup() {
-  REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/.." && pwd)"
-  LIB="$REPO_ROOT/scripts/lib/map-tiers.sh"
-  TEST_ROOT="$(mktemp -d)"
-  PLANNING_DIR="$TEST_ROOT/.lbwc-planning"
-  mkdir -p "$PLANNING_DIR/codebase"
-  CURRENT_HASH="$(git -C "$REPO_ROOT" rev-parse HEAD)"
+  setup_temp_dir
+  reset_case_failures
+  LIB="$SCRIPTS_DIR/lib/map-tiers.sh"
 }
 
 teardown() {
-  rm -rf "$TEST_ROOT"
+  teardown_temp_dir
 }
 
 run_tier() {
-  bash -c ". '$LIB'; resolve_map_tier $*"
+  run bash -c '. "$1"; shift; resolve_map_tier "$@"' _ "$LIB" "$@"
 }
 
 run_mode() {
-  (
-    cd "$REPO_ROOT"
-    bash -c ". '$LIB'; resolve_map_mode '$PLANNING_DIR' $*"
-  )
+  local repo=$1
+  shift
+  run bash -c 'cd "$1" && . "$2" && shift 2 && resolve_map_mode "$@"' _ "$repo" "$LIB" "$@"
 }
 
-@test "map-tiers: under 200 files is solo" {
-  run run_tier 50 auto
-  [ "$status" -eq 0 ]
-  [ "$output" = "tier=solo" ]
+expect_exact_output() {
+  local label=$1 want=$2
+  [ "$output" = "$want" ] || record_case_failure "$label" "output=[$output] want=[$want]"
 }
 
-@test "map-tiers: 200 to 1000 files is duo" {
-  run run_tier 500 auto
-  [ "$status" -eq 0 ]
-  [ "$output" = "tier=duo" ]
+make_repo() {
+  local repo="$TEST_TEMP_DIR/$1" step
+  mkdir -p "$repo/.lbwc-planning/codebase"
+  git -C "$repo" init -q
+  git -C "$repo" config user.name "LBWC Test"
+  git -C "$repo" config user.email "lbwc-tests@example.com"
+  for step in 1 2 3; do
+    printf 'v%s\n' "$step" > "$repo/file-$step.txt"
+    git -C "$repo" add -A
+    git -C "$repo" commit -qm "step $step"
+  done
+  FIRST_HASH=$(git -C "$repo" rev-list --max-parents=0 HEAD)
+  HEAD_HASH=$(git -C "$repo" rev-parse HEAD)
 }
 
-@test "map-tiers: over 1000 files is quad" {
-  run run_tier 5000 auto
-  [ "$status" -eq 0 ]
-  [ "$output" = "tier=quad" ]
+write_meta() {
+  printf '%s\n' 'mapped_at: 2026-08-01T00:00:00Z' "git_hash: $2" "file_count: $3" > "$1/.lbwc-planning/codebase/META.md"
 }
 
-@test "map-tiers: prefer_teams=never forces solo at any size" {
-  run run_tier 5000 never
-  [ "$status" -eq 0 ]
-  [ "$output" = "tier=solo" ]
+@test "resolve_map_tier picks a tier from file count, preference and forced tier" {
+  local label count prefer forced want
+  while IFS='|' read -r label count prefer forced want; do
+    [ -n "$label" ] || continue
+    run_tier "$count" "$prefer" "$forced"
+    expect_case "$label" 0 ""
+    expect_exact_output "$label" "tier=$want"
+  done <<'CASES'
+well-under-200|50|auto||solo
+just-under-200|199|auto||solo
+exactly-200|200|auto||duo
+mid-range|500|auto||duo
+exactly-1000|1000|auto||duo
+just-over-1000|1001|auto||quad
+large|5000|auto||quad
+never-forces-solo|5000|never||solo
+never-beats-forced-tier|5000|never|quad|solo
+forced-tier-beats-count|50|auto|quad|quad
+forced-solo-on-large|5000|auto|solo|solo
+forced-duo|50|auto|duo|duo
+CASES
+
+  assert_no_case_failures
 }
 
-@test "map-tiers: prefer_teams=never overrides forced tier" {
-  run run_tier 5000 never quad
-  [ "$status" -eq 0 ]
-  [ "$output" = "tier=solo" ]
+@test "resolve_map_tier rejects unknown forced tiers even when teams are disabled" {
+  local label count prefer forced
+  while IFS='|' read -r label count prefer forced; do
+    [ -n "$label" ] || continue
+    run_tier "$count" "$prefer" "$forced"
+    expect_case "$label" 1 "map-tiers: unknown tier: $forced"
+  done <<'CASES'
+unknown-forced-tier|50|auto|octet
+unknown-forced-tier-with-never|5000|never|octet
+CASES
+
+  assert_no_case_failures
 }
 
-@test "map-tiers: prefer_teams=never rejects unknown forced tier" {
-  run run_tier 5000 never octet
-  [ "$status" -eq 1 ]
-}
+@test "resolve_map_mode chooses full or incremental from META and the git delta" {
+  local label repo
 
-@test "map-tiers: forced tier wins over count" {
-  run run_tier 50 auto quad
-  [ "$status" -eq 0 ]
-  [ "$output" = "tier=quad" ]
-}
+  make_repo forced
+  run_mode "$TEST_TEMP_DIR/forced" "$TEST_TEMP_DIR/forced/.lbwc-planning" incremental
+  expect_case "forced-incremental-without-meta" 0 ""
+  expect_exact_output "forced-incremental-without-meta" $'mode=incremental\nchanged_files=0'
 
-@test "map-tiers: unknown forced tier fails" {
-  run run_tier 50 auto octet
-  [ "$status" -eq 1 ]
-}
+  run_mode "$TEST_TEMP_DIR/forced" "$TEST_TEMP_DIR/forced/.lbwc-planning" full
+  expect_exact_output "forced-full" $'mode=full\nchanged_files=0'
 
-@test "map-tiers: missing META means full mode" {
-  run run_mode
-  [ "$status" -eq 0 ]
-  [ "${lines[0]}" = "mode=full" ]
-}
+  make_repo no-meta
+  run_mode "$TEST_TEMP_DIR/no-meta" "$TEST_TEMP_DIR/no-meta/.lbwc-planning"
+  expect_exact_output "missing-meta-is-full" $'mode=full\nchanged_files=0'
 
-@test "map-tiers: META at HEAD with few changes is incremental" {
-  printf 'mapped_at: 2026-08-01T00:00:00Z\ngit_hash: %s\nfile_count: 1000000\n' \
-    "$CURRENT_HASH" \
-    > "$PLANNING_DIR/codebase/META.md"
+  repo="$TEST_TEMP_DIR/no-git"
+  mkdir -p "$repo/.lbwc-planning/codebase"
+  write_meta "$repo" "0123456789abcdef0123456789abcdef01234567" 10
+  run_mode "$repo" "$repo/.lbwc-planning"
+  expect_exact_output "outside-git-is-full" $'mode=full\nchanged_files=0'
 
-  run run_mode
-  [ "$status" -eq 0 ]
-  [ "${lines[0]}" = "mode=incremental" ]
-}
+  while IFS='|' read -r label hash_kind count want_mode want_changed; do
+    [ -n "$label" ] || continue
+    make_repo "$label"
+    repo="$TEST_TEMP_DIR/$label"
+    case "$hash_kind" in
+      first) write_meta "$repo" "$FIRST_HASH" "$count" ;;
+      head) write_meta "$repo" "$HEAD_HASH" "$count" ;;
+      unknown) write_meta "$repo" "0000000000000000000000000000000000000000" "$count" ;;
+      no-git) write_meta "$repo" "no-git" "$count" ;;
+    esac
+    run_mode "$repo" "$repo/.lbwc-planning"
+    expect_case "$label" 0 ""
+    expect_exact_output "$label" "mode=$want_mode"$'\n'"changed_files=$want_changed"
+  done <<'CASES'
+head-with-huge-file-count|head|1000000|incremental|0
+changes-under-twenty-percent|first|11|incremental|2
+changes-at-twenty-percent|first|10|full|2
+unknown-hash|unknown|10|full|0
+no-git-marker|no-git|10|full|0
+zero-file-count|first|0|full|0
+text-file-count|first|many|full|0
+CASES
 
-@test "map-tiers: unknown git hash means full mode" {
-  printf 'mapped_at: 2026-08-01T00:00:00Z\ngit_hash: %s\nfile_count: 10\n' \
-    '0000000000000000000000000000000000000000' \
-    > "$PLANNING_DIR/codebase/META.md"
-
-  run run_mode
-  [ "$status" -eq 0 ]
-  [ "${lines[0]}" = "mode=full" ]
-}
-
-@test "map-tiers: forced incremental wins without META" {
-  run run_mode incremental
-  [ "$status" -eq 0 ]
-  [ "${lines[0]}" = "mode=incremental" ]
+  assert_no_case_failures
 }
