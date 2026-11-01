@@ -71,7 +71,7 @@ done
 case "\$url" in
   https://fixture.invalid/release.json) source="$TEST_TEMP_DIR/release/release.json" ;;
   https://fixture.invalid/checksums.txt) source="$TEST_TEMP_DIR/release/checksums.txt" ;;
-  https://fixture.invalid/*.tar.gz) source="$TEST_TEMP_DIR/release/archive.tar.gz" ;;
+  https://fixture.invalid/rtk-*.tar.gz) source="$TEST_TEMP_DIR/release/archive.tar.gz" ;;
   *) exit 44 ;;
 esac
 if [ -n "\$output" ]; then
@@ -236,11 +236,32 @@ EOF
   [ ! -e "$LBWC_RTK_BINARY" ]
 }
 
-@test "rtk-manager: unsafe archive paths prevent installation" {
-  mkdir -p "$TEST_TEMP_DIR/unsafe/dir"
-  printf 'bad\n' > "$TEST_TEMP_DIR/unsafe/rtk"
-  tar -czf "$TEST_TEMP_DIR/release/archive.tar.gz" -C "$TEST_TEMP_DIR/unsafe" dir/../rtk
+build_archive_with_entry() {
+  python3 -I -c '
+import io, sys, tarfile
+out, name = sys.argv[1], sys.argv[2]
+payload = b"bad\n"
+with tarfile.open(out, "w:gz") as archive:
+    info = tarfile.TarInfo(name)
+    info.size = len(payload)
+    info.mode = 0o755
+    archive.addfile(info, io.BytesIO(payload))
+' "$TEST_TEMP_DIR/release/archive.tar.gz" "$1"
   printf '%s  rtk-%s.tar.gz\n' "$(sha256_value "$TEST_TEMP_DIR/release/archive.tar.gz")" "$(target_name)" > "$TEST_TEMP_DIR/release/checksums.txt"
+}
+
+@test "rtk-manager: parent traversal archive paths prevent installation" {
+  build_archive_with_entry 'dir/../rtk'
+
+  run manager install --yes
+
+  [ "$status" -eq 2 ]
+  [[ "$output" == *'unsafe or empty paths'* ]]
+  [ ! -e "$LBWC_RTK_BINARY" ]
+}
+
+@test "rtk-manager: absolute archive paths prevent installation" {
+  build_archive_with_entry '/rtk'
 
   run manager install --yes
 
