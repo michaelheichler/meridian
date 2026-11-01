@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+ROOT="$(CDPATH='' cd -- "$SCRIPT_DIR/.." && pwd -P)"
 STATE_DIR="${LBWC_RTK_DIR:-$ROOT/.lbwc-planning/tools/rtk}"
 RTK_BINARY="${LBWC_RTK_BINARY:-$STATE_DIR/rtk}"
 RECEIPT_FILE="${LBWC_RTK_RECEIPT:-$STATE_DIR/rtk-install.json}"
@@ -24,14 +25,19 @@ Usage: rtk-manager.sh <command> [options]
 
 Commands:
   status [--json] [--check-updates]
-  install --yes [--dry-run]
-  update --yes [--dry-run]
+  install [--yes | --dry-run]
+  update [--yes | --dry-run]
+  init [--yes | --dry-run]
   verify [--json]
-  uninstall --yes [--dry-run]
+  doctor-json
+  smoke [--json]
+  smoke-start
+  smoke-finish
+  uninstall [--yes | --dry-run]
 
-Installs are project-local. This script never changes Claude Code settings or
-global RTK configuration. Mutating commands require --yes. Use --dry-run to
-validate the planned release without changing the project.
+Binary installs stay project-local. Only init changes Claude Code settings and
+RTK configuration. Mutating commands require --yes. Use --dry-run to inspect
+the plan without changing project or user configuration.
 EOF
 }
 
@@ -342,12 +348,25 @@ validate_configured_paths
 case "$command_name" in
   status) status "$json" "$check_updates" ;;
   verify) verify_install "$json" ;;
+  init|doctor-json|smoke|smoke-start|smoke-finish)
+    . "$SCRIPT_DIR/lib/rtk-integration.sh"
+    case "$command_name" in
+      init)
+        [ "$yes" = true ] || [ "$dry_run" = true ] || die 'init requires --yes'
+        init_integration "$dry_run"
+        ;;
+      doctor-json) doctor_json ;;
+      smoke) integration_smoke "$json" ;;
+      smoke-start) smoke_start ;;
+      smoke-finish) smoke_finish ;;
+    esac
+    ;;
   install|update)
-    [ "$yes" = true ] || die "$command_name requires --yes"
+    [ "$yes" = true ] || [ "$dry_run" = true ] || die "$command_name requires --yes"
     install_release "$command_name" "$dry_run"
     ;;
   uninstall)
-    [ "$yes" = true ] || die 'uninstall requires --yes'
+    [ "$yes" = true ] || [ "$dry_run" = true ] || die 'uninstall requires --yes'
     uninstall_release "$dry_run"
     ;;
   --help|-h|help) usage ;;
