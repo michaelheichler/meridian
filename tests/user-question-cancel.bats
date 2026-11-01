@@ -1,23 +1,31 @@
 #!/usr/bin/env bats
 
 load test_helper
+load gate_case_helper
+load gate_case_files
 
 setup() {
   setup_temp_dir
-  SESSION=session-cancel
+  PLANNING="$TEST_TEMP_DIR/.lbwc-planning"
+  QUESTION_TEXT="Which review pace should this project use?"
+  reset_case_failures
 }
 
 teardown() {
   teardown_temp_dir
 }
 
-guard() {
-  local mode="$1"
-  (cd "$PROJECT_ROOT" && python3 -m hooks.user_question_guard "$mode")
+run_guard() {
+  local mode=$1 payload=$2
+  run bash -c 'cd "$1" && python3 -m hooks.user_question_guard "$2"' _ "$PROJECT_ROOT" "$mode" <<< "$payload"
+}
+
+read_state() {
+  run bash -c 'cd "$1" && python3 -m hooks.user_question_guard decision-read state "$2" "$3"' _ "$PROJECT_ROOT" "$PLANNING" "$1"
 }
 
 question_json() {
-  jq -cn --arg cwd "$TEST_TEMP_DIR" --arg session "$SESSION" '{
+  jq -cn --arg cwd "$TEST_TEMP_DIR" --arg session "$1" '{
     session_id:$session,
     cwd:$cwd,
     tool_name:"AskUserQuestion",
@@ -34,53 +42,77 @@ question_json() {
   }'
 }
 
-agent_json() {
-  jq -cn --arg cwd "$TEST_TEMP_DIR" --arg session "$SESSION" '{
-    session_id:$session,
-    cwd:$cwd,
-    tool_name:"Agent",
-    tool_input:{subagent_type:"qa"}
-  }'
+tool_json() {
+  jq -cn --arg cwd "$TEST_TEMP_DIR" --arg session "$1" --arg tool "$2" \
+    '{session_id:$session, cwd:$cwd, tool_name:$tool, tool_input:{subagent_type:"qa"}}'
 }
 
-@test "pending decision blocks orchestration and mutation" {
-  run bash -c 'cd "$1" && python3 -m hooks.user_question_guard pretool' _ "$PROJECT_ROOT" <<<"$(question_json)"
-  [ "$status" -eq 0 ]
-  [ -z "$output" ]
-  run bash -c 'cd "$1" && python3 -m hooks.user_question_guard pretool' _ "$PROJECT_ROOT" <<<"$(agent_json)"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"A user decision is pending"* ]]
-  [[ "$output" == *"orchestration"* ]]
+stop_json() {
+  jq -cn --arg cwd "$TEST_TEMP_DIR" --arg session "$1" '{session_id:$session, cwd:$cwd}'
 }
 
-@test "killed AskUserQuestion clears pending and resumes normally" {
-  bash -c 'cd "$1" && python3 -m hooks.user_question_guard pretool' _ "$PROJECT_ROOT" <<<"$(question_json)" >/dev/null
-  killed=$(question_json | jq '.tool_input = {} | .is_error = true')
-  run bash -c 'cd "$1" && python3 -m hooks.user_question_guard posttool' _ "$PROJECT_ROOT" <<<"$killed"
-  [ "$status" -eq 0 ]
-  [ -z "$output" ]
-  run bash -c 'cd "$1" && python3 -m hooks.user_question_guard pretool' _ "$PROJECT_ROOT" <<<"$(agent_json)"
-  [ "$status" -eq 0 ]
-  [ -z "$output" ]
+open_question() {
+  run_guard pretool "$(question_json "$1")"
 }
 
-@test "killing QA after cancel leaves Agent unblocked" {
-  bash -c 'cd "$1" && python3 -m hooks.user_question_guard pretool' _ "$PROJECT_ROOT" <<<"$(question_json)" >/dev/null
-  bash -c 'cd "$1" && python3 -m hooks.user_question_guard stop' _ "$PROJECT_ROOT" <<<"$(jq -cn --arg cwd "$TEST_TEMP_DIR" --arg session "$SESSION" '{session_id:$session,cwd:$cwd}')" >/dev/null
-  run bash -c 'cd "$1" && python3 -m hooks.user_question_guard pretool' _ "$PROJECT_ROOT" <<<"$(agent_json)"
-  [ "$status" -eq 0 ]
-  [ -z "$output" ]
-  run bash -c 'cd "$1" && python3 -m hooks.user_question_guard stop' _ "$PROJECT_ROOT" <<<"$(jq -cn --arg cwd "$TEST_TEMP_DIR" --arg session "$SESSION" '{session_id:$session,cwd:$cwd}')"
-  [ "$status" -eq 0 ]
-  [ -z "$output" ]
-  run bash -c 'cd "$1" && python3 -m hooks.user_question_guard pretool' _ "$PROJECT_ROOT" <<<"$(agent_json)"
-  [ "$status" -eq 0 ]
-  [ -z "$output" ]
+@test "user_question_guard: a pending decision blocks orchestration and mutation but allows inspection" {
+  open_question pend
+  expect_case_silent open-question 0
+
+  run_guard pretool "$(tool_json pend Agent)"
+  expect_case pending-blocks-agent 0 "A user decision is pending"
+  expect_output_has pending-blocks-agent "orchestration"
+
+  run_guard pretool "$(tool_json pend Bash)"
+  expect_case pending-blocks-mutation 0 "A user decision is pending"
+
+  run_guard pretool "$(tool_json pend Read)"
+  expect_case_silent pending-allows-inspection 0
+
+  run_guard pretool "$(question_json agent-asker | jq -c '. + {agent_type:"qa"}')"
+  expect_case subagent-cannot-ask 0 "reserved for the main session"
+
+  run_guard pretool "$(tool_json 'bad session!' Agent)"
+  expect_case invalid-session-id 0 "A valid session id is required"
+
+  assert_no_case_failures
 }
 
-@test "question guard PreToolUse matcher covers Agent Skill and SendMessage" {
+@test "user_question_guard: a killed, stopped or answered question clears the pending state and resumes normally" {
+  open_question killed
+  run_guard posttool "$(question_json killed | jq -c '.tool_input = {} | .is_error = true')"
+  expect_case_silent killed-question 0
+  read_state killed
+  expect_case killed-question-state 0 "cancelled"
+  run_guard pretool "$(tool_json killed Agent)"
+  expect_case_silent killed-question-resumes 0
+
+  open_question stopped
+  run_guard stop "$(stop_json stopped)"
+  expect_case_silent stop-cancels-pending 0
+  run_guard pretool "$(tool_json stopped Agent)"
+  expect_case_silent stop-then-agent-allowed 0
+  run_guard stop "$(stop_json stopped)"
+  expect_case_silent second-stop-allowed 0
+  run_guard pretool "$(tool_json stopped Agent)"
+  expect_case_silent second-agent-allowed 0
+
+  open_question answered
+  run_guard posttool "$(question_json answered | jq -c --arg q "$QUESTION_TEXT" '.tool_response = {answers:{($q):"Fast"}}')"
+  expect_case_silent answered-question 0
+  read_state answered
+  expect_case answered-question-state 0 "resolved"
+  run_guard pretool "$(tool_json answered Agent)"
+  expect_case_silent answered-question-resumes 0
+
+  assert_no_case_failures
+}
+
+@test "question guard hook registration: the PreToolUse matcher covers Agent, Skill and SendMessage" {
+  local matcher
   matcher=$(jq -r '.hooks.PreToolUse[0].matcher' "$PROJECT_ROOT/hooks/hooks.json")
-  [[ "$matcher" == *Agent* ]]
-  [[ "$matcher" == *Skill* ]]
-  [[ "$matcher" == *SendMessage* ]]
+  [[ "$matcher" == *Agent* ]] || record_case_failure matcher-agent "matcher=$matcher"
+  [[ "$matcher" == *Skill* ]] || record_case_failure matcher-skill "matcher=$matcher"
+  [[ "$matcher" == *SendMessage* ]] || record_case_failure matcher-sendmessage "matcher=$matcher"
+  assert_no_case_failures
 }
