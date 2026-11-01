@@ -96,49 +96,161 @@ make_contract() {
   printf '%s' "$path"
 }
 
-@test "no args exits 1 and prints usage" {
-  generate
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"Usage: agent-generator.sh"* ]]
+generate_raw() {
+  run bash -c 'cd "$TEST_TEMP_DIR" && exec bash "$GENERATOR" "$@"' _ "$@"
 }
 
-@test "unknown role exits 1 with an invalid role message" {
-  generate not-a-role --job "do something"
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"invalid role"* ]]
+manifest_path() {
+  printf '%s' "$TEST_TEMP_DIR/.lbwc-planning/.agent-manifest.json"
 }
 
-@test "valid role with --job generates a file, registers it, and prints SPAWN_READY" {
-  generate docs --job "write a README"
+generated_name() {
+  printf '%s\n' "$output" | grep -o "lbwc-$1-[a-z0-9-]*" | head -1
+}
+
+agent_file_count() {
+  find "$TEST_TEMP_DIR/.claude/agents" -type f 2>/dev/null | wc -l | tr -d ' '
+}
+
+reset_generated_state() {
+  rm -rf "$TEST_TEMP_DIR/.claude" "$(manifest_path)"
+}
+
+assert_rejected_without_mutation() {
+  local label="$1" expected="$2"
+  [ "$status" -eq 1 ] || { echo "case=$label status=$status output=$output" >&2; return 1; }
+  [[ "$output" =~ $expected ]] || { echo "case=$label expected=$expected output=$output" >&2; return 1; }
+  [ ! -f "$(manifest_path)" ] || { echo "case=$label manifest was created" >&2; return 1; }
+  [ "$(agent_file_count)" -eq 0 ] || { echo "case=$label agent file was rendered" >&2; return 1; }
+}
+
+issue_schema3() {
+  local id="$1" job="$2" capability="$3"
+  shift 3
+  S3_ID="$id"
+  S3_JOB="$job"
+  S3_CAPABILITY="$capability"
+  S3_ROOT="$TEST_TEMP_DIR/.temporary-agent-runfiles/runs/$id"
+  mkdir -p "$S3_ROOT"
+  S3_CONTRACT=$(bash "$SCRIPTS_DIR/task-contract.sh" issue "$TEST_TEMP_DIR" "$id" \
+    --command team --role web-engineer --team solo --job "$job" \
+    --control-root "$S3_ROOT" --write-capability "$capability" "$@")
+  S3_ROOT=$(cd -P "$S3_ROOT" && pwd -P)
+}
+
+schema3_arguments() {
+  S3_ARGUMENTS=(--job "$S3_JOB" --task-id "$(basename "$S3_CONTRACT" .json)"
+    --contract "$S3_CONTRACT" --control-root "$S3_ROOT" --write-capability "$S3_CAPABILITY")
+}
+
+generate_schema3() {
+  schema3_arguments
+  generate web-engineer "${S3_ARGUMENTS[@]}" "$@"
+}
+
+generate_native_team() {
+  schema3_arguments
+  run bash "$SCRIPTS_DIR/agent-generator.sh" --native-team web-engineer "${S3_ARGUMENTS[@]}" "$@"
+}
+
+seed_solo_agent() {
+  local state="$1" name
+  generate docs --job "seed the solo agent"
+  [ "$status" -eq 0 ] || { echo "seed generation failed: $output" >&2; return 1; }
+  name=$(jq -r '.agents | keys[0]' "$(manifest_path)")
+  jq --arg name "$name" --arg state "$state" '.agents[$name].state = $state' "$(manifest_path)" > "$(manifest_path).tmp"
+  mv "$(manifest_path).tmp" "$(manifest_path)"
+}
+
+assert_exclusive_blocked() {
+  local label="$1" expected="$2"
+  [ "$status" -eq 1 ] || { echo "case=$label status=$status output=$output" >&2; return 1; }
+  [[ "$output" == *"$expected"* ]] || { echo "case=$label expected=$expected output=$output" >&2; return 1; }
+  [ "$(jq '.agents | length' "$(manifest_path)")" -eq 1 ] || { echo "case=$label manifest gained an agent" >&2; return 1; }
+  [ "$(agent_file_count)" -eq 1 ] || { echo "case=$label agent file count changed" >&2; return 1; }
+}
+
+assert_exclusive_admitted() {
+  local label="$1" state="$2" same registered
+  [ "$status" -eq 0 ] || { echo "case=$label status=$status output=$output" >&2; return 1; }
+  same=$(jq --arg state "$state" '[.agents[] | select(.state == $state)] | length' "$(manifest_path)")
+  registered=$(jq '[.agents[] | select(.state == "registered")] | length' "$(manifest_path)")
+  [ "$same" -eq 1 ] || { echo "case=$label $state agents=$same output=$output" >&2; return 1; }
+  [ "$registered" -eq 2 ] || { echo "case=$label registered agents=$registered output=$output" >&2; return 1; }
+}
+
+@test "generator rejects bad arguments before any mutation" {
+  local label runner expected arguments
+  local -a words
+  while IFS='@' read -r label runner expected arguments; do
+    [ -n "$label" ] || continue
+    reset_generated_state
+    read -ra words <<< "$arguments"
+    "$runner" "${words[@]}"
+    assert_rejected_without_mutation "$label" "$expected"
+  done <<'CASES'
+no-args@generate@Usage: agent-generator.sh@
+unknown-role@generate@invalid role@not-a-role --job do-something
+missing-job@generate@--job is required@docs
+no-contract@generate_raw@--contract is required@docs --job write-a-readme
+missing-contract-file@generate@contract not found@python-engineer --job contract-task --task-id task-1 --contract missing.json --write-allowance src/a.py
+CASES
+}
+
+@test "generated agents are rendered, registered, and named from the random source" {
+  local label seed name
+  while IFS='@' read -r label seed; do
+    [ -n "$label" ] || continue
+    reset_generated_state
+    LBWC_AGENT_RANDOM_SEED="$seed" generate docs --job "write a README"
+    [ "$status" -eq 0 ] || { echo "case=$label status=$status output=$output" >&2; return 1; }
+    name=$(generated_name docs)
+    [[ "$output" == *"SPAWN_READY $name"* ]] || { echo "case=$label output=$output" >&2; return 1; }
+    [[ "$name" =~ ^lbwc-docs-[a-z0-9]+-[a-z0-9]+-[a-z0-9]+$ ]] || { echo "case=$label name=$name" >&2; return 1; }
+    [ -f "$TEST_TEMP_DIR/.claude/agents/$name.md" ] || { echo "case=$label definition missing for $name" >&2; return 1; }
+    jq -e --arg name "$name" '.agents | has($name)' "$(manifest_path)" >/dev/null \
+      || { echo "case=$label manifest lacks $name" >&2; return 1; }
+  done <<'CASES'
+unseeded@
+seeded@42
+CASES
+}
+
+@test "LBWC_AGENT_RANDOM_SEED yields a deterministic name across runs" {
+  LBWC_AGENT_RANDOM_SEED=42 generate docs --job "first"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"SPAWN_READY lbwc-docs-"* ]]
-  local name
-  name=$(printf '%s\n' "$output" | grep -o 'lbwc-docs-[a-z0-9-]*' | head -1)
-  [ -n "$name" ]
-  [ -f "$TEST_TEMP_DIR/.claude/agents/$name.md" ]
-  jq -e --arg name "$name" '.agents | has($name)' \
-    "$TEST_TEMP_DIR/.lbwc-planning/.agent-manifest.json" >/dev/null
+  local first
+  first=$(generated_name docs)
+  [ -n "$first" ]
+
+  reset_generated_state
+  LBWC_AGENT_RANDOM_SEED=42 generate docs --job "second"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"SPAWN_READY $first"* ]]
 }
 
-@test "empty global question overrides still render denial and handoff" {
-  generate docs --job "write a README" --disallowed-tools "" --initial-prompt ""
-  [ "$status" -eq 0 ]
-  local name rendered
-  name=$(printf '%s\n' "$output" | grep -o 'lbwc-docs-[a-z0-9-]*' | head -1)
-  [ -n "$name" ]
-  rendered="$TEST_TEMP_DIR/.claude/agents/$name.md"
-  grep -q '^disallowedTools: "AskUserQuestion"$' "$rendered"
-  grep -q 'user_decision_required' "$rendered"
+generate_with_question_override() {
+  case "$1" in
+    empty) generate docs --job "write a README" --disallowed-tools "" --initial-prompt "" ;;
+    partial) generate docs --job "write a README" --initial-prompt "Return user_decision_required." ;;
+  esac
 }
 
-@test "partial question handoff override receives the complete structured contract" {
-  generate docs --job "write a README" --initial-prompt "Return user_decision_required."
-  [ "$status" -eq 0 ]
-  local name rendered
-  name=$(printf '%s\n' "$output" | grep -o 'lbwc-docs-[a-z0-9-]*' | head -1)
-  [ -n "$name" ]
-  rendered="$TEST_TEMP_DIR/.claude/agents/$name.md"
-  grep -F '\"type\":\"user_decision_required\",\"question\":\"clear user question\",\"response_shape\":\"bounded choices or freeform\"' "$rendered"
+@test "question overrides keep the denial and the structured handoff" {
+  local label override pattern name
+  while IFS='@' read -r label override pattern; do
+    [ -n "$label" ] || continue
+    reset_generated_state
+    generate_with_question_override "$override"
+    [ "$status" -eq 0 ] || { echo "case=$label status=$status output=$output" >&2; return 1; }
+    name=$(generated_name docs)
+    grep -qE -- "$pattern" "$TEST_TEMP_DIR/.claude/agents/$name.md" \
+      || { echo "case=$label missing=$pattern" >&2; cat "$TEST_TEMP_DIR/.claude/agents/$name.md" >&2; return 1; }
+  done <<'CASES'
+empty-denial@empty@^disallowedTools: "AskUserQuestion"$
+empty-handoff@empty@user_decision_required
+partial-handoff-contract@partial@\\"type\\":\\"user_decision_required\\",\\"question\\":\\"clear user question\\",\\"response_shape\\":\\"bounded choices or freeform\\"
+CASES
 }
 
 @test "pending decision rejects direct transitions without creating runtime state" {
@@ -159,10 +271,10 @@ make_contract() {
   generate architect --job "build a roadmap"
   [ "$status" -eq 0 ]
   local name
-  name=$(printf '%s\n' "$output" | grep -o 'lbwc-architect-[a-z0-9-]*' | head -1)
+  name=$(generated_name architect)
   [ -n "$name" ]
   jq -e --arg name "$name" '.agents[$name].model == "ember-path" and .agents[$name].effort == "swift"' \
-    "$TEST_TEMP_DIR/.lbwc-planning/.agent-manifest.json" >/dev/null
+    "$(manifest_path)" >/dev/null
   grep -F 'model: "ember-path"' "$TEST_TEMP_DIR/.claude/agents/$name.md" >/dev/null
   grep -F 'effort: "swift"' "$TEST_TEMP_DIR/.claude/agents/$name.md" >/dev/null
 }
@@ -175,11 +287,11 @@ make_contract() {
   generate docs --job "write a README"
   [ "$status" -eq 0 ]
   local name
-  name=$(printf '%s\n' "$output" | grep -o 'lbwc-docs-[a-z0-9-]*' | head -1)
+  name=$(generated_name docs)
   [ -n "$name" ]
-  ! grep -q '^effort:' "$TEST_TEMP_DIR/.claude/agents/$name.md"
-  jq -e --arg name "$name" '.agents[$name].effort == null' \
-    "$TEST_TEMP_DIR/.lbwc-planning/.agent-manifest.json" >/dev/null
+  run grep -c '^effort:' "$TEST_TEMP_DIR/.claude/agents/$name.md"
+  [ "$output" = "0" ]
+  jq -e --arg name "$name" '.agents[$name].effort == null' "$(manifest_path)" >/dev/null
 }
 
 @test "generator blocks when the saved binary fingerprint is stale" {
@@ -203,7 +315,7 @@ make_contract() {
 
   [ "$status" -eq 0 ]
   local name
-  name=$(printf '%s\n' "$output" | grep -o 'lbwc-docs-[a-z0-9-]*' | head -1)
+  name=$(generated_name docs)
   [ -n "$name" ]
   grep -F 'model: "nova-route"' "$TEST_TEMP_DIR/.claude/agents/$name.md" >/dev/null
   grep -F 'effort: "deliberate"' "$TEST_TEMP_DIR/.claude/agents/$name.md" >/dev/null
@@ -212,100 +324,45 @@ make_contract() {
 @test "task write allowance is registered as an exact repository path" {
   generate python-engineer --job "repair the failing hook" --write-allowance hooks/skill_gate.py
   [ "$status" -eq 0 ]
-  local name
-  local project_root
-  name=$(printf '%s\n' "$output" | grep -o 'lbwc-python-engineer-[a-z0-9-]*' | head -1)
+  local name project_root
+  name=$(generated_name python-engineer)
   project_root=$(cd "$TEST_TEMP_DIR" && pwd -P)
   [ -n "$name" ]
   jq -e --arg name "$name" --arg root "$project_root" '
     .agents[$name].project_root == $root
     and .agents[$name].write_allowances == ["hooks/skill_gate.py"]
-  ' "$TEST_TEMP_DIR/.lbwc-planning/.agent-manifest.json" >/dev/null
+  ' "$(manifest_path)" >/dev/null
 }
 
-@test "schema 3 generator uses the explicit temporary control root" {
-  local control_root="$TEST_TEMP_DIR/.temporary-agent-runfiles/runs/team-one"
-  mkdir -p "$control_root"
-  local contract
-  contract=$(bash "$SCRIPTS_DIR/task-contract.sh" issue "$TEST_TEMP_DIR" team-scope \
-    --command team --role web-engineer --team solo --job "write the web scope" \
-    --control-root "$control_root" --write-capability directory:src/web)
-  generate web-engineer --job "write the web scope" --task-id "$(basename "$contract" .json)" \
-    --contract "$contract" --control-root "$control_root" --write-capability directory:src/web
-  [ "$status" -eq 0 ]
-  control_root=$(cd -P "$control_root" && pwd -P)
-  local name
-  name=$(printf '%s\n' "$output" | grep -o 'lbwc-web-engineer-[a-z0-9-]*' | head -1)
-  [ -n "$name" ]
-  jq -e --arg name "$name" --arg root "$control_root" '
-    .agents[$name].schema_version == 3
-    and .agents[$name].control_root == $root
-    and .agents[$name].capabilities == [{access:"write",kind:"directory",path:"src/web"}]
-  ' "$control_root/agent-manifest.json" >/dev/null
-  [ -f "$TEST_TEMP_DIR/.claude/agents/$name.md" ]
-}
-
-@test "schema 3 generator records runtime and communication policy" {
-  local control_root="$TEST_TEMP_DIR/.temporary-agent-runfiles/runs/team-policy"
-  mkdir -p "$control_root"
-  local contract
-  contract=$(bash "$SCRIPTS_DIR/task-contract.sh" issue "$TEST_TEMP_DIR" team-policy \
-    --command team --role web-engineer --team solo --job "write the web scope" \
-    --control-root "$control_root" --runtime-kind native-team \
-    --communication-policy native-team --write-capability directory:src/web)
-  generate web-engineer --job "write the web scope" --task-id "$(basename "$contract" .json)" \
-    --contract "$contract" --control-root "$control_root" --write-capability directory:src/web
-  [ "$status" -eq 0 ]
-  local name
-  name=$(printf '%s\n' "$output" | grep -o 'lbwc-web-engineer-[a-z0-9-]*' | head -1)
-  [ -n "$name" ]
-  jq -e --arg name "$name" '
-    .agents[$name].runtime_kind == "native-team"
-    and .agents[$name].communication_policy == "native-team"
-  ' "$control_root/agent-manifest.json" >/dev/null
-}
-
-@test "schema 3 generation records in-process execution metadata" {
-  local control_root="$TEST_TEMP_DIR/.temporary-agent-runfiles/runs/execution-metadata"
-  mkdir -p "$control_root"
-  local contract
-  contract=$(bash "$SCRIPTS_DIR/task-contract.sh" issue "$TEST_TEMP_DIR" execution-metadata \
-    --command team --role web-engineer --team solo --job "write the web scope" \
-    --control-root "$control_root" --write-capability directory:src/web)
-  generate web-engineer --job "write the web scope" --task-id "$(basename "$contract" .json)" \
-    --contract "$contract" --control-root "$control_root" --write-capability directory:src/web
-  [ "$status" -eq 0 ]
-  local name
-  name=$(printf '%s\n' "$output" | grep -o 'lbwc-web-engineer-[a-z0-9-]*' | head -1)
-  [ -n "$name" ]
-  jq -e --arg name "$name" '
-    .agents[$name].execution.requested_backend == "in_process"
-    and .agents[$name].execution.resolved_backend == "in_process"
-    and .agents[$name].execution.role == "web-engineer"
-    and .agents[$name].execution.model == .agents[$name].model
-    and .agents[$name].execution.effort == .agents[$name].effort
-    and .agents[$name].execution.max_turns == .agents[$name].max_turns
-    and .agents[$name].execution.contract_id == .agents[$name].contract_id
-    and (.agents[$name].execution | has("tmux_bootstrap") | not)
-  ' "$control_root/agent-manifest.json" >/dev/null
+@test "schema 3 generation records contract-derived fields in the control-root manifest" {
+  local label issue_arguments expression name
+  local -a words
+  while IFS='@' read -r label issue_arguments expression; do
+    [ -n "$label" ] || continue
+    read -ra words <<< "$issue_arguments"
+    issue_schema3 "$label" "write the web scope" directory:src/web "${words[@]}"
+    generate_schema3
+    [ "$status" -eq 0 ] || { echo "case=$label status=$status output=$output" >&2; return 1; }
+    name=$(generated_name web-engineer)
+    jq -e --arg name "$name" --arg root "$S3_ROOT" "$expression" "$S3_ROOT/agent-manifest.json" >/dev/null \
+      || { echo "case=$label expression=$expression" >&2; jq ".agents[\"$name\"]" "$S3_ROOT/agent-manifest.json" >&2; return 1; }
+    [ -f "$TEST_TEMP_DIR/.claude/agents/$name.md" ] || { echo "case=$label definition missing for $name" >&2; return 1; }
+  done <<'CASES'
+control-root@@.agents[$name].schema_version == 3 and .agents[$name].control_root == $root and .agents[$name].capabilities == [{access:"write",kind:"directory",path:"src/web"}]
+runtime-policy@--runtime-kind native-team --communication-policy native-team@.agents[$name].runtime_kind == "native-team" and .agents[$name].communication_policy == "native-team"
+in-process-execution@@.agents[$name].execution.requested_backend == "in_process" and .agents[$name].execution.resolved_backend == "in_process" and .agents[$name].execution.role == "web-engineer" and .agents[$name].execution.model == .agents[$name].model and .agents[$name].execution.effort == .agents[$name].effort and .agents[$name].execution.max_turns == .agents[$name].max_turns and .agents[$name].execution.contract_id == .agents[$name].contract_id and (.agents[$name].execution | has("tmux_bootstrap") | not)
+CASES
 }
 
 @test "schema 3 tmux runtime selection records matching execution metadata" {
-  local control_root="$TEST_TEMP_DIR/.temporary-agent-runfiles/runs/tmux-execution"
-  mkdir -p "$control_root"
   jq -e '."web-engineer".executionBackend == "in_process"' \
     "$PROJECT_ROOT/templates/agent-roles/defaults.json" >/dev/null
-  local contract
-  contract=$(bash "$SCRIPTS_DIR/task-contract.sh" issue "$TEST_TEMP_DIR" tmux-execution \
-    --command team --role web-engineer --team solo --job "write the web scope" \
-    --control-root "$control_root" --requested-backend tmux --resolved-backend tmux \
-    --write-capability directory:src/web)
-  generate web-engineer --job "write the web scope" --task-id "$(basename "$contract" .json)" \
-    --contract "$contract" --control-root "$control_root" --write-capability directory:src/web \
-    --execution-backend tmux
+  issue_schema3 tmux-execution "write the web scope" directory:src/web \
+    --requested-backend tmux --resolved-backend tmux
+  generate_schema3 --execution-backend tmux
   [ "$status" -eq 0 ]
   local name
-  name=$(printf '%s\n' "$output" | grep -o 'lbwc-web-engineer-[a-z0-9-]*' | head -1)
+  name=$(generated_name web-engineer)
   [ -n "$name" ]
   jq -e --arg name "$name" '
     .agents[$name].execution.requested_backend == "tmux"
@@ -320,80 +377,49 @@ make_contract() {
     and .agents[$name].execution.tmux_bootstrap.child_identity == $name
     and .agents[$name].execution.tmux_bootstrap.contract_id == .agents[$name].contract_id
     and .agents[$name].execution.tmux_bootstrap.control_root == .agents[$name].control_root
-  ' "$control_root/agent-manifest.json" >/dev/null
+  ' "$S3_ROOT/agent-manifest.json" >/dev/null
   grep -F '## TMUX bus loop' "$TEST_TEMP_DIR/.claude/agents/$name.md"
 }
 
-@test "schema 3 generator rejects backend overrides that conflict with the contract" {
-  local control_root="$TEST_TEMP_DIR/.temporary-agent-runfiles/runs/backend-drift" contract
-  mkdir -p "$control_root"
-  contract=$(bash "$SCRIPTS_DIR/task-contract.sh" issue "$TEST_TEMP_DIR" backend-drift \
-    --command team --role web-engineer --team solo --job "write the web scope" \
-    --control-root "$control_root" --requested-backend tmux --resolved-backend tmux \
-    --write-capability directory:src/web)
-
-  generate web-engineer --job "write the web scope" --task-id "$(basename "$contract" .json)" \
-    --contract "$contract" --control-root "$control_root" --write-capability directory:src/web \
-    --execution-backend in_process
-
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"execution backend override conflicts with contract"* ]]
-  [ ! -f "$control_root/agent-manifest.json" ]
-}
-
-@test "schema 3 generation rejects an invalid execution backend selection" {
-  local control_root="$TEST_TEMP_DIR/.temporary-agent-runfiles/runs/execution-override"
-  mkdir -p "$control_root"
-  local contract
-  contract=$(bash "$SCRIPTS_DIR/task-contract.sh" issue "$TEST_TEMP_DIR" execution-override \
-    --command team --role web-engineer --team solo --job "write the web scope" \
-    --control-root "$control_root" --write-capability directory:src/web)
-  generate web-engineer --job "write the web scope" --task-id "$(basename "$contract" .json)" \
-    --contract "$contract" --control-root "$control_root" --write-capability directory:src/web \
-    --execution-backend unsupported
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"invalid execution backend override 'unsupported'"* ]]
-  [ ! -f "$control_root/agent-manifest.json" ]
+@test "schema 3 generation rejects execution backend overrides before writing the manifest" {
+  local label contract_backend override expected
+  local -a contract_arguments
+  while IFS='@' read -r label contract_backend override expected; do
+    [ -n "$label" ] || continue
+    contract_arguments=()
+    [ "$contract_backend" = "-" ] || contract_arguments=(--requested-backend "$contract_backend" --resolved-backend "$contract_backend")
+    issue_schema3 "$label" "write the web scope" directory:src/web "${contract_arguments[@]}"
+    generate_schema3 --execution-backend "$override"
+    [ "$status" -eq 1 ] || { echo "case=$label status=$status output=$output" >&2; return 1; }
+    [[ "$output" == *"$expected"* ]] || { echo "case=$label expected=$expected output=$output" >&2; return 1; }
+    [ ! -f "$S3_ROOT/agent-manifest.json" ] || { echo "case=$label manifest was written" >&2; return 1; }
+  done <<'CASES'
+backend-drift@tmux@in_process@execution backend override conflicts with contract
+invalid-selection@-@unsupported@invalid execution backend override 'unsupported'
+CASES
 }
 
 @test "native-team generation renders native capabilities and records definition authority" {
-  local control_root="$TEST_TEMP_DIR/.temporary-agent-runfiles/runs/native-definition" contract contract_id name
-  mkdir -p "$control_root"
-  contract=$(bash "$SCRIPTS_DIR/task-contract.sh" issue "$TEST_TEMP_DIR" native-definition \
-    --command team --role web-engineer --team solo --job "implement the scoped task" \
-    --control-root "$control_root" --runtime-kind native-team \
-    --communication-policy native-team --write-capability directory:.)
-  contract_id=$(basename "$contract" .json)
-
-  run bash "$SCRIPTS_DIR/agent-generator.sh" --native-team web-engineer \
-    --job "implement the scoped task" --task-id "$contract_id" --contract "$contract" \
-    --control-root "$control_root" --write-capability directory:.
-
+  local name
+  issue_schema3 native-definition "implement the scoped task" directory:. \
+    --runtime-kind native-team --communication-policy native-team
+  generate_native_team
   [ "$status" -eq 0 ]
-  name=$(printf '%s\n' "$output" | grep -o 'lbwc-web-engineer-[a-z0-9-]*' | head -1)
+  name=$(generated_name web-engineer)
   [ -n "$name" ]
   grep -F 'SendMessage' "$TEST_TEMP_DIR/.claude/agents/$name.md" >/dev/null
   grep -F 'TaskList' "$TEST_TEMP_DIR/.claude/agents/$name.md" >/dev/null
   grep -F 'Write' "$TEST_TEMP_DIR/.claude/agents/$name.md" >/dev/null
   jq -e --arg name "$name" '.agents[$name].definition_sha256 != null and .agents[$name].tools != null' \
-    "$control_root/agent-manifest.json" >/dev/null
+    "$S3_ROOT/agent-manifest.json" >/dev/null
 }
 
 @test "native-team generation rejects definition-field overrides" {
-  local control_root="$TEST_TEMP_DIR/.temporary-agent-runfiles/runs/native-override" contract contract_id
-  mkdir -p "$control_root"
-  contract=$(bash "$SCRIPTS_DIR/task-contract.sh" issue "$TEST_TEMP_DIR" native-override \
-    --command team --role web-engineer --team solo --job "implement the scoped task" \
-    --control-root "$control_root" --write-capability directory:.)
-  contract_id=$(basename "$contract" .json)
-
-  run bash "$SCRIPTS_DIR/agent-generator.sh" --native-team web-engineer \
-    --job "implement the scoped task" --task-id "$contract_id" --contract "$contract" \
-    --control-root "$control_root" --write-capability directory:. --model other-model
-
+  issue_schema3 native-override "implement the scoped task" directory:.
+  generate_native_team --model other-model
   [ "$status" -ne 0 ]
   [[ "$output" == *"native-team definition overrides are not allowed"* ]]
-  [ ! -d "$TEST_TEMP_DIR/.claude/agents" ] || [ "$(find "$TEST_TEMP_DIR/.claude/agents" -type f | wc -l | tr -d ' ')" -eq 0 ]
+  [ "$(agent_file_count)" -eq 0 ]
 }
 
 @test "--pair with a pairsWith role prints ENGINEER and CRITIC SPAWN_READY lines" {
@@ -413,182 +439,97 @@ make_contract() {
     [.agents[] | select(.role == "python-engineer") | .write_allowances] == [["src/parser.py"]]
     and [.agents[] | select(.role == "test-dev") | .write_allowances] == [["tests/parser.bats"]]
     and [.agents[] | select(.role == "python-critic") | .write_allowances] == [[]]
-  ' "$TEST_TEMP_DIR/.lbwc-planning/.agent-manifest.json" >/dev/null
+  ' "$(manifest_path)" >/dev/null
 }
 
-@test "trio rejects a role-scoped allowance for a critic" {
-  generate --trio python-engineer --job "add parser coverage" \
-    --role-write-allowance python-critic:reviews/parser.md
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"only valid for test-dev"* ]]
-}
-
-@test "trio rejects a test-dev allowance outside the test directory" {
-  generate --trio python-engineer --job "add parser coverage" \
-    --role-write-allowance test-dev:src/parser.py
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"exact repository test path"* ]]
+@test "trio rejects role-scoped allowances that do not target an exact test path" {
+  local label scoped expected
+  while IFS='@' read -r label scoped expected; do
+    [ -n "$label" ] || continue
+    generate --trio python-engineer --job "add parser coverage" --role-write-allowance "$scoped"
+    [ "$status" -eq 1 ] || { echo "case=$label status=$status output=$output" >&2; return 1; }
+    [[ "$output" == *"$expected"* ]] || { echo "case=$label expected=$expected output=$output" >&2; return 1; }
+  done <<'CASES'
+critic-role@python-critic:reviews/parser.md@only valid for test-dev
+test-dev-outside-tests@test-dev:src/parser.py@exact repository test path
+CASES
 }
 
 @test "generator rejects a pair that would exceed the live-agent capacity" {
   generate --trio python-engineer --job "hold the current build slot"
   [ "$status" -eq 0 ]
-  [ "$(jq '[.agents[] | select(.state == "registered")] | length' \
-    "$TEST_TEMP_DIR/.lbwc-planning/.agent-manifest.json")" -eq 3 ]
+  [ "$(jq '[.agents[] | select(.state == "registered")] | length' "$(manifest_path)")" -eq 3 ]
 
   generate --pair python-engineer --job "must wait for capacity"
   [ "$status" -eq 1 ]
   [[ "$output" == *"agent cap reached: 4"* ]]
-  [ "$(jq '.agents | length' \
-    "$TEST_TEMP_DIR/.lbwc-planning/.agent-manifest.json")" -eq 3 ]
+  [ "$(jq '.agents | length' "$(manifest_path)")" -eq 3 ]
 }
 
-@test "--exclusive rejects generation while a solo agent is registered" {
-  generate docs --job "hold the exclusive slot"
-  [ "$status" -eq 0 ]
-
-  generate --pair python-engineer --exclusive --job "must wait for the solo"
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"exclusive generation blocked: registered or running agent exists"* ]]
-  [ "$(jq '.agents | length' \
-    "$TEST_TEMP_DIR/.lbwc-planning/.agent-manifest.json")" -eq 1 ]
-}
-
-@test "--exclusive rejects generation while a solo agent is running" {
-  generate docs --job "start before the exclusive pair"
-  [ "$status" -eq 0 ]
-  local manifest="$TEST_TEMP_DIR/.lbwc-planning/.agent-manifest.json"
-  local running_name
-  running_name=$(jq -r '.agents | keys[0]' "$manifest")
-  jq --arg name "$running_name" '.agents[$name].state = "running"' "$manifest" > "$manifest.tmp"
-  mv "$manifest.tmp" "$manifest"
-
-  generate --pair python-engineer --exclusive --job "must wait for the running solo"
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"exclusive generation blocked: registered or running agent exists"* ]]
-  [ "$(jq '.agents | length' "$manifest")" -eq 1 ]
-  [ "$(find "$TEST_TEMP_DIR/.claude/agents" -type f | wc -l | tr -d ' ')" -eq 1 ]
-}
-
-@test "--exclusive admits generation after the solo agent becomes used" {
-  generate docs --job "complete before the exclusive pair"
-  [ "$status" -eq 0 ]
-  local manifest="$TEST_TEMP_DIR/.lbwc-planning/.agent-manifest.json"
-  local used_name
-  used_name=$(jq -r '.agents | keys[0]' "$manifest")
-  jq --arg name "$used_name" '.agents[$name].state = "used"' "$manifest" > "$manifest.tmp"
-  mv "$manifest.tmp" "$manifest"
-
-  generate --pair python-engineer --exclusive --job "start after the solo"
-  [ "$status" -eq 0 ]
-  [ "$(jq '[.agents[] | select(.state == "used")] | length' "$manifest")" -eq 1 ]
-  [ "$(jq '[.agents[] | select(.state == "registered")] | length' "$manifest")" -eq 2 ]
-}
-
-@test "--exclusive admits generation when existing agents are expired" {
-  generate docs --job "expire before the exclusive pair"
-  [ "$status" -eq 0 ]
-  local manifest="$TEST_TEMP_DIR/.lbwc-planning/.agent-manifest.json"
-  local expired_name
-  expired_name=$(jq -r '.agents | keys[0]' "$manifest")
-  jq --arg name "$expired_name" '.agents[$name].state = "expired"' "$manifest" > "$manifest.tmp"
-  mv "$manifest.tmp" "$manifest"
-
-  generate --pair python-engineer --exclusive --job "start after expiration"
-  [ "$status" -eq 0 ]
-  [ "$(jq '[.agents[] | select(.state == "expired")] | length' "$manifest")" -eq 1 ]
-  [ "$(jq '[.agents[] | select(.state == "registered")] | length' "$manifest")" -eq 2 ]
-}
-
-@test "--exclusive fails closed for malformed lifecycle states" {
-  local transform
-  for transform in \
-    '.agents[.agents | keys[0]].state = null' \
-    'del(.agents[.agents | keys[0]].state)' \
-    '.agents[.agents | keys[0]].state = "paused"' \
-    '.agents[.agents | keys[0]] = []' \
-    '.agents[.agents | keys[0]] = 42'
-  do
-    generate docs --job "create an agent to corrupt"
-    [ "$status" -eq 0 ]
-    local manifest="$TEST_TEMP_DIR/.lbwc-planning/.agent-manifest.json"
-    jq "$transform" "$manifest" > "$manifest.tmp"
-    mv "$manifest.tmp" "$manifest"
-
-    generate --pair python-engineer --exclusive --job "reject malformed state"
-    [ "$status" -eq 1 ]
-    [[ "$output" == *"exclusive generation blocked: invalid agent lifecycle state"* ]]
-    [ "$(jq '.agents | length' "$manifest")" -eq 1 ]
-    [ "$(find "$TEST_TEMP_DIR/.claude/agents" -type f | wc -l | tr -d ' ')" -eq 1 ]
-
-    teardown_temp_dir
-    setup
+@test "--exclusive rejects generation while a solo agent is registered or running" {
+  local state
+  for state in registered running; do
+    reset_generated_state
+    seed_solo_agent "$state"
+    generate --pair python-engineer --exclusive --job "must wait for the solo"
+    assert_exclusive_blocked "solo-$state" "exclusive generation blocked: registered or running agent exists"
   done
 }
 
-@test "missing --job exits 1 naming the required flag" {
-  generate docs
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"--job is required"* ]]
+@test "--exclusive admits generation after the solo agent becomes used or expired" {
+  local state
+  for state in used expired; do
+    reset_generated_state
+    seed_solo_agent "$state"
+    generate --pair python-engineer --exclusive --job "start after the solo"
+    assert_exclusive_admitted "solo-$state" "$state"
+  done
 }
 
-@test "generated LBWC agent requires a contract before any mutation" {
-  run bash -c 'cd "$TEST_TEMP_DIR" && exec bash "$GENERATOR" docs --job "write a README"'
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"--contract is required"* ]]
-  [ ! -f "$TEST_TEMP_DIR/.lbwc-planning/.agent-manifest.json" ]
-  [ ! -d "$TEST_TEMP_DIR/.claude/agents" ]
+@test "--exclusive fails closed for malformed lifecycle states" {
+  local label transform
+  while IFS='@' read -r label transform; do
+    [ -n "$label" ] || continue
+    reset_generated_state
+    seed_solo_agent registered
+    jq "$transform" "$(manifest_path)" > "$(manifest_path).tmp"
+    mv "$(manifest_path).tmp" "$(manifest_path)"
+    generate --pair python-engineer --exclusive --job "reject malformed state"
+    assert_exclusive_blocked "$label" "exclusive generation blocked: invalid agent lifecycle state"
+  done <<'CASES'
+null-state@.agents[.agents | keys[0]].state = null
+missing-state@del(.agents[.agents | keys[0]].state)
+unknown-state@.agents[.agents | keys[0]].state = "paused"
+array-entry@.agents[.agents | keys[0]] = []
+number-entry@.agents[.agents | keys[0]] = 42
+CASES
 }
 
-@test "contract mode rejects a missing contract before rendering" {
-  generate python-engineer --job "contract task" --task-id task-1 --contract missing.json --write-allowance src/a.py
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"contract not found"* ]]
-  [ ! -d "$TEST_TEMP_DIR/.claude/agents" ] || [ "$(find "$TEST_TEMP_DIR/.claude/agents" -type f | wc -l | tr -d ' ')" -eq 0 ]
-}
-
-@test "contract mode rejects a tampered digest" {
-  local contract
-  contract=$(make_contract python-engineer task-1 '["src/a.py"]')
-  jq '.task_identity = "tampered"' "$contract" > "$contract.tmp" && mv "$contract.tmp" "$contract"
-  generate python-engineer --job "contract task" --task-id "$(basename "$contract" .json)" --contract "$contract" --write-allowance src/a.py
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"contract digest mismatch"* ]]
-}
-
-@test "contract mode rejects a task identity mismatch" {
-  local contract
-  contract=$(make_contract python-engineer task-1 '["src/a.py"]')
-  generate python-engineer --job "contract task" --task-id task-2 --contract "$contract" --write-allowance src/a.py
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"task identity mismatch"* ]]
-}
-
-@test "contract mode rejects an extra allowance" {
-  local contract
-  contract=$(make_contract python-engineer task-1 '["src/a.py"]')
-  generate python-engineer --job "contract task" --task-id "$(basename "$contract" .json)" --contract "$contract" --write-allowance src/a.py --write-allowance src/b.py
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"write allowances do not match contract"* ]]
-}
-
-@test "contract mode requires explicit main provenance" {
-  local contract
-  contract=$(make_contract python-engineer task-1 '["src/a.py"]')
-  jq '.created_by = "worker"' "$contract" > "$contract.tmp" && mv "$contract.tmp" "$contract"
-  generate python-engineer --job "contract task" --task-id "$(basename "$contract" .json)" --contract "$contract" --write-allowance src/a.py
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"contract digest mismatch"* || "$output" == *"planned main-session contract"* ]]
-}
-
-@test "pair contract rejects a role missing from roles array before rendering" {
-  local contract
-  contract=$(make_contract python-engineer task-1 '["src/a.py"]' pair "contract pair")
-  jq '.roles = ["python-engineer"]' "$contract" > "$contract.tmp" && mv "$contract.tmp" "$contract"
-  generate --pair python-engineer --job "contract pair" --task-id "$(basename "$contract" .json)" --contract "$contract" --write-allowance src/a.py
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"contract"* ]]
-  [ ! -d "$TEST_TEMP_DIR/.claude/agents" ] || [ "$(find "$TEST_TEMP_DIR/.claude/agents" -type f | wc -l | tr -d ' ')" -eq 0 ]
+@test "contract mode rejects contracts that do not match the request" {
+  local label team contract_allowances filter task requested expected contract id
+  local -a request_arguments mode_arguments
+  while IFS='@' read -r label team contract_allowances filter task requested expected; do
+    [ -n "$label" ] || continue
+    reset_generated_state
+    contract=$(make_contract python-engineer "case-$label" "$contract_allowances" "$team" "contract job")
+    jq "$filter" "$contract" > "$contract.tmp" && mv "$contract.tmp" "$contract"
+    id=$(basename "$contract" .json)
+    [ "$task" = "-" ] || id="$task"
+    request_arguments=()
+    for allowance in $requested; do request_arguments+=(--write-allowance "$allowance"); done
+    mode_arguments=()
+    [ "$team" = "pair" ] && mode_arguments=(--pair)
+    generate "${mode_arguments[@]}" python-engineer --job "contract job" --task-id "$id" \
+      --contract "$contract" "${request_arguments[@]}"
+    assert_rejected_without_mutation "$label" "$expected"
+  done <<'CASES'
+tampered-digest@solo@["src/a.py"]@.task_identity = "tampered"@-@src/a.py@contract digest mismatch
+task-identity-mismatch@solo@["src/a.py"]@.@task-2@src/a.py@task identity mismatch
+extra-allowance@solo@["src/a.py"]@.@-@src/a.py src/b.py@write allowances do not match contract
+subset-allowance@solo@["src/a.py","src/b.py"]@.@-@src/a.py@write allowances do not match contract
+worker-provenance@solo@["src/a.py"]@.created_by = "worker"@-@src/a.py@contract digest mismatch|planned main-session contract
+pair-missing-role@pair@["src/a.py"]@.roles = ["python-engineer"]@-@src/a.py@contract
+CASES
 }
 
 @test "generator accepts a real task-contract writer output" {
@@ -603,50 +544,5 @@ EOF
   id=$(basename "$contract" .json)
   generate python-engineer --job "wire contract" --task-id "$id" --contract "$contract" --write-allowance src/a.py
   [ "$status" -eq 0 ]
-  jq -e --arg id "$id" '.agents[] | select(.contract_id == $id and .contract_enabled == true)' "$TEST_TEMP_DIR/.lbwc-planning/.agent-manifest.json" >/dev/null
-}
-
-@test "generator rejects a real contract allowance subset before mutation" {
-  cat > "$TEST_TEMP_DIR/PLAN.md" <<'EOF'
-phase: 09
-<tasks>
-<task><name>wire-contract</name><action>implement</action><verify>tests</verify><done>green</done><strategy>small</strategy><role>python-engineer</role><files>src/a.py,src/b.py</files></task>
-</tasks>
-EOF
-  local contract id
-  contract=$(bash "$SCRIPTS_DIR/task-contract.sh" open "$TEST_TEMP_DIR/PLAN.md" "$TEST_TEMP_DIR" wire-contract --team solo --job "wire contract")
-  id=$(basename "$contract" .json)
-  generate python-engineer --job "wire contract" --task-id "$id" --contract "$contract" --write-allowance src/a.py
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"write allowances do not match contract"* ]]
-  [ ! -f "$TEST_TEMP_DIR/.lbwc-planning/.agent-manifest.json" ]
-  [ ! -d "$TEST_TEMP_DIR/.claude/agents" ] || [ "$(find "$TEST_TEMP_DIR/.claude/agents" -type f | wc -l | tr -d ' ')" -eq 0 ]
-}
-
-@test "LBWC_AGENT_RANDOM_SEED is accepted and still generates a well-formed registered agent" {
-  LBWC_AGENT_RANDOM_SEED=42 generate docs --job "write a README"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"SPAWN_READY lbwc-docs-"* ]]
-  local name
-  name=$(printf '%s\n' "$output" | grep -o 'lbwc-docs-[a-z0-9-]*' | head -1)
-  [ -n "$name" ]
-  [[ "$name" =~ ^lbwc-docs-[a-z0-9]+-[a-z0-9]+-[a-z0-9]+$ ]]
-  [ -f "$TEST_TEMP_DIR/.claude/agents/$name.md" ]
-  jq -e --arg name "$name" '.agents | has($name)' \
-    "$TEST_TEMP_DIR/.lbwc-planning/.agent-manifest.json" >/dev/null
-}
-
-@test "LBWC_AGENT_RANDOM_SEED yields a deterministic name across runs" {
-  LBWC_AGENT_RANDOM_SEED=42 generate docs --job "first"
-  [ "$status" -eq 0 ]
-  local first
-  first=$(printf '%s\n' "$output" | grep -o 'lbwc-docs-[a-z0-9-]*' | head -1)
-  [ -n "$first" ]
-
-  teardown_temp_dir
-  setup
-
-  LBWC_AGENT_RANDOM_SEED=42 generate docs --job "second"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"SPAWN_READY $first"* ]]
+  jq -e --arg id "$id" '.agents[] | select(.contract_id == $id and .contract_enabled == true)' "$(manifest_path)" >/dev/null
 }
