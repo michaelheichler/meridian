@@ -4,8 +4,6 @@ set -E
 umask 077
 
 SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname "$0")" && pwd)
-. "$SCRIPT_DIR/lib/require-bash.sh"
-require_bash_43
 PLUGIN_ROOT=$(CDPATH='' cd -- "$SCRIPT_DIR/.." && pwd)
 . "$SCRIPT_DIR/lib/agent-manifest.sh"
 . "$SCRIPT_DIR/lib/workflow-manifest.sh"
@@ -168,7 +166,9 @@ case "$SHAPE" in
     is_valid_role "$PAIR_ROLE" || fail "invalid pair role '$PAIR_ROLE'"
     ;;
   trio)
-    mapfile -t TRIO_ROLES < <(jq -r --arg r "$ROLE" '.trios[$r] // [] | .[]' "$ROLE_DEFAULTS_PATH")
+    while IFS= read -r trio_role; do
+      TRIO_ROLES+=("$trio_role")
+    done < <(jq -r --arg r "$ROLE" '.trios[$r] // [] | .[]' "$ROLE_DEFAULTS_PATH")
     [ "${#TRIO_ROLES[@]}" -eq 3 ] || fail "trio requires defaults.json's 'trios.$ROLE' to list exactly 3 roles"
     for trio_role in "${TRIO_ROLES[@]}"; do
       is_valid_role "$trio_role" || fail "invalid trio role '$trio_role'"
@@ -249,7 +249,7 @@ cleanup_on_failure() {
 }
 trap cleanup_on_failure EXIT
 
-tmp="${TARGET}.tmp.${BASHPID:-$$}"
+tmp="${TARGET}.tmp.$$"
 if ! bash "$SCRIPT_DIR/render-workflow-template.sh" "$SHAPE" "${RENDER_ARGS[@]}" > "$tmp"; then
   rm -f "$tmp"
   fail "could not render workflow script"
