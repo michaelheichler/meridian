@@ -1,5 +1,4 @@
-#!/usr/bin/env bash
-
+# Sourced only, because setting shell options here would leak into the caller.
 if [ "${BASH_SOURCE[0]}" = "$0" ]; then
   echo "Error: uat-utils.sh must be sourced, not executed directly" >&2
   exit 1
@@ -15,46 +14,12 @@ normalize_uat_status() {
 }
 
 _uat_ascii_lower() {
-  local input="${1:-}"
-  local output=""
-  local idx=0
-  local char
-
-  while [ "$idx" -lt "${#input}" ]; do
-    char="${input:$idx:1}"
-    case "$char" in
-      A) char=a ;;
-      B) char=b ;;
-      C) char=c ;;
-      D) char=d ;;
-      E) char=e ;;
-      F) char=f ;;
-      G) char=g ;;
-      H) char=h ;;
-      I) char=i ;;
-      J) char=j ;;
-      K) char=k ;;
-      L) char=l ;;
-      M) char=m ;;
-      N) char=n ;;
-      O) char=o ;;
-      P) char=p ;;
-      Q) char=q ;;
-      R) char=r ;;
-      S) char=s ;;
-      T) char=t ;;
-      U) char=u ;;
-      V) char=v ;;
-      W) char=w ;;
-      X) char=x ;;
-      Y) char=y ;;
-      Z) char=z ;;
-    esac
-    output="${output}${char}"
-    idx=$((idx + 1))
+  local text="${1:-}" upper=ABCDEFGHIJKLMNOPQRSTUVWXYZ lower=abcdefghijklmnopqrstuvwxyz index=0
+  while [ "$index" -lt 26 ]; do
+    text="${text//${upper:$index:1}/${lower:$index:1}}"
+    index=$((index + 1))
   done
-
-  printf '%s' "$output"
+  printf '%s' "$text"
 }
 
 _uat_trim_ws() {
@@ -396,7 +361,7 @@ current_uat() {
     state_file="${dir}.uat-remediation-stage"
   fi
   if [ -f "$state_file" ]; then
-    local layout round rr
+    local layout round round_label
     layout=$(grep '^layout=' "$state_file" 2>/dev/null | head -1 | cut -d= -f2 | tr -d '[:space:]')
     round=$(grep '^round=' "$state_file" 2>/dev/null | head -1 | cut -d= -f2 | tr -d '[:space:]')
     case "$state_file" in
@@ -406,8 +371,8 @@ current_uat() {
         ;;
     esac
     if [ "$layout" = "round-dir" ] && [ -n "$round" ]; then
-      rr=$(printf '%02d' "$round" 2>/dev/null) || rr="$round"
-      local round_uat="${dir}remediation/uat/round-${rr}/R${rr}-UAT.md"
+      round_label=$(printf '%02d' "$round" 2>/dev/null) || round_label="$round"
+      local round_uat="${dir}remediation/uat/round-${round_label}/R${round_label}-UAT.md"
       if [ -f "$round_uat" ]; then
         printf '%s\n' "$round_uat"
         return 0
@@ -429,8 +394,8 @@ current_uat() {
         return 0
       fi
     elif [ "$layout" = "legacy" ] && [ -n "$round" ]; then
-      rr=$(printf '%02d' "$round" 2>/dev/null) || rr="$round"
-      local legacy_round_uat="${dir}remediation/round-${rr}/R${rr}-UAT.md"
+      round_label=$(printf '%02d' "$round" 2>/dev/null) || round_label="$round"
+      local legacy_round_uat="${dir}remediation/round-${round_label}/R${round_label}-UAT.md"
       if [ -f "$legacy_round_uat" ]; then
         printf '%s\n' "$legacy_round_uat"
         return 0

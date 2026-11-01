@@ -21,7 +21,7 @@ if [[ ! -d "$MILESTONE_PHASE_DIR" ]]; then
 fi
 
 SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd)"
-source "$SCRIPT_DIR/uat-utils.sh"
+source "$SCRIPT_DIR/lib/uat-utils.sh"
 
 LOCK_DIR="$PLANNING_DIR/.create-remediation-phase.lock"
 

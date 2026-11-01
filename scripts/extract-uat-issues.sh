@@ -11,8 +11,8 @@ if [ ! -f "$ISSUE_PARSER" ] || [ ! -f "$ROUND_ID_PARSER" ]; then
   exit 1
 fi
 
-if [ -f "$SCRIPT_DIR/uat-utils.sh" ]; then
-  source "$SCRIPT_DIR/uat-utils.sh"
+if [ -f "$SCRIPT_DIR/lib/uat-utils.sh" ]; then
+  source "$SCRIPT_DIR/lib/uat-utils.sh"
 fi
 
 INPUT_PATH="${1:?Usage: extract-uat-issues.sh <phase-dir|uat-file>}"
