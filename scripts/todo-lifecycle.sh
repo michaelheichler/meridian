@@ -256,6 +256,33 @@ phase_dir_for_number() {
   find "${PLANNING_DIR%/}/phases" -maxdepth 1 -type d -name "${phase_num}-*" 2>/dev/null | head -1
 }
 
+suppression_failure_message() {
+  local suppression_result="$1"
+  local message
+
+  message=$(printf '%s' "$suppression_result" | jq -r '.message // empty' 2>/dev/null || true)
+  if [ -z "$message" ]; then
+    message="Known-issue suppression failed because track-known-issues.sh returned no usable result. The todo was removed, but it may be re-promoted."
+  fi
+  printf '%s\n' "$message"
+}
+
+mutate_result_json() {
+  jq -cn \
+    --arg action "$1" \
+    --arg command_label "$2" \
+    --arg status "$3" \
+    --arg warning "$4" \
+    --arg state_path "$5" \
+    '{
+      status:$status,
+      action:$action,
+      command_label:$command_label,
+      state_path:$state_path,
+      warning:(if $warning == "" then null else $warning end)
+    }'
+}
+
 mutate_item() {
   local mode="$1"
   local command_label="$2"
@@ -305,26 +332,12 @@ mutate_item() {
     suppression_status=$(printf '%s' "$suppression_result" | jq -r '.status // "error"' 2>/dev/null || echo 'error')
     if [ "$suppression_status" != "ok" ]; then
       final_status="partial"
-      if [ -n "$final_warning" ]; then
-        final_warning+=" "
-      fi
-      final_warning+=$(printf '%s' "$suppression_result" | jq -r '.message // empty' 2>/dev/null || true)
+      final_warning="${final_warning:+$final_warning }$(suppression_failure_message "$suppression_result")"
     fi
   fi
 
-  jq -cn \
-    --arg status "$final_status" \
-    --arg action "$mode" \
-    --arg command_label "$command_label" \
-    --arg state_path "$(printf '%s' "$validated_json" | jq -r '.state_path // empty')" \
-    --arg warning "$final_warning" \
-    '{
-      status:$status,
-      action:$action,
-      command_label:$command_label,
-      state_path:$state_path,
-      warning:(if $warning == "" then null else $warning end)
-    }'
+  mutate_result_json "$mode" "$command_label" "$final_status" "$final_warning" \
+    "$(printf '%s' "$validated_json" | jq -r '.state_path // empty')"
 }
 
 case "$CMD" in
