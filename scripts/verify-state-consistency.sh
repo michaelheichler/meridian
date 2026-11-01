@@ -9,7 +9,8 @@ source "$SCRIPT_DIR/lib/iso-epoch.sh"
 
 drift() {
   printf 'DRIFT %s: %s\n' "$1" "$2"
-  DRIFT_COUNT=$((DRIFT_COUNT + 1))
+  local next_count=$((DRIFT_COUNT + 1))
+  printf -v DRIFT_COUNT '%s' "$next_count"
 }
 
 skip() {
