@@ -5,6 +5,8 @@ PLANNING_DIR="${LBWC_PLANNING_DIR:-.lbwc-planning}"
 SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd)"
 DRIFT_COUNT=0
 
+source "$SCRIPT_DIR/lib/iso-epoch.sh"
+
 drift() {
   printf 'DRIFT %s: %s\n' "$1" "$2"
   DRIFT_COUNT=$((DRIFT_COUNT + 1))
@@ -78,7 +80,7 @@ check_roadmap() {
 }
 
 check_manifest() {
-  local manifest="$PLANNING_DIR/.agent-manifest.json"
+  local manifest="$PLANNING_DIR/.agent-manifest.json" agent_id state timestamp epoch now
   [[ -f "$manifest" ]] || return 0
   if ! command -v jq >/dev/null 2>&1; then
     skip "agent_manifest" "jq"
@@ -88,11 +90,9 @@ check_manifest() {
     [[ -n "$agent_id" ]] || continue
     if [[ -z "$timestamp" ]]; then
       drift "agent_manifest" "$agent_id has active state $state without timestamp"
-    elif ! date -j -u -f '%Y-%m-%dT%H:%M:%SZ' "${timestamp%%.*}Z" '+%s' >/dev/null 2>&1; then
+    elif ! epoch=$(iso_utc_to_epoch "$timestamp"); then
       drift "agent_manifest" "$agent_id has invalid timestamp $timestamp"
     else
-      local epoch now
-      epoch=$(date -j -u -f '%Y-%m-%dT%H:%M:%SZ' "${timestamp%%.*}Z" '+%s' 2>/dev/null || echo 0)
       now=$(date '+%s')
       (( now - epoch > 86400 )) && drift "agent_manifest" "$agent_id is $state and older than 24h"
     fi
