@@ -107,7 +107,14 @@ discovery_row() {
   expect_output_jq "$label" "$program"
 }
 
-@test "discovery selects the question mode and a stable candidate order" {
+fail_closed_row() {
+  local label="$1" fragment="$2"
+  run_skills --json list "$PROJECT_ROOT"
+  expect_rejected "$label" "$fragment"
+  reset_skills_fixture
+}
+
+@test "discovery selects the question mode and a stable candidate order and fails closed on invalid inputs or symbolic links" {
   local empty_result linked_project="$TEST_ROOT/project-link"
   empty_result='{"candidate_count":0,"candidates":[],"config":{"auto_install_skills":false,"discovery_questions":true,"skill_suggestions":true},"detected_stack":[],"installed":{"global":[],"project":[]},"operation":"list","question_mode":"none","schema_version":1}'
 
@@ -164,6 +171,31 @@ discovery_row() {
   run_skills --json list "$linked_project"
   expect_case symbolic-project-argument 0
   expect_trace_root symbolic-project-argument
+  reset_skills_fixture
+
+  printf '%s\n' '{"suggestions":"not-an-array"}' > "$DETECTOR_RESPONSE"
+  fail_closed_row malformed-detector-output 'detector output is not a valid LBWC stack result'
+
+  printf '%s\n' '{' > "$PLANNING_DIR/config.json"
+  fail_closed_row invalid-json-configuration 'skill discovery configuration is invalid'
+
+  printf '%s\n' '[]' > "$PLANNING_DIR/config.json"
+  fail_closed_row non-object-configuration 'skill discovery configuration is invalid'
+
+  printf '%s\n' '{"skill_suggestions":"yes"}' > "$PLANNING_DIR/config.json"
+  fail_closed_row non-boolean-setting 'skill discovery configuration is invalid'
+
+  mv "$PLANNING_DIR/config.json" "$TEST_ROOT/external-config.json"
+  ln -s "$TEST_ROOT/external-config.json" "$PLANNING_DIR/config.json"
+  fail_closed_row symbolic-link-configuration 'configuration must not be a symbolic link'
+
+  rm "$PLANNING_DIR/config.json"
+  ln -s "$TEST_ROOT/missing-config.json" "$PLANNING_DIR/config.json"
+  fail_closed_row dangling-symbolic-link-configuration 'configuration must not be a symbolic link'
+
+  mv "$PLUGIN_ROOT/scripts/detect-stack.sh" "$TEST_ROOT/external-detector.sh"
+  ln -s "$TEST_ROOT/external-detector.sh" "$PLUGIN_ROOT/scripts/detect-stack.sh"
+  fail_closed_row symbolic-link-detector 'stack detector must not be a symbolic link'
 
   assert_no_case_failures
 }
@@ -200,41 +232,6 @@ discovery_row() {
   assert_no_case_failures
 }
 
-fail_closed_row() {
-  local label="$1" fragment="$2"
-  run_skills --json list "$PROJECT_ROOT"
-  expect_rejected "$label" "$fragment"
-  reset_skills_fixture
-}
-
-@test "discovery fails closed on an invalid detector, configuration or symbolic link" {
-  printf '%s\n' '{"suggestions":"not-an-array"}' > "$DETECTOR_RESPONSE"
-  fail_closed_row malformed-detector-output 'detector output is not a valid LBWC stack result'
-
-  printf '%s\n' '{' > "$PLANNING_DIR/config.json"
-  fail_closed_row invalid-json-configuration 'skill discovery configuration is invalid'
-
-  printf '%s\n' '[]' > "$PLANNING_DIR/config.json"
-  fail_closed_row non-object-configuration 'skill discovery configuration is invalid'
-
-  printf '%s\n' '{"skill_suggestions":"yes"}' > "$PLANNING_DIR/config.json"
-  fail_closed_row non-boolean-setting 'skill discovery configuration is invalid'
-
-  mv "$PLANNING_DIR/config.json" "$TEST_ROOT/external-config.json"
-  ln -s "$TEST_ROOT/external-config.json" "$PLANNING_DIR/config.json"
-  fail_closed_row symbolic-link-configuration 'configuration must not be a symbolic link'
-
-  rm "$PLANNING_DIR/config.json"
-  ln -s "$TEST_ROOT/missing-config.json" "$PLANNING_DIR/config.json"
-  fail_closed_row dangling-symbolic-link-configuration 'configuration must not be a symbolic link'
-
-  mv "$PLUGIN_ROOT/scripts/detect-stack.sh" "$TEST_ROOT/external-detector.sh"
-  ln -s "$TEST_ROOT/external-detector.sh" "$PLUGIN_ROOT/scripts/detect-stack.sh"
-  fail_closed_row symbolic-link-detector 'stack detector must not be a symbolic link'
-
-  assert_no_case_failures
-}
-
 @test "install validates the candidate and refuses noninteractive mutation" {
   write_detector '["python"]' '[]' '[]' '["safe-skill"]' '["safe-skill"]'
   run_skills --json install "$PROJECT_ROOT" safe-skill
@@ -251,7 +248,7 @@ fail_closed_row() {
   assert_no_case_failures
 }
 
-@test "the skills command keeps installation consent in the main session" {
+@test "the skills command keeps installation consent in the main session and declares no name, network tool, subagent tool or direct installer" {
   local command_file="$REPO_ROOT/commands/skills.md"
 
   while IFS='|' read -r label fragment; do
@@ -271,12 +268,6 @@ skip-all-option|1. Skip all
 show-table-option|2. Show the table again
 native-other-option|Use native Other to type comma-separated numbers
 FRAGMENTS
-
-  assert_no_case_failures
-}
-
-@test "the skills command declares no name, network tool, subagent tool or direct installer" {
-  local command_file="$REPO_ROOT/commands/skills.md"
 
   run awk 'NR == 1 {next} /^---$/ {exit} /^name:/' "$command_file"
   expect_case frontmatter-has-no-name 0

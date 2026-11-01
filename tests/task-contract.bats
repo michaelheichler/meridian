@@ -1,5 +1,7 @@
 #!/usr/bin/env bats
 
+load gate_case_helper
+
 setup() {
   ROOT="$(mktemp -d)"
   ROOT_CANON="$(cd "$ROOT" && pwd -P)"
@@ -7,6 +9,7 @@ setup() {
   SCRIPT="$BATS_TEST_DIRNAME/../scripts/task-contract.sh"
   PLAN_CONTRACT="$ROOT/.lbwc-planning/.contracts/tasks/09-PLAN-write-contract.json"
   PLAN_ID="09-PLAN-write-contract"
+  reset_case_failures
   cat >"$PLAN" <<'PLAN'
 ---
 phase: 9
@@ -53,20 +56,24 @@ expect_rejected() {
   local label="$1" message="$2"
   shift 2
   run "$@"
-  if [ "$status" -eq 0 ] || [[ "$output" != *"$message"* ]]; then
-    echo "case=$label status=$status expected_message=$message" >&2
-    echo "$output" >&2
-    return 1
-  fi
+  [ "$status" -ne 0 ] || record_case_failure "$label" "expected a failing status output=$output"
+  [[ "$output" == *"$message"* ]] || record_case_failure "$label" "missing message=[$message] output=$output"
 }
 
 expect_contract() {
   local label="$1" file="$2" filter="$3"
   shift 3
-  if ! jq -e "$@" "$filter" "$file" >/dev/null; then
-    echo "case=$label contract=$(cat "$file")" >&2
-    return 1
-  fi
+  jq -e "$@" "$filter" "$file" >/dev/null 2>&1 \
+    || record_case_failure "$label" "contract did not satisfy filter content=$(cat "$file" 2>&1)"
+}
+
+expect_accepted() {
+  local label="$1"
+  [ "$status" -eq 0 ] || record_case_failure "$label" "status=$status output=$output"
+}
+
+expect_no_written_contracts() {
+  [ -z "$(written_contracts)" ] || record_case_failure "$1" "contracts were written: $(written_contracts)"
 }
 
 expect_tamper_rejected() {
@@ -78,10 +85,29 @@ expect_tamper_rejected() {
   mv "$file.orig" "$file"
 }
 
-@test "open writes a canonical schema 2 plan contract and read returns it" {
+@test "open writes and rereads a schema 2 plan contract, binds groupings, and rejects bad plans, options and drift" {
+  mkdir -p "$ROOT/real-tasks" "$ROOT/.lbwc-planning"
+  ln -s "$ROOT/real-tasks" "$ROOT/.lbwc-planning/.contracts"
+  expect_rejected symlinked-contracts "symlink" open_plan
+  rm "$ROOT/.lbwc-planning/.contracts"
+
+  cp "$PLAN" "$ROOT/bad.md"
+  perl -pi -e 's#</task>##' "$ROOT/bad.md"
+  cp "$PLAN" "$ROOT/dupe.md"
+  perl -0777 -pi -e 's#</tasks>#</tasks><tasks></tasks>#' "$ROOT/dupe.md"
+  cp "$PLAN" "$ROOT/escape.md"
+  perl -pi -e 's#src/contract.py#../escape#' "$ROOT/escape.md"
+  expect_rejected unknown-task "unknown task" bash "$SCRIPT" open "$PLAN" "$ROOT" "missing"
+  expect_rejected malformed-plan "malformed PLAN" bash "$SCRIPT" open "$ROOT/bad.md" "$ROOT" "write contract"
+  expect_rejected duplicate-tasks-block "duplicate tasks" bash "$SCRIPT" open "$ROOT/dupe.md" "$ROOT" "write contract"
+  expect_rejected unsafe-path "repo-relative" bash "$SCRIPT" open "$ROOT/escape.md" "$ROOT" "write contract"
+
+  expect_rejected injected-role "invalid role" open_plan --role 'coding-dijkstra;touch /tmp/pwned'
+  [ ! -e /tmp/pwned ] || record_case_failure injected-role "/tmp/pwned exists"
+  expect_rejected unknown-flag "Usage" open_plan --bad coding-dijkstra
+
   run open_plan
-  [ "$status" -eq 0 ]
-  [ -f "$PLAN_CONTRACT" ]
+  expect_accepted plan-contract
   expect_contract plan-contract "$PLAN_CONTRACT" '
     .schema_version == 2 and .created_by == "main" and .project_root == $root
     and .roles == ["coding-dijkstra", "coding-dijkstra-critic"]
@@ -95,122 +121,12 @@ expect_tamper_rejected() {
     and (has("control_root") | not)
   ' --arg root "$ROOT_CANON"
   run bash "$SCRIPT" read "$ROOT" "$PLAN_ID"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *'"state": "planned"'* ]]
-}
+  expect_case read-plan-contract 0 '"state": "planned"'
 
-@test "open rejects invalid plan input" {
-  cp "$PLAN" "$ROOT/bad.md"
-  perl -pi -e 's#</task>##' "$ROOT/bad.md"
-  cp "$PLAN" "$ROOT/dupe.md"
-  perl -0777 -pi -e 's#</tasks>#</tasks><tasks></tasks>#' "$ROOT/dupe.md"
-  cp "$PLAN" "$ROOT/escape.md"
-  perl -pi -e 's#src/contract.py#../escape#' "$ROOT/escape.md"
-
-  expect_rejected unknown-task "unknown task" bash "$SCRIPT" open "$PLAN" "$ROOT" "missing"
-  expect_rejected malformed-plan "malformed PLAN" bash "$SCRIPT" open "$ROOT/bad.md" "$ROOT" "write contract"
-  expect_rejected duplicate-tasks-block "duplicate tasks" bash "$SCRIPT" open "$ROOT/dupe.md" "$ROOT" "write contract"
-  expect_rejected unsafe-path "repo-relative" bash "$SCRIPT" open "$ROOT/escape.md" "$ROOT" "write contract"
-}
-
-@test "open rejects injected and unknown option forms" {
-  expect_rejected injected-role "invalid role" open_plan --role 'coding-dijkstra;touch /tmp/pwned'
-  [ ! -e /tmp/pwned ]
-  expect_rejected unknown-flag "Usage" open_plan --bad coding-dijkstra
-}
-
-@test "reopen after a transition is idempotent but source drift fails" {
-  open_plan
-  bash "$SCRIPT" state "$ROOT" "$PLAN_ID" dispatched
-  run open_plan
-  [ "$status" -eq 0 ]
-  perl -pi -e 's/Implement the writer/Changed/' "$PLAN"
-  expect_rejected plan-drift "PLAN digest mismatch" open_plan
-}
-
-@test "open refuses a symlinked contracts directory" {
-  mkdir -p "$ROOT/real-tasks" "$ROOT/.lbwc-planning"
-  ln -s "$ROOT/real-tasks" "$ROOT/.lbwc-planning/.contracts"
-  expect_rejected symlinked-contracts "symlink" open_plan
-}
-
-@test "state applies a legal transition and persists it" {
-  open_plan
-  run bash "$SCRIPT" state "$ROOT" "$PLAN_ID" dispatched
-  [ "$status" -eq 0 ]
-  run bash "$SCRIPT" read "$ROOT" "$PLAN_ID"
-  [[ "$output" == *'"state": "dispatched"'* ]]
-}
-
-@test "state rejects each class of illegal transition" {
-  open_plan
-  expect_rejected skipped-step "illegal state transition" bash "$SCRIPT" state "$ROOT" "$PLAN_ID" verified
-  expect_rejected unknown-state "invalid state" bash "$SCRIPT" state "$ROOT" "$PLAN_ID" bogus
-  expect_rejected unknown-contract "unknown contract" bash "$SCRIPT" state "$ROOT" "no-such-contract" dispatched
-  bash "$SCRIPT" state "$ROOT" "$PLAN_ID" cancelled
-  expect_rejected leaves-terminal "illegal state transition" bash "$SCRIPT" state "$ROOT" "$PLAN_ID" dispatched
-}
-
-@test "state and verify reject tampered contracts and job drift" {
-  open_plan
-  expect_tamper_rejected schema-version "$PLAN_CONTRACT" \
-    's/"schema_version": 2/"schema_version": 99/' "invalid contract" \
-    bash "$SCRIPT" state "$ROOT" "$PLAN_ID" dispatched
-  expect_tamper_rejected roles-sequence "$PLAN_CONTRACT" \
-    's/coding-dijkstra-critic/not-the-configured-critic/' "contract digest mismatch" \
-    bash "$SCRIPT" state "$ROOT" "$PLAN_ID" dispatched
-
-  local debug_contract
-  debug_contract=$(bash "$SCRIPT" issue "$ROOT" "debug-one" \
-    --command debug --role debugger --team solo --job "Find root cause")
-  expect_rejected job-drift "job digest mismatch" bash "$SCRIPT" verify "$debug_contract" "$ROOT" --job "Different brief"
-  expect_tamper_rejected command-name "$debug_contract" \
-    's/"command_name": "debug"/"command_name": "qa"/' "contract digest mismatch" \
-    bash "$SCRIPT" verify "$debug_contract" "$ROOT" --job "Find root cause"
-
-  make_control_root team-backend
-  local team_contract
-  team_contract=$(issue_team team-backend --control-root "$CONTROL_ROOT" \
-    --requested-backend tmux --resolved-backend tmux --write-capability directory:src/web)
-  expect_tamper_rejected resolved-backend "$team_contract" \
-    's/"resolved_backend": "tmux"/"resolved_backend": "in_process"/' "contract digest mismatch" \
-    bash "$SCRIPT" verify "$team_contract" "$ROOT"
-}
-
-@test "issue writes a command contract with exact team and role allowances" {
-  run bash "$SCRIPT" issue "$ROOT" "docs-readme" \
-    --command docs --role docs --team solo --job "Update README" \
-    --write-allowance README.md
-  [ "$status" -eq 0 ]
-  expect_contract command-contract "$output" '
-    .schema_version == 2
-    and .source_kind == "command"
-    and .command_name == "docs"
-    and .created_by == "main"
-    and .project_root == $root
-    and .team_mode == "solo"
-    and .role == "docs"
-    and .roles == ["docs"]
-    and .write_allowances == ["README.md"]
-    and .allowances_by_role == {docs:["README.md"]}
-    and (.contract_digest | test("^[0-9a-f]{64}$"))
-  ' --arg root "$ROOT_CANON"
-}
-
-@test "repeated command issue creates a new run contract" {
-  local first second
-  first=$(bash "$SCRIPT" issue "$ROOT" repeat --command qa --role qa --team solo --job "verify")
-  second=$(bash "$SCRIPT" issue "$ROOT" repeat --command qa --role qa --team solo --job "verify")
-  [ "$first" != "$second" ]
-  [ -f "$first" ]
-  [ -f "$second" ]
-}
-
-@test "open binds a plan grouping with exact allowances per role" {
   run open_plan --role coding-dijkstra --team pair --group implementation \
     --job "Implement the writer" \
     --write-allowance src/contract.py --write-allowance tests/task-contract.bats
-  [ "$status" -eq 0 ]
+  expect_accepted plan-grouping
   expect_contract plan-grouping "$output" '
     .schema_version == 2
     and .source_kind == "plan"
@@ -220,10 +136,60 @@ expect_tamper_rejected() {
     and .allowances_by_role["coding-dijkstra"] == ["src/contract.py", "tests/task-contract.bats"]
     and .allowances_by_role["coding-dijkstra-critic"] == []
   '
+
+  bash "$SCRIPT" state "$ROOT" "$PLAN_ID" dispatched
+  run open_plan
+  expect_accepted reopen-after-transition
+  perl -pi -e 's/Implement the writer/Changed/' "$PLAN"
+  expect_rejected plan-drift "PLAN digest mismatch" open_plan
+
+  assert_no_case_failures
 }
 
-@test "allowance validation rejects bad allowances before any contract is written" {
-  local protected
+@test "state persists legal transitions and rejects illegal transitions and tampered contracts" {
+  open_plan
+  expect_rejected skipped-step "illegal state transition" bash "$SCRIPT" state "$ROOT" "$PLAN_ID" verified
+  expect_rejected unknown-state "invalid state" bash "$SCRIPT" state "$ROOT" "$PLAN_ID" bogus
+  expect_rejected unknown-contract "unknown contract" bash "$SCRIPT" state "$ROOT" "no-such-contract" dispatched
+  expect_tamper_rejected schema-version "$PLAN_CONTRACT" \
+    's/"schema_version": 2/"schema_version": 99/' "invalid contract" \
+    bash "$SCRIPT" state "$ROOT" "$PLAN_ID" dispatched
+  expect_tamper_rejected roles-sequence "$PLAN_CONTRACT" \
+    's/coding-dijkstra-critic/not-the-configured-critic/' "contract digest mismatch" \
+    bash "$SCRIPT" state "$ROOT" "$PLAN_ID" dispatched
+
+  run bash "$SCRIPT" state "$ROOT" "$PLAN_ID" dispatched
+  expect_accepted legal-transition
+  run bash "$SCRIPT" read "$ROOT" "$PLAN_ID"
+  expect_case legal-transition-persisted 0 '"state": "dispatched"'
+
+  bash "$SCRIPT" state "$ROOT" "$PLAN_ID" cancelled
+  expect_rejected leaves-terminal "illegal state transition" bash "$SCRIPT" state "$ROOT" "$PLAN_ID" dispatched
+
+  assert_no_case_failures
+}
+
+@test "verify rejects job drift and tampered command and backend contracts" {
+  local debug_contract team_contract
+  debug_contract=$(bash "$SCRIPT" issue "$ROOT" "debug-one" \
+    --command debug --role debugger --team solo --job "Find root cause")
+  expect_rejected job-drift "job digest mismatch" bash "$SCRIPT" verify "$debug_contract" "$ROOT" --job "Different brief"
+  expect_tamper_rejected command-name "$debug_contract" \
+    's/"command_name": "debug"/"command_name": "qa"/' "contract digest mismatch" \
+    bash "$SCRIPT" verify "$debug_contract" "$ROOT" --job "Find root cause"
+
+  make_control_root team-backend
+  team_contract=$(issue_team team-backend --control-root "$CONTROL_ROOT" \
+    --requested-backend tmux --resolved-backend tmux --write-capability directory:src/web)
+  expect_tamper_rejected resolved-backend "$team_contract" \
+    's/"resolved_backend": "tmux"/"resolved_backend": "in_process"/' "contract digest mismatch" \
+    bash "$SCRIPT" verify "$team_contract" "$ROOT"
+
+  assert_no_case_failures
+}
+
+@test "issue writes schema 2 command contracts with exact allowances and rejects bad allowances before writing" {
+  local protected first second
   expect_rejected role-outside-team "allowance role is not in contract team" \
     bash "$SCRIPT" issue "$ROOT" "bad-team" \
     --command build --role python-engineer --team pair --job "Implement" \
@@ -246,15 +212,50 @@ expect_tamper_rejected() {
       --command test --role python-engineer --team solo --job "mutate policy" \
       --write-allowance "$protected"
   done
-  [ -z "$(written_contracts)" ]
+  expect_no_written_contracts bad-allowances-write-nothing
+
+  run bash "$SCRIPT" issue "$ROOT" "docs-readme" \
+    --command docs --role docs --team solo --job "Update README" \
+    --write-allowance README.md
+  expect_accepted command-contract
+  expect_contract command-contract "$output" '
+    .schema_version == 2
+    and .source_kind == "command"
+    and .command_name == "docs"
+    and .created_by == "main"
+    and .project_root == $root
+    and .team_mode == "solo"
+    and .role == "docs"
+    and .roles == ["docs"]
+    and .write_allowances == ["README.md"]
+    and .allowances_by_role == {docs:["README.md"]}
+    and (.contract_digest | test("^[0-9a-f]{64}$"))
+  ' --arg root "$ROOT_CANON"
+
+  first=$(bash "$SCRIPT" issue "$ROOT" repeat --command qa --role qa --team solo --job "verify")
+  second=$(bash "$SCRIPT" issue "$ROOT" repeat --command qa --role qa --team solo --job "verify")
+  [ "$first" != "$second" ] || record_case_failure repeated-issue "both runs returned $first"
+  [ -f "$first" ] || record_case_failure repeated-issue "missing first contract $first"
+  [ -f "$second" ] || record_case_failure repeated-issue "missing second contract $second"
+
+  assert_no_case_failures
 }
 
-@test "issue writes schema 3 typed capabilities in an explicit control root" {
+@test "issue writes schema 3 typed capabilities in the control root and rejects invalid capability declarations" {
+  local contract backend=(--requested-backend workflow --resolved-backend workflow)
+  make_control_root team-state
+  contract=$(issue_team team-state --control-root "$CONTROL_ROOT" --write-capability directory:src/web)
+  run bash "$SCRIPT" state "$ROOT" "$(basename "$contract" .json)" dispatched
+  expect_accepted schema3-state
+  [ ! -e "$ROOT/.lbwc-planning" ] || record_case_failure schema3-state "planning directory was created"
+  [ ! -e "$CONTROL_ROOT/contracts/.lock" ] || record_case_failure schema3-state "control root lock remained"
+
   make_control_root team-one
   run issue_team team-scope --control-root "$CONTROL_ROOT" \
     --write-capability file:src/web/index.ts --write-capability directory:tests/web
-  [ "$status" -eq 0 ]
-  [ "$output" = "$CONTROL_ROOT/contracts/tasks/$(basename "$output")" ]
+  expect_accepted typed-contract
+  [ "$output" = "$CONTROL_ROOT/contracts/tasks/$(basename "$output")" ] \
+    || record_case_failure typed-contract "contract path $output is outside the control root"
   expect_contract typed-contract "$output" '
     .schema_version == 3
     and .control_root == $control
@@ -268,39 +269,21 @@ expect_tamper_rejected() {
     and .requested_backend == "in_process"
     and .resolved_backend == "in_process"
   ' --arg control "$CONTROL_ROOT"
-}
 
-@test "schema 3 state updates use the temporary control root only" {
-  make_control_root team-state
-  local contract
-  contract=$(issue_team team-state --control-root "$CONTROL_ROOT" --write-capability directory:src/web)
-
-  run bash "$SCRIPT" state "$ROOT" "$(basename "$contract" .json)" dispatched
-
-  [ "$status" -eq 0 ]
-  [ ! -e "$ROOT/.lbwc-planning" ]
-  [ ! -e "$CONTROL_ROOT/contracts/.lock" ]
-}
-
-@test "schema 3 issue accepts a role with no write capability when the role never writes" {
   make_control_root read-only
   run bash "$SCRIPT" issue "$ROOT" "qa-scope" \
     --command qa --role qa --team solo --job "verify the web scope" \
-    --control-root "$CONTROL_ROOT" --requested-backend workflow --resolved-backend workflow
-  [ "$status" -eq 0 ]
+    --control-root "$CONTROL_ROOT" "${backend[@]}"
+  expect_accepted role-disallows-write
   expect_contract role-disallows-write "$output" '.schema_version == 3 and .capabilities_by_role["qa"] == []'
-
   run bash "$SCRIPT" issue "$ROOT" "scout-scope" \
     --command map --role scout --team solo --job "map the thing" \
-    --control-root "$CONTROL_ROOT" --requested-backend workflow --resolved-backend workflow \
+    --control-root "$CONTROL_ROOT" "${backend[@]}" \
     --read-only-role scout
-  [ "$status" -eq 0 ]
+  expect_accepted declared-read-only
   expect_contract declared-read-only "$output" '.schema_version == 3 and .capabilities_by_role["scout"] == []'
-}
 
-@test "schema 3 issue rejects invalid capability and metadata declarations" {
   make_control_root invalid
-  local backend=(--requested-backend workflow --resolved-backend workflow)
   expect_rejected writer-without-capability "typed contract requires at least one capability" \
     bash "$SCRIPT" issue "$ROOT" "dev-scope" \
     --command fix --role coding-dijkstra --team solo --job "fix the thing" \
@@ -324,13 +307,21 @@ expect_tamper_rejected() {
   expect_rejected unknown-communication-policy "communication_policy" \
     issue_team bad-communication --control-root "$CONTROL_ROOT" \
     --communication-policy unknown-policy --write-capability directory:src/web
+
+  assert_no_case_failures
 }
 
-@test "open writes schema 3 when backend and control-root flags are set" {
+@test "open writes schema 3 only when backend and control-root flags are all set" {
+  make_control_root plan-partial
+  expect_rejected backends-without-control-root "schema 3 open requires" open_plan --requested-backend tmux --resolved-backend tmux
+  expect_rejected control-root-without-backends "schema 3 open requires" open_plan --control-root "$CONTROL_ROOT"
+  expect_no_written_contracts partial-flags-write-nothing
+
   make_control_root plan-schema3
   run open_plan --requested-backend tmux --resolved-backend tmux --control-root "$CONTROL_ROOT"
-  [ "$status" -eq 0 ]
-  [ "$output" = "$CONTROL_ROOT/contracts/tasks/$(basename "$output")" ]
+  expect_accepted plan-schema3
+  [ "$output" = "$CONTROL_ROOT/contracts/tasks/$(basename "$output")" ] \
+    || record_case_failure plan-schema3 "contract path $output is outside the control root"
   expect_contract plan-schema3 "$output" '
     .schema_version == 3
     and .source_kind == "plan"
@@ -345,13 +336,8 @@ expect_tamper_rejected() {
     ]
     and .write_allowances == ["src/contract.py", "tests/task-contract.bats"]
   ' --arg control "$CONTROL_ROOT"
-}
 
-@test "open rejects a partial schema 3 flag set before writing" {
-  make_control_root plan-partial
-  expect_rejected backends-without-control-root "schema 3 open requires" open_plan --requested-backend tmux --resolved-backend tmux
-  expect_rejected control-root-without-backends "schema 3 open requires" open_plan --control-root "$CONTROL_ROOT"
-  [ -z "$(written_contracts)" ]
+  assert_no_case_failures
 }
 
 @test "assert-snapshot accepts a matching snapshot and rejects a mismatch without writing" {
@@ -362,13 +348,13 @@ expect_tamper_rejected() {
   local flags=(--requested-backend tmux --resolved-backend tmux --control-root "$CONTROL_ROOT")
 
   run open_plan "${flags[@]}" --assert-snapshot "$full"
-  [ "$status" -eq 0 ]
+  expect_accepted open-full-snapshot
   expect_contract open-full-snapshot "$output" '.schema_version == 3 and .requested_backend == "tmux" and .resolved_backend == "tmux"'
   run issue_team team-assert "${flags[@]}" --assert-snapshot "$full" --write-capability directory:src/web
-  [ "$status" -eq 0 ]
+  expect_accepted issue-full-snapshot
   expect_contract issue-full-snapshot "$output" '.schema_version == 3 and .requested_backend == "tmux" and .resolved_backend == "tmux"'
   run open_plan "${flags[@]}" --assert-snapshot "$freeze" --group freeze-shape
-  [ "$status" -eq 0 ]
+  expect_accepted open-freeze-snapshot
   expect_contract open-freeze-snapshot "$output" '.schema_version == 3 and .requested_backend == "tmux" and .resolved_backend == "tmux"'
 
   jq '.requested_backend = "in_process" | .resolved_backend = "in_process"' "$full" > "$ROOT/full-mismatch.json"
@@ -377,5 +363,8 @@ expect_tamper_rejected() {
   expect_rejected issue-full-mismatch "snapshot backend mismatch" issue_team team-assert-mismatch "${flags[@]}" \
     --assert-snapshot "$ROOT/full-mismatch.json" --write-capability directory:src/web
   expect_rejected open-freeze-mismatch "snapshot backend mismatch" open_plan "${flags[@]}" --assert-snapshot "$ROOT/freeze-mismatch.json" --group freeze-mismatch
-  [ -z "$(find "$CONTROL_ROOT/contracts/tasks" -name '*mismatch*' -print -quit)" ]
+  [ -z "$(find "$CONTROL_ROOT/contracts/tasks" -name '*mismatch*' -print -quit)" ] \
+    || record_case_failure mismatch-writes-nothing "a mismatch contract was written"
+
+  assert_no_case_failures
 }

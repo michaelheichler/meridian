@@ -368,7 +368,7 @@ sc_milestone_extract() {
   esac
 }
 
-@test "project tree reports its identity, defaults and next phase state" {
+@test "project tree reports identity and defaults, scans canonical phases, and gates unplanned phases on discussion" {
   pd_table <<'CASES'
 no-planning-directory#sc_no_planning#planning_dir_exists=false~uat_round_count=0~qa_attention_reason=none~qa_reason=none
 planning-without-phases-dir#:#planning_dir_exists=true~project_exists=false
@@ -377,6 +377,22 @@ project-without-phases#sc_project_no_phases#project_exists=true~qa_status=none~q
 unplanned-phase#mkdir -p .lbwc-planning/phases/01-test#next_phase_state=needs_plan_and_execute
 planned-phase#pd_plan 01-test 1#next_phase_state=needs_execute
 finished-phase#pd_done 01-test#next_phase_state=all_done
+noncanonical-plan-file-ignored#sc_noncanonical_plan#next_phase_state=needs_execute~next_phase_plans=1
+dotfile-plan-ignored#sc_dotfile_plan#next_phase_state=all_done
+noncanonical-phase-dir-skipped#sc_noncanonical_dir#phase_count=1~next_phase=01~next_phase_slug=01-real~next_phase_state=needs_plan_and_execute
+numeric-sort-not-lexicographic#sc_numeric_sort#uat_issues_phase=11~next_phase=11
+active-file-ignored#sc_active_file_ignored#phase_count=1~phases_dir=.lbwc-planning/phases
+mid-remediation-beats-later-uat#sc_priority mid_remediation#next_phase=02~next_phase_state=needs_execute~next_phase_plans=2~next_phase_summaries=1
+mid-execution-beats-later-uat#sc_priority mid_execution#next_phase=02~next_phase_state=needs_execute~next_phase_plans=2~next_phase_summaries=1
+unplanned-beats-later-uat#sc_priority unplanned#next_phase=01~next_phase_state=needs_plan_and_execute
+undiscussed-beats-later-uat#sc_priority undiscussed#next_phase=01~next_phase_state=needs_discussion
+discussed-beats-later-uat#sc_priority discussed#next_phase=01~next_phase_state=needs_plan_and_execute
+flag-true-reported#pd_config .require_phase_discussion=true#config_require_phase_discussion=true
+undiscussed-phase#sc_discuss undiscussed#next_phase_state=needs_discussion~next_phase=01
+canonical-context-satisfies#sc_discuss discussed#next_phase_state=needs_plan_and_execute
+planned-phase-skips-discussion#sc_discuss planned#next_phase_state=needs_execute
+foreign-context-does-not-satisfy#sc_discuss foreign_context#next_phase_state=needs_discussion
+first-undiscussed-phase-targeted#sc_discuss multi_phase#next_phase_state=needs_discussion~next_phase=02~next_phase_slug=02-second
 CASES
 }
 
@@ -406,33 +422,7 @@ pd_golden_matches() {
     || { printf 'golden=%s differs\n' "$1" >&2; diff -u "$expected" "$TEST_TEMP_DIR/actual-output.txt" >&2; return 1; }
 }
 
-@test "phase directory scan counts only canonical artifacts and picks the first unfinished phase" {
-  pd_table <<'CASES'
-noncanonical-plan-file-ignored#sc_noncanonical_plan#next_phase_state=needs_execute~next_phase_plans=1
-dotfile-plan-ignored#sc_dotfile_plan#next_phase_state=all_done
-noncanonical-phase-dir-skipped#sc_noncanonical_dir#phase_count=1~next_phase=01~next_phase_slug=01-real~next_phase_state=needs_plan_and_execute
-numeric-sort-not-lexicographic#sc_numeric_sort#uat_issues_phase=11~next_phase=11
-active-file-ignored#sc_active_file_ignored#phase_count=1~phases_dir=.lbwc-planning/phases
-mid-remediation-beats-later-uat#sc_priority mid_remediation#next_phase=02~next_phase_state=needs_execute~next_phase_plans=2~next_phase_summaries=1
-mid-execution-beats-later-uat#sc_priority mid_execution#next_phase=02~next_phase_state=needs_execute~next_phase_plans=2~next_phase_summaries=1
-unplanned-beats-later-uat#sc_priority unplanned#next_phase=01~next_phase_state=needs_plan_and_execute
-undiscussed-beats-later-uat#sc_priority undiscussed#next_phase=01~next_phase_state=needs_discussion
-discussed-beats-later-uat#sc_priority discussed#next_phase=01~next_phase_state=needs_plan_and_execute
-CASES
-}
-
-@test "phase discussion requirement gates only unplanned phases" {
-  pd_table <<'CASES'
-flag-true-reported#pd_config .require_phase_discussion=true#config_require_phase_discussion=true
-undiscussed-phase#sc_discuss undiscussed#next_phase_state=needs_discussion~next_phase=01
-canonical-context-satisfies#sc_discuss discussed#next_phase_state=needs_plan_and_execute
-planned-phase-skips-discussion#sc_discuss planned#next_phase_state=needs_execute
-foreign-context-does-not-satisfy#sc_discuss foreign_context#next_phase_state=needs_discussion
-first-undiscussed-phase-targeted#sc_discuss multi_phase#next_phase_state=needs_discussion~next_phase=02~next_phase_slug=02-second
-CASES
-}
-
-@test "UAT reports route flat layouts and fill the routing fields" {
+@test "UAT reports route flat layouts and fill the routing fields, and an in-progress round-dir UAT blocks routing" {
   pd_table <<'CASES'
 major-issue-routes-remediation#sc_flat_uat major#next_phase_state=needs_uat_remediation~next_phase=01~next_phase_slug=01-test~uat_issues_phase=01~uat_issues_major_or_higher=true~uat_file=01-UAT.md~uat_issues_count=1~uat_round_count=0~!---UAT_EXTRACT_START---
 minor-only-clears-major-flag#sc_flat_uat minor#next_phase_state=needs_uat_remediation~uat_issues_major_or_higher=false
@@ -457,11 +447,6 @@ source-uat-does-not-block-unplanned#sc_source_uat unplanned_neighbour#uat_issues
 all-pass-status-counts-as-verified#sc_auto_uat all_pass#has_unverified_phases=false~next_phase_state=all_done~qa_status=none
 passed-status-counts-as-verified#sc_auto_uat passed#has_unverified_phases=false
 verified-phase-skipped-for-unverified#sc_auto_uat skip_verified#has_unverified_phases=true~first_unverified_phase=02~first_unverified_slug=02-polish~next_phase=02~next_phase_state=needs_verification
-CASES
-}
-
-@test "an in-progress round-dir UAT blocks archive routing and later phases" {
-  pd_table <<'CASES'
 progress-checkpoints#sc_active_round_uat 01-test progress#next_phase=01~next_phase_slug=01-test~next_phase_state=needs_verification~uat_blocking_phase=01~uat_blocking_status=active~uat_blocking_file=remediation/uat/round-06/R06-UAT.md~!next_phase_state=all_done
 missing-status#sc_active_round_uat 01-test nostatus#next_phase=01~next_phase_slug=01-test~next_phase_state=needs_verification~uat_blocking_phase=01~uat_blocking_status=active~uat_blocking_file=remediation/uat/round-06/R06-UAT.md~!next_phase_state=all_done
 boundary-phase-08#sc_active_round_uat 08-active-uat running 09-next#next_phase=08~next_phase_slug=08-active-uat~next_phase_state=needs_verification~uat_blocking_phase=08~uat_blocking_status=active~uat_blocking_file=remediation/uat/round-06/R06-UAT.md~!next_phase=09
@@ -470,7 +455,7 @@ active-round-over-issues-found-uat#sc_active_round_over_issues#next_phase=01~nex
 CASES
 }
 
-@test "shipped milestones report rename and UAT recovery state" {
+@test "shipped milestones report rename and UAT recovery state and emit the extractor block for the shipped phase" {
   pd_table <<'CASES'
 shipped-milestone-detected#sc_milestone shipped_only#has_shipped_milestones=true
 legacy-default-reported-not-renamed#sc_milestone legacy_default#phase_detect_complete=true~needs_milestone_rename=true~+.lbwc-planning/milestones/default~+.lbwc-planning/milestones/default/phases/01-legacy-phase
@@ -478,11 +463,6 @@ source-uat-excluded-from-milestone-scan#sc_milestone source_uat_only#milestone_u
 remediation-reference-suppresses-recovery#sc_milestone referenced_by_remediation#next_phase_state=all_done~milestone_uat_issues=false
 unreferenced-issues-trigger-recovery#sc_milestone unreferenced#milestone_uat_issues=true~milestone_uat_slug=v1
 recovery-outranks-discussion#sc_milestone over_discussion#next_phase_state=all_done~milestone_uat_issues=true~milestone_uat_slug=v1
-CASES
-}
-
-@test "milestone recovery emits the extractor block for the shipped phase" {
-  pd_table <<'CASES'
 issue-block-emitted#sc_milestone_extract major_issue#---MILESTONE_UAT_EXTRACT_START---~---MILESTONE_UAT_EXTRACT_END---~P01-T1|major|milestone broken
 zero-issue-matches-standalone-extractor#sc_milestone_extract zero_issue#%.lbwc-planning/milestones/m01-test/phases/01-alpha~uat_phase=01 uat_issues_total=0~!uat_extract_error=true
 recurrence-matches-standalone-extractor#sc_milestone_extract recurrence#%.lbwc-planning/milestones/m01-test/phases/03-feature
@@ -509,14 +489,12 @@ sc_source_failure() {
   export PD_RAW=1
 }
 
-@test "an internal failure emits only the stable error marker" {
+@test "an internal or setup failure emits only the stable error marker" {
   pd_table <<'CASES'
 late-failure-after-partial-output#sc_late_failure#=phase_detect_error=true
 library-fails-to-source#sc_source_failure#=phase_detect_error=true
 CASES
-}
 
-@test "phase-detect reports a stable setup error when its output file cannot be created" {
   pd_reset
   export PD_SCRIPTS_DIR="$TEST_TEMP_DIR/scripts-setup-failure"
   cp -R "$SCRIPTS_DIR" "$PD_SCRIPTS_DIR"

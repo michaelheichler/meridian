@@ -23,7 +23,17 @@ set_accepted_row() {
   expect_jq "$label" "$PLANNING/config.json" ".routing.profiles.$profile.roles.$role == $expected"
 }
 
-@test "set stores exact catalog routes, structural null reasoning and any global reasoning value" {
+check_set_rejected() {
+  local label="$1" fragment="$2" before
+  shift 2
+  before=$(config_digest)
+  run bash "$ROUTING" set "$PLANNING" "$@"
+  expect_rejected "$label" "$fragment"
+  expect_digest "$label" "$before" "$(config_digest)"
+}
+
+@test "set stores exact catalog routes and any global reasoning value and rejects invalid requests unchanged" {
+  local external external_before
   snapshot_planning
 
   while IFS='|' read -r label profile role model reasoning expected; do
@@ -34,22 +44,7 @@ exact-route|quality|architect|nova-route|"deliberate"|{model: "nova-route", reas
 structural-null|balanced|docs|ember-path|null|{model: "ember-path", reasoning: null, status: "resolved"}
 global-reasoning-ignores-associations|quality|architect|nova-route|"swift"|{model: "nova-route", reasoning: "swift", status: "resolved"}
 CASES
-
-  assert_no_case_failures
-}
-
-check_set_rejected() {
-  local label="$1" fragment="$2" before
-  shift 2
-  before=$(config_digest)
-  run bash "$ROUTING" set "$PLANNING" "$@"
-  expect_rejected "$label" "$fragment"
-  expect_digest "$label" "$before" "$(config_digest)"
-}
-
-@test "set rejects invalid requests and leaves the configuration untouched" {
-  local external external_before
-  snapshot_planning
+  restore_planning
 
   check_set_rejected missing-selector "not present in the saved capability catalog" \
     quality architect missing-route '"deliberate"'
@@ -109,22 +104,30 @@ CASES
   assert_no_case_failures
 }
 
-@test "activate and copy persist only the three routing profiles" {
+check_migrate_unchanged_rejection() {
+  local label="$1" fragment="$2" before
+  before=$(config_digest)
+  run bash "$ROUTING" migrate "$PLANNING"
+  expect_rejected "$label" "$fragment"
+  expect_digest "$label" "$before" "$(config_digest)"
+}
+
+@test "copy, activate, resolve and validate accept a resolved routing table and reject invalid state unchanged" {
+  local before
+  snapshot_planning
+
   bash "$ROUTING" set "$PLANNING" quality architect nova-route '"deliberate"' >/dev/null
-
   run bash "$ROUTING" copy "$PLANNING" quality turbo
-  [ "$status" -eq 0 ]
+  expect_case copy-profile 0
   run bash "$ROUTING" activate "$PLANNING" turbo
-  [ "$status" -eq 0 ]
-
-  jq -e '
+  expect_case activate-profile 0
+  expect_jq three-profiles-persisted "$PLANNING/config.json" '
     .routing.active_profile == "turbo"
     and .routing.profiles.turbo.roles == .routing.profiles.quality.roles
     and (.routing.profiles | keys | sort) == ["balanced", "quality", "turbo"]
-  ' "$PLANNING/config.json" >/dev/null
-}
+  '
+  restore_planning
 
-@test "resolve and validate accept a resolved routing table" {
   bash "$ROUTING" set "$PLANNING" balanced docs ember-path null >/dev/null
   bash "$ROUTING" set "$PLANNING" quality docs ember-path '"swift"' >/dev/null
 
@@ -140,21 +143,7 @@ CASES
 
   run bash "$ROUTING" validate "$PLANNING"
   expect_case validate-resolved-table 0
-
-  assert_no_case_failures
-}
-
-check_migrate_unchanged_rejection() {
-  local label="$1" fragment="$2" before
-  before=$(config_digest)
-  run bash "$ROUTING" migrate "$PLANNING"
-  expect_rejected "$label" "$fragment"
-  expect_digest "$label" "$before" "$(config_digest)"
-}
-
-@test "routing commands reject invalid state without changing the configuration" {
-  local before
-  snapshot_planning
+  restore_planning
 
   printf '%s\n' '{"status":"executing"}' > "$PLANNING/.execution-state.json"
   before=$(config_digest)
@@ -329,31 +318,8 @@ boundary_rejected_row() {
   [ "$status" -eq 0 ]
 }
 
-@test "concurrent route writers preserve both updates" {
+@test "configuration transactions fail closed when forged or failed and serialize concurrent route writers" {
   local first_pid second_pid first_rc second_rc sleep_mark="$TEST_TEMP_DIR/second-writer-waiting"
-  install_blocking_jq
-
-  start_blocked_writer
-  first_pid=$!
-  run_wrapped_routing ROUTING_SLEEP_MARK="$sleep_mark" \
-    bash "$ROUTING" set "$PLANNING" balanced architect nova-route '"deliberate"' >/dev/null 2>&1 &
-  second_pid=$!
-  wait_for_file "$sleep_mark"
-  : > "$TEST_TEMP_DIR/release-first-transform"
-  wait "$first_pid"; first_rc=$?
-  wait "$second_pid"; second_rc=$?
-
-  [ "$first_rc" -eq 0 ]
-  [ "$second_rc" -eq 0 ]
-  jq -e '
-    .routing.profiles.balanced.roles.docs
-      == {model: "ember-path", reasoning: "swift", status: "resolved"}
-    and .routing.profiles.balanced.roles.architect
-      == {model: "nova-route", reasoning: "deliberate", status: "resolved"}
-  ' "$PLANNING/config.json" >/dev/null
-}
-
-@test "a forged or failed configuration transaction fails closed and releases its lock" {
   local before planning
   planning=$(cd -P "$PLANNING" && pwd -P)
   before=$(config_digest "$planning")
@@ -374,6 +340,26 @@ boundary_rejected_row() {
   expect_case failed-command-exit-status 47
   [ ! -e "$planning/.routing.lock" ] \
     || record_case_failure failed-command-releases-lock "lock directory remained"
-
   assert_no_case_failures
+
+  install_blocking_jq
+
+  start_blocked_writer
+  first_pid=$!
+  run_wrapped_routing ROUTING_SLEEP_MARK="$sleep_mark" \
+    bash "$ROUTING" set "$PLANNING" balanced architect nova-route '"deliberate"' >/dev/null 2>&1 &
+  second_pid=$!
+  wait_for_file "$sleep_mark"
+  : > "$TEST_TEMP_DIR/release-first-transform"
+  wait "$first_pid"; first_rc=$?
+  wait "$second_pid"; second_rc=$?
+
+  [ "$first_rc" -eq 0 ]
+  [ "$second_rc" -eq 0 ]
+  jq -e '
+    .routing.profiles.balanced.roles.docs
+      == {model: "ember-path", reasoning: "swift", status: "resolved"}
+    and .routing.profiles.balanced.roles.architect
+      == {model: "nova-route", reasoning: "deliberate", status: "resolved"}
+  ' "$PLANNING/config.json" >/dev/null
 }

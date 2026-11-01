@@ -20,7 +20,14 @@ write_registry() {
   printf '%s\n' "$2" > "$1/.runtime/tmux-bus/registry.json"
 }
 
-@test "config init persists the execution defaults and accepts later execution settings" {
+reject_in_process_switch_row() {
+  local label="$1" registry="$2"
+  write_registry "$PLANNING_DIR" "$registry"
+  reject_unchanged_row "$label" "$PLANNING_DIR" frozen set "$PLANNING_DIR" agent_execution_mode '"in_process"'
+  expect_config_jq "$label" "$PLANNING_DIR" '.agent_execution_mode == "tmux"'
+}
+
+@test "config persists execution defaults, accepts valid settings, and rejects invalid, unwritable and frozen ones unchanged" {
   local tmux_settings workflow_settings state state_dir
 
   init_config "$PLANNING_DIR"
@@ -75,18 +82,7 @@ write_registry() {
       '.agent_execution_mode == "in_process"'
   done
 
-  assert_no_case_failures
-}
-
-reject_in_process_switch_row() {
-  local label="$1" registry="$2"
-  write_registry "$PLANNING_DIR" "$registry"
-  reject_unchanged_row "$label" "$PLANNING_DIR" frozen set "$PLANNING_DIR" agent_execution_mode '"in_process"'
-  expect_config_jq "$label" "$PLANNING_DIR" '.agent_execution_mode == "tmux"'
-}
-
-@test "config rejects invalid, unwritable and frozen execution settings without changing the file" {
-  local tmux_settings workflow_settings
+  PLANNING_DIR="$TEST_ROOT/rejections/.lbwc-planning"
   init_config "$PLANNING_DIR"
 
   reject_unchanged_row invalid-mode "$PLANNING_DIR" "invalid configuration" \
@@ -141,7 +137,8 @@ migrate_fills_row() {
   expect_config_jq "$label" "$PLANNING_DIR" "$program"
 }
 
-@test "migration fills missing execution blocks and strips unused tmux keys" {
+@test "migration fills missing execution blocks, strips unused tmux keys, and rejects invalid tmux settings unchanged" {
+  local default_config setting literal
   mkdir -p "$PLANNING_DIR"
   printf '%s\n' '{"schema_version":1,"agent_execution_mode":"tmux","tmux_execution":{"max_agents":4,"restrictions":{"allow_agent_git":true}}}' \
     > "$PLANNING_DIR/config.json"
@@ -175,28 +172,6 @@ migrate_fills_row() {
     and .workflow_execution.enabled == false
   '
 
-  assert_no_case_failures
-}
-
-migrate_rejected_row() {
-  local label="$1" setting="$2" literal="$3" default_config="$4" before
-  printf '%s\n' "$default_config" > "$PLANNING_DIR/config.json"
-  jq --arg setting "$setting" --argjson value "$literal" 'setpath($setting | split("."); $value)' \
-    "$PLANNING_DIR/config.json" > "$PLANNING_DIR/config.json.tmp"
-  mv "$PLANNING_DIR/config.json.tmp" "$PLANNING_DIR/config.json"
-  before=$(config_digest "$PLANNING_DIR")
-
-  run bash "$MIGRATE" "$PLANNING_DIR/config.json"
-
-  [ "$status" -ne 0 ] || record_case_failure "$label" "expected a failing status output=$output"
-  [[ "$output" == *"Config migration failed"* ]] \
-    || record_case_failure "$label" "missing failure message output=$output"
-  [ "$before" = "$(config_digest "$PLANNING_DIR")" ] || record_case_failure "$label" "configuration changed"
-}
-
-@test "migration rejects invalid existing tmux execution settings without changing the file" {
-  local default_config
-  mkdir -p "$PLANNING_DIR"
   run bash "$SCRIPT" default-config
   [ "$status" -eq 0 ]
   default_config="$output"
@@ -226,4 +201,20 @@ tmux_execution.unexpected	true
 VALUES
 
   assert_no_case_failures
+}
+
+migrate_rejected_row() {
+  local label="$1" setting="$2" literal="$3" default_config="$4" before
+  printf '%s\n' "$default_config" > "$PLANNING_DIR/config.json"
+  jq --arg setting "$setting" --argjson value "$literal" 'setpath($setting | split("."); $value)' \
+    "$PLANNING_DIR/config.json" > "$PLANNING_DIR/config.json.tmp"
+  mv "$PLANNING_DIR/config.json.tmp" "$PLANNING_DIR/config.json"
+  before=$(config_digest "$PLANNING_DIR")
+
+  run bash "$MIGRATE" "$PLANNING_DIR/config.json"
+
+  [ "$status" -ne 0 ] || record_case_failure "$label" "expected a failing status output=$output"
+  [[ "$output" == *"Config migration failed"* ]] \
+    || record_case_failure "$label" "missing failure message output=$output"
+  [ "$before" = "$(config_digest "$PLANNING_DIR")" ] || record_case_failure "$label" "configuration changed"
 }

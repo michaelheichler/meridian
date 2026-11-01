@@ -55,7 +55,8 @@ expect_registry() {
   [ "$actual" = "$3" ] || fail_case "$1" "registry $2 = '$actual' expected '$3'"
 }
 
-@test "add stores the detail under its hash and recovers or creates the registry" {
+@test "add stores argument or stdin detail under its hash, truncates long context, and recovers or creates the registry" {
+  local long_context detail ctx_len
   while IFS='|' read -r label registry hash detail expected_summary; do
     [ -n "$label" ] || continue
     seed_registry "$registry"
@@ -73,24 +74,17 @@ missing-registry-file|-|deadbeef|{"summary":"New todo","context":"Some context",
 existing-entry-is-replaced|{"schema_version":1,"items":{"a1b2c3d4":{"summary":"Old","context":"Old context","files":[],"added":"2026-01-01","source":"user"}}}|a1b2c3d4|{"summary":"Updated","context":"New context","files":["new.ts"],"added":"2026-04-12","source":"user"}|Updated
 malformed-registry-is-reset|not json|a1b2c3d4|{"summary":"Recover","context":"New","files":[],"added":"2026-04-12","source":"user"}|Recover
 CASES
-}
 
-@test "add truncates context exceeding 2000 chars" {
   seed_registry '{"schema_version":1,"items":{}}'
-  local long_context detail
   long_context=$(printf 'x%.0s' $(seq 1 2500))
   detail=$(jq -n --arg ctx "$long_context" '{"summary":"Long","context":$ctx,"files":[],"added":"2026-04-12","source":"user"}')
 
   details add "12345678" "$detail" "$DETAILS_PATH"
   [ "$status" -eq 0 ]
-
-  local ctx_len
   ctx_len=$(jq -r '.items["12345678"].context | length' "$DETAILS_PATH")
   [ "$ctx_len" -le 2012 ]
   [ "$ctx_len" -gt 2000 ]
-}
 
-@test "add accepts JSON from stdin when detail arg is dash" {
   seed_registry '{"schema_version":1,"items":{}}'
   jq -n '{"summary":"User'\''s repro doesn'\''t work","context":"The user'\''s test doesn'\''t pass","files":[],"added":"2026-04-12","source":"user"}' > "$TEST_TEMP_DIR/detail.json"
 
@@ -124,7 +118,7 @@ invalid-hash-with-quote-and-backslash|{"schema_version":1,"items":{}}|-|a"b\c|no
 CASES
 }
 
-@test "remove deletes the registry entry and legacy fallback and keeps other entries" {
+@test "remove deletes the registry entry and legacy fallback, keeps other entries, and leaves a malformed registry alone" {
   while IFS='|' read -r label registry legacy hash action kept_key kept_summary; do
     [ -n "$label" ] || continue
     seed_registry "$registry"
@@ -146,9 +140,7 @@ existing-entry|{"schema_version":1,"items":{"a1b2c3d4":{"summary":"Test","contex
 missing-hash-leaves-other-entries|{"schema_version":1,"items":{"other":{"summary":"Keep","context":"","files":[],"added":"2026-04-12","source":"user"}}}|-|deadbeef|noop|other|Keep
 legacy-alongside-registry-entry|{"schema_version":1,"items":{"deadbeef":{"summary":"Canonical","context":"Registry copy","files":[],"added":"2026-04-12","source":"user"}}}|{"summary":"Legacy","context":"Legacy copy","files":[],"added":"2026-04-12","source":"user"}|deadbeef|removed|-|-
 CASES
-}
 
-@test "remove deletes the legacy fallback even when the registry is malformed and leaves the registry alone" {
   seed_registry 'not json'
   seed_legacy deadbeef '{"summary":"Legacy only","context":"Cleanup should still happen","files":[],"added":"2026-04-12","source":"user"}'
 

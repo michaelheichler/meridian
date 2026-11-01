@@ -119,7 +119,7 @@ EOF
   STUB_HELPER="$plugin/scripts/tmux-spawn-group.sh"
 }
 
-@test "build-agents JSON uses generated names as agent_id" {
+@test "build-agents uses generated names or SPAWN_READY output as agent_id and rejects duplicate names" {
   run bash "$HELPER" build-agents --names worker-a,worker-b --contract-id contract-1 --contract-digest digest-1
   [ "$status" -eq 0 ]
   jq -e '
@@ -128,15 +128,11 @@ EOF
     and .[1] == {agent_id:"worker-b",generated_name:"worker-b",contract_id:"contract-1",contract_digest:"digest-1"}
     and all(.[]; .agent_id == .generated_name)
   ' <<<"$output" >/dev/null
-}
 
-@test "build-agents rejects duplicate generated names" {
   run bash "$HELPER" build-agents --names worker-a,worker-a --contract-id contract-1 --contract-digest digest-1
   [ "$status" -ne 0 ]
   [[ "$output" == *"duplicate generated agent name"* ]]
-}
 
-@test "build-agents parses SPAWN_READY generator output" {
   run bash "$HELPER" build-agents --contract-id contract-1 --contract-digest digest-1 \
     --spawn-ready-text $'ENGINEER: SPAWN_READY lbwc-web-engineer-aaaa\nCRITIC: SPAWN_READY lbwc-web-code-critic-bbbb\n'
   [ "$status" -eq 0 ]
@@ -152,8 +148,8 @@ run_dispatch_without_main_id() {
     --names worker-a --job 'do work' --timeout-ms 1000
 }
 
-@test "dispatch fails closed whenever no main id can be resolved" {
-  local label mode
+@test "dispatch fails closed without a main id and rolls back when split-group fails" {
+  local label mode main_id='live-claude-session'
   while IFS='|' read -r label mode; do
     [ -n "$label" ] || continue
     run_dispatch_without_main_id "$mode"
@@ -164,6 +160,15 @@ run_dispatch_without_main_id() {
 explicit-empty-main-id|explicit-empty
 omitted-main-id-without-session-id|omitted
 CASES
+
+  fixture_bus "$main_id"
+  install_dispatch_stubs
+  SPLIT_FAIL=1 run bash "$STUB_HELPER" dispatch --project-root "$PROJECT_ROOT" --control-root "$CONTROL_ROOT" \
+    --main-id "$main_id" --main-capability "$MAIN_CAPABILITY" \
+    --contract-id contract-1 --contract-digest digest-1 --names worker-a \
+    --job 'do work' --timeout-ms 1000
+  [ "$status" -ne 0 ]
+  [ -f "$TEST_ROOT/rollback.txt" ]
 }
 
 @test "await ack uses the message id returned by await" {
@@ -193,17 +198,4 @@ CASES
   ' <<<"$output" >/dev/null
   acked=$(jq -r '.agents[0].message_id' <<<"$output")
   [ -f "$CONTROL_ROOT/.runtime/tmux-bus/inboxes/$main_id/acked/$acked.json" ]
-}
-
-@test "dispatch rolls back when split-group fails" {
-  local main_id='live-claude-session'
-  fixture_bus "$main_id"
-  MAIN_CAPABILITY="$MAIN_CAPABILITY"
-  install_dispatch_stubs
-  SPLIT_FAIL=1 run bash "$STUB_HELPER" dispatch --project-root "$PROJECT_ROOT" --control-root "$CONTROL_ROOT" \
-    --main-id "$main_id" --main-capability "$MAIN_CAPABILITY" \
-    --contract-id contract-1 --contract-digest digest-1 --names worker-a \
-    --job 'do work' --timeout-ms 1000
-  [ "$status" -ne 0 ]
-  [ -f "$TEST_ROOT/rollback.txt" ]
 }

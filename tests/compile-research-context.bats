@@ -94,8 +94,8 @@ add_commits() {
   done
 }
 
-@test "emits nothing when no completed research matches the description" {
-  local label fixture description
+@test "description matching emits the fresh best research with two keyword hits, warns when stale, and otherwise nothing" {
+  local label fixture description expected absent commits target want_content want_warning
   while IFS='|' read -r label fixture description; do
     [ -n "$label" ] || continue
     rm -rf "$LBWC_PLANNING_DIR/research"
@@ -121,10 +121,7 @@ one-keyword-multiple|done:swift-concurrency-patterns,done:python-web-server|swif
 no-keyword-match|done:topic-alpha,done:topic-beta|something completely unrelated
 only-short-keywords|done:api-design,done:ui-layout|an is at
 CASES
-}
 
-@test "emits the best research with at least two keyword hits in the title" {
-  local label fixture description expected absent
   while IFS='|' read -r label fixture description expected absent; do
     [ -n "$label" ] || continue
     rm -rf "$LBWC_PLANNING_DIR/research"
@@ -139,33 +136,7 @@ CASES
 single-file|done:api-design|api design issue|Research findings about api-design|
 picks-matching-file|done:swift-concurrency-patterns,done:python-web-server|swift concurrency issue|Research findings about swift-concurrency-patterns|python-web-server
 CASES
-}
 
-@test "explicit file override returns the content even when the research is stale" {
-  local label commits rfile
-  while IFS='|' read -r label commits; do
-    [ -n "$label" ] || continue
-    rm -rf "$LBWC_PLANNING_DIR/research"
-    rfile=$(create_research_file "override-$label")
-    add_commits "$commits" dummy
-    run --separate-stderr compile_context "$LBWC_PLANNING_DIR" --file "$rfile"
-    [ "$status" -eq 0 ] || fail_case "$label" "status=0" "status=$status output=$output"
-    expect_has "$label" "Research findings about override-$label" "$output"
-    expect_lacks "$label" "commits have landed" "$output"
-  done <<'CASES'
-fresh|0
-stale|11
-CASES
-}
-
-@test "explicit file override prints nothing for a nonexistent file" {
-  run --separate-stderr compile_context "$LBWC_PLANNING_DIR" --file "/nonexistent/path.md"
-  [ "$status" -eq 0 ]
-  [ -z "$output" ]
-}
-
-@test "staleness decides between plain, warned, and skipped output" {
-  local label commits target want_content want_warning
   while IFS='|' read -r label commits target want_content want_warning; do
     [ -n "$label" ] || continue
     rm -rf "$LBWC_PLANNING_DIR/research"
@@ -190,4 +161,25 @@ ten-commits-still-warn|10|dummy|yes|yes
 eleven-commits-skipped|11|dummy|no|no
 planning-only-commits-ignored|11|planning|yes|no
 CASES
+}
+
+@test "explicit file override returns the content even when stale and nothing for a nonexistent file" {
+  local label commits rfile
+  while IFS='|' read -r label commits; do
+    [ -n "$label" ] || continue
+    rm -rf "$LBWC_PLANNING_DIR/research"
+    rfile=$(create_research_file "override-$label")
+    add_commits "$commits" dummy
+    run --separate-stderr compile_context "$LBWC_PLANNING_DIR" --file "$rfile"
+    [ "$status" -eq 0 ] || fail_case "$label" "status=0" "status=$status output=$output"
+    expect_has "$label" "Research findings about override-$label" "$output"
+    expect_lacks "$label" "commits have landed" "$output"
+  done <<'CASES'
+fresh|0
+stale|11
+CASES
+
+  run --separate-stderr compile_context "$LBWC_PLANNING_DIR" --file "/nonexistent/path.md"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
 }
