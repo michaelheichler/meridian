@@ -1,6 +1,7 @@
 #!/usr/bin/env bats
 
 load test_helper
+load gate_case_helper
 load agent_generator_fixture
 load gate_case_helper
 load rejection_case_helper
@@ -576,4 +577,21 @@ EOF
   generate python-engineer --job "wire contract" --task-id "$id" --contract "$contract" --write-allowance src/a.py
   [ "$status" -eq 0 ]
   jq -e --arg id "$id" '.agents[] | select(.contract_id == $id and .contract_enabled == true)' "$(manifest_path)" >/dev/null
+}
+
+@test "explicit route and pair-role options replace the saved defaults in the registered agents" {
+  local label arguments expression
+  local -a argument_list
+  reset_case_failures
+  while IFS='@' read -r label arguments expression; do
+    read -ra argument_list <<< "$arguments"
+    generate "${argument_list[@]}"
+    expect_case "$label" 0
+    jq -e "$expression" "$(manifest_path)" >/dev/null \
+      || record_case_failure "$label" "manifest $(jq -c '[.agents[] | {role, model, effort, max_turns}]' "$(manifest_path)") does not satisfy $expression"
+  done <<'CASES'
+route-override@architect --job route-job --model ember-path --reasoning swift --max-turns 9@[.agents[] | select(.role == "architect")] | any(.model == "ember-path" and .effort == "swift" and .max_turns == "9")
+explicit-pair-role@--pair python-engineer --job pair-job --pair-role python-critic@[.agents[].role] | contains(["python-engineer", "python-critic"])
+CASES
+  assert_no_case_failures
 }
