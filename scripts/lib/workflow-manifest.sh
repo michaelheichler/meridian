@@ -1,11 +1,8 @@
-#!/usr/bin/env bash
-set -u
-
 WORKFLOW_MANIFEST_SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 . "$WORKFLOW_MANIFEST_SCRIPT_DIR/lbwc-control-root.sh" 2>/dev/null || return 1
 . "$WORKFLOW_MANIFEST_SCRIPT_DIR/manifest-lock.sh" 2>/dev/null || return 1
 
-# Out-parameter: callers read this after a claim/finish/expire rejection to see the current state.
+# Callers read this after a rejected claim, so they can report the current state.
 export WORKFLOW_MANIFEST_CLAIM_STATE=""
 
 workflow_manifest_control_root() {

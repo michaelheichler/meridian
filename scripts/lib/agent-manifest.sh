@@ -1,6 +1,3 @@
-#!/usr/bin/env bash
-set -u
-
 AGENT_MANIFEST_SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 . "$AGENT_MANIFEST_SCRIPT_DIR/lbwc-control-root.sh" 2>/dev/null || return 1
 . "$AGENT_MANIFEST_SCRIPT_DIR/manifest-lock.sh" 2>/dev/null || return 1
@@ -71,11 +68,11 @@ agent_manifest_definition_path() {
 }
 
 manifest_new_pair_id() {
-  local ts rand
-  ts=$(date +%s%N 2>/dev/null || date +%s)
+  local timestamp rand
+  timestamp=$(date +%s%N 2>/dev/null || date +%s)
   rand=$(od -An -N4 -tx1 /dev/urandom 2>/dev/null | tr -d ' \n')
   [ -n "$rand" ] || rand="$RANDOM$RANDOM"
-  printf 'pair-%s-%s\n' "$ts" "$rand"
+  printf 'pair-%s-%s\n' "$timestamp" "$rand"
 }
 
 manifest_find_open_pair() {

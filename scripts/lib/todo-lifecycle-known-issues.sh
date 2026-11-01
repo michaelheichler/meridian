@@ -1,6 +1,3 @@
-#!/usr/bin/env bash
-set -u
-
 known_issue_normalize_legacy_identity() {
   local item_json="$1"
   local display_text issue_text source_path disposition phase_num

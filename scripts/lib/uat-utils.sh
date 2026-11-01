@@ -4,9 +4,6 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
   exit 1
 fi
 
-# Nounset stays on for new callers because every current caller already runs it.
-set -u
-
 normalize_uat_status() {
   local raw="${1:-}"
   case "$raw" in

@@ -1,6 +1,3 @@
-#!/usr/bin/env bash
-set -u
-
 SNAPSHOT_SCHEMA_FILTER='
   def non_empty_string: type == "string" and length > 0;
   def positive_integer: type == "number" and floor == . and . > 0;

@@ -1,6 +1,3 @@
-#!/usr/bin/env bash
-set -euo pipefail
-
 LBWC_COMPOSE_LIB_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 lbwc_extract_model_records() {
@@ -11,7 +8,7 @@ lbwc_extract_model_records() {
     return 1
   }
   LC_ALL=C grep -aoE 'id:"claude-[a-zA-Z0-9._-]+",family:"[a-zA-Z0-9_]+",display_name:"[^"[:cntrl:]]+"' "$binary" > "$entries" 2>/dev/null || true
-  : > "$metadata"
+  : > "$metadata" || return 1
   while IFS= read -r entry; do
     remainder="${entry#id:\"}"
     selector_id="${remainder%%\",family:\"*}"
@@ -20,13 +17,13 @@ lbwc_extract_model_records() {
     remainder="${entry#*,display_name:\"}"
     display_name="${remainder%\"}"
     jq -cn --arg selector "$selector_id" --arg label "$display_name" --arg group "$group" \
-      '{selector:$selector,label:$label,description:$label,group:$group}' >> "$metadata"
+      '{selector:$selector,label:$label,description:$label,group:$group}' >> "$metadata" || return 1
   done < "$entries"
   jq -s '
     reduce .[] as $record ([];
       if any(.[]; .selector == $record.selector) then . else . + [$record] end
     )
-  ' "$metadata" > "$output"
+  ' "$metadata" > "$output" || return 1
   rm -f "$entries" "$metadata"
   jq -e 'length > 0' "$output" >/dev/null
 }
@@ -72,7 +69,7 @@ lbwc_alloc_catalog_temps() {
 
 lbwc_write_catalog_envelope() {
   local binary="$1" version="$2" sha256="$3" output="$4" detected_at
-  detected_at=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+  detected_at=$(date -u '+%Y-%m-%dT%H:%M:%SZ') || return 1
   jq -S -n \
     --arg binary_path "$binary" \
     --arg version "$version" \
@@ -88,17 +85,17 @@ lbwc_build_catalog() {
   local binary="$1" output="$2" before after version
   lbwc_alloc_catalog_temps
   before=$(sha256_file "$binary") || fail 'could not fingerprint Claude Code executable'
-  version=$(extract_version "$binary")
-  extract_help "$binary" "$HELP_TEMP"
-  extract_model_records "$binary" "$MODELS_TEMP"
+  version=$(extract_version "$binary") || return 1
+  extract_help "$binary" "$HELP_TEMP" || return 1
+  extract_model_records "$binary" "$MODELS_TEMP" || return 1
   lbwc_extract_host_enum_candidates "$binary" "$HOST_ENUM_TEMP"
   lbwc_compose_model_catalog "$MODELS_TEMP" "$HOST_ENUM_TEMP" "$COMPOSED_MODELS_TEMP" \
     || fail 'could not compose host Agent model catalog'
-  extract_reasoning_values "$HELP_TEMP" "$REASONING_TEMP"
-  extract_model_associations "$binary" "$ASSOCIATIONS_TEMP"
+  extract_reasoning_values "$HELP_TEMP" "$REASONING_TEMP" || return 1
+  extract_model_associations "$binary" "$ASSOCIATIONS_TEMP" || return 1
   after=$(sha256_file "$binary") || fail 'could not recheck Claude Code executable fingerprint'
   [ "$before" = "$after" ] || fail 'Claude Code executable changed during capability extraction'
-  lbwc_write_catalog_envelope "$binary" "$version" "$after" "$output"
+  lbwc_write_catalog_envelope "$binary" "$version" "$after" "$output" || return 1
   rm -f "$HELP_TEMP" "$MODELS_TEMP" "$REASONING_TEMP" "$ASSOCIATIONS_TEMP" "$HOST_ENUM_TEMP" "$COMPOSED_MODELS_TEMP"
 }
 
@@ -153,7 +150,7 @@ lbwc_map_agent_model() {
   local source="$1" selector="$2" catalog_binary live_binary
   [ -n "$selector" ] || return 1
   if [ -f "$source" ] && jq -e '.schema_version == 1 and .source.sha256' "$source" >/dev/null 2>&1; then
-    catalog_binary=$(jq -r '.source.binary_path' "$source")
+    catalog_binary=$(jq -r '.source.binary_path' "$source") || return 1
     live_binary=""
     if [ -n "${CLAUDE_CODE_EXECPATH:-}" ]; then
       live_binary=$(resolve_claude_binary 2>/dev/null || true)
