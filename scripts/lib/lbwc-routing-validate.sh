@@ -48,6 +48,11 @@ validate_route_value() {
   local catalog="$1" selector="$2" reasoning_json="$3"
   jq -e --arg selector "$selector" '[.models[].selector] | index($selector) != null' "$catalog" >/dev/null \
     || fail "model selector is not present in the saved capability catalog: $selector"
+  jq -e --arg selector "$selector" '
+    ((.host_agent_enum | type) != "array" or (.host_agent_enum | length) == 0)
+    or (((.agent_model_ids // {})[$selector] // "") != "")
+  ' "$catalog" >/dev/null \
+    || fail "model selector is not present in the live host Agent enum: $selector"
   jq -e 'type == "string" or . == null' <<< "$reasoning_json" >/dev/null 2>&1 \
     || fail 'reasoning must be a detected string or null'
   if jq -e '. != null' <<< "$reasoning_json" >/dev/null; then
