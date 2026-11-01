@@ -1,6 +1,7 @@
 #!/usr/bin/env bats
 
 setup() {
+  unset TMUX TMUX_PANE
   REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/.." && pwd)"
   SCRIPT="$REPO_ROOT/scripts/session-start.sh"
   TEST_ROOT="$(mktemp -d)"
@@ -20,7 +21,7 @@ teardown() {
 run_session_start() {
   (
     cd "$REPO_ROOT"
-    LBWC_PLANNING_DIR="$PLANNING_DIR" bash "$SCRIPT"
+    LBWC_PLANNING_DIR="$PLANNING_DIR" bash "$SCRIPT" </dev/null
   )
 }
 
@@ -28,16 +29,98 @@ run_session_start_from() {
   local script_dir="$1"
   (
     cd "$REPO_ROOT"
-    LBWC_PLANNING_DIR="$PLANNING_DIR" bash "$script_dir/session-start.sh"
+    LBWC_PLANNING_DIR="$PLANNING_DIR" bash "$script_dir/session-start.sh" </dev/null
   )
+}
+
+run_session_start_with_input() {
+  local input="$1"
+  (
+    cd "$REPO_ROOT"
+    printf '%s' "$input" | LBWC_PLANNING_DIR="$PLANNING_DIR" bash "$SCRIPT"
+  )
+}
+
+copy_scripts_to() {
+  local dest="$1"
+  rm -rf "$dest"
+  mkdir -p "$(dirname "$dest")"
+  cp -R "$REPO_ROOT/scripts" "$dest"
+}
+
+replace_script_in_copy() {
+  local dest="$1" name="$2" body="$3"
+  printf '%s\n' '#!/usr/bin/env bash' "$body" > "$dest/$name"
+  chmod +x "$dest/$name"
+}
+
+write_project_md() {
+  mkdir -p "$PLANNING_DIR"
+  printf 'A real project description.\n' > "$PLANNING_DIR/PROJECT.md"
+}
+
+seed_compaction_count() {
+  mkdir -p "$PLANNING_DIR"
+  printf '%s\n' "$1" > "$PLANNING_DIR/.compaction-count"
+}
+
+read_compaction_count() {
+  cat "$PLANNING_DIR/.compaction-count"
+}
+
+SHIM_DIR=""
+
+prepare_cold_start() { :; }
+
+prepare_warm_start() { write_project_md; }
+
+prepare_phase_needing_plan() {
+  write_project_md
+  mkdir -p "$PLANNING_DIR/phases/01-test"
+}
+
+prepare_phase_needing_discussion() {
+  prepare_phase_needing_plan
+  printf '# Roadmap\n\n### Phase 01: Test\n\n| Phase | Status |\n| 01 | pending |\n' > "$PLANNING_DIR/ROADMAP.md"
+  printf '{"require_phase_discussion": true}\n' > "$PLANNING_DIR/config.json"
+}
+
+prepare_phase_detect_setup_failure() {
+  SHIM_DIR="$TEST_ROOT/scripts-shim"
+  copy_scripts_to "$SHIM_DIR"
+  replace_script_in_copy "$SHIM_DIR" phase-detect.sh \
+    "printf '%s\n' 'phase_detect_error=true' 'phase_detect_reason=setup_failed'; exit 1"
+}
+
+prepare_malformed_manifest() {
+  write_project_md
+  printf '{not valid json\n' > "$PLANNING_DIR/.agent-manifest.json"
+}
+
+prepare_unavailable_manifest() {
+  SHIM_DIR="$TEST_ROOT/scripts-shim"
+  copy_scripts_to "$SHIM_DIR"
+  replace_script_in_copy "$SHIM_DIR" agent-lifecycle.sh \
+    "printf '%s\n' 'agent_manifest_status=unavailable'; exit 1"
+}
+
+assert_context_fragments() {
+  local label="$1" expected="$2" absent="$3" fragment
+  local -a fragments=()
+  jq -e '.hookSpecificOutput.additionalContext | type == "string"' <<<"$output" >/dev/null \
+    || { echo "case=$label output is not a SessionStart hook document: $output" >&2; return 1; }
+  IFS='~' read -r -a fragments <<<"$expected"
+  for fragment in "${fragments[@]}"; do
+    [[ "$output" == *"$fragment"* ]] || { echo "case=$label missing=[$fragment] output=$output" >&2; return 1; }
+  done
+  [ -z "$absent" ] || [[ "$output" != *"$absent"* ]] \
+    || { echo "case=$label unexpected=[$absent] output=$output" >&2; return 1; }
 }
 
 @test "session-start fails clearly when a required root link cannot be created" {
   local plugin_root="$TEST_ROOT/plugin"
-  mkdir -p "$plugin_root"
-  cp -R "$REPO_ROOT/scripts" "$plugin_root/scripts"
-  printf '%s\n' '#!/usr/bin/env bash' 'exit 1' > "$plugin_root/scripts/ensure-plugin-root-link.sh"
-  chmod +x "$plugin_root/scripts/ensure-plugin-root-link.sh"
+  copy_scripts_to "$plugin_root/scripts"
+  replace_script_in_copy "$plugin_root/scripts" ensure-plugin-root-link.sh 'exit 1'
 
   run run_session_start_from "$plugin_root/scripts"
 
@@ -79,149 +162,52 @@ run_session_start_from() {
   [ "$(cat "$CLAUDE_ENV_FILE")" = 'export KEEP=1' ]
 }
 
-@test "session-start: cold start with no planning dir exits 0 and reports init needed" {
-  run run_session_start
+@test "session-start context reflects planning and subsystem state" {
+  local label prepare expected absent
+  while IFS='|' read -r label prepare expected absent; do
+    [ -n "$label" ] || continue
+    rm -rf "$PLANNING_DIR" "$TEST_ROOT/scripts-shim"
+    SHIM_DIR=""
+    "$prepare"
 
-  [ "$status" -eq 0 ]
-  echo "$output" | python3 -c 'import json,sys; json.load(sys.stdin)'
-  [[ "$output" == *"no ${PLANNING_DIR}/ directory found"* ]]
+    if [ -n "$SHIM_DIR" ]; then
+      run run_session_start_from "$SHIM_DIR"
+    else
+      run run_session_start
+    fi
+
+    [ "$status" -eq 0 ] || { echo "case=$label status=$status output=$output" >&2; return 1; }
+    assert_context_fragments "$label" "$expected" "$absent"
+  done <<CASES
+cold-start-reports-init-needed|prepare_cold_start|no ${PLANNING_DIR}/ directory found|
+warm-start-reports-phase-brief|prepare_warm_start|lbwc phase|
+phase-needing-plan-routes-to-plan|prepare_phase_needing_plan|missing PLAN.md~/plan 01|
+phase-needing-discussion-routes-to-discuss|prepare_phase_needing_discussion|missing CONTEXT.md~/discuss 01|/plan 01
+phase-setup-failure-is-unavailable-not-missing|prepare_phase_detect_setup_failure|lbwc: phase status unavailable (setup_failed).|no ${PLANNING_DIR}/ directory found
+malformed-agent-manifest-surfaces|prepare_malformed_manifest|lbwc: agent manifest status malformed.|
+unavailable-agent-manifest-surfaces|prepare_unavailable_manifest|lbwc: agent manifest status unavailable.|
+CASES
 }
 
-@test "session-start: warm start with an existing project reports a phase brief" {
-  mkdir -p "$PLANNING_DIR"
-  printf 'A real project description.\n' > "$PLANNING_DIR/PROJECT.md"
+@test "session-start applies the source-specific compaction count policy" {
+  local label input expected
+  while IFS='|' read -r label input expected; do
+    [ -n "$label" ] || continue
+    rm -rf "$PLANNING_DIR"
+    seed_compaction_count 5
 
-  run run_session_start
+    run run_session_start_with_input "$input"
 
-  [ "$status" -eq 0 ]
-  echo "$output" | python3 -c 'import json,sys; json.load(sys.stdin)'
-  [[ "$output" == *"lbwc phase"* ]]
-}
-
-@test "session-start: resume brief names the next command for a phase needing a plan" {
-  mkdir -p "$PLANNING_DIR/phases/01-test"
-  printf 'A real project description.\n' > "$PLANNING_DIR/PROJECT.md"
-
-  run run_session_start
-
-  [ "$status" -eq 0 ]
-  echo "$output" | python3 -c 'import json,sys; json.load(sys.stdin)'
-  [[ "$output" == *"missing PLAN.md"* ]]
-  [[ "$output" == *"/plan 01"* ]]
-}
-
-@test "session-start: needs_discussion routes to /discuss, not /plan" {
-  mkdir -p "$PLANNING_DIR/phases/01-test"
-  printf 'A real project description.\n' > "$PLANNING_DIR/PROJECT.md"
-  printf '# Roadmap\n\n### Phase 01: Test\n\n| Phase | Status |\n| 01 | pending |\n' > "$PLANNING_DIR/ROADMAP.md"
-  printf '{"require_phase_discussion": true}\n' > "$PLANNING_DIR/config.json"
-
-  run run_session_start
-
-  [ "$status" -eq 0 ]
-  echo "$output" | python3 -c 'import json,sys; json.load(sys.stdin)'
-  [[ "$output" == *"missing CONTEXT.md"* ]]
-  [[ "$output" == *"/discuss 01"* ]]
-  [[ "$output" != *"/plan 01"* ]]
-}
-
-@test "session-start: phase setup failure is unavailable status, not missing planning" {
-  local shim_dir="$TEST_ROOT/scripts-phase-detect-setup-failure"
-  cp -R "$REPO_ROOT/scripts" "$shim_dir"
-  cat > "$shim_dir/phase-detect.sh" <<'EOF'
-#!/usr/bin/env bash
-printf '%s\n' 'phase_detect_error=true' 'phase_detect_reason=setup_failed'
-exit 1
-EOF
-  chmod +x "$shim_dir/phase-detect.sh"
-
-  run run_session_start_from "$shim_dir"
-
-  [ "$status" -eq 0 ]
-  echo "$output" | python3 -c 'import json,sys; json.load(sys.stdin)'
-  [[ "$output" == *"lbwc: phase status unavailable (setup_failed)."* ]]
-  [[ "$output" != *"no ${PLANNING_DIR}/ directory found"* ]]
-}
-
-@test "session-start: surfaces a malformed agent manifest" {
-  mkdir -p "$PLANNING_DIR"
-  printf 'A real project description.\n' > "$PLANNING_DIR/PROJECT.md"
-  printf '{not valid json\n' > "$PLANNING_DIR/.agent-manifest.json"
-
-  run run_session_start
-
-  [ "$status" -eq 0 ]
-  echo "$output" | python3 -c 'import json,sys; json.load(sys.stdin)'
-  [[ "$output" == *"lbwc: agent manifest status malformed."* ]]
-}
-
-@test "session-start: surfaces an unavailable agent manifest" {
-  local shim_dir="$TEST_ROOT/scripts-agent-manifest-unavailable"
-  cp -R "$REPO_ROOT/scripts" "$shim_dir"
-  cat > "$shim_dir/agent-lifecycle.sh" <<'EOF'
-#!/usr/bin/env bash
-printf '%s\n' 'agent_manifest_status=unavailable'
-exit 1
-EOF
-  chmod +x "$shim_dir/agent-lifecycle.sh"
-
-  run run_session_start_from "$shim_dir"
-
-  [ "$status" -eq 0 ]
-  echo "$output" | python3 -c 'import json,sys; json.load(sys.stdin)'
-  [[ "$output" == *"lbwc: agent manifest status unavailable."* ]]
-}
-
-run_session_start_with_input() {
-  local input="$1"
-  (
-    cd "$REPO_ROOT"
-    printf '%s' "$input" | LBWC_PLANNING_DIR="$PLANNING_DIR" bash "$SCRIPT"
-  )
-}
-
-seed_compaction_count() {
-  mkdir -p "$PLANNING_DIR"
-  printf '%s\n' "$1" > "$PLANNING_DIR/.compaction-count"
-}
-
-read_compaction_count() {
-  cat "$PLANNING_DIR/.compaction-count"
-}
-
-assert_count_after_source() {
-  local session_source="$1" expected="$2"
-  seed_compaction_count 5
-
-  run run_session_start_with_input "{\"source\":\"$session_source\"}"
-
-  [ "$status" -eq 0 ]
-  [ "$(read_compaction_count)" = "$expected" ]
-}
-
-@test "session-start: a startup session resets the stale compaction count" {
-  assert_count_after_source startup 0
-}
-
-@test "session-start: a clear session resets the stale compaction count" {
-  assert_count_after_source clear 0
-}
-
-@test "session-start: a compact session keeps the compaction count" {
-  assert_count_after_source compact 5
-}
-
-@test "session-start: a resume session keeps the compaction count" {
-  assert_count_after_source resume 5
-}
-
-@test "session-start: empty stdin keeps the compaction count" {
-  seed_compaction_count 5
-
-  run run_session_start_with_input ""
-
-  [ "$status" -eq 0 ]
-  [ "$(read_compaction_count)" = "5" ]
+    [ "$status" -eq 0 ] || { echo "case=$label status=$status output=$output" >&2; return 1; }
+    [ "$(read_compaction_count)" = "$expected" ] \
+      || { echo "case=$label expected=$expected actual=$(read_compaction_count)" >&2; return 1; }
+  done <<'CASES'
+startup-resets-stale-count|{"source":"startup"}|0
+clear-resets-stale-count|{"source":"clear"}|0
+compact-keeps-count|{"source":"compact"}|5
+resume-keeps-count|{"source":"resume"}|5
+empty-stdin-keeps-count||5
+CASES
 }
 
 @test "session-start: a startup session without a planning dir creates nothing" {
@@ -293,67 +279,65 @@ write_credential() {
   python3 "$REPO_ROOT/scripts/lib/tmux-private-fs.py" write-json --root "$TMUX_RUNTIME_BUS_ROOT" --relative "credentials/$agent_id.json" --document "$(cat "$TEST_ROOT/credential.json")"
 }
 
-@test "session-start bind fails when the credential file is missing" {
-  local control_root="$TEST_ROOT/tmux-project/.lbwc-planning"
-  mkdir -p "$control_root"
-  printf '%s\n' '{}' > "$control_root/config.json"
-  fixture_session_bus "$control_root"
-  plant_unbound_agent agent-a 0123456789abcdef0123456789abcdef
+prepare_bound_agent() {
+  BOUND_CONTROL_ROOT="$TEST_ROOT/tmux-project/.lbwc-planning"
+  BOUND_CAPABILITY='0123456789abcdef0123456789abcdef'
+  rm -rf "$TEST_ROOT/tmux-project"
+  mkdir -p "$BOUND_CONTROL_ROOT"
+  printf '%s\n' '{}' > "$BOUND_CONTROL_ROOT/config.json"
+  fixture_session_bus "$BOUND_CONTROL_ROOT"
+  plant_unbound_agent agent-a "$BOUND_CAPABILITY"
+}
 
-  run env LBWC_TMUX_AGENT=1 LBWC_TMUX_AGENT_ID=agent-a LBWC_TMUX_CONTRACT_ID=contract-a LBWC_TMUX_CONTROL_ROOT="$control_root" LBWC_PLANNING_DIR="$PLANNING_DIR" CLAUDE_SESSION_ID=actual-child-session bash "$SCRIPT"
+run_bound_session_start() {
+  local child_session="$1"
+  run env LBWC_TMUX_AGENT=1 LBWC_TMUX_AGENT_ID=agent-a LBWC_TMUX_CONTRACT_ID=contract-a LBWC_TMUX_CONTROL_ROOT="$BOUND_CONTROL_ROOT" LBWC_PLANNING_DIR="$PLANNING_DIR" CLAUDE_SESSION_ID="$child_session" bash "$SCRIPT" </dev/null
+}
 
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"tmux bind failed"* ]]
+@test "session-start tmux bind fails closed on a missing or mismatched credential" {
+  local label credential
+  while IFS='|' read -r label credential; do
+    [ -n "$label" ] || continue
+    prepare_bound_agent
+    [ "$credential" = mismatched ] && write_credential agent-a fedcba9876543210fedcba9876543210
+
+    run_bound_session_start actual-child-session
+
+    [ "$status" -ne 0 ] || { echo "case=$label status=$status output=$output" >&2; return 1; }
+    [[ "$output" == *"tmux bind failed"* ]] || { echo "case=$label output=$output" >&2; return 1; }
+    run jq -e '.agents[] | select(.agent_id == "agent-a") | .claude_session_id == null' "$BOUND_CONTROL_ROOT/.runtime/tmux-bus/registry.json"
+    [ "$status" -eq 0 ] || { echo "case=$label agent was bound despite the failure" >&2; return 1; }
+  done <<'CASES'
+missing-credential|missing
+mismatched-credential|mismatched
+CASES
 }
 
 @test "session-start consumes a one-shot credential and records a heartbeat" {
-  local control_root="$TEST_ROOT/tmux-project/.lbwc-planning" agent_capability
-  mkdir -p "$control_root"
-  printf '%s\n' '{}' > "$control_root/config.json"
-  fixture_session_bus "$control_root"
-  agent_capability='0123456789abcdef0123456789abcdef'
-  plant_unbound_agent agent-a "$agent_capability"
-  write_credential agent-a "$agent_capability"
+  prepare_bound_agent
+  write_credential agent-a "$BOUND_CAPABILITY"
 
-  run env LBWC_TMUX_AGENT=1 LBWC_TMUX_AGENT_ID=agent-a LBWC_TMUX_CONTRACT_ID=contract-a LBWC_TMUX_CONTROL_ROOT="$control_root" LBWC_PLANNING_DIR="$PLANNING_DIR" CLAUDE_SESSION_ID=actual-child-session bash "$SCRIPT"
+  run_bound_session_start actual-child-session
 
   [ "$status" -eq 0 ]
   [[ "$output" == *"lbwc tmux bind:"* ]]
-  [[ "$output" == *"0123456789abcdef0123456789abcdef"* ]]
-  [ ! -e "$control_root/.runtime/tmux-bus/credentials/agent-a.json" ]
-  run jq -e '.agents[] | select(.agent_id == "agent-a") | .claude_session_id == "actual-child-session" and .state == "running" and (.heartbeat_at_ms | type == "number")' "$control_root/.runtime/tmux-bus/registry.json"
+  [[ "$output" == *"$BOUND_CAPABILITY"* ]]
+  [ ! -e "$BOUND_CONTROL_ROOT/.runtime/tmux-bus/credentials/agent-a.json" ]
+  run jq -e '.agents[] | select(.agent_id == "agent-a") | .claude_session_id == "actual-child-session" and .state == "running" and (.heartbeat_at_ms | type == "number")' "$BOUND_CONTROL_ROOT/.runtime/tmux-bus/registry.json"
   [ "$status" -eq 0 ]
 
-  write_credential agent-a "$agent_capability"
-  run env LBWC_TMUX_AGENT=1 LBWC_TMUX_AGENT_ID=agent-a LBWC_TMUX_CONTRACT_ID=contract-a LBWC_TMUX_CONTROL_ROOT="$control_root" LBWC_PLANNING_DIR="$PLANNING_DIR" CLAUDE_SESSION_ID=second-child-session bash "$SCRIPT"
+  write_credential agent-a "$BOUND_CAPABILITY"
+  run_bound_session_start second-child-session
   [ "$status" -ne 0 ]
   [[ "$output" == *"tmux bind failed"* ]]
 }
 
-@test "session-start bind fails on a mismatched credential" {
-  local control_root="$TEST_ROOT/tmux-project/.lbwc-planning"
-  mkdir -p "$control_root"
-  printf '%s\n' '{}' > "$control_root/config.json"
-  fixture_session_bus "$control_root"
-  plant_unbound_agent agent-a 0123456789abcdef0123456789abcdef
-  write_credential agent-a fedcba9876543210fedcba9876543210
-
-  run env LBWC_TMUX_AGENT=1 LBWC_TMUX_AGENT_ID=agent-a LBWC_TMUX_CONTRACT_ID=contract-a LBWC_TMUX_CONTROL_ROOT="$control_root" LBWC_PLANNING_DIR="$PLANNING_DIR" CLAUDE_SESSION_ID=actual-child-session bash "$SCRIPT"
-
-  [ "$status" -ne 0 ]
-}
-
 @test "concurrent SessionStart attempts bind a credential at most once" {
-  local control_root="$TEST_ROOT/tmux-project/.lbwc-planning" agent_capability
-  mkdir -p "$control_root"
-  printf '%s\n' '{}' > "$control_root/config.json"
-  fixture_session_bus "$control_root"
-  agent_capability='0123456789abcdef0123456789abcdef'
-  plant_unbound_agent agent-a "$agent_capability"
-  write_credential agent-a "$agent_capability"
+  prepare_bound_agent
+  write_credential agent-a "$BOUND_CAPABILITY"
   bash "$REPO_ROOT/scripts/ensure-plugin-root-link.sh" "$CONCURRENT_LINK" "$(cd -P "$REPO_ROOT" && pwd -P)"
 
-  run env SESSION_START="$SCRIPT" CONTROL_ROOT="$control_root" PLANNING_DIR="$PLANNING_DIR" bash -c '
+  run env SESSION_START="$SCRIPT" CONTROL_ROOT="$BOUND_CONTROL_ROOT" PLANNING_DIR="$PLANNING_DIR" bash -c '
     LBWC_TMUX_AGENT=1 LBWC_TMUX_AGENT_ID=agent-a LBWC_TMUX_CONTRACT_ID=contract-a LBWC_TMUX_CONTROL_ROOT="$CONTROL_ROOT" LBWC_PLANNING_DIR="$PLANNING_DIR" CLAUDE_SESSION_ID=concurrent-child-session bash "$SESSION_START" > "$CONTROL_ROOT/first-session-start.log" 2>&1 &
     first=$!
     LBWC_TMUX_AGENT=1 LBWC_TMUX_AGENT_ID=agent-a LBWC_TMUX_CONTRACT_ID=contract-a LBWC_TMUX_CONTROL_ROOT="$CONTROL_ROOT" LBWC_PLANNING_DIR="$PLANNING_DIR" CLAUDE_SESSION_ID=concurrent-child-session bash "$SESSION_START" > "$CONTROL_ROOT/second-session-start.log" 2>&1 &
@@ -364,8 +348,55 @@ write_credential() {
   '
 
   [ "$status" -eq 0 ]
-  [ ! -e "$control_root/.runtime/tmux-bus/credentials/agent-a.json" ]
-  run jq -e '.agents[] | select(.agent_id == "agent-a") | .claude_session_id == "concurrent-child-session"' "$control_root/.runtime/tmux-bus/registry.json"
+  [ ! -e "$BOUND_CONTROL_ROOT/.runtime/tmux-bus/credentials/agent-a.json" ]
+  run jq -e '.agents[] | select(.agent_id == "agent-a") | .claude_session_id == "concurrent-child-session"' "$BOUND_CONTROL_ROOT/.runtime/tmux-bus/registry.json"
   [ "$status" -eq 0 ]
 }
 
+build_cleanup_fixture() {
+  local stub_mode="$1" workdir_kind="$2" plugin="$TEST_ROOT/plugin-copy" body
+  CLEANUP_PLUGIN_SCRIPTS="$plugin/scripts"
+  CLEANUP_ARGV_LOG="$TEST_ROOT/cleanup-stub.argv"
+  CLEANUP_WORKDIR="$TEST_ROOT/workdir"
+  rm -rf "$plugin" "$CLEANUP_WORKDIR" "$CLEANUP_ARGV_LOG" "$ROOT_LINK"
+  mkdir -p "$CLEANUP_WORKDIR"
+  [ "$workdir_kind" != git ] || git -C "$CLEANUP_WORKDIR" init -q
+  CLEANUP_PROJECT_ROOT="$(cd "$CLEANUP_WORKDIR" && pwd -P)"
+  copy_scripts_to "$CLEANUP_PLUGIN_SCRIPTS"
+  body="printf '%s\n' \"\$*\" > '$CLEANUP_ARGV_LOG'"
+  [ "$stub_mode" != prints ] || body="$body; printf '%s\n' 'retained state inspected'"
+  replace_script_in_copy "$CLEANUP_PLUGIN_SCRIPTS" cleanup-temporary-agent-runfiles.sh "$body"
+  [ "$stub_mode" != non-executable ] || chmod -x "$CLEANUP_PLUGIN_SCRIPTS/cleanup-temporary-agent-runfiles.sh"
+}
+
+run_cleanup_fixture_session_start() {
+  run bash -c 'cd "$1" && LBWC_PLANNING_DIR="$2" bash "$3/session-start.sh" </dev/null' _ "$CLEANUP_WORKDIR" "$PLANNING_DIR" "$CLEANUP_PLUGIN_SCRIPTS"
+}
+
+@test "session-start runs the temporary run cleanup for the project root and reports retained state" {
+  local label stub_mode workdir_kind expect_call expect_line
+  while IFS='|' read -r label stub_mode workdir_kind expect_call expect_line; do
+    [ -n "$label" ] || continue
+    build_cleanup_fixture "$stub_mode" "$workdir_kind"
+
+    run_cleanup_fixture_session_start
+
+    [ "$status" -eq 0 ] || { echo "case=$label status=$status output=$output" >&2; return 1; }
+    if [ "$expect_call" = yes ]; then
+      [ "$(cat "$CLEANUP_ARGV_LOG" 2>/dev/null)" = "cleanup --project-root $CLEANUP_PROJECT_ROOT" ] \
+        || { echo "case=$label argv=$(cat "$CLEANUP_ARGV_LOG" 2>&1) expected root=$CLEANUP_PROJECT_ROOT" >&2; return 1; }
+    else
+      [ ! -e "$CLEANUP_ARGV_LOG" ] || { echo "case=$label stub ran with argv=$(cat "$CLEANUP_ARGV_LOG")" >&2; return 1; }
+    fi
+    if [ "$expect_line" = yes ]; then
+      [[ "$output" == *"Temporary agent run cleanup inspected retained state."* ]] || { echo "case=$label output=$output" >&2; return 1; }
+    else
+      [[ "$output" != *"Temporary agent run cleanup"* ]] || { echo "case=$label output=$output" >&2; return 1; }
+    fi
+  done <<'CASES'
+prints-output-adds-context|prints|git|yes|yes
+silent-stub-adds-no-context|silent|git|yes|no
+non-executable-stub-is-skipped|non-executable|git|no|no
+outside-a-git-repo-is-skipped|prints|plain|no|no
+CASES
+}

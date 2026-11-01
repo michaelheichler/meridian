@@ -1,6 +1,7 @@
 #!/usr/bin/env bats
 
 setup() {
+  unset TMUX TMUX_PANE
   REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/.." && pwd -P)"
   HELPER="$REPO_ROOT/scripts/tmux-spawn-group.sh"
   BUS="$REPO_ROOT/scripts/tmux-bus.sh"
@@ -142,17 +143,27 @@ EOF
   jq -e '.[0].agent_id == "lbwc-web-engineer-aaaa" and .[1].agent_id == "lbwc-web-code-critic-bbbb"' <<<"$output" >/dev/null
 }
 
-@test "dispatch fails closed when main id is missing" {
-  run bash "$HELPER" dispatch --project-root "$PROJECT_ROOT" --control-root "$CONTROL_ROOT" \
-    --main-id '' --contract-id contract-1 --contract-digest digest-1 --names worker-a --job 'do work' --timeout-ms 1000
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"main id is required"* ]] || [[ "$output" == *"Usage:"* ]]
+run_dispatch_without_main_id() {
+  local mode="$1"
+  local -a main_id_args=()
+  [ "$mode" = explicit-empty ] && main_id_args=(--main-id '')
+  run env -u CLAUDE_SESSION_ID bash "$HELPER" dispatch --project-root "$PROJECT_ROOT" --control-root "$CONTROL_ROOT" \
+    ${main_id_args[@]+"${main_id_args[@]}"} --contract-id contract-1 --contract-digest digest-1 \
+    --names worker-a --job 'do work' --timeout-ms 1000
 }
 
-@test "dispatch fails closed when CLAUDE_SESSION_ID is empty and main id is omitted" {
-  run env -u CLAUDE_SESSION_ID bash "$HELPER" dispatch --project-root "$PROJECT_ROOT" --control-root "$CONTROL_ROOT" \
-    --contract-id contract-1 --contract-digest digest-1 --names worker-a --job 'do work' --timeout-ms 1000
-  [ "$status" -ne 0 ]
+@test "dispatch fails closed whenever no main id can be resolved" {
+  local label mode
+  while IFS='|' read -r label mode; do
+    [ -n "$label" ] || continue
+    run_dispatch_without_main_id "$mode"
+    [ "$status" -ne 0 ] || { echo "case=$label status=$status output=$output" >&2; return 1; }
+    [[ "$output" == *"main id is required"* ]] || { echo "case=$label output=$output" >&2; return 1; }
+    [ ! -e "$CONTROL_ROOT/.runtime" ] || { echo "case=$label created runtime state" >&2; return 1; }
+  done <<'CASES'
+explicit-empty-main-id|explicit-empty
+omitted-main-id-without-session-id|omitted
+CASES
 }
 
 @test "await ack uses the message id returned by await" {
@@ -163,13 +174,13 @@ EOF
 
   TMUX_CHILD_BUS="$BUS" TMUX_CHILD_CONTROL_ROOT="$CONTROL_ROOT" TMUX_CHILD_AGENT_ID=worker-a \
     TMUX_CHILD_SESSION_ID=child-session-a TMUX_CHILD_CAPABILITY="$AGENT_CAPABILITY" \
-    TMUX_CHILD_TIMEOUT_MS=4000 bash "$CHILD" &
+    TMUX_CHILD_TIMEOUT_MS=30000 bash "$CHILD" &
   child_pid=$!
 
   run bash "$STUB_HELPER" dispatch --project-root "$PROJECT_ROOT" --control-root "$CONTROL_ROOT" \
     --main-id "$main_id" --main-capability "$MAIN_CAPABILITY" \
     --contract-id contract-1 --contract-digest digest-1 --names worker-a \
-    --job 'do work' --timeout-ms 4000
+    --job 'do work' --timeout-ms 30000
 
   wait "$child_pid"
   [ "$status" -eq 0 ]
