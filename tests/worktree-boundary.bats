@@ -25,6 +25,7 @@ check_context_script() {
   esac
   mkdir -p "$worktree" "$maps"
   find "$maps" -name '*.json' -delete
+  rm -f "$TEST_TEMP_DIR/.lbwc-planning/.compaction-count"
   [ "$map_key" = "-" ] || printf '{"worktree_path":"%s"}' "$worktree" > "$maps/$map_key.json"
 
   run env LBWC_PLANNING_DIR="$TEST_TEMP_DIR/.lbwc-planning" bash -c 'cd "$1" && printf "%s" "$2" | bash "$3"' _ "$worktree" "$payload" "$SCRIPTS_DIR/$script.sh"
@@ -53,6 +54,10 @@ unmatched-mapping-key|{"agent_type":"python-engineer","agent_id":"agent-abc123"}
 engineer-without-mapping|{"agent_name":"lbwc-python-engineer-01"}|-|omit
 reviewer-role-with-mapping|{"agent_name":"lbwc-qa"}|lbwc-qa|omit
 lead-role-with-mapping|{"agent_name":"lbwc-lead"}|lbwc-lead|omit
+debugger-with-mapping|{"agent_name":"lbwc-debugger-01"}|lbwc-debugger-01|include
+docs-with-mapping|{"agent_name":"lbwc-docs-01"}|lbwc-docs-01|include
+qa-author-with-mapping|{"agent_name":"lbwc-qa-author-01"}|lbwc-qa-author-01|include
+architect-with-mapping|{"agent_name":"lbwc-architect-01"}|lbwc-architect-01|omit
 CASES
 }
 
