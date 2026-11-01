@@ -94,13 +94,14 @@ for vf in "${verif_files[@]}"; do
 
   deterministic=false
   if grep -qE '^## (Must-Have Checks|Artifact Checks|Key Link Checks|Anti-Pattern Scan|Convention Compliance|Requirement Mapping|Skill-Augmented Checks|Other Checks)' "$vf" 2>/dev/null; then
-    if grep -q '| # | ID |' "$vf" 2>/dev/null; then
+    if grep -qE '\| [#] \| ID \|' "$vf" 2>/dev/null; then
       deterministic=true
     fi
   fi
 
   if [[ "$deterministic" == true ]]; then
     current_section=""
+    status_col=5
     while IFS= read -r line; do
       case "$line" in
         "## Must-Have Checks"*) current_section="must_have" ;;
@@ -113,24 +114,19 @@ for vf in "${verif_files[@]}"; do
         "## Other Checks"*) current_section="other" ;;
         "## Pre-existing"*|"## Summary"*) current_section="" ;;
         "| "*)
-          if [[ "$line" == *"---|"* ]] || [[ "$line" == *"| # |"* ]] || [[ "$line" == *"| ID |"* ]]; then
+          if [[ "$line" == *"| ID |"* ]]; then
+            status_col=$(echo "$line" | awk -F'|' '{for (i = 1; i <= NF; i++) {cell = $i; gsub(/^ +| +$/, "", cell); if (cell == "Status") {print i; exit}}}')
+            status_col="${status_col:-5}"
+            continue
+          fi
+          if [[ "$line" == *"---|"* ]]; then
             continue
           fi
           if [[ -n "$current_section" ]]; then
             safe_line=$(echo "$line" | sed 's/\&#124;/__PIPE__/g')
             check_id=$(echo "$safe_line" | awk -F'|' '{gsub(/^ +| +$/, "", $3); print $3}')
             description=$(echo "$safe_line" | awk -F'|' '{gsub(/^ +| +$/, "", $4); print $4}' | sed 's/__PIPE__/|/g')
-            col_count=$(echo "$safe_line" | tr -cd '|' | wc -c | tr -d ' ')
-            if [[ "$col_count" -eq 7 ]]; then
-              case "$current_section" in
-                convention)
-                  status=$(echo "$safe_line" | awk -F'|' '{gsub(/^ +| +$/, "", $6); print $6}') ;;
-                *)
-                  status=$(echo "$safe_line" | awk -F'|' '{gsub(/^ +| +$/, "", $7); print $7}') ;;
-              esac
-            else
-              status=$(echo "$safe_line" | awk -F'|' '{gsub(/^ +| +$/, "", $5); print $5}')
-            fi
+            status=$(echo "$safe_line" | awk -F'|' -v col="$status_col" '{cell = $col; gsub(/^ +| +$/, "", cell); print cell}')
             status=$(echo "$status" | sed 's/\*\*//g')
             if [[ -n "$check_id" && -n "$status" ]]; then
               echo "  $status $check_id: $description"
