@@ -50,7 +50,15 @@ extract_section() {
       if (in_section) exit
       if ($0 == "## " heading) { in_section = 1; next }
     }
-    in_section { print }
+    in_section {
+      if ($0 ~ /^[ \t]*$/) {
+        if (started) blanks++
+        next
+      }
+      for (; blanks > 0; blanks--) print ""
+      started = 1
+      print
+    }
   ' "$SESSION_FILE"
 }
 
