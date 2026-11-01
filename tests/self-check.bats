@@ -52,7 +52,7 @@ spawn_guard() {
   printf '{"tool_name":"Agent","tool_input":{"subagent_type":"%s"}}' "$agent" | bash scripts/agent-spawn-guard.sh
 }
 
-@test "spawn guard blocks an unrelated role while a pair is open" {
+@test "spawn guard blocks an unrelated role while a pair is open and lets a paired name flip to running" {
   write_pair_manifest
   local before
   before=$(cksum < "$MANIFEST")
@@ -62,10 +62,6 @@ spawn_guard() {
   [ "$status" -eq 2 ]
   [[ "$stderr" == *"Pair p1 "*"is open, spawn every member before starting other work."* ]]
   [ "$(cksum < "$MANIFEST")" = "$before" ]
-}
-
-@test "spawn guard allows the paired name and flips its manifest entry to running" {
-  write_pair_manifest
 
   run -0 spawn_guard lbwc-dev-a
 

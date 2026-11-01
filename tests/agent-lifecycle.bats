@@ -78,8 +78,8 @@ prepare_planning_dir() {
   esac
 }
 
-@test "agent-lifecycle: hook events without a usable manifest are silent no-ops" {
-  local label setup_kind command event agent
+@test "agent-lifecycle: a missing manifest is a silent no-op and a broken or unreadable one fails with its status" {
+  local label setup_kind command event agent expected shim_dir="$TEST_ROOT/scripts"
   local -a words
   while IFS='@' read -r label setup_kind command event agent; do
     [ -n "$label" ] || continue
@@ -99,10 +99,7 @@ touch-stop-without-planning-dir@absent@touch stop@SubagentStop@lbwc-python-engin
 touch-start-without-manifest@no-manifest@touch start@SubagentStart@lbwc-python-engineer-calm-fox
 touch-for-unknown-agent@empty-manifest@touch@SubagentStart@unknown-agent
 CASES
-}
 
-@test "agent-lifecycle: a broken manifest fails with its status on stderr only" {
-  local label setup_kind command expected
   while IFS='@' read -r label setup_kind command expected; do
     [ -n "$label" ] || continue
     rm -f "$MANIFEST"
@@ -116,28 +113,20 @@ malformed-on-sweep@malformed@sweep@agent_manifest_status=malformed
 malformed-on-idle@malformed@idle@agent_manifest_status=malformed
 dangling-symlink@dangling@sweep@agent_manifest_status=unavailable
 CASES
-}
 
-@test "agent-lifecycle: an unreadable planning dir fails as unavailable" {
+  rm -f "$MANIFEST"
+  mkdir -p "$shim_dir"
+  cp "$SCRIPT" "$shim_dir/agent-lifecycle.sh"
+  run env LBWC_PLANNING_DIR="$PLANNING_DIR" bash "$shim_dir/agent-lifecycle.sh" sweep
+  [ "$status" -ne 0 ]
+  [ "$output" = "agent_manifest_status=unavailable" ]
+
   [ "$(id -u)" -ne 0 ] || skip "root ignores directory permissions"
   chmod 000 "$PLANNING_DIR"
-
   run --separate-stderr env LBWC_PLANNING_DIR="$PLANNING_DIR" bash "$SCRIPT" sweep
-
   [ "$status" -eq 1 ]
   [ -z "$output" ]
   [ "$stderr" = "agent_manifest_status=unavailable" ]
-}
-
-@test "agent-lifecycle: unavailable manifest library fails with its status" {
-  local shim_dir="$TEST_ROOT/scripts"
-  mkdir -p "$shim_dir"
-  cp "$SCRIPT" "$shim_dir/agent-lifecycle.sh"
-
-  run env LBWC_PLANNING_DIR="$PLANNING_DIR" bash "$shim_dir/agent-lifecycle.sh" sweep
-
-  [ "$status" -ne 0 ]
-  [ "$output" = "agent_manifest_status=unavailable" ]
 }
 
 @test "agent-lifecycle: only a native start event promotes a registered known agent" {
@@ -155,8 +144,18 @@ self-reported-state@{"agent_type":"lbwc-python-engineer-calm-fox","state":"runni
 CASES
 }
 
-@test "agent-lifecycle: idle event stops a contracted teammate after revalidation" {
+@test "agent-lifecycle: the unmatched TeammateIdle hook stops an idle contracted teammate only after revalidation and a valid contract" {
   local label name role team allowances contract bin sleep_log="$TEST_ROOT/sleep.log"
+  local active_bin="$TEST_ROOT/bin" contract_path
+  run jq -e '
+    .hooks.TeammateIdle | length == 1
+    and (.[0] | has("matcher") | not)
+    and .[0].hooks[0].timeout == 135
+    and (.[0].hooks[0].command | contains("agent-lifecycle.sh idle"))
+    and (.[0].hooks | length == 1)
+  ' "$REPO_ROOT/hooks/hooks.json"
+  [ "$status" -eq 0 ]
+
   bin=$(write_idle_sleep_shim)
   mkdir -p "$TEST_ROOT/.claude/agents"
   while IFS='@' read -r label name role team allowances; do
@@ -181,33 +180,26 @@ CASES
 solo-engineer@lbwc-python-engineer-calm-fox@python-engineer@solo@["scripts/owned.sh"]
 paired-critic@lbwc-python-critic-calm-owl@python-critic@pair@[]
 CASES
-}
 
-@test "agent-lifecycle: revalidation preserves a teammate that became active" {
-  local bin="$TEST_ROOT/bin"
   write_contract_and_manifest running
-  mkdir -p "$bin"
-  cat > "$bin/sleep" <<'EOF'
+  mkdir -p "$active_bin"
+  cat > "$active_bin/sleep" <<'EOF'
 #!/usr/bin/env bash
 [ "$1" = "120" ] || exit 9
 printf '%s\n' "$1" > "$LBWC_TEST_SLEEP_LOG"
 tmp="${LBWC_TEST_MANIFEST}.tmp"
 jq 'del(.agents["lbwc-python-engineer-calm-fox"].idle_observation_token) | .agents["lbwc-python-engineer-calm-fox"].last_activity_at = "2026-08-09T13:00:01Z"' "$LBWC_TEST_MANIFEST" > "$tmp" && mv "$tmp" "$LBWC_TEST_MANIFEST"
 EOF
-  chmod +x "$bin/sleep"
-
-  run_lifecycle "$(event_payload TeammateIdle "$ENGINEER")" PATH="$bin:$PATH" LBWC_TEST_SLEEP_LOG="$TEST_ROOT/sleep.log" \
+  chmod +x "$active_bin/sleep"
+  rm -f "$sleep_log"
+  run_lifecycle "$(event_payload TeammateIdle "$ENGINEER")" PATH="$active_bin:$PATH" LBWC_TEST_SLEEP_LOG="$sleep_log" \
     LBWC_TEST_MANIFEST="$MANIFEST" LBWC_LIFECYCLE_NOW=1786280400 bash "$SCRIPT" idle
-
   [ "$status" -eq 0 ]
   [ -z "$output" ]
   [ "$(agent_state "$ENGINEER")" = "running" ]
-  [ "$(cat "$TEST_ROOT/sleep.log")" = "120" ]
-}
+  [ "$(cat "$sleep_log")" = "120" ]
 
-@test "agent-lifecycle: invalid contract never produces a stop decision" {
   write_contract_and_manifest running
-  local contract_path
   contract_path=$(jq -r --arg name "$ENGINEER" '.agents[$name].contract_path' "$MANIFEST")
   jq '.created_by = "worker"' "$contract_path" > "$TEST_ROOT/contract.tmp"
   mv "$TEST_ROOT/contract.tmp" "$contract_path"
@@ -219,22 +211,8 @@ EOF
   [ "$(agent_state "$ENGINEER")" = "running" ]
 }
 
-@test "agent-lifecycle: TeammateIdle hook has no matcher and enforces the two minute wait" {
-  local hooks="$REPO_ROOT/hooks/hooks.json"
-
-  run jq -e '
-    .hooks.TeammateIdle | length == 1
-    and (.[0] | has("matcher") | not)
-    and .[0].hooks[0].timeout == 135
-    and (.[0].hooks[0].command | contains("agent-lifecycle.sh idle"))
-    and (.[0].hooks | length == 1)
-  ' "$hooks"
-
-  [ "$status" -eq 0 ]
-}
-
-@test "agent-lifecycle: tmux session start fails closed on a malformed runtime registry" {
-  local control_root="$TEST_ROOT/control"
+@test "agent-lifecycle: tmux session start fails closed on a malformed runtime registry and heartbeats a bound agent" {
+  local control_root="$TEST_ROOT/control" bound_root="$TEST_ROOT/project/.lbwc-planning"
   mkdir -p "$control_root/.runtime/tmux-bus"
   printf '{not valid json\n' > "$control_root/.runtime/tmux-bus/registry.json"
 
@@ -249,6 +227,18 @@ EOF
 
   [ "$status" -ne 0 ]
   [ "$output" = "tmux_lifecycle_status=malformed" ]
+
+  build_tmux_registry_fixture "$bound_root"
+  run env \
+    LBWC_CONTROL_ROOT="$bound_root" \
+    LBWC_TMUX_AGENT=1 \
+    LBWC_TMUX_AGENT_ID=agent-a \
+    CLAUDE_SESSION_ID=agent-session-a \
+    bash "$SCRIPT" tmux-session-start
+  [ "$status" -eq 0 ]
+  [ "$output" = "tmux_lifecycle_status=running" ]
+  run jq -e '.agents[] | select(.agent_id == "agent-a") | .state == "running" and (.heartbeat_at_ms | type == "number")' "$bound_root/.runtime/tmux-bus/registry.json"
+  [ "$status" -eq 0 ]
 }
 
 build_tmux_registry_fixture() {
@@ -285,19 +275,3 @@ build_tmux_registry_fixture() {
   tmux_runtime_initialize_inbox agent-a
 }
 
-@test "agent-lifecycle: tmux session start heartbeats a bound agent" {
-  local control_root="$TEST_ROOT/project/.lbwc-planning"
-  build_tmux_registry_fixture "$control_root"
-
-  run env \
-    LBWC_CONTROL_ROOT="$control_root" \
-    LBWC_TMUX_AGENT=1 \
-    LBWC_TMUX_AGENT_ID=agent-a \
-    CLAUDE_SESSION_ID=agent-session-a \
-    bash "$SCRIPT" tmux-session-start
-
-  [ "$status" -eq 0 ]
-  [ "$output" = "tmux_lifecycle_status=running" ]
-  run jq -e '.agents[] | select(.agent_id == "agent-a") | .state == "running" and (.heartbeat_at_ms | type == "number")' "$control_root/.runtime/tmux-bus/registry.json"
-  [ "$status" -eq 0 ]
-}

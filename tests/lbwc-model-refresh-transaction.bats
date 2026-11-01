@@ -1,6 +1,7 @@
 #!/usr/bin/env bats
 
 load test_helper
+load gate_case_helper
 load model_cli_helper
 
 setup() {
@@ -8,10 +9,16 @@ setup() {
   REAL_CP=$(command -v cp)
   REAL_MV=$(command -v mv)
   REAL_BASH=$(command -v bash)
+  reset_case_failures
 }
 
 teardown() {
   teardown_model_sandbox
+}
+
+fresh_model_sandbox() {
+  teardown_model_sandbox
+  setup_model_sandbox
 }
 
 make_traced_cli() {
@@ -36,6 +43,19 @@ make_traced_cli() {
 assert_state_unchanged() {
   [ "$1" = "$(config_sha)" ] || { echo "config.json changed" >&2; return 1; }
   [ "$2" = "$(catalog_sha)" ] || { echo "claude-capabilities.json changed" >&2; return 1; }
+}
+
+expect_refresh_failed_unchanged() {
+  local label="$1" refresh_status="$2" config_before="$3" catalog_before="$4"
+  [ "$refresh_status" -ne 0 ] || record_case_failure "$label" "refresh succeeded output=$output"
+  assert_state_unchanged "$config_before" "$catalog_before" 2>/dev/null \
+    || record_case_failure "$label" "state files changed"
+}
+
+expect_true() {
+  local label="$1" message="$2"
+  shift 2
+  "$@" || record_case_failure "$label" "$message"
 }
 
 tool_path() {
@@ -121,7 +141,7 @@ SHIM
   jq -e '.effort == "turbo"' "$PLANNING_DIR/config.json" >/dev/null
 }
 
-@test "refresh restores both files when the second commit rename fails" {
+commit_rename_failure_case() {
   local config_before catalog_before
   catalog_before=$(catalog_sha)
   config_before=$(config_sha)
@@ -142,12 +162,12 @@ SHIM
     CLAUDE_CODE_EXECPATH="$CLAUDE_FIXTURE" \
     bash "$SCRIPT" refresh "$PLANNING_DIR"
 
-  [ "$status" -ne 0 ]
-  assert_state_unchanged "$config_before" "$catalog_before"
-  [ ! -e "$PLANNING_DIR/.lbwc-model-refresh.pending" ]
+  expect_refresh_failed_unchanged second-commit-rename-fails "$status" "$config_before" "$catalog_before"
+  expect_true second-commit-rename-fails "pending journal remained" \
+    test ! -e "$PLANNING_DIR/.lbwc-model-refresh.pending"
 }
 
-@test "refresh restores both files after a catchable interruption" {
+catchable_interruption_case() {
   local config_before catalog_before refresh_pid refresh_status=0
   local ready="$TEST_ROOT/interrupt-ready" release="$TEST_ROOT/interrupt-release" child_pid_path="$TEST_ROOT/interrupt-child-pid"
   catalog_before=$(catalog_sha)
@@ -179,16 +199,24 @@ SHIM
   : > "$release"
   wait "$refresh_pid" || refresh_status=$?
 
-  [ "$refresh_status" -ne 0 ]
-  assert_state_unchanged "$config_before" "$catalog_before"
-  [ ! -e "$PLANNING_DIR/.lbwc-model-refresh.pending" ]
-  [ ! -e "$PLANNING_DIR/.routing.lock" ]
+  expect_refresh_failed_unchanged catchable-interruption "$refresh_status" "$config_before" "$catalog_before"
+  expect_true catchable-interruption "pending journal remained" \
+    test ! -e "$PLANNING_DIR/.lbwc-model-refresh.pending"
+  expect_true catchable-interruption "routing lock remained" test ! -e "$PLANNING_DIR/.routing.lock"
 }
 
-@test "refresh rejects a swapped published journal directory without changing either state file" {
+@test "refresh restores both files when the second commit rename fails or a catchable interruption arrives" {
+  commit_rename_failure_case
+  fresh_model_sandbox
+  catchable_interruption_case
+
+  assert_no_case_failures
+}
+
+swapped_journal_directory_case() {
   local config_before catalog_before external_sha marker="$TEST_ROOT/journal-directory-swapped"
   local attacker="$TEST_ROOT/attacker-journal" external_catalog="$TEST_ROOT/external-catalog"
-  local pending
+  local pending label=swapped-journal-directory
   pending="$(physical_planning_dir)/.lbwc-model-refresh.pending"
   mkdir -p "$attacker"
   cp "$PLANNING_DIR/config.json" "$attacker/config.before"
@@ -225,16 +253,15 @@ SHIM
     CLAUDE_CODE_EXECPATH="$CLAUDE_FIXTURE" \
     bash "$SCRIPT" refresh "$PLANNING_DIR"
 
-  [ -e "$marker" ]
-  [ "$status" -ne 0 ]
-  assert_state_unchanged "$config_before" "$catalog_before"
-  [ "$external_sha" = "$(file_sha_of "$external_catalog")" ]
-  [ -e "$PLANNING_DIR/.lbwc-model-refresh.pending" ]
+  expect_true "$label" "swap never ran" test -e "$marker"
+  expect_refresh_failed_unchanged "$label" "$status" "$config_before" "$catalog_before"
+  expect_true "$label" "external catalog changed" test "$external_sha" = "$(file_sha_of "$external_catalog")"
+  expect_true "$label" "pending journal is gone" test -e "$PLANNING_DIR/.lbwc-model-refresh.pending"
 }
 
-@test "refresh rejects a symlink swapped onto the published journal boundary" {
+symlinked_journal_boundary_case() {
   local config_before catalog_before attacker_sha marker="$TEST_ROOT/journal-symlink-swapped"
-  local attacker="$TEST_ROOT/external-journal" pending real_ln
+  local attacker="$TEST_ROOT/external-journal" pending real_ln label=symlinked-journal-boundary
   pending="$(physical_planning_dir)/.lbwc-model-refresh.pending"
   real_ln=$(command -v ln)
   mkdir -p "$attacker"
@@ -272,16 +299,15 @@ SHIM
     CLAUDE_CODE_EXECPATH="$CLAUDE_FIXTURE" \
     bash "$SCRIPT" refresh "$PLANNING_DIR"
 
-  [ "$status" -ne 0 ]
-  [ -e "$marker" ]
-  [ -L "$PLANNING_DIR/.lbwc-model-refresh.pending" ]
-  assert_state_unchanged "$config_before" "$catalog_before"
-  [ "$attacker_sha" = "$(file_sha_of "$attacker/config.after")" ]
+  expect_refresh_failed_unchanged "$label" "$status" "$config_before" "$catalog_before"
+  expect_true "$label" "swap never ran" test -e "$marker"
+  expect_true "$label" "pending journal is not the planted symlink" test -L "$PLANNING_DIR/.lbwc-model-refresh.pending"
+  expect_true "$label" "attacker journal changed" test "$attacker_sha" = "$(file_sha_of "$attacker/config.after")"
 }
 
-@test "refresh rejects a swapped after image without changing either state file" {
+swapped_after_image_case() {
   local config_before catalog_before external_sha marker="$TEST_ROOT/journal-after-swapped"
-  local external_config="$TEST_ROOT/external-config-after" pending
+  local external_config="$TEST_ROOT/external-config-after" pending label=swapped-after-image
   pending="$(physical_planning_dir)/.lbwc-model-refresh.pending"
   jq '.effort = "turbo"' "$PLANNING_DIR/config.json" > "$external_config"
   external_sha=$(file_sha_of "$external_config")
@@ -307,16 +333,15 @@ SHIM
     CLAUDE_CODE_EXECPATH="$CLAUDE_FIXTURE" \
     bash "$SCRIPT" refresh "$PLANNING_DIR"
 
-  [ "$status" -ne 0 ]
-  [ -e "$marker" ]
-  assert_state_unchanged "$config_before" "$catalog_before"
-  [ "$external_sha" = "$(file_sha_of "$external_config")" ]
-  [ -e "$PLANNING_DIR/.lbwc-model-refresh.pending" ]
+  expect_refresh_failed_unchanged "$label" "$status" "$config_before" "$catalog_before"
+  expect_true "$label" "swap never ran" test -e "$marker"
+  expect_true "$label" "external config changed" test "$external_sha" = "$(file_sha_of "$external_config")"
+  expect_true "$label" "pending journal is gone" test -e "$PLANNING_DIR/.lbwc-model-refresh.pending"
 }
 
-@test "refresh rejects a swapped before image during rollback without changing either state file" {
+swapped_before_image_case() {
   local config_before catalog_before external_sha marker="$TEST_ROOT/journal-before-swapped"
-  local external_config="$TEST_ROOT/external-config-before" pending
+  local external_config="$TEST_ROOT/external-config-before" pending label=swapped-before-image-during-rollback
   pending="$(physical_planning_dir)/.lbwc-model-refresh.pending"
   jq '.effort = "turbo"' "$PLANNING_DIR/config.json" > "$external_config"
   external_sha=$(file_sha_of "$external_config")
@@ -345,11 +370,22 @@ SHIM
     CLAUDE_CODE_EXECPATH="$CLAUDE_FIXTURE" \
     bash "$SCRIPT" refresh "$PLANNING_DIR"
 
-  [ "$status" -ne 0 ]
-  [ -e "$marker" ]
-  assert_state_unchanged "$config_before" "$catalog_before"
-  [ "$external_sha" = "$(file_sha_of "$external_config")" ]
-  [ -e "$PLANNING_DIR/.lbwc-model-refresh.pending" ]
+  expect_refresh_failed_unchanged "$label" "$status" "$config_before" "$catalog_before"
+  expect_true "$label" "swap never ran" test -e "$marker"
+  expect_true "$label" "external config changed" test "$external_sha" = "$(file_sha_of "$external_config")"
+  expect_true "$label" "pending journal is gone" test -e "$PLANNING_DIR/.lbwc-model-refresh.pending"
+}
+
+@test "refresh rejects a swapped journal directory, symlink, after image or before image without changing either state file" {
+  swapped_journal_directory_case
+  fresh_model_sandbox
+  symlinked_journal_boundary_case
+  fresh_model_sandbox
+  swapped_after_image_case
+  fresh_model_sandbox
+  swapped_before_image_case
+
+  assert_no_case_failures
 }
 
 @test "a surviving refresh marker blocks every model writer and trusted state entry point" {
@@ -363,10 +399,9 @@ SHIM
 
     run env CLAUDE_CODE_EXECPATH="$CLAUDE_FIXTURE" bash "$(tool_path "$tool")" ${arguments//@PLANNING@/$PLANNING_DIR} </dev/null
 
-    [ "$status" -ne 0 ] || { case_fail "$label" "entry point succeeded"; return 1; }
+    expect_refresh_failed_unchanged "$label" "$status" "$config_before" "$catalog_before"
     [[ "$output" == *'pending model refresh requires recovery'* ]] \
-      || { case_fail "$label" "missing recovery message"; return 1; }
-    assert_state_unchanged "$config_before" "$catalog_before" || { case_fail "$label" "state changed"; return 1; }
+      || record_case_failure "$label" "missing recovery message output=$output"
   done <<'CASES'
 model-set|model|set @PLANNING@ quality docs ember-path null
 model-activate|model|activate @PLANNING@ turbo
@@ -378,4 +413,6 @@ routing-validate|routing|validate @PLANNING@
 capabilities-refresh|capabilities|refresh @PLANNING@
 capabilities-validate|capabilities|validate @PLANNING@/claude-capabilities.json
 CASES
+
+  assert_no_case_failures
 }

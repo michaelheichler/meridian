@@ -15,8 +15,8 @@ fresh_root() {
   printf '%s\n' "$root"
 }
 
-@test "check-markdown-format accepts well-formed command trees" {
-  local root
+@test "check-markdown-format passes clean trees, counts whitespace violations, and exits 2 on bad invocations" {
+  local root label content fragment
 
   root=$(fresh_root clean)
   printf '%b' '---\ncategory: supporting\n---\n\n# Clean\n' > "$root/commands/clean.md"
@@ -39,11 +39,6 @@ fresh_root() {
   run bash "$CHECKER" --root "$REPO_ROOT"
   expect_case "shipped-command-files" 0 'Markdown format passed:'
 
-  assert_no_case_failures
-}
-
-@test "check-markdown-format rejects whitespace violations with file, line and a total count" {
-  local label content fragment root
   while IFS='|' read -r label content fragment; do
     [ -n "$label" ] || continue
     root=$(fresh_root "$label")
@@ -68,11 +63,6 @@ CASES
   expect_output_has "multi-a-trailing" 'commands/a.md:1: trailing whitespace'
   expect_output_has "multi-a-tab" 'commands/a.md:2: literal tab character'
   expect_output_has "multi-b-newline" 'commands/b.md: missing final newline'
-  assert_no_case_failures
-}
-
-@test "check-markdown-format exits 2 on invalid invocation or repository layout" {
-  local root
 
   run bash "$CHECKER" --bogus
   expect_case "unknown-flag" 2 'Usage: check-markdown-format.sh [--root PATH]'

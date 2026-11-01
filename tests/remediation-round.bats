@@ -45,7 +45,7 @@ finish_qa_round() {
   bash "$SCRIPT" stage "$PHASE_DIR" qa done >/dev/null
 }
 
-@test "remediation-round open: creates, reuses, advances and caps rounds" {
+@test "remediation-round open: creates, reuses, advances and caps rounds and anchors QA rounds to HEAD" {
   fresh_phase qa-new
   run bash "$SCRIPT" open "$PHASE_DIR" qa
   expect_case qa-new 0 "round=01"
@@ -91,10 +91,35 @@ finish_qa_round() {
   expect_case uat-cap-plan-reopen 0 "round=01"
   expect_no_path uat-cap-plan-reopen "$PHASE_DIR/remediation/uat/round-02"
 
+  fresh_git_phase anchor-open
+  run bash "$SCRIPT" open "$PHASE_DIR" qa
+  expect_status anchor-open 0
+  expect_file_line anchor-open "$QA_STATE" "^round_started_at_commit=$HEAD1$"
+
+  fresh_git_phase anchor-kept
+  bash "$SCRIPT" open "$PHASE_DIR" qa >/dev/null
+  run bash "$SCRIPT" stage "$PHASE_DIR" qa execute
+  expect_status anchor-kept 0
+  expect_file_line anchor-kept "$QA_STATE" "^round_started_at_commit=$HEAD1$"
+
+  fresh_git_phase anchor-new-round
+  bash "$SCRIPT" open "$PHASE_DIR" qa >/dev/null
+  finish_qa_round
+  ( cd "$TEST_ROOT/anchor-new-round" && echo y >> f && git add f && git commit -qm second )
+  HEAD2=$(git -C "$TEST_ROOT/anchor-new-round" rev-parse HEAD)
+  run bash "$SCRIPT" open "$PHASE_DIR" qa
+  expect_case anchor-new-round 0 "round=02"
+  expect_file_line anchor-new-round "$QA_STATE" "^round_started_at_commit=$HEAD2$"
+
+  fresh_git_phase anchor-uat-none
+  run bash "$SCRIPT" open "$PHASE_DIR" uat
+  expect_status anchor-uat-none 0
+  expect_no_file_line anchor-uat-none "$UAT_STATE" '^round_started_at_commit='
+
   assert_no_case_failures
 }
 
-@test "remediation-round stage and current: move stages, report state, reject bad input" {
+@test "remediation-round stage and current: move stages, report state, reject bad input and malformed invocations" {
   fresh_phase uat-execute
   bash "$SCRIPT" open "$PHASE_DIR" uat >/dev/null
   run bash "$SCRIPT" stage "$PHASE_DIR" uat execute
@@ -132,10 +157,6 @@ finish_qa_round() {
   expect_case uat-stage-without-round 1 "no active round"
   expect_no_path uat-stage-without-round "$UAT_STATE"
 
-  assert_no_case_failures
-}
-
-@test "remediation-round usage: rejects malformed invocations" {
   fresh_phase usage-too-few-args
   run bash "$SCRIPT" open "$PHASE_DIR"
   expect_case usage-too-few-args 1 "usage: remediation-round.sh"
@@ -151,35 +172,6 @@ finish_qa_round() {
   fresh_phase usage-bad-action
   run bash "$SCRIPT" rewind "$PHASE_DIR" uat
   expect_case usage-bad-action 1 "usage: remediation-round.sh"
-
-  assert_no_case_failures
-}
-
-@test "remediation-round QA anchor: round_started_at_commit follows HEAD per round" {
-  fresh_git_phase anchor-open
-  run bash "$SCRIPT" open "$PHASE_DIR" qa
-  expect_status anchor-open 0
-  expect_file_line anchor-open "$QA_STATE" "^round_started_at_commit=$HEAD1$"
-
-  fresh_git_phase anchor-kept
-  bash "$SCRIPT" open "$PHASE_DIR" qa >/dev/null
-  run bash "$SCRIPT" stage "$PHASE_DIR" qa execute
-  expect_status anchor-kept 0
-  expect_file_line anchor-kept "$QA_STATE" "^round_started_at_commit=$HEAD1$"
-
-  fresh_git_phase anchor-new-round
-  bash "$SCRIPT" open "$PHASE_DIR" qa >/dev/null
-  finish_qa_round
-  ( cd "$TEST_ROOT/anchor-new-round" && echo y >> f && git add f && git commit -qm second )
-  HEAD2=$(git -C "$TEST_ROOT/anchor-new-round" rev-parse HEAD)
-  run bash "$SCRIPT" open "$PHASE_DIR" qa
-  expect_case anchor-new-round 0 "round=02"
-  expect_file_line anchor-new-round "$QA_STATE" "^round_started_at_commit=$HEAD2$"
-
-  fresh_git_phase anchor-uat-none
-  run bash "$SCRIPT" open "$PHASE_DIR" uat
-  expect_status anchor-uat-none 0
-  expect_no_file_line anchor-uat-none "$UAT_STATE" '^round_started_at_commit='
 
   assert_no_case_failures
 }

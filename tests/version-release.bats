@@ -1,6 +1,7 @@
 #!/usr/bin/env bats
 
 load gate_case_helper
+load gate_case_files
 load rejection_case_helper
 
 build_sandbox() {
@@ -39,7 +40,13 @@ sandbox_digest() {
   (cd "$SANDBOX" && find . -type f -exec cksum {} + | sort)
 }
 
-@test "version-bump accepts synchronized metadata and leaves files untouched on verify and dry-run" {
+expect_sandbox_version() {
+  local label="$1" want="$2"
+  [ "$(tr -d '[:space:]' < "$SANDBOX/VERSION")" = "$want" ] || record_case_failure "$label" "VERSION is not $want"
+  [ "$(jq -r '.version' "$SANDBOX/.claude-plugin/plugin.json")" = "$want" ] || record_case_failure "$label" "plugin version is not $want"
+}
+
+@test "version-bump verifies, dry-runs and sets synchronized metadata and rejects drift or unconfirmed sets with exit 2" {
   local before
   reset_case_failures
 
@@ -53,28 +60,17 @@ sandbox_digest() {
   run version_bump --set 1.0.1 --yes --dry-run
   expect_case dry-run 0 'dry-run'
   expect_digest dry-run "$before" "$(sandbox_digest)"
-  [ "$(tr -d '[:space:]' < "$SANDBOX/VERSION")" = 1.0.0 ] || record_case_failure dry-run "VERSION changed"
-  [ "$(jq -r '.version' "$SANDBOX/.claude-plugin/plugin.json")" = 1.0.0 ] || record_case_failure dry-run "plugin version changed"
-
-  assert_no_case_failures
-}
-
-@test "version-bump set updates VERSION, plugin and marketplace after changelog discipline passes" {
-  bump_changelog_to_1_0_1
+  expect_sandbox_version dry-run 1.0.0
 
   run version_bump --set 1.0.1 --yes
+  expect_status set-confirmed 0
+  expect_sandbox_version set-confirmed 1.0.1
+  [ "$(jq -r '.version' "$SANDBOX/.claude-plugin/marketplace.json")" = 1.0.1 ] \
+    || record_case_failure set-confirmed "marketplace version is not 1.0.1"
+  [ "$(jq -r '.plugins[0].version' "$SANDBOX/.claude-plugin/marketplace.json")" = 1.0.1 ] \
+    || record_case_failure set-confirmed "marketplace plugin version is not 1.0.1"
 
-  [ "$status" -eq 0 ]
-  [ "$(tr -d '[:space:]' < "$SANDBOX/VERSION")" = 1.0.1 ]
-  [ "$(jq -r '.version' "$SANDBOX/.claude-plugin/plugin.json")" = 1.0.1 ]
-  [ "$(jq -r '.version' "$SANDBOX/.claude-plugin/marketplace.json")" = 1.0.1 ]
-  [ "$(jq -r '.plugins[0].version' "$SANDBOX/.claude-plugin/marketplace.json")" = 1.0.1 ]
-}
-
-@test "version-bump rejects metadata drift and unconfirmed sets with exit 2" {
-  local before
-  reset_case_failures
-
+  build_sandbox
   printf '{"name":"lbwc","version":"1.0.1"}\n' > "$SANDBOX/.claude-plugin/plugin.json"
   run version_bump --verify
   expect_case plugin-drift 2 'does not match VERSION'

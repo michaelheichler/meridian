@@ -34,46 +34,26 @@ run_gate_loop() {
   run node "$HARNESS" "$rendered" "$responses"
 }
 
-@test "pair gate loop scores verdicts and stops or continues by autonomy" {
-  local label autonomy responses labels result_status round
-  while IFS='|' read -r label autonomy responses labels result_status round; do
+@test "gate loops score verdicts, rerun the blocking owner, and ask the user after three standard blocks" {
+  local label kind autonomy responses labels result_status round
+  while IFS='|' read -r label kind autonomy responses labels result_status round; do
     [ -n "$label" ] || continue
-    run_gate_loop pair "$autonomy" "$responses" || { record_case_failure "$label" "render failed output=$output"; continue; }
+    run_gate_loop "$kind" "$autonomy" "$responses" || { record_case_failure "$label" "render failed output=$output"; continue; }
     expect_status "$label" 0
     expect_jq_output "$label-calls" ".agentCalls | map(.label) | join(\",\") == \"$labels\""
     expect_jq_output "$label-result" ".result.status == \"$result_status\" and .result.round == $round"
     expect_jq_output "$label-critic-schema" '.agentCalls | map(select(.label == "critic")) | all(.hasSchema == true)'
   done <<'CASES'
-pass-on-round-1|standard|[{"n":1},{"verdict":"PASS"}]|engineer,critic|complete|1
-pure-vibe-continues-past-round-3|pure-vibe|[{"n":1},{"verdict":"BLOCK"},{"n":2},{"verdict":"BLOCK"},{"n":3},{"verdict":"BLOCK"},{"n":4},{"verdict":"PASS"}]|engineer,critic,engineer,critic,engineer,critic,engineer,critic|complete|4
-block-text-containing-pass-stays-block|standard|[{"n":1},{"verdict":"BLOCK","findings":"1. (blocking) The variant does not decrease. Fix: tighten the guard split.\nVERDICT: BLOCK. Flips on: fix 1 so tests/guard.bats can pass.\nGrounding: discipline-of-programming-dijkstra/SKILL.md."},{"n":2},{"verdict":"PASS"}]|engineer,critic,engineer,critic|complete|2
+pair-pass-on-round-1|pair|standard|[{"n":1},{"verdict":"PASS"}]|engineer,critic|complete|1
+pair-pure-vibe-continues-past-round-3|pair|pure-vibe|[{"n":1},{"verdict":"BLOCK"},{"n":2},{"verdict":"BLOCK"},{"n":3},{"verdict":"BLOCK"},{"n":4},{"verdict":"PASS"}]|engineer,critic,engineer,critic,engineer,critic,engineer,critic|complete|4
+pair-block-text-containing-pass-stays-block|pair|standard|[{"n":1},{"verdict":"BLOCK","findings":"1. (blocking) The variant does not decrease. Fix: tighten the guard split.\nVERDICT: BLOCK. Flips on: fix 1 so tests/guard.bats can pass.\nGrounding: discipline-of-programming-dijkstra/SKILL.md."},{"n":2},{"verdict":"PASS"}]|engineer,critic,engineer,critic|complete|2
+trio-pass-on-round-1|trio|standard|[{"n":1},{"t":1},{"verdict":"PASS"}]|engineer,test-dev,critic|complete|1
+trio-owner-source-reruns-engineer|trio|standard|[{"n":1},{"t":1},{"verdict":"BLOCK","owner":"SOURCE"},{"n":2},{"verdict":"PASS"}]|engineer,test-dev,critic,engineer,critic|complete|2
+trio-owner-tests-reruns-test-dev|trio|standard|[{"n":1},{"t":1},{"verdict":"BLOCK","owner":"TESTS"},{"t":2},{"verdict":"PASS"}]|engineer,test-dev,critic,test-dev,critic|complete|2
+trio-no-owner-reruns-both|trio|standard|[{"n":1},{"t":1},{"verdict":"BLOCK"},{"n":2},{"t":2},{"verdict":"PASS"}]|engineer,test-dev,critic,engineer,test-dev,critic|complete|2
+trio-pure-vibe-continues-past-round-3|trio|pure-vibe|[{"n":1},{"t":1},{"verdict":"BLOCK"},{"n":2},{"t":2},{"verdict":"BLOCK"},{"n":3},{"t":3},{"verdict":"BLOCK"},{"n":4},{"t":4},{"verdict":"PASS"}]|engineer,test-dev,critic,engineer,test-dev,critic,engineer,test-dev,critic,engineer,test-dev,critic|complete|4
 CASES
 
-  assert_no_case_failures
-}
-
-@test "trio gate loop reruns only the role that owns the blocking verdict" {
-  local label autonomy responses labels result_status round
-  while IFS='|' read -r label autonomy responses labels result_status round; do
-    [ -n "$label" ] || continue
-    run_gate_loop trio "$autonomy" "$responses" || { record_case_failure "$label" "render failed output=$output"; continue; }
-    expect_status "$label" 0
-    expect_jq_output "$label-calls" ".agentCalls | map(.label) | join(\",\") == \"$labels\""
-    expect_jq_output "$label-result" ".result.status == \"$result_status\" and .result.round == $round"
-    expect_jq_output "$label-critic-schema" '.agentCalls | map(select(.label == "critic")) | all(.hasSchema == true)'
-  done <<'CASES'
-pass-on-round-1|standard|[{"n":1},{"t":1},{"verdict":"PASS"}]|engineer,test-dev,critic|complete|1
-owner-source-reruns-engineer|standard|[{"n":1},{"t":1},{"verdict":"BLOCK","owner":"SOURCE"},{"n":2},{"verdict":"PASS"}]|engineer,test-dev,critic,engineer,critic|complete|2
-owner-tests-reruns-test-dev|standard|[{"n":1},{"t":1},{"verdict":"BLOCK","owner":"TESTS"},{"t":2},{"verdict":"PASS"}]|engineer,test-dev,critic,test-dev,critic|complete|2
-no-owner-reruns-both|standard|[{"n":1},{"t":1},{"verdict":"BLOCK"},{"n":2},{"t":2},{"verdict":"PASS"}]|engineer,test-dev,critic,engineer,test-dev,critic|complete|2
-pure-vibe-continues-past-round-3|pure-vibe|[{"n":1},{"t":1},{"verdict":"BLOCK"},{"n":2},{"t":2},{"verdict":"BLOCK"},{"n":3},{"t":3},{"verdict":"BLOCK"},{"n":4},{"t":4},{"verdict":"PASS"}]|engineer,test-dev,critic,engineer,test-dev,critic,engineer,test-dev,critic,engineer,test-dev,critic|complete|4
-CASES
-
-  assert_no_case_failures
-}
-
-@test "gate loops under standard autonomy ask the user after three blocked rounds" {
-  local label kind responses labels
   while IFS='|' read -r label kind responses labels; do
     [ -n "$label" ] || continue
     run_gate_loop "$kind" standard "$responses" || { record_case_failure "$label" "render failed output=$output"; continue; }
@@ -85,8 +65,8 @@ CASES
     expect_jq_output "$label-choices" '(.result.choices | length) >= 2 and (.result.choices | length) <= 4'
     expect_jq_output "$label-question" '.result.question | contains("Round 3")'
   done <<'CASES'
-pair|pair|[{"n":1},{"verdict":"BLOCK"},{"n":2},{"verdict":"BLOCK"},{"n":3},{"verdict":"BLOCK","findings":"round 3 findings"}]|engineer,critic,engineer,critic,engineer,critic
-trio|trio|[{"n":1},{"t":1},{"verdict":"BLOCK"},{"n":2},{"t":2},{"verdict":"BLOCK"},{"n":3},{"t":3},{"verdict":"BLOCK","findings":"round 3 findings"}]|engineer,test-dev,critic,engineer,test-dev,critic,engineer,test-dev,critic
+pair-asks-after-three-blocks|pair|[{"n":1},{"verdict":"BLOCK"},{"n":2},{"verdict":"BLOCK"},{"n":3},{"verdict":"BLOCK","findings":"round 3 findings"}]|engineer,critic,engineer,critic,engineer,critic
+trio-asks-after-three-blocks|trio|[{"n":1},{"t":1},{"verdict":"BLOCK"},{"n":2},{"t":2},{"verdict":"BLOCK"},{"n":3},{"t":3},{"verdict":"BLOCK","findings":"round 3 findings"}]|engineer,test-dev,critic,engineer,test-dev,critic,engineer,test-dev,critic
 CASES
 
   assert_no_case_failures

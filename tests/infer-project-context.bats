@@ -76,7 +76,7 @@ run_infer() {
   run bash "$SCRIPT" "$MAP_DIR" "$TEST_REPO"
 }
 
-@test "infer-project-context: infers every field from the map, with source attribution and without concern text" {
+@test "infer-project-context: infers every field and the project name with source attribution, and rejects missing input" {
   local purpose="A Claude Code plugin for a plan, execute, verify workflow."
   write_stack "Purpose" "$purpose"
   write_supporting_map
@@ -109,10 +109,6 @@ run_infer() {
   run bash "$SCRIPT" --help
   expect_case help 0 "Usage: infer-project-context.sh CODEBASE_DIR [REPO_ROOT]"
 
-  assert_no_case_failures
-}
-
-@test "infer-project-context: names the project from the origin remote, then plugin.json, then the directory" {
   run_infer
   expect_case directory-fallback 0 ""
   expect_jq_output directory-fallback '.name == {value: "repo", source: "directory"}'
@@ -129,10 +125,6 @@ run_infer() {
   expect_case origin-remote 0 ""
   expect_jq_output origin-remote '.name == {value: "widget", source: "repo"}'
 
-  assert_no_case_failures
-}
-
-@test "infer-project-context: rejects a missing argument and a missing codebase directory" {
   run bash "$SCRIPT"
   expect_case no-arguments 1 "CODEBASE_DIR is required"
 

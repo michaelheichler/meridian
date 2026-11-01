@@ -16,20 +16,19 @@ teardown() {
 create_state_with_todos() {
   local path="$1"
   mkdir -p "$(dirname "$path")"
-  cat > "$path" <<'EOF'
-# LBWC State
-
-**Project:** Test
-**Status:** Active
-
-## Todos
-- Fix bug in parser (added 2026-01-15)
-- [HIGH] Refactor auth module (added 2026-02-01)
-- [low] Update docs (added 2026-02-10)
-
-## Recent Activity
-- 2026-02-10: Updated docs
-EOF
+  printf '%s\n' \
+    '# LBWC State' \
+    '' \
+    '**Project:** Test' \
+    '**Status:** Active' \
+    '' \
+    '## Todos' \
+    '- Fix bug in parser (added 2026-01-15)' \
+    '- [HIGH] Refactor auth module (added 2026-02-01)' \
+    '- [low] Update docs (added 2026-02-10)' \
+    '' \
+    '## Recent Activity' \
+    '- 2026-02-10: Updated docs' > "$path"
 }
 
 build_layout() {
@@ -49,7 +48,7 @@ build_layout() {
   esac
 }
 
-@test "lists root todos with count and stable mutation metadata" {
+@test "list-todos lists root todos with stable mutation metadata and errors unless a writable root STATE.md exists" {
   create_state_with_todos ".lbwc-planning/STATE.md"
 
   run bash "$SCRIPTS_DIR/list-todos.sh"
@@ -64,9 +63,7 @@ build_layout() {
   expect_json root '.items[1].section' "## Todos"
   expect_json root '.items[0].identity_occurrence' 1
   expect_json root '.items[0].identity_total' 1
-}
 
-@test "list-todos errors unless a writable root STATE.md exists and leaves other state untouched" {
   while IFS='|' read -r label layout filter message; do
     [ -n "$label" ] || continue
     build_layout "$layout"

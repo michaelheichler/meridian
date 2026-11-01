@@ -20,7 +20,7 @@ run_nudge() {
     | env CLAUDE_PLUGIN_ROOT="$PROJECT_ROOT" bash "$SCRIPTS_DIR/deviq-nudge.sh"
 }
 
-@test "writes without a usable match stay silent with exit 0" {
+@test "deviq-nudge stays silent without a usable match and nudges a match once per cooldown" {
   reset_case_failures
 
   run bash -c "printf 'not json{{{' | env CLAUDE_PLUGIN_ROOT='$PROJECT_ROOT' bash '$SCRIPTS_DIR/deviq-nudge.sh'"
@@ -31,12 +31,6 @@ run_nudge() {
 
   run run_nudge "adds a simple helper function to format dates"
   expect_case_silent no-matching-pattern 0
-
-  assert_no_case_failures
-}
-
-@test "a matching write nudges once and the cooldown silences the next match" {
-  reset_case_failures
 
   run run_nudge "this class has become a real god object over time"
   expect_case first-match-nudges 0 "additionalContext"
