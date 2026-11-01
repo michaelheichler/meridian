@@ -294,6 +294,18 @@ CASES
   jq -e --arg name "$name" '.agents[$name].effort == null' "$(manifest_path)" >/dev/null
 }
 
+@test "generator refuses a route whose selector has no host Agent id and writes no agent" {
+  local catalog="$TEST_TEMP_DIR/.lbwc-planning/claude-capabilities.json"
+  jq '. + {host_agent_enum: ["sonnet"], agent_model_ids: {sonnet: "sonnet"}}
+    | .models += [{selector: "sonnet", label: "Sonnet", description: "Host fixture"}]' \
+    "$catalog" > "$catalog.next"
+  mv "$catalog.next" "$catalog"
+
+  generate docs --job "write a README"
+
+  assert_rejected_without_mutation host-enum-gap "not present in the live host Agent enum"
+}
+
 @test "generator blocks when the saved binary fingerprint is stale" {
   printf '%s\n' 'changed' >> "$ROUTE_BINARY"
 

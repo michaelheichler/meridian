@@ -1,6 +1,7 @@
 #!/usr/bin/env bats
 
 load test_helper
+load guard_helper
 
 ROUTING="${LBWC_ROUTING_UNDER_TEST:-${SCRIPTS_DIR}/lbwc-routing.sh}"
 
@@ -93,6 +94,35 @@ teardown() {
   [[ "$output" == *"not present in the saved capability catalog"* ]]
   after=$(shasum -a 256 "$TEST_TEMP_DIR/.lbwc-planning/config.json" | awk '{print $1}')
   [ "$before" = "$after" ]
+}
+
+check_host_enum_case() {
+  local label="$1" enum_state="$2" selector="$3" expected_status="$4" expected_text="$5"
+  local catalog="$TEST_TEMP_DIR/.lbwc-planning/claude-capabilities.json"
+  [ -f "$catalog.base" ] || cp "$catalog" "$catalog.base"
+  if [ "$enum_state" = "enum" ]; then
+    jq '. + {host_agent_enum: ["sonnet"], agent_model_ids: {sonnet: "sonnet"}}
+      | .models += [{selector: "sonnet", label: "Sonnet", description: "Host fixture"}]' \
+      "$catalog.base" > "$catalog"
+  else
+    cp "$catalog.base" "$catalog"
+  fi
+
+  run bash "$ROUTING" check "$TEST_TEMP_DIR/.lbwc-planning" "$selector" '"deliberate"'
+
+  [ "$status" -eq "$expected_status" ] || fail_case "$label" "expected exit status $expected_status got $status"
+  [[ "$output" == *"$expected_text"* ]] || fail_case "$label" "expected output to contain '$expected_text'"
+}
+
+@test "check requires a host Agent id only when the catalog carries a host Agent enum" {
+  while IFS='|' read -r label enum_state selector expected_status expected_text; do
+    [ -n "$label" ] || continue
+    check_host_enum_case "$label" "$enum_state" "$selector" "$expected_status" "$expected_text"
+  done <<'CASES'
+selector-without-host-id|enum|nova-route|1|not present in the live host Agent enum
+selector-with-host-id|enum|sonnet|0|
+catalog-without-host-enum|none|nova-route|0|
+CASES
 }
 
 @test "global reasoning accepts every detected value regardless of model associations" {
