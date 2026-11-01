@@ -1,163 +1,99 @@
 <p align="center">
-  <img src="assets/lbwc.png" alt="LBWC, written with love and guarded by contracts" width="720">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/meridian-hero-dark.png">
+    <img src="assets/meridian-hero.png" alt="Meridian. Log. Explore. Orchestrate." width="760">
+  </picture>
 </p>
 
-<p align="center">
-  <a href="https://code.claude.com/docs/en/plugins"><img src="https://img.shields.io/badge/Claude%20Code-2.1.231-D97757?logo=anthropic&logoColor=white" alt="Claude Code 2.1.231 verified"></a>
-  <img src="https://img.shields.io/badge/release-local%20verification%20passed-2EA44F" alt="Local release verification passed">
-</p>
+With the helper tool Meridian, you direct Claude Code to log, explore, and orchestrate with more ease. Agents no longer forget the work between steps and sessions, because Meridian keeps a logbook. Like a true explorer, it records each step and tells your agent team what is done and what comes next.
 
-<h1 align="center">Love Better With Claude</h1>
+<p align="center"><img src="assets/pills/row.png" alt="Subagents, books, guard, trace, and explore." width="640"></p>
 
-LBWC is a Claude Code plugin for planning, building, QA, and UAT with one clear rule. The human owns the direction, the main session owns orchestration, and generated agents get only the work the main session issues to them.
+## The loop
 
-LBWC keeps the useful parts of a multi-agent workflow without asking you to become a full-time air traffic controller. It turns a project into a small, visible sequence of artifacts, contracts, checks, and decisions. Workers help with bounded tasks. They do not get to rewrite the plan, mint broader permissions, commit changes, or wander into a spare worktree for a little unsupervised character growth.
+You type one command, and Meridian takes the project one correct step forward.
+
+| Step | What happens |
+| :---: | --- |
+| <img src="assets/icons/compass.png" alt="" width="40"><br>1 | You run `/meridian:transit`. Meridian reads the project state and finds the one artifact that is missing next. It asks you before it starts. |
+| <img src="assets/icons/book-skills.png" alt="" width="40"><br>2 | Meridian writes a fresh agent for the job, and that agent reads its book-based skills before it touches a file. |
+| <img src="assets/icons/team.png" alt="" width="40"><br>3 | An engineer builds while a separate critic reviews, so no agent ever approves its own work. |
+| <img src="assets/icons/guard.png" alt="" width="40"><br>4 | Shell guards check every write, command, and spawn against the agent's contract before anything reaches your repository. |
+| <img src="assets/icons/logbook.png" alt="" width="40"><br>5 | The logbook records what happened and what comes next, so the next agent or session continues without guessing. |
+
+## Features
+
+| Area | What you get |
+| :---: | --- |
+| <img src="assets/icons/team.png" alt="" width="32"><br>**Teams** | Every spawn gets its own agent definition, bound to a contract from the shell. Meridian picks a solo specialist, a pair of engineer and critic, or a trio with a test owner. |
+| <img src="assets/icons/book-skills.png" alt="" width="32"><br>**Skills** | Each role reads the book-based skills that ship with Meridian before it works, so it knows its job instead of guessing it. These skills do not depend on native Claude Code skills. |
+| <img src="assets/icons/guard.png" alt="" width="32"><br>**Guards** | File, command, spawn, and task guards enforce each contract. An explicit deny blocks a call. A guard that fails only warns, so a broken check never stalls your session. |
+| <img src="assets/icons/logbook.png" alt="" width="32"><br>**Logbooks** | The explorer journal keeps the request, the decisions, and the next step. It survives compaction and the end of a session, and it never deletes an entry. |
+| <img src="assets/icons/explore.png" alt="" width="32"><br>**Research** | Meridian studies the codebase and the question first, so plans rest on evidence from your repository. |
+| <img src="assets/icons/git.png" alt="" width="32"><br>**Git** | The main session owns every commit, one per task, and agents can work in isolated worktrees. |
+| <img src="assets/icons/build.png" alt="" width="32"><br>**Phases** | Each phase moves through a reviewed plan, contract-bound building, a QA verdict, and your own acceptance test. |
+| <img src="assets/icons/compass.png" alt="" width="32"><br>**Status** | The statusline shows the phase, the team, and the checks. Every step ends with a short card that names the next action. |
+
+Meridian runs on local files, small bash scripts, and hooks. It needs no server, database, or account, and it runs on the bash that ships with macOS.
 
 ## Quick start
 
-LBWC is locally verified with Claude Code 2.1.231. Add the marketplace:
+Add the marketplace, install the plugin, and restart Claude Code.
 
 ```bash
 claude plugin marketplace add michaelheichler/lbwc
+claude plugin install meridian@meridian-marketplace
 ```
 
-...then install it:
-
-```bash
-claude plugin install lbwc@lbwc-marketplace
-```
-
-For a project-wide install, add `--scope project` to either command. Check the install with:
-
-```bash
-claude plugin list
-```
-
-Open Claude Code in the project you want to work on. Run setup once, then use `/lbwc:vibe` for the rest of the project:
+Open your project in Claude Code and set it up once.
 
 ```text
-/lbwc:init
-/lbwc:vibe
+/meridian:init
 ```
 
-`/lbwc:init` creates LBWC planning state. After that, `/lbwc:vibe` is the **only** LBWC command you need to drive the work. It reads the actual state, names the next missing artifact, asks you to approve it, and dispatches to the command that owns that step. Use `claude plugin marketplace update lbwc-marketplace` and `claude plugin update lbwc@lbwc-marketplace` to update. Use `claude plugin uninstall lbwc@lbwc-marketplace` to remove it.
-
-## One command after setup
-
-The user-facing loop is small:
+From then on, one command drives the work.
 
 ```text
-/lbwc:init once
-   |
-/lbwc:vibe for every next step
-   |
-LBWC routes /lbwc:plan -> /lbwc:build -> /lbwc:qa -> /lbwc:uat
+/meridian:transit
 ```
 
-You use `/lbwc:vibe` whenever you want the next step. It reads the actual artifacts and does not invent a new project plan because a worker had an exciting thought at 02:17.
+Meridian tells you what it found, what it wants to do next, and what it needs from you. Answer the question, and it runs the step.
 
-For a feature, the interaction is usually this:
+## Using Meridian day to day
 
-1. Run `/lbwc:init` once in a new project.
-2. Run `/lbwc:vibe` and review the proposed next action. If it matches your intent, approve it.
-3. When the current step ends, run `/lbwc:vibe` again.
-4. Accept the phase after LBWC routes it through planning, build, QA, and UAT.
+You stay the decision maker. Meridian proposes the next step, and you approve it, change it, or stop it. When a phase needs your judgment, such as accepting finished work, Meridian walks you through it one checkpoint at a time.
 
-When you have a focused brief, give it to `/lbwc:vibe`:
+When you come back after a break, run `/meridian:transit` again. Meridian reads its logbook and the Git history, and it picks up where the work stopped.
 
-```text
-/lbwc:vibe Fix expired coupon checkout.
-/lbwc:vibe Research payment retry behavior.
-/lbwc:vibe Document CLI configuration.
-```
+## Commands
 
-## What `/lbwc:vibe` routes to
+You only need `/meridian:transit`. The other commands let you run one stage directly.
 
-`/lbwc:vibe` is the user entry point. The routes below are the internal LBWC stages it dispatches after state detection and your approval. You can recognize them in status and handoffs, but you do not need to steer the pipeline yourself.
-
-| Route | When `/lbwc:vibe` chooses it | What comes back |
-| --- | --- | --- |
-| `/lbwc:discuss` | A phase needs context before planning | A human-facing context artifact |
-| `/lbwc:research` | A decision needs evidence | Focused research notes |
-| `/lbwc:map` | A codebase needs a map | A structured codebase map |
-| `/lbwc:plan` | A phase needs a reviewed plan | A bounded plan with verification criteria |
-| `/lbwc:build` | An accepted plan needs execution | Contracted task execution and summaries |
-| `/lbwc:qa` | A completed build needs plan-based checks | PASS, FAIL, or PARTIAL evidence |
-| `/lbwc:uat` | QA passes and acceptance needs a human | Completed UAT or a concrete issue list |
-| `/lbwc:debug` | The brief describes a defect | Root cause, fix evidence, and a focused record |
-| `/lbwc:fix` | The work is a known-small repair | A narrow repair path |
-| `/lbwc:docs` | The work is documentation scoped | Documentation scoped to the request |
-| `/lbwc:import` | External plans need staged review and promotion | A normalized preview and explicit conflict decisions |
-| `/lbwc:team` | One scoped task benefits from a native Claude Code team | Contract-bound teammate work and native task evidence |
-
-The command files are intentionally readable. If you want the exact workflow or ownership boundary, start with [the public architecture overview](PUBLIC-ARCHITECTURE.md).
-
-## Human-first architecture
-
-LBWC is zero trust in the practical direction. The framework protects the user from agent drift. Agents do useful work, but they do not become the project manager because they can produce a convincing paragraph.
-
-| Owner | Responsibility |
+| Command | What it does |
 | --- | --- |
-| You | Scope, priorities, approvals, and release decisions |
-| Main session | Orchestration, contract issuance, artifact persistence, and Git |
-| Generated agent | One contracted task, exact write paths, and structured evidence |
-| Shell guards | Contract, workspace, lifecycle, Git, and critical-command admission |
+| `/meridian:init` | Sets up Meridian in a project. |
+| `/meridian:transit` | Finds the next step and runs it after you approve. |
+| `/meridian:status` | Shows progress, the current phase, and the next action. |
+| `/meridian:plan` | Plans one phase. |
+| `/meridian:build` | Builds a planned phase with contract-bound agents. |
+| `/meridian:qa` | Checks finished phase work. |
+| `/meridian:uat` | Walks you through acceptance testing. |
+| `/meridian:research` | Runs research for a question. |
+| `/meridian:map` | Maps the codebase. |
+| `/meridian:debug` | Investigates a bug step by step. |
+| `/meridian:fix` | Applies a small change with commit discipline. |
+| `/meridian:team` | Forms an agent team for one scoped task. |
+| `/meridian:config` | Shows and changes every option. |
+| `/meridian:help` | Lists every command. |
 
-Before LBWC registers a generated agent, the shell issues an immutable task contract. It binds the task, team shape, job, allowed paths, and lifecycle state. The generator, spawn guard, and file guard check that contract. A worker cannot widen its scope by writing a more confident handoff, changing the manifest, or editing the contract store.
+Run `/meridian:help` for the full list, including pause, resume, todos, models, and profiles.
 
-Template-granted Bash remains available for normal work. The guard blocks generated identities from Git, critical execution, shell evaluation routes, and LBWC control paths. This is command admission, not an operating-system sandbox. The distinction matters, and [the public architecture overview](PUBLIC-ARCHITECTURE.md) describes the boundary plainly.
+## Learn more
 
-## Teams, status, and release work
+- [Architecture](PUBLIC-ARCHITECTURE.md) explains how the parts work together.
+- The [`/meridian:config` reference](commands/config.md) lists every option.
+- [Changelog](CHANGELOG.md) shows what changed.
 
-LBWC runs its work through small team shapes. These are solo specialists, engineer and critic pairs, test-owner trios, and explicit native Claude Code teams through `/lbwc:team`. Native teams use generated `.claude/agents/` definitions and Claude's session-owned team and task storage. LBWC does not pre-author native team configuration, and each member receives only the paths its role owns, so critics receive no write allowance. The main session reviews evidence and persists approved artifacts. It also owns commits.
+---
 
-The statusline is read-only. When available, it shows the model, context, and rate-limit fields that Claude Code supplies. It also shows project phase, task progress, active team state, QA or UAT status, and telemetry health. It does not call an API or read credentials.
-
-If a teammate becomes idle, LBWC waits exactly 120 seconds, checks the manifest and contract again, and returns Claude Code native stop guidance. It does not send process signals, respawn work, clear ownership, or delete the teammate output. Quietly deleting evidence is a bad debugging strategy with better branding.
-
-For local tool and release work, LBWC includes:
-
-- `scripts/rtk-manager.sh` for approved, checksummed, project-local RTK installs with rollback.
-- `VERSION` and `CHANGELOG.md` for synchronized release history.
-- `scripts/version-bump.sh` to update release metadata together.
-- `scripts/release-verify.sh` to run local release checks before a maintainer decides to publish.
-
-## Verify, update, and develop
-
-Check a checkout before installing or releasing it:
-
-```bash
-claude plugin validate --strict .
-bats tests/
-bats tests/self-check.bats
-bash scripts/tests/agent-generator-core.sh
-bash scripts/release-verify.sh
-```
-
-On macOS, run `bash scripts/dev/bats32.sh tests/` to execute the repo scripts under /bin/bash 3.2 while bats keeps the modern bash.
-
-After a new LBWC release, update the marketplace entry and the installed plugin:
-
-```bash
-claude plugin marketplace update lbwc-marketplace
-claude plugin update lbwc@lbwc-marketplace
-```
-
-To remove the plugin:
-
-```bash
-claude plugin uninstall lbwc@lbwc-marketplace
-```
-
-The release scripts check local state. Publishing, tags, pushes, and history changes remain explicit maintainer decisions.
-
-## Read next
-
-- [Architecture and enforcement boundaries](PUBLIC-ARCHITECTURE.md)
-- [Release history](CHANGELOG.md)
-
-## License and maintenance
-
-Thanks to VBW, BMAD and similar planning systems. This repository is the merging of my old "Agentic Project Love" Framework and VBW, a great script-based planning system. The port is from VBW to LBWC, and LBWC includes much of the VBW source code.
-
-LBWC uses the [GNU General Public License v3.0 only](LICENSE). [Michael Heichler](https://github.com/michaelheichler) maintains it. Report bugs or propose changes through the [issue tracker](https://github.com/michaelheichler/lbwc/issues).
+<sub>Released under the MIT License. Thanks to the VBW team for the foundation.</sub>
