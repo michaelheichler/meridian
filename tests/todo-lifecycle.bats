@@ -464,3 +464,75 @@ remove-without-registry-signature-in-sidecar|$KNOWN_ISSUE_REF_LINE|yes
 remove-without-registry-legacy-line|$KNOWN_ISSUE_LEGACY_LINE|no
 CASES
 }
+
+@test "snapshot-save and snapshot-select reject unreadable payloads and out-of-view selections with a coded error" {
+  run_piped 'not json' "$SCRIPT" snapshot-save
+  expect_status save-invalid-json 0
+  expect_json save-invalid-json '.code' snapshot_invalid
+  expect_json save-invalid-json '.message | contains("invalid")' true
+
+  run_piped '{"status":"ok"}' "$SCRIPT" snapshot-save
+  expect_status save-malformed 0
+  expect_json save-malformed '.code' snapshot_invalid
+  expect_json save-malformed '.message | contains("malformed")' true
+
+  write_state_recent_activity
+  save_snapshot
+  run bash "$SCRIPT" snapshot-select 4
+  expect_status select-past-end 0
+  expect_json select-past-end '.code' invalid_selection
+  expect_json select-past-end '.message | contains("1-3")' true
+
+  run bash "$SCRIPT" snapshot-select 0
+  expect_status select-zero 0
+  expect_json select-zero '.code' invalid_selection
+
+  run bash "$SCRIPT" snapshot-select first
+  expect_status select-not-a-number 0
+  expect_json select-not-a-number '.code' invalid_selection
+
+  run bash "$SCRIPT" snapshot-select 03
+  expect_status select-padded 0
+  expect_json select-padded '.num' 3
+  expect_json select-padded '.snapshot_filter' null
+
+  save_snapshot high
+  run bash "$SCRIPT" snapshot-select 1 --require-unfiltered
+  expect_status select-filtered 0
+  expect_json select-filtered '.code' snapshot_filtered
+
+  run_piped '{"status":"error","message":"STATE.md not found"}' "$SCRIPT" snapshot-save
+  run bash "$SCRIPT" snapshot-select 1
+  expect_status select-error-snapshot 0
+  expect_json select-error-snapshot '.status' error
+  expect_json select-error-snapshot '.message' "STATE.md not found"
+
+  CLAUDE_SESSION_ID="$(printf 'n%.0s' $(seq 1 300))" run_piped '{"status":"error","message":"x"}' "$SCRIPT" snapshot-save
+  expect_status save-uncreatable 0
+  expect_json save-uncreatable '.code' snapshot_write_failed
+}
+
+@test "validate-item fails closed on payloads without identity metadata or outside the root backlog" {
+  local item_json other_state="$TEST_TEMP_DIR/other/.lbwc-planning/STATE.md"
+  write_state_recent_activity
+  save_snapshot
+  item_json=$(select_snapshot_item 1)
+
+  run_piped "$(printf '%s' "$item_json" | jq -c 'del(.identity_occurrence)')" "$SCRIPT" validate-item
+  expect_status missing-occurrence 0
+  expect_json missing-occurrence '.code' invalid_item
+
+  mkdir -p "$(dirname "$other_state")"
+  cp "$STATE_FILE" "$other_state"
+  run_piped "$(printf '%s' "$item_json" | jq -c --arg path "$other_state" '.state_path = $path')" "$SCRIPT" validate-item
+  expect_status foreign-state 0
+  expect_json foreign-state '.code' state_missing
+
+  run_piped "$(printf '%s' "$item_json" | jq -c --arg path "$LBWC_PLANNING_DIR/NOTES.md" '.state_path = $path')" "$SCRIPT" validate-item
+  expect_status not-state-file 0
+  expect_json not-state-file '.code' state_missing
+
+  run_piped 'not json' "$SCRIPT" validate-item
+  expect_status invalid-json 0
+  expect_json invalid-json '.code' invalid_item
+}
