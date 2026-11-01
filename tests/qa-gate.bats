@@ -296,5 +296,5 @@ CASES
   run_gate_adapter
 
   [ "$status" -eq 2 ]
-  [ -z "$output" ]
+  [ "$output" = "qa-gate: current time unavailable, cannot verify SUMMARY.md gate" ]
 }
