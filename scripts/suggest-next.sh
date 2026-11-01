@@ -17,6 +17,7 @@ if [ -f "$SCRIPT_DIR/summary-utils.sh" ]; then
   . "$SCRIPT_DIR/summary-utils.sh"
 else
   count_complete_summaries() { echo "0"; }
+  extract_summary_status() { :; }
 fi
 if [ -f "$SCRIPT_DIR/phase-state-utils.sh" ]; then
   . "$SCRIPT_DIR/phase-state-utils.sh"
