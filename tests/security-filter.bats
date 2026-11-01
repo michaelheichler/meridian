@@ -1,6 +1,8 @@
 #!/usr/bin/env bats
 
 load test_helper
+load gate_case_helper
+load rejection_case_helper
 
 bats_require_minimum_version 1.5.0
 
@@ -14,85 +16,91 @@ teardown() {
   teardown_temp_dir
 }
 
-run_filter() {
-  local file_path="$1"
-  payload "tool_input.file_path=$file_path" | bash "$SCRIPTS_DIR/security-filter.sh"
+tree_digest() {
+  find "$TEST_TEMP_DIR" | sort
 }
 
-@test "allows a normal source file" {
-  run run_filter "src/main.py"
-  [ "$status" -eq 0 ]
+feed_filter() {
+  printf '%s' "$1" | bash "$SCRIPTS_DIR/security-filter.sh"
 }
 
-@test "blocks .env files" {
-  run run_filter ".env"
-  [ "$status" -eq 2 ]
+allow_row() {
+  local label="$1" tool_name="$2" path_key="$3" target="$4" before
+  before=$(tree_digest)
+  run feed_filter "$(payload "tool_name=$tool_name" "tool_input.$path_key=$target")"
+  expect_case_silent "$label" 0
+  expect_digest "$label" "$before" "$(tree_digest)"
 }
 
-@test "blocks a bare .pem file" {
-  run run_filter "id_rsa.pem"
-  [ "$status" -eq 2 ]
+deny_row() {
+  local label="$1" tool_name="$2" path_key="$3" target="$4"
+  run feed_filter "$(payload "tool_name=$tool_name" "tool_input.$path_key=$target")"
+  expect_case "$label" 2 "Blocked: sensitive file ($target)"
 }
 
-@test "blocks a .pem file with a trailing extra extension" {
-  run run_filter "id_rsa.pem.orig"
-  [ "$status" -eq 2 ]
+@test "allow rows let ordinary paths, search patterns and build output reads through silently" {
+  reset_case_failures
+
+  allow_row normal-source-file Write file_path src/main.py
+  allow_row pem-without-dot-in-name Write file_path openpem/notes.txt
+  allow_row grep-pattern-without-path Grep pattern 'dist/|build/'
+  allow_row read-build-dir Read file_path build/x
+  allow_row read-dist-dir Read file_path dist/y
+  allow_row grep-build-dir Grep path build/x
+  allow_row grep-dist-dir Grep path dist/y
+
+  local before
+  before=$(tree_digest)
+  run feed_filter "$(payload "tool_input.pattern=dist/|build/" "tool_input.path=src")"
+  expect_case_silent pattern-with-dist-and-real-path 0
+  expect_digest pattern-with-dist-and-real-path "$before" "$(tree_digest)"
+
+  assert_no_case_failures
 }
 
-@test "blocks a .pem-named directory even when the leaf file is harmless" {
-  run run_filter "vendor.pem/notes.txt"
-  [ "$status" -eq 2 ]
+@test "deny rows block sensitive paths with exit 2 and name the path" {
+  reset_case_failures
+
+  deny_row env-file Write file_path .env
+  deny_row env-variant Write file_path config/.env.production
+  deny_row bare-pem Write file_path id_rsa.pem
+  deny_row pem-with-extra-extension Write file_path id_rsa.pem.orig
+  deny_row pem-named-directory Write file_path vendor.pem/notes.txt
+  deny_row key-file Write file_path certs/server.key
+  deny_row cert-file Write file_path certs/server.cert
+  deny_row p12-file Write file_path certs/client.p12
+  deny_row pfx-file Write file_path certs/client.pfx
+  deny_row credentials-json Write file_path config/credentials.json
+  deny_row secrets-json Write file_path config/secrets.json
+  deny_row service-account-json Write file_path gcp/service-account-prod.json
+  deny_row node-modules Write file_path node_modules/leftpad/index.js
+  deny_row git-directory Write file_path .git/config
+  deny_row temporary-agent-runfiles Write file_path .temporary-agent-runfiles/state.json
+  deny_row write-build-dir Write file_path build/x
+  deny_row write-dist-dir Write file_path dist/y
+  deny_row edit-build-dir Edit file_path build/x
+  deny_row edit-dist-dir Edit file_path dist/y
+  deny_row read-env-file Read file_path .env
+  deny_row grep-env-file Grep path .env
+  deny_row read-node-modules Read file_path node_modules/pkg/index.js
+
+  assert_no_case_failures
 }
 
-@test "does not block a filename that merely contains pem without a dot" {
-  run run_filter "openpem/notes.txt"
-  [ "$status" -eq 0 ]
+@test "deny rows fail closed with exit 2 on an empty path or unreadable input" {
+  reset_case_failures
+
+  run feed_filter "$(payload "tool_input.file_path=")"
+  expect_case_silent empty-file-path 2
+
+  run feed_filter ""
+  expect_case_silent empty-input 2
+
+  run feed_filter "not json{{{"
+  expect_case_silent malformed-json 2
+
+  assert_no_case_failures
 }
-
-@test "blocks node_modules paths" {
-  run run_filter "node_modules/leftpad/index.js"
-  [ "$status" -eq 2 ]
-}
-
-@test "blocks empty file path" {
-  run run_filter ""
-  [ "$status" -eq 2 ]
-}
-
-@test "allows a Grep call with no path field, regex is not a path" {
-  local json
-  json=$(payload "tool_input.pattern=dist/|build/")
-  run bash -c "printf '%s' '$json' | bash '$SCRIPTS_DIR/security-filter.sh'"
-  [ "$status" -eq 0 ]
-}
-
-@test "does not block a search whose pattern contains dist/ or build/ when a real path is also present" {
-  local json
-  json=$(payload "tool_input.pattern=dist/|build/" "tool_input.path=src")
-  run bash -c "printf '%s' '$json' | bash '$SCRIPTS_DIR/security-filter.sh'"
-  [ "$status" -eq 0 ]
-}
-
-run_tool_filter() {
-  local tool_name="$1" path_key="$2" target="$3"
-  payload "tool_name=$tool_name" "tool_input.$path_key=$target" | bash "$SCRIPTS_DIR/security-filter.sh"
-}
-
-assert_tool_exit() {
-  local expected="$1" tool_name="$2" path_key="$3" target="$4"
-  run run_tool_filter "$tool_name" "$path_key" "$target"
-  [ "$status" -eq "$expected" ]
-}
-
-for target in build/x dist/y; do
-  bats_test_function --description "Read of $target is allowed" -- assert_tool_exit 0 Read file_path "$target"
-  bats_test_function --description "Grep of $target is allowed" -- assert_tool_exit 0 Grep path "$target"
-  bats_test_function --description "Write of $target is blocked" -- assert_tool_exit 2 Write file_path "$target"
-  bats_test_function --description "Edit of $target is blocked" -- assert_tool_exit 2 Edit file_path "$target"
-done
-
-bats_test_function --description "Read of .env stays blocked" -- assert_tool_exit 2 Read file_path .env
-bats_test_function --description "Grep of .env stays blocked" -- assert_tool_exit 2 Grep path .env
 
 @test "allows the call and warns on stderr when jq is missing" {
   local no_jq_bin="$TEST_TEMP_DIR/no-jq-bin"
