@@ -48,6 +48,7 @@ task_event() {
   run bash -c 'jq -cn --arg cwd "$1" '\''{hook_event_name:"TaskCreated",cwd:$cwd,task_id:"native-2",task_subject:"unrelated-task"}'\'' | LBWC_CONTROL_ROOT="$2" bash "$3"' _ "$TEST_ROOT" "$CONTROL_ROOT" "$ADMISSION"
   [ "$status" -eq 2 ]
   [[ "$output" == *"no pending native-team contract"* ]]
+  jq -e '(.tasks // {}) | has("native-2") | not' "$CONTROL_ROOT/agent-manifest.json" >/dev/null
 }
 
 @test "TaskCompleted blocks until the bound contract is verified" {
@@ -55,6 +56,7 @@ task_event() {
   run bash -c 'jq -cn --arg cwd "$1" '\''{hook_event_name:"TaskCompleted",cwd:$cwd,task_id:"native-3"}'\'' | LBWC_CONTROL_ROOT="$2" bash "$3"' _ "$TEST_ROOT" "$CONTROL_ROOT" "$COMPLETION"
   [ "$status" -eq 2 ]
   [[ "$output" == *"contract is not verified"* ]]
+  jq -e '.tasks["native-3"].state == "created"' "$CONTROL_ROOT/agent-manifest.json" >/dev/null
 }
 
 @test "TaskCompleted allows a verified bound contract and records completion" {

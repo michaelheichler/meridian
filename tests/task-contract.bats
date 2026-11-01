@@ -2,8 +2,11 @@
 
 setup() {
   ROOT="$(mktemp -d)"
+  ROOT_CANON="$(cd "$ROOT" && pwd -P)"
   PLAN="$ROOT/PLAN.md"
   SCRIPT="$BATS_TEST_DIRNAME/../scripts/task-contract.sh"
+  PLAN_CONTRACT="$ROOT/.lbwc-planning/.contracts/tasks/09-PLAN-write-contract.json"
+  PLAN_ID="09-PLAN-write-contract"
   cat >"$PLAN" <<'PLAN'
 ---
 phase: 9
@@ -25,99 +28,153 @@ PLAN
 
 teardown() { rm -rf "$ROOT"; }
 
-@test "open writes canonical task contract and read returns it" {
-  run bash "$SCRIPT" open "$PLAN" "$ROOT" "write contract"
+make_control_root() {
+  CONTROL_ROOT="$ROOT/.temporary-agent-runfiles/runs/$1"
+  mkdir -p "$CONTROL_ROOT"
+  CONTROL_ROOT="$(cd -P "$CONTROL_ROOT" && pwd -P)"
+}
+
+open_plan() {
+  bash "$SCRIPT" open "$PLAN" "$ROOT" "write contract" "$@"
+}
+
+issue_team() {
+  local name="$1"
+  shift
+  bash "$SCRIPT" issue "$ROOT" "$name" \
+    --command team --role web-engineer --team solo --job "Implement the web scope" "$@"
+}
+
+written_contracts() {
+  find "$ROOT/.lbwc-planning/.contracts/tasks" "$ROOT/.temporary-agent-runfiles" -name '*.json' -type f 2>/dev/null || true
+}
+
+expect_rejected() {
+  local label="$1" message="$2"
+  shift 2
+  run "$@"
+  if [ "$status" -eq 0 ] || [[ "$output" != *"$message"* ]]; then
+    echo "case=$label status=$status expected_message=$message" >&2
+    echo "$output" >&2
+    return 1
+  fi
+}
+
+expect_contract() {
+  local label="$1" file="$2" filter="$3"
+  shift 3
+  if ! jq -e "$@" "$filter" "$file" >/dev/null; then
+    echo "case=$label contract=$(cat "$file")" >&2
+    return 1
+  fi
+}
+
+expect_tamper_rejected() {
+  local label="$1" file="$2" edit="$3" message="$4"
+  shift 4
+  cp "$file" "$file.orig"
+  perl -pi -e "$edit" "$file"
+  expect_rejected "$label" "$message" "$@"
+  mv "$file.orig" "$file"
+}
+
+@test "open writes a canonical schema 2 plan contract and read returns it" {
+  run open_plan
   [ "$status" -eq 0 ]
-  contract="$ROOT/.lbwc-planning/.contracts/tasks/09-PLAN-write-contract.json"
-  [ -f "$contract" ]
-  ROOT_CANON="$(cd "$ROOT" && pwd -P)"
-  run jq --arg root "$ROOT_CANON" -e '.schema_version == 2 and .created_by == "main" and .project_root == $root and .roles == ["coding-dijkstra", "coding-dijkstra-critic"] and .state == "planned" and .phase == "09" and .task_name == "write contract" and .role == "coding-dijkstra" and .files == ["src/contract.py", "tests/task-contract.bats"] and .write_allowances == .files and (.contract_digest | test("^[0-9a-f]{64}$"))' "$contract"
-  [ "$status" -eq 0 ]
-  run bash "$SCRIPT" read "$ROOT" "09-PLAN-write-contract"
+  [ -f "$PLAN_CONTRACT" ]
+  expect_contract plan-contract "$PLAN_CONTRACT" '
+    .schema_version == 2 and .created_by == "main" and .project_root == $root
+    and .roles == ["coding-dijkstra", "coding-dijkstra-critic"]
+    and .state == "planned" and .phase == "09" and .task_name == "write contract"
+    and .role == "coding-dijkstra"
+    and .files == ["src/contract.py", "tests/task-contract.bats"]
+    and .write_allowances == .files
+    and (.contract_digest | test("^[0-9a-f]{64}$"))
+    and (has("requested_backend") | not)
+    and (has("resolved_backend") | not)
+    and (has("control_root") | not)
+  ' --arg root "$ROOT_CANON"
+  run bash "$SCRIPT" read "$ROOT" "$PLAN_ID"
   [ "$status" -eq 0 ]
   [[ "$output" == *'"state": "planned"'* ]]
 }
 
-@test "state permits legal transitions and rejects illegal ones" {
-  bash "$SCRIPT" open "$PLAN" "$ROOT" "write contract"
-  run bash "$SCRIPT" state "$ROOT" "09-PLAN-write-contract" dispatched
-  [ "$status" -eq 0 ]
-  run bash "$SCRIPT" state "$ROOT" "09-PLAN-write-contract" verified
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"illegal state transition"* ]]
-}
-
-@test "rejects traversal, unknown task, malformed plan, and duplicate drift" {
-  run bash "$SCRIPT" open "$PLAN" "$ROOT" "missing"
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"unknown task"* ]]
+@test "open rejects invalid plan input" {
   cp "$PLAN" "$ROOT/bad.md"
   perl -pi -e 's#</task>##' "$ROOT/bad.md"
-  run bash "$SCRIPT" open "$ROOT/bad.md" "$ROOT" "write contract"
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"malformed PLAN"* ]]
-  bash "$SCRIPT" open "$PLAN" "$ROOT" "write contract"
-  perl -pi -e 's/Implement the writer/Changed/' "$PLAN"
-  run bash "$SCRIPT" open "$PLAN" "$ROOT" "write contract"
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"PLAN digest mismatch"* ]]
-}
-
-@test "rejects unsafe repo-relative paths" {
-  perl -pi -e 's#src/contract.py#../escape#' "$PLAN"
-  run bash "$SCRIPT" open "$PLAN" "$ROOT" "write contract"
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"repo-relative"* ]]
-}
-
-@test "rejects symlinked contract directories and duplicate task blocks" {
-  mkdir -p "$ROOT/real-tasks"
-  mkdir -p "$ROOT/.lbwc-planning"
-  ln -s "$ROOT/real-tasks" "$ROOT/.lbwc-planning/.contracts"
-  run bash "$SCRIPT" open "$PLAN" "$ROOT" "write contract"
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"symlink"* ]]
-  rm "$ROOT/.lbwc-planning/.contracts"
   cp "$PLAN" "$ROOT/dupe.md"
   perl -0777 -pi -e 's#</tasks>#</tasks><tasks></tasks>#' "$ROOT/dupe.md"
-  run bash "$SCRIPT" open "$ROOT/dupe.md" "$ROOT" "write contract"
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"duplicate tasks"* ]]
+  cp "$PLAN" "$ROOT/escape.md"
+  perl -pi -e 's#src/contract.py#../escape#' "$ROOT/escape.md"
+
+  expect_rejected unknown-task "unknown task" bash "$SCRIPT" open "$PLAN" "$ROOT" "missing"
+  expect_rejected malformed-plan "malformed PLAN" bash "$SCRIPT" open "$ROOT/bad.md" "$ROOT" "write contract"
+  expect_rejected duplicate-tasks-block "duplicate tasks" bash "$SCRIPT" open "$ROOT/dupe.md" "$ROOT" "write contract"
+  expect_rejected unsafe-path "repo-relative" bash "$SCRIPT" open "$ROOT/escape.md" "$ROOT" "write contract"
 }
 
-@test "reopen after transition is idempotent, but source drift fails" {
-  bash "$SCRIPT" open "$PLAN" "$ROOT" "write contract"
-  bash "$SCRIPT" state "$ROOT" "09-PLAN-write-contract" dispatched
-  run bash "$SCRIPT" open "$PLAN" "$ROOT" "write contract"
+@test "open rejects injected and unknown option forms" {
+  expect_rejected injected-role "invalid role" open_plan --role 'coding-dijkstra;touch /tmp/pwned'
+  [ ! -e /tmp/pwned ]
+  expect_rejected unknown-flag "Usage" open_plan --bad coding-dijkstra
+}
+
+@test "reopen after a transition is idempotent but source drift fails" {
+  open_plan
+  bash "$SCRIPT" state "$ROOT" "$PLAN_ID" dispatched
+  run open_plan
   [ "$status" -eq 0 ]
   perl -pi -e 's/Implement the writer/Changed/' "$PLAN"
-  run bash "$SCRIPT" open "$PLAN" "$ROOT" "write contract"
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"PLAN digest mismatch"* ]]
+  expect_rejected plan-drift "PLAN digest mismatch" open_plan
 }
 
-@test "state rejects a tampered contract" {
-  bash "$SCRIPT" open "$PLAN" "$ROOT" "write contract"
-  perl -pi -e 's/"schema_version": 2/"schema_version": 99/' "$ROOT/.lbwc-planning/.contracts/tasks/09-PLAN-write-contract.json"
-  run bash "$SCRIPT" state "$ROOT" "09-PLAN-write-contract" dispatched
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"contract digest mismatch"* || "$output" == *"invalid contract"* ]]
+@test "open refuses a symlinked contracts directory" {
+  mkdir -p "$ROOT/real-tasks" "$ROOT/.lbwc-planning"
+  ln -s "$ROOT/real-tasks" "$ROOT/.lbwc-planning/.contracts"
+  expect_rejected symlinked-contracts "symlink" open_plan
 }
 
-@test "open rejects injected or non-exact role argument forms" {
-  run bash "$SCRIPT" open "$PLAN" "$ROOT" "write contract" --role 'coding-dijkstra;touch /tmp/pwned'
-  [ "$status" -ne 0 ]
-  [ ! -e /tmp/pwned ]
-  run bash "$SCRIPT" open "$PLAN" "$ROOT" "write contract" --bad coding-dijkstra
-  [ "$status" -ne 0 ]
+@test "state applies a legal transition and persists it" {
+  open_plan
+  run bash "$SCRIPT" state "$ROOT" "$PLAN_ID" dispatched
+  [ "$status" -eq 0 ]
+  run bash "$SCRIPT" read "$ROOT" "$PLAN_ID"
+  [[ "$output" == *'"state": "dispatched"'* ]]
 }
 
-@test "state rejects a tampered roles sequence" {
-  bash "$SCRIPT" open "$PLAN" "$ROOT" "write contract"
-  perl -pi -e 's/coding-dijkstra-critic/not-the-configured-critic/' "$ROOT/.lbwc-planning/.contracts/tasks/09-PLAN-write-contract.json"
-  run bash "$SCRIPT" state "$ROOT" "09-PLAN-write-contract" dispatched
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"contract digest mismatch"* || "$output" == *"invalid contract"* ]]
+@test "state rejects each class of illegal transition" {
+  open_plan
+  expect_rejected skipped-step "illegal state transition" bash "$SCRIPT" state "$ROOT" "$PLAN_ID" verified
+  expect_rejected unknown-state "invalid state" bash "$SCRIPT" state "$ROOT" "$PLAN_ID" bogus
+  expect_rejected unknown-contract "unknown contract" bash "$SCRIPT" state "$ROOT" "no-such-contract" dispatched
+  bash "$SCRIPT" state "$ROOT" "$PLAN_ID" cancelled
+  expect_rejected leaves-terminal "illegal state transition" bash "$SCRIPT" state "$ROOT" "$PLAN_ID" dispatched
+}
+
+@test "state and verify reject tampered contracts and job drift" {
+  open_plan
+  expect_tamper_rejected schema-version "$PLAN_CONTRACT" \
+    's/"schema_version": 2/"schema_version": 99/' "invalid contract" \
+    bash "$SCRIPT" state "$ROOT" "$PLAN_ID" dispatched
+  expect_tamper_rejected roles-sequence "$PLAN_CONTRACT" \
+    's/coding-dijkstra-critic/not-the-configured-critic/' "contract digest mismatch" \
+    bash "$SCRIPT" state "$ROOT" "$PLAN_ID" dispatched
+
+  local debug_contract
+  debug_contract=$(bash "$SCRIPT" issue "$ROOT" "debug-one" \
+    --command debug --role debugger --team solo --job "Find root cause")
+  expect_rejected job-drift "job digest mismatch" bash "$SCRIPT" verify "$debug_contract" "$ROOT" --job "Different brief"
+  expect_tamper_rejected command-name "$debug_contract" \
+    's/"command_name": "debug"/"command_name": "qa"/' "contract digest mismatch" \
+    bash "$SCRIPT" verify "$debug_contract" "$ROOT" --job "Find root cause"
+
+  make_control_root team-backend
+  local team_contract
+  team_contract=$(issue_team team-backend --control-root "$CONTROL_ROOT" \
+    --requested-backend tmux --resolved-backend tmux --write-capability directory:src/web)
+  expect_tamper_rejected resolved-backend "$team_contract" \
+    's/"resolved_backend": "tmux"/"resolved_backend": "in_process"/' "contract digest mismatch" \
+    bash "$SCRIPT" verify "$team_contract" "$ROOT"
 }
 
 @test "issue writes a command contract with exact team and role allowances" {
@@ -125,9 +182,7 @@ teardown() { rm -rf "$ROOT"; }
     --command docs --role docs --team solo --job "Update README" \
     --write-allowance README.md
   [ "$status" -eq 0 ]
-  contract="$output"
-  ROOT_CANON="$(cd "$ROOT" && pwd -P)"
-  run jq --arg root "$ROOT_CANON" -e '
+  expect_contract command-contract "$output" '
     .schema_version == 2
     and .source_kind == "command"
     and .command_name == "docs"
@@ -139,40 +194,24 @@ teardown() { rm -rf "$ROOT"; }
     and .write_allowances == ["README.md"]
     and .allowances_by_role == {docs:["README.md"]}
     and (.contract_digest | test("^[0-9a-f]{64}$"))
-  ' "$contract"
-  [ "$status" -eq 0 ]
+  ' --arg root "$ROOT_CANON"
 }
 
-@test "issue rejects an allowance for a role outside the exact team before writing" {
-  run bash "$SCRIPT" issue "$ROOT" "bad-team" \
-    --command build --role python-engineer --team pair --job "Implement" \
-    --role-write-allowance test-dev:tests/unit.py
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"allowance role is not in contract team"* ]]
-  [ ! -d "$ROOT/.lbwc-planning/.contracts/tasks" ] || [ -z "$(find "$ROOT/.lbwc-planning/.contracts/tasks" -type f -print -quit)" ]
+@test "repeated command issue creates a new run contract" {
+  local first second
+  first=$(bash "$SCRIPT" issue "$ROOT" repeat --command qa --role qa --team solo --job "verify")
+  second=$(bash "$SCRIPT" issue "$ROOT" repeat --command qa --role qa --team solo --job "verify")
+  [ "$first" != "$second" ]
+  [ -f "$first" ]
+  [ -f "$second" ]
 }
 
-@test "verify rejects command job drift and a tampered contract" {
-  contract=$(bash "$SCRIPT" issue "$ROOT" "debug-one" \
-    --command debug --role debugger --team solo --job "Find root cause")
-  run bash "$SCRIPT" verify "$contract" "$ROOT" --job "Different brief"
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"job digest mismatch"* ]]
-  perl -pi -e 's/"command_name": "debug"/"command_name": "qa"/' "$contract"
-  run bash "$SCRIPT" verify "$contract" "$ROOT" --job "Find root cause"
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"contract digest mismatch"* ]]
-}
-
-@test "open binds a plan grouping and rejects allowances outside PLAN before writing" {
-  run bash "$SCRIPT" open "$PLAN" "$ROOT" "write contract" \
-    --role coding-dijkstra --team pair --group implementation \
+@test "open binds a plan grouping with exact allowances per role" {
+  run open_plan --role coding-dijkstra --team pair --group implementation \
     --job "Implement the writer" \
-    --write-allowance src/contract.py \
-    --write-allowance tests/task-contract.bats
+    --write-allowance src/contract.py --write-allowance tests/task-contract.bats
   [ "$status" -eq 0 ]
-  contract="$output"
-  run jq -e '
+  expect_contract plan-grouping "$output" '
     .schema_version == 2
     and .source_kind == "plan"
     and .team_mode == "pair"
@@ -180,18 +219,18 @@ teardown() { rm -rf "$ROOT"; }
     and .roles == ["coding-dijkstra", "coding-dijkstra-critic"]
     and .allowances_by_role["coding-dijkstra"] == ["src/contract.py", "tests/task-contract.bats"]
     and .allowances_by_role["coding-dijkstra-critic"] == []
-  ' "$contract"
-  [ "$status" -eq 0 ]
-
-  run bash "$SCRIPT" open "$PLAN" "$ROOT" "write contract" \
-    --role coding-dijkstra --team pair --group outside \
-    --job "Implement" --write-allowance src/not-in-plan.py
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"allowance is not declared by PLAN"* ]]
+  '
 }
 
-@test "issue rejects protected framework paths before contract mutation" {
+@test "allowance validation rejects bad allowances before any contract is written" {
   local protected
+  expect_rejected role-outside-team "allowance role is not in contract team" \
+    bash "$SCRIPT" issue "$ROOT" "bad-team" \
+    --command build --role python-engineer --team pair --job "Implement" \
+    --role-write-allowance test-dev:tests/unit.py
+  expect_rejected outside-plan "allowance is not declared by PLAN" \
+    open_plan --role coding-dijkstra --team pair --group outside \
+    --job "Implement" --write-allowance src/not-in-plan.py
   for protected in \
     config/subagent-critical-execution.txt \
     config/destructive-commands.txt \
@@ -202,40 +241,23 @@ teardown() { rm -rf "$ROOT"; }
     .lbwc-planning/.contracts/tasks/forged.json \
     .claude/agents/forged.md
   do
-    run bash "$SCRIPT" issue "$ROOT" "protected" \
+    expect_rejected "protected-$protected" "protected path" \
+      bash "$SCRIPT" issue "$ROOT" "protected" \
       --command test --role python-engineer --team solo --job "mutate policy" \
       --write-allowance "$protected"
-    [ "$status" -ne 0 ]
-    [[ "$output" == *"protected path"* ]]
   done
-  [ ! -d "$ROOT/.lbwc-planning/.contracts/tasks" ] || [ -z "$(find "$ROOT/.lbwc-planning/.contracts/tasks" -type f -print -quit)" ]
+  [ -z "$(written_contracts)" ]
 }
 
-@test "repeated command issue creates a new run contract" {
-  first=$(bash "$SCRIPT" issue "$ROOT" repeat \
-    --command qa --role qa --team solo --job "verify")
-  second=$(bash "$SCRIPT" issue "$ROOT" repeat \
-    --command qa --role qa --team solo --job "verify")
-  [ "$first" != "$second" ]
-  [ -f "$first" ]
-  [ -f "$second" ]
-}
-
-@test "issue writes schema 3 typed capabilities in an explicit temporary control root" {
-  local control_root="$ROOT/.temporary-agent-runfiles/runs/team-one"
-  mkdir -p "$control_root"
-  run bash "$SCRIPT" issue "$ROOT" "team-scope" \
-    --command team --role web-engineer --team solo --job "Implement the web scope" \
-    --control-root "$control_root" \
-    --write-capability file:src/web/index.ts \
-    --write-capability directory:tests/web
+@test "issue writes schema 3 typed capabilities in an explicit control root" {
+  make_control_root team-one
+  run issue_team team-scope --control-root "$CONTROL_ROOT" \
+    --write-capability file:src/web/index.ts --write-capability directory:tests/web
   [ "$status" -eq 0 ]
-  local contract="$output"
-  control_root=$(cd -P "$control_root" && pwd -P)
-  [ "$contract" = "$control_root/contracts/tasks/$(basename "$contract")" ]
-  run jq -e '
+  [ "$output" = "$CONTROL_ROOT/contracts/tasks/$(basename "$output")" ]
+  expect_contract typed-contract "$output" '
     .schema_version == 3
-    and .control_root == "'"$control_root"'"
+    and .control_root == $control
     and .capabilities_by_role["web-engineer"] == [
       {access:"write",kind:"file",path:"src/web/index.ts"},
       {access:"write",kind:"directory",path:"tests/web"}
@@ -245,151 +267,76 @@ teardown() { rm -rf "$ROOT"; }
     and .communication_policy == "native-team"
     and .requested_backend == "in_process"
     and .resolved_backend == "in_process"
-  ' "$contract"
-  [ "$status" -eq 0 ]
-}
-
-@test "issue accepts a typed contract with no capability for a role that disallows Write and Edit" {
-  local control_root="$ROOT/.temporary-agent-runfiles/runs/qa-one"
-  mkdir -p "$control_root"
-  run bash "$SCRIPT" issue "$ROOT" "qa-scope" \
-    --command qa --role qa --team solo --job "verify the web scope" \
-    --control-root "$control_root" \
-    --requested-backend workflow --resolved-backend workflow
-  [ "$status" -eq 0 ]
-  local contract="$output"
-  run jq -e '.schema_version == 3 and .capabilities_by_role["qa"] == []' "$contract"
-  [ "$status" -eq 0 ]
-}
-
-@test "issue still rejects a typed contract with no capability for a role that can write" {
-  local control_root="$ROOT/.temporary-agent-runfiles/runs/dev-one"
-  mkdir -p "$control_root"
-  run bash "$SCRIPT" issue "$ROOT" "dev-scope" \
-    --command fix --role coding-dijkstra --team solo --job "fix the thing" \
-    --control-root "$control_root" \
-    --requested-backend workflow --resolved-backend workflow
-  [ "$status" -ne 0 ]
-  [[ "$output" == *'typed contract requires at least one capability'* ]]
-}
-
-@test "issue accepts a declared read-only role that can write" {
-  local control_root="$ROOT/.temporary-agent-runfiles/runs/scout-one"
-  mkdir -p "$control_root"
-  run bash "$SCRIPT" issue "$ROOT" "scout-scope" \
-    --command map --role scout --team solo --job "map the thing" \
-    --control-root "$control_root" \
-    --requested-backend workflow --resolved-backend workflow \
-    --read-only-role scout
-  [ "$status" -eq 0 ]
-  local contract="$output"
-  run jq -e '.schema_version == 3 and .capabilities_by_role["scout"] == []' "$contract"
-  [ "$status" -eq 0 ]
-}
-
-@test "issue rejects a read-only role outside the contract team" {
-  local control_root="$ROOT/.temporary-agent-runfiles/runs/scout-two"
-  mkdir -p "$control_root"
-  run bash "$SCRIPT" issue "$ROOT" "scout-scope-bad" \
-    --command map --role scout --team solo --job "map the thing" \
-    --control-root "$control_root" \
-    --requested-backend workflow --resolved-backend workflow \
-    --read-only-role architect
-  [ "$status" -ne 0 ]
-  [[ "$output" == *'read-only role is not in contract team'* ]]
-}
-
-@test "issue rejects a read-only role that also receives a write capability" {
-  local control_root="$ROOT/.temporary-agent-runfiles/runs/scout-three"
-  mkdir -p "$control_root"
-  run bash "$SCRIPT" issue "$ROOT" "scout-scope-conflict" \
-    --command map --role scout --team solo --job "map the thing" \
-    --control-root "$control_root" \
-    --requested-backend workflow --resolved-backend workflow \
-    --read-only-role scout --write-capability file:notes.md
-  [ "$status" -ne 0 ]
-  [[ "$output" == *'role declared read-only cannot also receive a write capability'* ]]
-}
-
-@test "schema 3 binds validated backend metadata into the contract digest" {
-  local control_root="$ROOT/.temporary-agent-runfiles/runs/team-backend" contract
-  mkdir -p "$control_root"
-
-  run bash "$SCRIPT" issue "$ROOT" "team-backend" \
-    --command team --role web-engineer --team solo --job "Implement the web scope" \
-    --control-root "$control_root" --requested-backend tmux --resolved-backend tmux \
-    --write-capability directory:src/web
-  [ "$status" -eq 0 ]
-  contract="$output"
-  run jq -e '.schema_version == 3 and .requested_backend == "tmux" and .resolved_backend == "tmux"' "$contract"
-  [ "$status" -eq 0 ]
-
-  jq '.resolved_backend = "in_process"' "$contract" > "$ROOT/tampered-contract.json"
-  mv "$ROOT/tampered-contract.json" "$contract"
-  run bash "$SCRIPT" verify "$contract" "$ROOT"
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"contract digest mismatch"* ]]
-}
-
-@test "schema 3 root capability is limited to the team command" {
-  run bash "$SCRIPT" issue "$ROOT" "not-team" \
-    --command test --role web-engineer --team solo --job "scope" \
-    --write-capability directory:.
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"repository root capability is only valid for team"* ]]
+  ' --arg control "$CONTROL_ROOT"
 }
 
 @test "schema 3 state updates use the temporary control root only" {
-  local control_root="$ROOT/.temporary-agent-runfiles/runs/team-state" contract id
-  rm -rf "$ROOT/.lbwc-planning"
-  mkdir -p "$control_root"
-  contract=$(bash "$SCRIPT" issue "$ROOT" "team-state" \
-    --command team --role web-engineer --team solo --job "scope" \
-    --control-root "$control_root" --write-capability directory:src/web)
-  id=$(basename "$contract" .json)
+  make_control_root team-state
+  local contract
+  contract=$(issue_team team-state --control-root "$CONTROL_ROOT" --write-capability directory:src/web)
 
-  run bash "$SCRIPT" state "$ROOT" "$id" dispatched
+  run bash "$SCRIPT" state "$ROOT" "$(basename "$contract" .json)" dispatched
 
   [ "$status" -eq 0 ]
   [ ! -e "$ROOT/.lbwc-planning" ]
-  [ ! -e "$control_root/contracts/.lock" ]
+  [ ! -e "$CONTROL_ROOT/contracts/.lock" ]
 }
 
-@test "schema 3 rejects unsupported runtime and communication policies" {
-  local control_root="$ROOT/.temporary-agent-runfiles/runs/team-policy"
-  mkdir -p "$control_root"
+@test "schema 3 issue accepts a role with no write capability when the role never writes" {
+  make_control_root read-only
+  run bash "$SCRIPT" issue "$ROOT" "qa-scope" \
+    --command qa --role qa --team solo --job "verify the web scope" \
+    --control-root "$CONTROL_ROOT" --requested-backend workflow --resolved-backend workflow
+  [ "$status" -eq 0 ]
+  expect_contract role-disallows-write "$output" '.schema_version == 3 and .capabilities_by_role["qa"] == []'
 
-  run bash "$SCRIPT" issue "$ROOT" "bad-runtime" \
-    --command team --role web-engineer --team solo --job "scope" \
-    --control-root "$control_root" --runtime-kind unknown-runtime \
-    --write-capability directory:src/web
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"runtime_kind"* ]]
+  run bash "$SCRIPT" issue "$ROOT" "scout-scope" \
+    --command map --role scout --team solo --job "map the thing" \
+    --control-root "$CONTROL_ROOT" --requested-backend workflow --resolved-backend workflow \
+    --read-only-role scout
+  [ "$status" -eq 0 ]
+  expect_contract declared-read-only "$output" '.schema_version == 3 and .capabilities_by_role["scout"] == []'
+}
 
-  run bash "$SCRIPT" issue "$ROOT" "bad-communication" \
-    --command team --role web-engineer --team solo --job "scope" \
-    --control-root "$control_root" --communication-policy unknown-policy \
-    --write-capability directory:src/web
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"communication_policy"* ]]
+@test "schema 3 issue rejects invalid capability and metadata declarations" {
+  make_control_root invalid
+  local backend=(--requested-backend workflow --resolved-backend workflow)
+  expect_rejected writer-without-capability "typed contract requires at least one capability" \
+    bash "$SCRIPT" issue "$ROOT" "dev-scope" \
+    --command fix --role coding-dijkstra --team solo --job "fix the thing" \
+    --control-root "$CONTROL_ROOT" "${backend[@]}"
+  expect_rejected read-only-outside-team "read-only role is not in contract team" \
+    bash "$SCRIPT" issue "$ROOT" "scout-bad" \
+    --command map --role scout --team solo --job "map the thing" \
+    --control-root "$CONTROL_ROOT" "${backend[@]}" --read-only-role architect
+  expect_rejected read-only-with-write "role declared read-only cannot also receive a write capability" \
+    bash "$SCRIPT" issue "$ROOT" "scout-conflict" \
+    --command map --role scout --team solo --job "map the thing" \
+    --control-root "$CONTROL_ROOT" "${backend[@]}" \
+    --read-only-role scout --write-capability file:notes.md
+  expect_rejected root-capability-outside-team "repository root capability is only valid for team" \
+    bash "$SCRIPT" issue "$ROOT" "not-team" \
+    --command test --role web-engineer --team solo --job "scope" \
+    --write-capability directory:.
+  expect_rejected unknown-runtime-kind "runtime_kind" \
+    issue_team bad-runtime --control-root "$CONTROL_ROOT" \
+    --runtime-kind unknown-runtime --write-capability directory:src/web
+  expect_rejected unknown-communication-policy "communication_policy" \
+    issue_team bad-communication --control-root "$CONTROL_ROOT" \
+    --communication-policy unknown-policy --write-capability directory:src/web
 }
 
 @test "open writes schema 3 when backend and control-root flags are set" {
-  local control_root="$ROOT/.temporary-agent-runfiles/runs/plan-schema3"
-  mkdir -p "$control_root"
-
-  run bash "$SCRIPT" open "$PLAN" "$ROOT" "write contract" \
-    --requested-backend tmux --resolved-backend tmux --control-root "$control_root"
+  make_control_root plan-schema3
+  run open_plan --requested-backend tmux --resolved-backend tmux --control-root "$CONTROL_ROOT"
   [ "$status" -eq 0 ]
-  local contract="$output"
-  control_root=$(cd -P "$control_root" && pwd -P)
-  [ "$contract" = "$control_root/contracts/tasks/$(basename "$contract")" ]
-  run jq -e --arg root "$control_root" '
+  [ "$output" = "$CONTROL_ROOT/contracts/tasks/$(basename "$output")" ]
+  expect_contract plan-schema3 "$output" '
     .schema_version == 3
     and .source_kind == "plan"
     and .requested_backend == "tmux"
     and .resolved_backend == "tmux"
-    and .control_root == $root
+    and .control_root == $control
     and .runtime_kind == "native-team"
     and .communication_policy == "native-team"
     and .capabilities_by_role["coding-dijkstra"] == [
@@ -397,120 +344,38 @@ teardown() { rm -rf "$ROOT"; }
       {access:"write",kind:"file",path:"tests/task-contract.bats"}
     ]
     and .write_allowances == ["src/contract.py", "tests/task-contract.bats"]
-  ' "$contract"
-  [ "$status" -eq 0 ]
-}
-
-@test "open without backend flags still writes schema 2" {
-  run bash "$SCRIPT" open "$PLAN" "$ROOT" "write contract"
-  [ "$status" -eq 0 ]
-  run jq -e '
-    .schema_version == 2
-    and (has("requested_backend") | not)
-    and (has("resolved_backend") | not)
-    and (has("control_root") | not)
-  ' "$output"
-  [ "$status" -eq 0 ]
+  ' --arg control "$CONTROL_ROOT"
 }
 
 @test "open rejects a partial schema 3 flag set before writing" {
-  local control_root="$ROOT/.temporary-agent-runfiles/runs/plan-partial"
-  mkdir -p "$control_root"
-
-  run bash "$SCRIPT" open "$PLAN" "$ROOT" "write contract" \
-    --requested-backend tmux --resolved-backend tmux
-  [ "$status" -ne 0 ]
-  [ ! -d "$ROOT/.lbwc-planning/.contracts/tasks" ] || [ -z "$(find "$ROOT/.lbwc-planning/.contracts/tasks" -type f -print -quit)" ]
-  [ ! -d "$control_root/contracts/tasks" ] || [ -z "$(find "$control_root/contracts/tasks" -type f -print -quit 2>/dev/null)" ]
-
-  run bash "$SCRIPT" open "$PLAN" "$ROOT" "write contract" --control-root "$control_root"
-  [ "$status" -ne 0 ]
+  make_control_root plan-partial
+  expect_rejected backends-without-control-root "schema 3 open requires" open_plan --requested-backend tmux --resolved-backend tmux
+  expect_rejected control-root-without-backends "schema 3 open requires" open_plan --control-root "$CONTROL_ROOT"
+  [ -z "$(written_contracts)" ]
 }
 
-@test "open --assert-snapshot compares flags and does not copy snapshot backends" {
-  local control_root="$ROOT/.temporary-agent-runfiles/runs/plan-assert"
-  mkdir -p "$control_root"
-  control_root=$(cd -P "$control_root" && pwd -P)
-  local snapshot="$ROOT/runtime-snapshot.json"
-  jq -n --arg root "$control_root" '{
-    requested_backend: "tmux",
-    resolved_backend: "tmux",
-    control_root: $root
-  }' > "$snapshot"
+@test "assert-snapshot accepts a matching snapshot and rejects a mismatch without writing" {
+  make_control_root snapshot-assert
+  local full="$ROOT/full-snapshot.json" freeze="$ROOT/freeze-snapshot.json"
+  jq -n --arg root "$CONTROL_ROOT" '{requested_backend:"tmux",resolved_backend:"tmux",control_root:$root}' > "$full"
+  jq -n '{requested_backend:"tmux",resolved_backend:"tmux"}' > "$freeze"
+  local flags=(--requested-backend tmux --resolved-backend tmux --control-root "$CONTROL_ROOT")
 
-  run bash "$SCRIPT" open "$PLAN" "$ROOT" "write contract" \
-    --requested-backend tmux --resolved-backend tmux --control-root "$control_root" \
-    --assert-snapshot "$snapshot"
+  run open_plan "${flags[@]}" --assert-snapshot "$full"
   [ "$status" -eq 0 ]
-  run jq -e '.schema_version == 3 and .requested_backend == "tmux" and .resolved_backend == "tmux"' "$output"
+  expect_contract open-full-snapshot "$output" '.schema_version == 3 and .requested_backend == "tmux" and .resolved_backend == "tmux"'
+  run issue_team team-assert "${flags[@]}" --assert-snapshot "$full" --write-capability directory:src/web
   [ "$status" -eq 0 ]
-
-  jq '.requested_backend = "in_process" | .resolved_backend = "in_process"' "$snapshot" > "$ROOT/snapshot-mismatch.json"
-  mv "$ROOT/snapshot-mismatch.json" "$snapshot"
-  run bash "$SCRIPT" open "$PLAN" "$ROOT" "write contract" \
-    --requested-backend tmux --resolved-backend tmux --control-root "$control_root" \
-    --assert-snapshot "$snapshot" --group mismatch
-  [ "$status" -ne 0 ]
-  [ ! -e "$control_root/contracts/tasks/09-PLAN-write-contract-mismatch.json" ]
-
-  run bash "$SCRIPT" open "$PLAN" "$ROOT" "write contract" \
-    --requested-backend in_process --resolved-backend in_process --control-root "$control_root" \
-    --assert-snapshot "$snapshot" --group copied
+  expect_contract issue-full-snapshot "$output" '.schema_version == 3 and .requested_backend == "tmux" and .resolved_backend == "tmux"'
+  run open_plan "${flags[@]}" --assert-snapshot "$freeze" --group freeze-shape
   [ "$status" -eq 0 ]
-  run jq -e '.requested_backend == "in_process" and .resolved_backend == "in_process"' "$output"
-  [ "$status" -eq 0 ]
-}
+  expect_contract open-freeze-snapshot "$output" '.schema_version == 3 and .requested_backend == "tmux" and .resolved_backend == "tmux"'
 
-@test "issue --assert-snapshot compares flags and does not copy snapshot backends" {
-  local control_root="$ROOT/.temporary-agent-runfiles/runs/team-assert"
-  mkdir -p "$control_root"
-  control_root=$(cd -P "$control_root" && pwd -P)
-  local snapshot="$ROOT/team-runtime-snapshot.json"
-  jq -n --arg root "$control_root" '{
-    requested_backend: "tmux",
-    resolved_backend: "tmux",
-    control_root: $root
-  }' > "$snapshot"
-
-  run bash "$SCRIPT" issue "$ROOT" "team-assert" \
-    --command team --role web-engineer --team solo --job "Implement the web scope" \
-    --requested-backend tmux --resolved-backend tmux --control-root "$control_root" \
-    --assert-snapshot "$snapshot" --write-capability directory:src/web
-  [ "$status" -eq 0 ]
-  run jq -e '.schema_version == 3 and .requested_backend == "tmux" and .resolved_backend == "tmux"' "$output"
-  [ "$status" -eq 0 ]
-
-  jq '.requested_backend = "in_process" | .resolved_backend = "in_process"' "$snapshot" > "$ROOT/team-snapshot-mismatch.json"
-  mv "$ROOT/team-snapshot-mismatch.json" "$snapshot"
-  run bash "$SCRIPT" issue "$ROOT" "team-assert-mismatch" \
-    --command team --role web-engineer --team solo --job "Implement the web scope" \
-    --requested-backend tmux --resolved-backend tmux --control-root "$control_root" \
-    --assert-snapshot "$snapshot" --write-capability directory:src/web
-  [ "$status" -ne 0 ]
-  [ ! -e "$control_root/contracts/tasks/"*team-assert-mismatch* ]
-}
-
-@test "open --assert-snapshot accepts a freeze snapshot that omits control_root" {
-  local control_root="$ROOT/.temporary-agent-runfiles/runs/freeze-shape"
-  mkdir -p "$control_root"
-  control_root=$(cd -P "$control_root" && pwd -P)
-  local snapshot="$ROOT/freeze-shaped-snapshot.json"
-  jq -n '{
-    requested_backend: "tmux",
-    resolved_backend: "tmux"
-  }' > "$snapshot"
-
-  run bash "$SCRIPT" open "$PLAN" "$ROOT" "write contract" \
-    --requested-backend tmux --resolved-backend tmux --control-root "$control_root" \
-    --assert-snapshot "$snapshot" --group freeze-shape
-  [ "$status" -eq 0 ]
-  run jq -e '.schema_version == 3 and .requested_backend == "tmux" and .resolved_backend == "tmux"' "$output"
-  [ "$status" -eq 0 ]
-
-  jq '.resolved_backend = "in_process"' "$snapshot" > "$ROOT/freeze-mismatch.json"
-  mv "$ROOT/freeze-mismatch.json" "$snapshot"
-  run bash "$SCRIPT" open "$PLAN" "$ROOT" "write contract" \
-    --requested-backend tmux --resolved-backend tmux --control-root "$control_root" \
-    --assert-snapshot "$snapshot" --group freeze-mismatch
-  [ "$status" -ne 0 ]
+  jq '.requested_backend = "in_process" | .resolved_backend = "in_process"' "$full" > "$ROOT/full-mismatch.json"
+  jq '.resolved_backend = "in_process"' "$freeze" > "$ROOT/freeze-mismatch.json"
+  expect_rejected open-full-mismatch "snapshot backend mismatch" open_plan "${flags[@]}" --assert-snapshot "$ROOT/full-mismatch.json" --group mismatch
+  expect_rejected issue-full-mismatch "snapshot backend mismatch" issue_team team-assert-mismatch "${flags[@]}" \
+    --assert-snapshot "$ROOT/full-mismatch.json" --write-capability directory:src/web
+  expect_rejected open-freeze-mismatch "snapshot backend mismatch" open_plan "${flags[@]}" --assert-snapshot "$ROOT/freeze-mismatch.json" --group freeze-mismatch
+  [ -z "$(find "$CONTROL_ROOT/contracts/tasks" -name '*mismatch*' -print -quit)" ]
 }
