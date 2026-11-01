@@ -34,7 +34,7 @@ You type one command, and Meridian takes the project one correct step forward.
 | <img src="assets/icons/build.png" alt="" width="32"><br>**Phases** | Each phase moves through a reviewed plan, contract-bound building, a QA verdict, and your own acceptance test. |
 | <img src="assets/icons/compass.png" alt="" width="32"><br>**Status** | The statusline shows the phase, the team, and the checks. Every step ends with a short card that names the next action. |
 
-Meridian works with local files and small scripts for the bash that ships with macOS, so it needs no server or account.
+Meridian runs on local files and small scripts written for the bash that ships with macOS, so it needs no server or account.
 
 ## Quick start
 
