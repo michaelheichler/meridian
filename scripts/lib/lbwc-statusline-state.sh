@@ -6,6 +6,8 @@ TRIO="none"
 QA_STATE="pending"
 UAT_STATE="pending"
 TELEMETRY_STATE="off"
+HIDE_LIMITS="false"
+HIDE_LIMITS_FOR_API_KEY="false"
 
 read_frontmatter_value() {
   local path="$1" key="$2"
@@ -124,6 +126,24 @@ read_orchestration_state() {
   read_phase_from_state_file
   read_quality_states
   read_telemetry_state
+}
+
+read_limits_config() {
+  local flags
+  [ -f "$PLANNING_DIR/config.json" ] || return 0
+  flags=$(jq -r '[(.statusline_hide_limits == true), (.statusline_hide_limits_for_api_key == true)] | join(" ")' "$PLANNING_DIR/config.json" 2>/dev/null) || return 0
+  read -r HIDE_LIMITS HIDE_LIMITS_FOR_API_KEY <<< "$flags"
+}
+
+# Statusline input has no auth field, so credential env is the signal.
+uses_api_key_auth() {
+  [ -n "${ANTHROPIC_API_KEY:-}" ] || [ -n "${ANTHROPIC_AUTH_TOKEN:-}" ]
+}
+
+limits_line_hidden() {
+  read_limits_config
+  [ "$HIDE_LIMITS" = true ] && return 0
+  [ "$HIDE_LIMITS_FOR_API_KEY" = true ] && uses_api_key_auth
 }
 
 is_git_worktree() {
