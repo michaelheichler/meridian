@@ -2,6 +2,8 @@
 
 load test_helper
 load agent_generator_fixture
+load gate_case_helper
+load rejection_case_helper
 
 GENERATOR="${SCRIPTS_DIR}/agent-generator.sh"
 export GENERATOR
@@ -260,6 +262,55 @@ CASES
   run grep -c '^effort:' "$TEST_TEMP_DIR/.claude/agents/$name.md"
   [ "$output" = "0" ]
   jq -e --arg name "$name" '.agents[$name].effort == null' "$(manifest_path)" >/dev/null
+}
+
+max_turns_generation_row() {
+  local label="$1" filter="$2" want="$3" name definition lines expected_lines=1
+  reset_generated_state
+  jq "$filter" "$TEST_TEMP_DIR/.lbwc-planning/config.pristine" > "$TEST_TEMP_DIR/.lbwc-planning/config.json"
+
+  generate docs --job "write a README"
+
+  expect_case "$label" 0 "SPAWN_READY"
+  name=$(generated_name docs)
+  definition="$TEST_TEMP_DIR/.claude/agents/$name.md"
+  jq -e --arg name "$name" --arg want "$want" '.agents[$name].max_turns == $want' "$(manifest_path)" >/dev/null \
+    || record_case_failure "$label" "manifest max_turns differs from [$want]"
+  lines=$(grep -c '^maxTurns:' "$definition" || true)
+  [ -n "$want" ] || expected_lines=0
+  [ "$lines" = "$expected_lines" ] || record_case_failure "$label" "definition has $lines maxTurns lines, want $expected_lines"
+  [ -z "$want" ] || [[ "$output" == *"  maxTurns: $want"* ]] \
+    || record_case_failure "$label" "SPAWN_READY lacks maxTurns $want output=$output"
+  [ -n "$want" ] || [[ "$output" != *maxTurns* ]] \
+    || record_case_failure "$label" "SPAWN_READY printed maxTurns for an unlimited agent output=$output"
+}
+
+@test "an unlimited turn budget leaves out the maxTurns line and a set budget flows into every artifact" {
+  reset_case_failures
+  cp "$TEST_TEMP_DIR/.lbwc-planning/config.json" "$TEST_TEMP_DIR/.lbwc-planning/config.pristine"
+
+  while IFS='@' read -r label filter want; do
+    [ -n "$label" ] || continue
+    max_turns_generation_row "$label" "$filter" "$want"
+  done <<'CASES'
+roles-zero@.roles.docs.max_turns = 0@
+roles-false@.roles.docs.max_turns = false@
+agent-max-turns-zero@. * {agent_max_turns: {docs: 0}}@
+agent-max-turns-absolute@. * {agent_max_turns: {docs: 12}, effort: "thorough"}@12
+roles-scaled-by-effort@. * {roles: {docs: {max_turns: 20}}, effort: "thorough"}@30
+CASES
+
+  assert_no_case_failures
+}
+
+@test "the generator fails closed when a resolver reports the max turns value without the set marker" {
+  local resolver="$TEST_TEMP_DIR/stub-resolver.sh"
+  printf '%s\n' '#!/usr/bin/env bash' \
+    "printf \"%s\\n\" \"RESOLVED_AGENT_MODEL='nova-route'\" \"RESOLVED_MAX_TURNS=''\" \"RESOLVED_REASONING_JSON='null'\"" > "$resolver"
+
+  LBWC_AGENT_SETTINGS_SCRIPT="$resolver" generate docs --job "write a README"
+
+  assert_rejected_without_mutation stub-resolver-without-set-marker "resolver omitted the max turns value"
 }
 
 @test "generator refuses a route whose selector has no host Agent id and writes no agent" {

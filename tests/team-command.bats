@@ -223,6 +223,46 @@ unknown-value-falls-back-to-balanced|reckless|10
 CASES
 }
 
+preflight_turns_row() {
+  local label="$1" engineer="$2" config="$3" defaults_filter="$4" want="$5" plugin="$TEST_ROOT/plugin"
+  jq "$defaults_filter" "$REPO_ROOT/templates/agent-roles/defaults.json" > "$plugin/templates/agent-roles/defaults.json"
+  printf '%s\n' "$config" > "$PROJECT/.lbwc-planning/config.json"
+
+  run bash "$plugin/scripts/team-command-transaction.sh" preflight --project-root "$PROJECT" --engineer "$engineer"
+
+  if [ "${want:0:1}" = '!' ]; then
+    [ "$status" -ne 0 ] && [[ "$output" == *"${want:1}"* ]] \
+      || { echo "case=$label status=$status output=$output" >&2; return 1; }
+  else
+    [ "$status" -eq 0 ] && [ "$(jq -c '.routing.max_turns' <<< "$output")" = "$want" ] \
+      || { echo "case=$label want=$want status=$status output=$output" >&2; return 1; }
+  fi
+}
+
+@test "preflight resolves the engineer turn budget from the planning config with the documented precedence" {
+  local plugin="$TEST_ROOT/plugin" label engineer config defaults_filter want
+  mkdir -p "$plugin/templates" "$PROJECT/.lbwc-planning"
+  cp -R "$REPO_ROOT/scripts" "$plugin/scripts"
+  ln -s "$REPO_ROOT/config" "$plugin/config"
+  cp -R "$REPO_ROOT/templates/." "$plugin/templates/"
+  printf '%s\n' '#!/usr/bin/env bash' \
+    "printf '%s\\n' '{\"model\":\"nova-route\",\"profile\":\"balanced\",\"reasoning\":\"deliberate\",\"role\":\"python-engineer\"}'" \
+    > "$plugin/scripts/lbwc-routing.sh"
+
+  while IFS='@' read -r label engineer config defaults_filter want; do
+    [ -n "$label" ] || continue
+    preflight_turns_row "$label" "$engineer" "$config" "$defaults_filter" "$want"
+  done <<'CASES'
+agent-max-turns-is-absolute@python-engineer@{"routing":{"active_profile":"balanced"},"effort":"thorough","agent_max_turns":{"python-engineer":10}}@.@10
+agent-max-turns-false-is-unlimited@python-engineer@{"routing":{"active_profile":"balanced"},"agent_max_turns":{"python-engineer":false}}@.@null
+dev-alias-reaches-the-engineer@python-engineer@{"routing":{"active_profile":"balanced"},"agent_max_turns":{"dev":9}}@.@9
+roles-max-turns-is-effort-scaled@python-engineer@{"routing":{"active_profile":"balanced"},"effort":"thorough","roles":{"python-engineer":{"max_turns":20}}}@.@30
+roles-zero-is-unlimited@python-engineer@{"routing":{"active_profile":"balanced"},"effort":"thorough","roles":{"python-engineer":{"max_turns":0}}}@.@null
+defaults-zero-is-unlimited@python-engineer@{"routing":{"active_profile":"balanced"}}@.["python-engineer"].maxTurns = 0@null
+invalid-agent-max-turns-names-its-key@python-engineer@{"routing":{"active_profile":"balanced"},"agent_max_turns":{"python-engineer":"abc"}}@.@!invalid agent_max_turns.python-engineer value 'abc'
+CASES
+}
+
 @test "preflight is read-only and reports the canonical root, pair mode, and no side effects" {
   run bash "$TRANSACTION" preflight --project-root "$PROJECT" --scope src
 

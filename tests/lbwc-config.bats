@@ -152,6 +152,7 @@ plain_summary|false
 custom_profiles|{"release":{"effort":"thorough","autonomy":"cautious","verification_tier":"deep"}}
 active_profile|"release"
 agent_max_turns|{"lead":{"thorough":120,"turbo":false},"qa":0}
+agent_max_turns|{"dev":50}
 qa_skip_agents|["docs","qa-author"]
 token_budgets|false
 two_phase_completion|false
