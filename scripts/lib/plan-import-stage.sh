@@ -30,7 +30,8 @@ semantic_conflicts() {
     destination_digest=$(import_sha256 "$project_root/$relative") || import_fail "could not digest canonical artifact: $relative"
     [ "$source_digest" = "$destination_digest" ] && continue
     status_detail=$(conflict_detail "$ir" "$relative" "$project_root")
-    conflicts=$(jq -c --arg artifact "$relative" --arg source_digest "$source_digest" --arg destination_digest "$destination_digest" --argjson detail "${status_detail:-{\}}" \
+    [ -n "$status_detail" ] || status_detail='{}'
+    conflicts=$(jq -c --arg artifact "$relative" --arg source_digest "$source_digest" --arg destination_digest "$destination_digest" --argjson detail "$status_detail" \
       '. + [{artifact:$artifact, source_digest:$source_digest, destination_digest:$destination_digest, detail:$detail}]' <<< "$conflicts")
   done < <(find "$tree" -type f -print 2>/dev/null | LC_ALL=C sort)
   printf '%s\n' "$conflicts"
