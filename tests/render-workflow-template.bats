@@ -38,7 +38,6 @@ make_script_fixture() {
   fixture_dir=$(mktemp -d)
   mkdir -p "$fixture_dir/scripts/lib" "$fixture_dir/templates/workflows"
   cp "$SCRIPT" "$fixture_dir/scripts/render-workflow-template.sh"
-  cp "$BATS_TEST_DIRNAME/../scripts/lib/require-bash.sh" "$fixture_dir/scripts/lib/require-bash.sh"
 }
 
 wrap_body_for_syntax_check() {
