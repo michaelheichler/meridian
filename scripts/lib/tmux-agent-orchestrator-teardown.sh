@@ -139,12 +139,13 @@ kill_session() {
   [ "$session" = "$registered_session" ] || fail 'session does not match registry'
   managed=$(jq -r '.tmux.managed_session' <<<"$registry")
   active_agent_ids=$(jq -c '[.agents[] | select(.state != "shutdown") | .agent_id]' <<<"$registry")
-  write_teardown_intent "$intent_name" "$session" prepared || fail 'cannot persist session teardown intent'
   if [ "$managed" = true ] && tmux_session_exists "$session"; then
+    write_teardown_intent "$intent_name" "$session" prepared || fail 'cannot persist session teardown intent'
     stop_owned_session "$registry" "$session" "$intent_name"
   elif [ "$managed" = true ]; then
     teardown_process_stopped "$intent_name" "$session" || fail 'owned tmux session is unavailable; refusing false shutdown'
   elif [ "$managed" = false ]; then
+    write_teardown_intent "$intent_name" "$session" prepared || fail 'cannot persist session teardown intent'
     stop_external_session "$registry" "$active_agent_ids" "$intent_name"
     return 0
   fi
