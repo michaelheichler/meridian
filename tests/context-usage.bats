@@ -8,6 +8,7 @@ setup() {
   mkdir -p "$PROJECT_DIR/.lbwc-planning"
   cd "$PROJECT_DIR"
   HOOK="$PROJECT_ROOT/hooks/context_usage.py"
+  USAGE_FILE="$PROJECT_DIR/.lbwc-planning/.context-usage"
 }
 
 teardown() {
@@ -15,15 +16,11 @@ teardown() {
   teardown_temp_dir
 }
 
-write_usage() {
-  printf '%s\n' "$1" > "$PROJECT_DIR/.lbwc-planning/.context-usage"
-}
-
 resolve_level() {
-  bash -c ". '$PROJECT_ROOT/scripts/lib/resolve-caveman-level.sh' && resolve_caveman_level auto '$PROJECT_DIR/.lbwc-planning' && printf '%s' \"\$RESOLVED_CAVEMAN_LEVEL\""
+  bash -c ". '$PROJECT_ROOT/scripts/lib/resolve-caveman-level.sh' && resolve_caveman_level '$1' '$PROJECT_DIR/.lbwc-planning' && printf '%s' \"\$RESOLVED_CAVEMAN_LEVEL\""
 }
 
-run_hook() {
+run_hook_with_transcript() {
   local transcript="$PROJECT_DIR/transcript.jsonl"
   python3 -c "open('$transcript','w').write('x' * $1)"
   run python3 "$HOOK" <<EOF
@@ -31,77 +28,67 @@ run_hook() {
 EOF
 }
 
-@test "context-usage hook writes parseable record" {
-  run_hook 400000
-
-  [ "$status" -eq 0 ]
-  [ -f "$PROJECT_DIR/.lbwc-planning/.context-usage" ]
-  [ "$(cat "$PROJECT_DIR/.lbwc-planning/.context-usage")" = "s1|50|200000" ]
+case_fail() {
+  echo "case=$1 $2" >&2
+  echo "output=$output" >&2
 }
 
-@test "context-usage hook respects configured window" {
-  printf '{"context_window_tokens": 100000}\n' > "$PROJECT_DIR/.lbwc-planning/config.json"
+@test "context-usage hook records session, capped percent, and window" {
+  while IFS='|' read -r label transcript_chars window_config expected_record; do
+    [ -n "$label" ] || continue
+    rm -f "$USAGE_FILE" "$PROJECT_DIR/.lbwc-planning/config.json"
+    [ -z "$window_config" ] || printf '{"context_window_tokens": %s}\n' "$window_config" > "$PROJECT_DIR/.lbwc-planning/config.json"
 
-  run_hook 200000
+    run_hook_with_transcript "$transcript_chars"
 
-  [ "$status" -eq 0 ]
-  [ "$(cat "$PROJECT_DIR/.lbwc-planning/.context-usage")" = "s1|50|100000" ]
+    [ "$status" -eq 0 ] || { case_fail "$label" "hook status=$status"; return 1; }
+    record=$(cat "$USAGE_FILE" 2>/dev/null || echo "missing")
+    [ "$record" = "$expected_record" ] || { case_fail "$label" "record=$record expected=$expected_record"; return 1; }
+  done <<'CASES'
+default-window|400000||s1|50|200000
+configured-window|200000|100000|s1|50|100000
+over-full-caps-at-100|2000000||s1|100|200000
+CASES
 }
 
-@test "context-usage hook caps at 100 percent" {
-  run_hook 2000000
+@test "context-usage hook fails open and writes nothing on unusable input" {
+  while IFS='|' read -r label payload; do
+    [ -n "$label" ] || continue
+    rm -f "$USAGE_FILE"
 
-  [ "$status" -eq 0 ]
-  [[ "$(cat "$PROJECT_DIR/.lbwc-planning/.context-usage")" == "s1|100|"* ]]
+    run python3 "$HOOK" <<< "$payload"
+
+    [ "$status" -eq 0 ] || { case_fail "$label" "hook status=$status"; return 1; }
+    [ ! -e "$USAGE_FILE" ] || { case_fail "$label" "usage file written: $(cat "$USAGE_FILE")"; return 1; }
+  done <<'CASES'
+missing-transcript|{"session_id": "s1", "cwd": "/nonexistent", "tool_name": "Write"}
+garbage-stdin|not json at all
+CASES
 }
 
-@test "context-usage hook fails open without transcript" {
-  run python3 "$HOOK" <<'EOF'
-{"session_id": "s1", "cwd": "/nonexistent", "tool_name": "Write"}
-EOF
+@test "resolve_caveman_level maps usage records to a level" {
+  while IFS='|' read -r label style record expected_level; do
+    [ -n "$label" ] || continue
+    rm -f "$USAGE_FILE"
+    [ "$record" = none-file ] || printf '%s\n' "${record//;/|}" > "$USAGE_FILE"
 
-  [ "$status" -eq 0 ]
-}
+    level=$(resolve_level "$style")
 
-@test "context-usage hook fails open on garbage stdin" {
-  run python3 "$HOOK" <<'EOF'
-not json at all
-EOF
-
-  [ "$status" -eq 0 ]
-}
-
-@test "caveman level: under 50 percent is none" {
-  write_usage "s1|30|200000"
-  [ "$(resolve_level)" = "none" ]
-}
-
-@test "caveman level: 50 to 69 is lite" {
-  write_usage "s1|55|200000"
-  [ "$(resolve_level)" = "lite" ]
-}
-
-@test "caveman level: 70 to 84 is full" {
-  write_usage "s1|72|200000"
-  [ "$(resolve_level)" = "full" ]
-}
-
-@test "caveman level: 85 and up is ultra" {
-  write_usage "s1|90|200000"
-  [ "$(resolve_level)" = "ultra" ]
-}
-
-@test "caveman level: two-field format still parses" {
-  write_usage "60|200000"
-  [ "$(resolve_level)" = "lite" ]
-}
-
-@test "caveman level: missing file is none" {
-  [ "$(resolve_level)" = "none" ]
-}
-
-@test "caveman level: non-auto style passes through" {
-  write_usage "s1|90|200000"
-  result=$(bash -c ". '$PROJECT_ROOT/scripts/lib/resolve-caveman-level.sh' && resolve_caveman_level full '$PROJECT_DIR/.lbwc-planning' && printf '%s' \"\$RESOLVED_CAVEMAN_LEVEL\"")
-  [ "$result" = "full" ]
+    [ "$level" = "$expected_level" ] || { echo "case=$label record=$record style=$style level=$level expected=$expected_level" >&2; return 1; }
+  done <<'CASES'
+under-50-is-none|auto|s1;30;200000|none
+49-is-none|auto|s1;49;200000|none
+50-is-lite|auto|s1;50;200000|lite
+55-is-lite|auto|s1;55;200000|lite
+69-is-lite|auto|s1;69;200000|lite
+70-is-full|auto|s1;70;200000|full
+72-is-full|auto|s1;72;200000|full
+84-is-full|auto|s1;84;200000|full
+85-is-ultra|auto|s1;85;200000|ultra
+90-is-ultra|auto|s1;90;200000|ultra
+two-field-record|auto|60;200000|lite
+missing-file|auto|none-file|none
+non-numeric-percent|auto|s1;abc;200000|none
+non-auto-style-passes-through|full|s1;90;200000|full
+CASES
 }

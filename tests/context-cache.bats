@@ -2,264 +2,290 @@
 
 load test_helper
 
+build_workspace() {
+  WS="${1:-$TEST_TEMP_DIR}"
+  PLANNING="$WS/.lbwc-planning"
+  PHASE_DIR="$PLANNING/phases/${2:-02-test-phase}"
+  PLAN="$PHASE_DIR/02-01-PLAN.md"
+
+  rm -rf "$PLANNING"
+  mkdir -p "$PHASE_DIR"
+  echo '{}' > "$PLANNING/config.json"
+  printf '%s\n' '# Test Roadmap' '## Phase 2: Test Phase' '**Goal:** Test goal' \
+    '**Success:** Tests pass' '**Reqs:** REQ-01' > "$PLANNING/ROADMAP.md"
+  printf '%s\n' '---' 'phase: 2' 'plan: 1' 'title: "Test Plan"' 'wave: 1' 'depends_on: []' \
+    'must_haves: ["test"]' '---' '# Test Plan' '## Tasks' '### Task 1: Test' \
+    '- **Files:** test.sh' '- **Action:** Test' > "$PLAN"
+}
+
 setup() {
   setup_temp_dir
-  create_test_config
-  # Create a minimal phase directory structure
-  mkdir -p "$TEST_TEMP_DIR/.lbwc-planning/phases/02-test-phase"
-  mkdir -p "$TEST_TEMP_DIR/.lbwc-planning"
-  # Create a minimal ROADMAP.md
-  cat > "$TEST_TEMP_DIR/.lbwc-planning/ROADMAP.md" <<'EOF'
-# Test Roadmap
-## Phase 2: Test Phase
-**Goal:** Test goal
-**Success:** Tests pass
-**Reqs:** REQ-01
-EOF
-  # Create a minimal plan
-  cat > "$TEST_TEMP_DIR/.lbwc-planning/phases/02-test-phase/02-01-PLAN.md" <<'EOF'
----
-phase: 2
-plan: 1
-title: "Test Plan"
-wave: 1
-depends_on: []
-must_haves: ["test"]
----
-# Test Plan
-## Tasks
-### Task 1: Test
-- **Files:** test.sh
-- **Action:** Test
-EOF
+  build_workspace
+  HASH_ENV=""
+  RUN_FROM=""
 }
 
 teardown() {
   teardown_temp_dir
 }
 
+hash_for_role() {
+  cd "${RUN_FROM:-$WS}" || return 1
+  run env ${HASH_ENV:+"$HASH_ENV"} bash "$SCRIPTS_DIR/cache-context.sh" 02 "$1" "$PLANNING/config.json" "$PLAN"
+  HASH=$(echo "$output" | cut -d' ' -f2)
+  [ "$status" -eq 0 ]
+}
+
+case_fail() {
+  echo "case=$1 $2" >&2
+  echo "output=$output" >&2
+}
+
 create_nested_context_workspace() {
   NESTED_REPO_ROOT="$TEST_TEMP_DIR/mono"
-  NESTED_WORKSPACE_ROOT="$NESTED_REPO_ROOT/apps/proj"
-  NESTED_PLANNING_DIR="$NESTED_WORKSPACE_ROOT/.lbwc-planning"
-  NESTED_PHASE_DIR="$NESTED_PLANNING_DIR/phases/02-test-phase"
-  NESTED_PLAN_PATH="$NESTED_PHASE_DIR/02-01-PLAN.md"
-
-  mkdir -p "$NESTED_PHASE_DIR"
-  create_test_config "mono/apps/proj/.lbwc-planning"
-  cat > "$NESTED_PLANNING_DIR/ROADMAP.md" <<'EOF'
-# Nested Test Roadmap
-## Phase 2: Nested Test Phase
-**Goal:** Nested test goal
-**Reqs:** REQ-01
-**Success:** Tests pass
-EOF
-  cat > "$NESTED_PLAN_PATH" <<'EOF'
----
-phase: 2
-plan: 1
-title: "Nested Test Plan"
-wave: 1
-depends_on: []
-must_haves: ["test"]
----
-# Nested Test Plan
-EOF
+  rm -rf "$NESTED_REPO_ROOT"
+  build_workspace "$NESTED_REPO_ROOT/apps/proj"
+  NESTED_WORKSPACE_ROOT="$WS"
 }
 
 create_alternate_context_workspace() {
-  ALT_WORKSPACE_ROOT="$TEST_TEMP_DIR/alternate-workspace"
-  ALT_PLANNING_DIR="$ALT_WORKSPACE_ROOT/.lbwc-planning"
-  ALT_PHASE_DIR="$ALT_PLANNING_DIR/phases/02-alt-phase"
-  ALT_PLAN_PATH="$ALT_PHASE_DIR/02-01-PLAN.md"
-
-  mkdir -p "$ALT_PHASE_DIR"
-  create_test_config "alternate-workspace/.lbwc-planning"
-  cat > "$ALT_PLANNING_DIR/ROADMAP.md" <<'EOF'
-# Alternate Roadmap
-## Phase 2: Alternate Phase
-**Goal:** Alternate goal
-**Success:** Alternate success
-**Reqs:** REQ-99
-EOF
-  cat > "$ALT_PLAN_PATH" <<'EOF'
----
-phase: 2
-plan: 1
-title: "Alternate Plan"
-wave: 1
-depends_on: []
-must_haves: ["alternate"]
----
-# Alternate Plan
-EOF
+  local saved_ws="$WS"
+  build_workspace "$TEST_TEMP_DIR/alternate-workspace" 02-alt-phase
+  ALT_PLANNING_DIR="$PLANNING"
+  sed 's/Test goal/Alternate goal/' "$PLANNING/ROADMAP.md" > "$PLANNING/ROADMAP.new"
+  mv "$PLANNING/ROADMAP.new" "$PLANNING/ROADMAP.md"
+  build_workspace "$saved_ws"
 }
 
-@test "cache-context.sh produces consistent hash for same inputs" {
-  run bash "$SCRIPTS_DIR/cache-context.sh" 02 dev "$TEST_TEMP_DIR/.lbwc-planning/config.json" "$TEST_TEMP_DIR/.lbwc-planning/phases/02-test-phase/02-01-PLAN.md"
-  [ "$status" -eq 0 ]
-  HASH1=$(echo "$output" | cut -d' ' -f2)
-
-  run bash "$SCRIPTS_DIR/cache-context.sh" 02 dev "$TEST_TEMP_DIR/.lbwc-planning/config.json" "$TEST_TEMP_DIR/.lbwc-planning/phases/02-test-phase/02-01-PLAN.md"
-  [ "$status" -eq 0 ]
-  HASH2=$(echo "$output" | cut -d' ' -f2)
-
-  [ "$HASH1" = "$HASH2" ]
+init_test_repo() {
+  git init -q
+  git config user.name "LBWC Test"
+  git config user.email "lbwc-tests@example.com"
 }
 
-@test "cache-context.sh reports miss when no cache exists" {
-  run bash "$SCRIPTS_DIR/cache-context.sh" 02 dev "$TEST_TEMP_DIR/.lbwc-planning/config.json" "$TEST_TEMP_DIR/.lbwc-planning/phases/02-test-phase/02-01-PLAN.md"
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "^miss "
+mut_rerun() { :; }
+mut_plan() { [ "$1" = v2 ] && echo "# Modified" >> "$PLAN"; return 0; }
+mut_roadmap() { printf '%s\n' '## Phase 2: Test Phase' "**Goal:** Goal $1" '**Reqs:** REQ-01' > "$PLANNING/ROADMAP.md"; }
+mut_milestone() { echo "# Milestone Context $1" > "$PLANNING/CONTEXT.md"; }
+mut_requirements() { echo "- [REQ-01] Requirement $1" > "$PLANNING/REQUIREMENTS.md"; }
+mut_state() { printf '# State\n\n## Key Decisions\n| Use API %s | | |\n' "$1" > "$PLANNING/STATE.md"; }
+mut_conventions() { echo "{\"conventions\":[{\"tag\":\"STYLE\",\"rule\":\"Use $1\"}]}" > "$PLANNING/conventions.json"; }
+mut_research() { printf '## Findings\n- %s\n' "$1" > "$PHASE_DIR/02-RESEARCH.md"; }
+mut_delta() {
+  printf '## Files Modified\n- sample.txt\n' > "$PHASE_DIR/02-01-SUMMARY.md"
+  echo "$1" > "$WS/sample.txt"
 }
-
-@test "cache-context.sh reports hit when cache exists" {
-  cd "$TEST_TEMP_DIR"
-  # Get the hash from within the test dir (consistent git context)
-  run bash "$SCRIPTS_DIR/cache-context.sh" 02 dev ".lbwc-planning/config.json" ".lbwc-planning/phases/02-test-phase/02-01-PLAN.md"
-  HASH=$(echo "$output" | cut -d' ' -f2)
-
-  # Create cache entry with matching hash
-  mkdir -p ".lbwc-planning/.cache/context"
-  echo "# cached" > ".lbwc-planning/.cache/context/${HASH}.md"
-
-  # Same call should now hit
-  run bash "$SCRIPTS_DIR/cache-context.sh" 02 dev ".lbwc-planning/config.json" ".lbwc-planning/phases/02-test-phase/02-01-PLAN.md"
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "^hit "
+mut_rolling_on() {
+  jq '. + {"rolling_summary": true}' "$PLANNING/config.json" > "$PLANNING/config.tmp" && mv "$PLANNING/config.tmp" "$PLANNING/config.json"
+  echo "# Rolling Context $1" > "$PLANNING/ROLLING-CONTEXT.md"
 }
-
-@test "cache-context.sh produces different hash when plan changes" {
-  run bash "$SCRIPTS_DIR/cache-context.sh" 02 dev "$TEST_TEMP_DIR/.lbwc-planning/config.json" "$TEST_TEMP_DIR/.lbwc-planning/phases/02-test-phase/02-01-PLAN.md"
-  HASH1=$(echo "$output" | cut -d' ' -f2)
-
-  # Modify the plan
-  echo "# Modified" >> "$TEST_TEMP_DIR/.lbwc-planning/phases/02-test-phase/02-01-PLAN.md"
-
-  run bash "$SCRIPTS_DIR/cache-context.sh" 02 dev "$TEST_TEMP_DIR/.lbwc-planning/config.json" "$TEST_TEMP_DIR/.lbwc-planning/phases/02-test-phase/02-01-PLAN.md"
-  HASH2=$(echo "$output" | cut -d' ' -f2)
-
-  [ "$HASH1" != "$HASH2" ]
-}
-
-@test "compile-context.sh always uses cache (v3_context_cache graduated)" {
-  cd "$TEST_TEMP_DIR"
-  run bash "$SCRIPTS_DIR/compile-context.sh" 02 dev ".lbwc-planning/phases" ".lbwc-planning/phases/02-test-phase/02-01-PLAN.md"
-  [ "$status" -eq 0 ]
-  # Cache dir should always be created now that flag is graduated
-  [ -d "$TEST_TEMP_DIR/.lbwc-planning/.cache" ]
-}
-
-@test "compile-context.sh uses cache when v3_context_cache=true" {
-  jq '.v3_context_cache = true' "$TEST_TEMP_DIR/.lbwc-planning/config.json" > "$TEST_TEMP_DIR/.lbwc-planning/config.tmp" && mv "$TEST_TEMP_DIR/.lbwc-planning/config.tmp" "$TEST_TEMP_DIR/.lbwc-planning/config.json"
-
-  cd "$TEST_TEMP_DIR"
-  # First run: cache miss, should write cache
-  run bash "$SCRIPTS_DIR/compile-context.sh" 02 dev ".lbwc-planning/phases" ".lbwc-planning/phases/02-test-phase/02-01-PLAN.md"
-  [ "$status" -eq 0 ]
-  # Cache dir should now exist with at least one file
-  [ -d "$TEST_TEMP_DIR/.lbwc-planning/.cache/context" ]
-  CACHE_COUNT=$(ls "$TEST_TEMP_DIR/.lbwc-planning/.cache/context/" | wc -l | tr -d ' ')
-  [ "$CACHE_COUNT" -ge 1 ]
-}
-
-@test "compile-context.sh includes RESEARCH.md when present" {
-  cd "$TEST_TEMP_DIR"
-  echo -e "## Findings\n- Test finding" > ".lbwc-planning/phases/02-test-phase/02-RESEARCH.md"
-  run bash "$SCRIPTS_DIR/compile-context.sh" 02 lead ".lbwc-planning/phases"
-  [ "$status" -eq 0 ]
-  grep -q "Research Findings" ".lbwc-planning/phases/02-test-phase/.context-lead.md"
-  grep -q "Test finding" ".lbwc-planning/phases/02-test-phase/.context-lead.md"
-}
-
-@test "compile-context.sh works without RESEARCH.md" {
-  cd "$TEST_TEMP_DIR"
-  run bash "$SCRIPTS_DIR/compile-context.sh" 02 lead ".lbwc-planning/phases"
-  [ "$status" -eq 0 ]
-  ! grep -q "Research Findings" ".lbwc-planning/phases/02-test-phase/.context-lead.md"
-}
-
-@test "compile-context.sh cache hit preserves metadata" {
-  jq '.v3_context_cache = true' "$TEST_TEMP_DIR/.lbwc-planning/config.json" > "$TEST_TEMP_DIR/.lbwc-planning/config.tmp" && mv "$TEST_TEMP_DIR/.lbwc-planning/config.tmp" "$TEST_TEMP_DIR/.lbwc-planning/config.json"
-
-  cd "$TEST_TEMP_DIR"
-  # First run: cache miss, compiles fresh
-  run bash "$SCRIPTS_DIR/compile-context.sh" 02 lead ".lbwc-planning/phases" ".lbwc-planning/phases/02-test-phase/02-01-PLAN.md"
-  [ "$status" -eq 0 ]
-  grep -q "Test goal" ".lbwc-planning/phases/02-test-phase/.context-lead.md"
-
-  # Second run: cache hit, served from cache
-  run bash "$SCRIPTS_DIR/compile-context.sh" 02 lead ".lbwc-planning/phases" ".lbwc-planning/phases/02-test-phase/02-01-PLAN.md"
-  [ "$status" -eq 0 ]
-  # Cached output must still contain actual ROADMAP metadata, not "Not available"
-  grep -q "Test goal" ".lbwc-planning/phases/02-test-phase/.context-lead.md"
-}
-
-@test "cache-context.sh: rolling summary fingerprint excluded when flag is false" {
+mut_rolling_off() {
   local unrelated_repo="$TEST_TEMP_DIR/unrelated-git"
-
-  # Default config has rolling_summary=false.
-  # Run from an unrelated git repo to prove explicit config/plan inputs ignore
-  # both ambient repo dirtiness and rolling-context content changes.
-  setup_unrelated_git_repo "$unrelated_repo"
-
-  echo "# Rolling Context" > "$TEST_TEMP_DIR/.lbwc-planning/ROLLING-CONTEXT.md"
-  cd "$unrelated_repo" || return 1
-
-  run bash "$SCRIPTS_DIR/cache-context.sh" 02 dev "$TEST_TEMP_DIR/.lbwc-planning/config.json" \
-    "$TEST_TEMP_DIR/.lbwc-planning/phases/02-test-phase/02-01-PLAN.md"
-  [ "$status" -eq 0 ]
-  HASH1=$(echo "$output" | cut -d' ' -f2)
-
-  echo "# Different Content" > "$TEST_TEMP_DIR/.lbwc-planning/ROLLING-CONTEXT.md"
-  echo "modified" >> unrelated.txt
-
-  run bash "$SCRIPTS_DIR/cache-context.sh" 02 dev "$TEST_TEMP_DIR/.lbwc-planning/config.json" \
-    "$TEST_TEMP_DIR/.lbwc-planning/phases/02-test-phase/02-01-PLAN.md"
-  [ "$status" -eq 0 ]
-  HASH2=$(echo "$output" | cut -d' ' -f2)
-
-  # Hash should be stable when flag is false (rolling context ignored)
-  [ "$HASH1" = "$HASH2" ]
+  [ -d "$unrelated_repo" ] || setup_unrelated_git_repo "$unrelated_repo"
+  RUN_FROM="$unrelated_repo"
+  echo "# Rolling Context $1" > "$PLANNING/ROLLING-CONTEXT.md"
+  [ "$1" = v1 ] || echo "modified" >> "$unrelated_repo/unrelated.txt"
 }
-
-@test "cache-context.sh: rolling summary fingerprint changes hash when flag is true" {
-  cd "$TEST_TEMP_DIR"
-  # Enable rolling_summary in config
-  jq '. + {"rolling_summary": true}' .lbwc-planning/config.json > .lbwc-planning/config.tmp \
-    && mv .lbwc-planning/config.tmp .lbwc-planning/config.json
-  echo "# Rolling Context v1" > .lbwc-planning/ROLLING-CONTEXT.md
-  run bash "$SCRIPTS_DIR/cache-context.sh" 02 dev .lbwc-planning/config.json \
-    .lbwc-planning/phases/02-test-phase/02-01-PLAN.md
-  [ "$status" -eq 0 ]
-  HASH1=$(echo "$output" | cut -d' ' -f2)
-  echo "# Rolling Context v2 (changed)" > .lbwc-planning/ROLLING-CONTEXT.md
-  run bash "$SCRIPTS_DIR/cache-context.sh" 02 dev .lbwc-planning/config.json \
-    .lbwc-planning/phases/02-test-phase/02-01-PLAN.md
-  HASH2=$(echo "$output" | cut -d' ' -f2)
-  # Hash must differ when rolling context content changes
-  [ "$HASH1" != "$HASH2" ]
-}
-
-@test "cache-context.sh: explicit config and plan beat conflicting LBWC_PLANNING_DIR" {
+mut_env_planning_dir() {
   create_alternate_context_workspace
-
-  cd "$TEST_TEMP_DIR" || return 1
-  run bash "$SCRIPTS_DIR/cache-context.sh" 02 dev .lbwc-planning/config.json \
-    .lbwc-planning/phases/02-test-phase/02-01-PLAN.md
-  [ "$status" -eq 0 ]
-  HASH1=$(echo "$output" | cut -d' ' -f2)
-
-  run env LBWC_PLANNING_DIR="$ALT_PLANNING_DIR" \
-    bash "$SCRIPTS_DIR/cache-context.sh" 02 dev .lbwc-planning/config.json \
-    .lbwc-planning/phases/02-test-phase/02-01-PLAN.md
-  [ "$status" -eq 0 ]
-  HASH2=$(echo "$output" | cut -d' ' -f2)
-
-  [ "$HASH1" = "$HASH2" ]
+  [ "$1" = v1 ] || HASH_ENV="LBWC_PLANNING_DIR=$ALT_PLANNING_DIR"
+  return 0
 }
 
-@test "compile-context.sh: explicit phase and plan beat conflicting LBWC_PLANNING_DIR" {
+@test "cache-context fingerprints each role input and ignores unrelated state" {
+  while IFS='|' read -r label role mutator expect root phase_name; do
+    [ -n "$label" ] || continue
+    build_workspace "$TEST_TEMP_DIR/$root" "$phase_name"
+    HASH_ENV=""
+    RUN_FROM=""
+
+    "$mutator" v1
+    hash_for_role "$role" || { case_fail "$label" "first hash failed status=$status"; return 1; }
+    first_hash="$HASH"
+
+    "$mutator" v2
+    hash_for_role "$role" || { case_fail "$label" "second hash failed status=$status"; return 1; }
+
+    if [ "$expect" = same ]; then
+      [ "$first_hash" = "$HASH" ] || { case_fail "$label" "expected same hash, got $first_hash then $HASH"; return 1; }
+    else
+      [ "$first_hash" != "$HASH" ] || { case_fail "$label" "expected a changed hash, got $HASH twice"; return 1; }
+    fi
+  done <<'CASES'
+identical-rerun|dev|mut_rerun|same|ws-a|02-test-phase
+plan-edit|dev|mut_plan|differs|ws-b|02-test-phase
+roadmap-edit|dev|mut_roadmap|differs|ws-c|02-test-phase
+milestone-context-edit|dev|mut_milestone|differs|ws-d|02-test-phase
+requirements-edit-lead|lead|mut_requirements|differs|ws-e|02-test-phase
+state-edit-lead|lead|mut_state|differs|ws-f|02-test-phase
+conventions-edit-dev|dev|mut_conventions|differs|ws-g|02-test-phase
+conventions-edit-scout|scout|mut_conventions|differs|ws-h|02-test-phase
+research-edit-dev|dev|mut_research|differs|ws-i|02-test-phase
+research-edit-path-with-spaces|dev|mut_research|differs|space dir|02-test phase
+delta-content-edit-same-file-list|dev|mut_delta|differs|ws-j|02-test-phase
+rolling-context-edit-flag-on|dev|mut_rolling_on|differs|ws-k|02-test-phase
+rolling-context-edit-flag-off-ambient-repo-dirty|dev|mut_rolling_off|same|ws-l|02-test-phase
+explicit-paths-beat-conflicting-planning-dir|dev|mut_env_planning_dir|same|ws-m|02-test-phase
+CASES
+}
+
+@test "cache-context follows the target repo off-root across committed changes" {
+  while IFS='|' read -r label layout mutation expect; do
+    [ -n "$label" ] || continue
+    unrelated_repo="$TEST_TEMP_DIR/unrelated-git"
+    rm -rf "$unrelated_repo"
+    setup_unrelated_git_repo "$unrelated_repo"
+
+    if [ "$layout" = flat ]; then
+      build_workspace "$TEST_TEMP_DIR/flat-$label"
+      repo_root="$WS"
+      sample_path="$WS/sample.txt"
+      cd "$repo_root" || return 1
+      init_test_repo
+      printf '# Summary\n## Files Modified\n- sample.txt\n## Deviations\n' > "$PHASE_DIR/02-01-SUMMARY.md"
+      echo 'v1' > sample.txt
+      git add -A
+      git commit -qm 'init target repo'
+    else
+      create_nested_context_workspace
+      repo_root="$NESTED_REPO_ROOT"
+      sample_path="$NESTED_WORKSPACE_ROOT/sample.txt"
+      cd "$repo_root" || return 1
+      init_test_repo
+      echo 'v1' > "$sample_path"
+      git add -A
+      git commit -qm 'init nested workspace'
+    fi
+    echo 'v2' > "$sample_path"
+    git add -A
+    git commit -qm 'update sample v2'
+
+    RUN_FROM="$unrelated_repo"
+    hash_for_role dev || { case_fail "$label" "first hash failed status=$status"; return 1; }
+    first_hash="$HASH"
+
+    cd "$repo_root" || return 1
+    if [ "$mutation" = sample ]; then
+      echo 'v3' > "$sample_path"
+    else
+      echo 'shared change' > "$repo_root/shared.txt"
+    fi
+    git add -A
+    git commit -qm 'change after first hash'
+
+    hash_for_role dev || { case_fail "$label" "second hash failed status=$status"; return 1; }
+
+    if [ "$expect" = same ]; then
+      [ "$first_hash" = "$HASH" ] || { case_fail "$label" "expected same hash, got $first_hash then $HASH"; return 1; }
+    else
+      [ "$first_hash" != "$HASH" ] || { case_fail "$label" "expected a changed hash, got $HASH twice"; return 1; }
+    fi
+  done <<'CASES'
+flat-repo-committed-content|flat|sample|differs
+nested-workspace-committed-content|nested|sample|differs
+nested-workspace-sibling-noise|nested|sibling|same
+CASES
+}
+
+@test "cache-context reports hit only when a cache file matches the hash" {
+  while IFS='|' read -r label seed expected_status; do
+    [ -n "$label" ] || continue
+    build_workspace "$TEST_TEMP_DIR/hit-$label"
+    hash_for_role dev || { case_fail "$label" "hash failed status=$status"; return 1; }
+    if [ "$seed" = yes ]; then
+      mkdir -p "$PLANNING/.cache/context"
+      echo "# cached" > "$PLANNING/.cache/context/${HASH}.md"
+    fi
+
+    hash_for_role dev || { case_fail "$label" "rerun failed status=$status"; return 1; }
+    echo "$output" | grep -q "^$expected_status " || { case_fail "$label" "expected status $expected_status"; return 1; }
+  done <<'CASES'
+no-cache-file|no|miss
+matching-cache-file|yes|hit
+CASES
+}
+
+@test "compile-context populates the cache and one index entry per role" {
+  cd "$TEST_TEMP_DIR"
+  run bash "$SCRIPTS_DIR/compile-context.sh" 02 lead .lbwc-planning/phases .lbwc-planning/phases/02-test-phase/02-01-PLAN.md
+  [ "$status" -eq 0 ]
+  run bash "$SCRIPTS_DIR/compile-context.sh" 02 dev .lbwc-planning/phases .lbwc-planning/phases/02-test-phase/02-01-PLAN.md
+  [ "$status" -eq 0 ]
+  run bash "$SCRIPTS_DIR/compile-context.sh" 02 qa .lbwc-planning/phases .lbwc-planning/phases/02-test-phase/02-01-PLAN.md
+  [ "$status" -eq 0 ]
+
+  index="$PLANNING/.cache/context-index.json"
+  [ "$(ls "$PLANNING/.cache/context/" | wc -l | tr -d ' ')" -eq 3 ]
+  [ "$(jq '.entries | keys | length' "$index")" -eq 3 ]
+
+  dev_entry=$(jq -c '.entries | to_entries[] | select(.value.role == "dev") | .value' "$index")
+  [ "$(echo "$dev_entry" | jq -r '.phase')" = "02" ]
+  [ "$(echo "$dev_entry" | jq 'has("path") and has("role") and has("phase") and has("timestamp")')" = "true" ]
+  [ -f "$(echo "$dev_entry" | jq -r '.path')" ]
+  [ -n "$(echo "$dev_entry" | jq -r '.timestamp | select(. != null)')" ]
+}
+
+@test "compile-context serves a repeat run from cache and refreshes the index timestamp" {
+  cd "$TEST_TEMP_DIR"
+  run bash "$SCRIPTS_DIR/compile-context.sh" 02 lead .lbwc-planning/phases .lbwc-planning/phases/02-test-phase/02-01-PLAN.md
+  [ "$status" -eq 0 ]
+  first_stamp=$(jq -r '.entries | to_entries[0].value.timestamp' "$PLANNING/.cache/context-index.json")
+
+  # Timestamps have one-second resolution, so the repeat run must wait to differ
+  sleep 1
+
+  run bash "$SCRIPTS_DIR/compile-context.sh" 02 lead .lbwc-planning/phases .lbwc-planning/phases/02-test-phase/02-01-PLAN.md
+  [ "$status" -eq 0 ]
+  second_stamp=$(jq -r '.entries | to_entries[0].value.timestamp' "$PLANNING/.cache/context-index.json")
+
+  grep -q "Test goal" "$PHASE_DIR/.context-lead.md"
+  [ "$first_stamp" != "$second_stamp" ]
+}
+
+@test "compile-context still compiles when the index file is corrupt" {
+  cd "$TEST_TEMP_DIR"
+  mkdir -p "$PLANNING/.cache"
+  echo "NOT VALID JSON{{{{" > "$PLANNING/.cache/context-index.json"
+
+  run bash "$SCRIPTS_DIR/compile-context.sh" 02 dev .lbwc-planning/phases .lbwc-planning/phases/02-test-phase/02-01-PLAN.md
+  [ "$status" -eq 0 ]
+  [ -f "$PHASE_DIR/.context-dev.md" ]
+}
+
+@test "compile-context includes research findings only when RESEARCH.md exists" {
+  while IFS='|' read -r label write_research expected_count; do
+    [ -n "$label" ] || continue
+    build_workspace "$TEST_TEMP_DIR/research-$label"
+    cd "$WS" || return 1
+    [ "$write_research" = yes ] && printf '## Findings\n- Test finding\n' > "$PHASE_DIR/02-RESEARCH.md"
+
+    run bash "$SCRIPTS_DIR/compile-context.sh" 02 lead .lbwc-planning/phases
+    [ "$status" -eq 0 ] || { case_fail "$label" "compile failed status=$status"; return 1; }
+    heading_count=$(grep -c "Research Findings" "$PHASE_DIR/.context-lead.md" || true)
+    finding_count=$(grep -c "Test finding" "$PHASE_DIR/.context-lead.md" || true)
+    [ "$heading_count" -eq "$expected_count" ] || { case_fail "$label" "heading count $heading_count, expected $expected_count"; return 1; }
+    [ "$finding_count" -eq "$expected_count" ] || { case_fail "$label" "finding count $finding_count, expected $expected_count"; return 1; }
+  done <<'CASES'
+with-research|yes|1
+without-research|no|0
+CASES
+}
+
+@test "compile-context lead reads the legacy Decisions heading and strips skills and todos" {
+  cd "$TEST_TEMP_DIR"
+  printf '%s\n' '# State' '' '## Decisions' '- Keep feature flags conservative' '' \
+    '### skills' '**Installed:** foo, bar' '**Suggested:** baz' '' \
+    '### Pending Todos' '- Migrate session store' > .lbwc-planning/STATE.md
+
+  run bash "$SCRIPTS_DIR/compile-context.sh" 02 lead .lbwc-planning/phases .lbwc-planning/phases/02-test-phase/02-01-PLAN.md
+  [ "$status" -eq 0 ]
+  grep -q 'Keep feature flags conservative' "$PHASE_DIR/.context-lead.md"
+  ! grep -q 'Installed:' "$PHASE_DIR/.context-lead.md"
+  ! grep -q 'Suggested:' "$PHASE_DIR/.context-lead.md"
+  ! grep -q 'Migrate session store' "$PHASE_DIR/.context-lead.md"
+}
+
+@test "compile-context explicit phase and plan beat a conflicting LBWC_PLANNING_DIR" {
   create_alternate_context_workspace
 
   cd "$TEST_TEMP_DIR" || return 1
@@ -267,396 +293,6 @@ EOF
     bash "$SCRIPTS_DIR/compile-context.sh" 02 lead .lbwc-planning/phases \
     .lbwc-planning/phases/02-test-phase/02-01-PLAN.md
   [ "$status" -eq 0 ]
-  grep -q 'Test goal' .lbwc-planning/phases/02-test-phase/.context-lead.md
-  ! grep -q 'Alternate goal' .lbwc-planning/phases/02-test-phase/.context-lead.md
-}
-
-@test "cache-context.sh: delta content hash follows target repo off-root across committed content changes" {
-  local unrelated_repo
-  unrelated_repo=$(mktemp -d "${TMPDIR:-/tmp}/lbwc-unrelated.XXXXXX")
-
-  setup_unrelated_git_repo "$unrelated_repo"
-
-  cd "$TEST_TEMP_DIR" || return 1
-  git init -q
-  git config user.name "LBWC Test"
-  git config user.email "lbwc-tests@example.com"
-
-  cat > .lbwc-planning/phases/02-test-phase/02-01-SUMMARY.md <<'EOF'
-# Summary
-## Files Modified
-- sample.txt
-## Deviations
-EOF
-
-  echo 'v1' > sample.txt
-  git add .lbwc-planning/config.json .lbwc-planning/ROADMAP.md \
-    .lbwc-planning/phases/02-test-phase/02-01-PLAN.md \
-    .lbwc-planning/phases/02-test-phase/02-01-SUMMARY.md sample.txt
-  git commit -qm 'init target repo'
-
-  echo 'v2' > sample.txt
-  git add sample.txt
-  git commit -qm 'update sample v2'
-
-  cd "$unrelated_repo" || return 1
-  run bash "$SCRIPTS_DIR/cache-context.sh" 02 dev "$TEST_TEMP_DIR/.lbwc-planning/config.json" \
-    "$TEST_TEMP_DIR/.lbwc-planning/phases/02-test-phase/02-01-PLAN.md"
-  [ "$status" -eq 0 ]
-  HASH1=$(echo "$output" | cut -d' ' -f2)
-
-  cd "$TEST_TEMP_DIR" || return 1
-  echo 'v3' > sample.txt
-  git add sample.txt
-  git commit -qm 'update sample v3'
-
-  cd "$unrelated_repo" || return 1
-  run bash "$SCRIPTS_DIR/cache-context.sh" 02 dev "$TEST_TEMP_DIR/.lbwc-planning/config.json" \
-    "$TEST_TEMP_DIR/.lbwc-planning/phases/02-test-phase/02-01-PLAN.md"
-  [ "$status" -eq 0 ]
-  HASH2=$(echo "$output" | cut -d' ' -f2)
-
-  rm -rf "$unrelated_repo"
-
-  [ "$HASH1" != "$HASH2" ]
-}
-
-@test "cache-context.sh: nested workspace committed content changes alter hash off-root" {
-  local unrelated_repo="$TEST_TEMP_DIR/unrelated-git"
-
-  create_nested_context_workspace
-
-  cd "$NESTED_REPO_ROOT" || return 1
-  git init -q
-  git config user.name "LBWC Test"
-  git config user.email "lbwc-tests@example.com"
-
-  echo 'v1' > "$NESTED_WORKSPACE_ROOT/sample.txt"
-  git add apps/proj
-  git commit -qm 'init nested workspace'
-
-  echo 'v2' > "$NESTED_WORKSPACE_ROOT/sample.txt"
-  git add apps/proj/sample.txt
-  git commit -qm 'update nested sample v2'
-
-  setup_unrelated_git_repo "$unrelated_repo"
-  cd "$unrelated_repo" || return 1
-
-  run bash "$SCRIPTS_DIR/cache-context.sh" 02 dev "$NESTED_PLANNING_DIR/config.json" "$NESTED_PLAN_PATH"
-  [ "$status" -eq 0 ]
-  HASH1=$(echo "$output" | cut -d' ' -f2)
-
-  cd "$NESTED_REPO_ROOT" || return 1
-  echo 'v3' > "$NESTED_WORKSPACE_ROOT/sample.txt"
-  git add apps/proj/sample.txt
-  git commit -qm 'update nested sample v3'
-
-  cd "$unrelated_repo" || return 1
-  run bash "$SCRIPTS_DIR/cache-context.sh" 02 dev "$NESTED_PLANNING_DIR/config.json" "$NESTED_PLAN_PATH"
-  [ "$status" -eq 0 ]
-  HASH2=$(echo "$output" | cut -d' ' -f2)
-
-  [ "$HASH1" != "$HASH2" ]
-}
-
-@test "cache-context.sh: nested workspace hash ignores sibling repo noise off-root" {
-  local unrelated_repo="$TEST_TEMP_DIR/unrelated-git"
-
-  create_nested_context_workspace
-
-  cd "$NESTED_REPO_ROOT" || return 1
-  git init -q
-  git config user.name "LBWC Test"
-  git config user.email "lbwc-tests@example.com"
-
-  echo 'v1' > "$NESTED_WORKSPACE_ROOT/sample.txt"
-  git add apps/proj
-  git commit -qm 'init nested workspace'
-
-  echo 'v2' > "$NESTED_WORKSPACE_ROOT/sample.txt"
-  git add apps/proj/sample.txt
-  git commit -qm 'update nested sample v2'
-
-  setup_unrelated_git_repo "$unrelated_repo"
-  cd "$unrelated_repo" || return 1
-
-  run bash "$SCRIPTS_DIR/cache-context.sh" 02 dev "$NESTED_PLANNING_DIR/config.json" "$NESTED_PLAN_PATH"
-  [ "$status" -eq 0 ]
-  HASH1=$(echo "$output" | cut -d' ' -f2)
-
-  cd "$NESTED_REPO_ROOT" || return 1
-  echo 'shared change' > shared.txt
-  git add shared.txt
-  git commit -qm 'update sibling noise'
-
-  cd "$unrelated_repo" || return 1
-  run bash "$SCRIPTS_DIR/cache-context.sh" 02 dev "$NESTED_PLANNING_DIR/config.json" "$NESTED_PLAN_PATH"
-  [ "$status" -eq 0 ]
-  HASH2=$(echo "$output" | cut -d' ' -f2)
-
-  [ "$HASH1" = "$HASH2" ]
-}
-
-@test "cache-context.sh: milestone context fingerprint changes hash when CONTEXT.md changes" {
-  cd "$TEST_TEMP_DIR"
-  echo "# Milestone Context v1" > .lbwc-planning/CONTEXT.md
-  run bash "$SCRIPTS_DIR/cache-context.sh" 02 dev .lbwc-planning/config.json \
-    .lbwc-planning/phases/02-test-phase/02-01-PLAN.md
-  [ "$status" -eq 0 ]
-  HASH1=$(echo "$output" | cut -d' ' -f2)
-
-  echo "# Milestone Context v2" > .lbwc-planning/CONTEXT.md
-  run bash "$SCRIPTS_DIR/cache-context.sh" 02 dev .lbwc-planning/config.json \
-    .lbwc-planning/phases/02-test-phase/02-01-PLAN.md
-  [ "$status" -eq 0 ]
-  HASH2=$(echo "$output" | cut -d' ' -f2)
-
-  [ "$HASH1" != "$HASH2" ]
-}
-
-@test "cache-context.sh: research fingerprint changes hash when phase path contains spaces" {
-  SPACE_ROOT="$TEST_TEMP_DIR/space dir"
-  mkdir -p "$SPACE_ROOT/.lbwc-planning/phases/02-test phase"
-
-  cat > "$SPACE_ROOT/.lbwc-planning/config.json" <<'EOF'
-{"v3_context_cache": true}
-EOF
-  cat > "$SPACE_ROOT/.lbwc-planning/ROADMAP.md" <<'EOF'
-# Roadmap
-## Phase 2: Test Phase
-**Goal:** Test goal
-**Success:** Tests pass
-**Reqs:** REQ-01
-EOF
-  cat > "$SPACE_ROOT/.lbwc-planning/phases/02-test phase/02-01-PLAN.md" <<'EOF'
----
-phase: 2
-plan: 1
-title: "Test Plan"
-wave: 1
-depends_on: []
-must_haves: ["test"]
----
-EOF
-  echo "## Findings
-- v1" > "$SPACE_ROOT/.lbwc-planning/phases/02-test phase/02-RESEARCH.md"
-
-  cd "$SPACE_ROOT"
-  run bash "$SCRIPTS_DIR/cache-context.sh" 02 dev .lbwc-planning/config.json \
-    ".lbwc-planning/phases/02-test phase/02-01-PLAN.md"
-  [ "$status" -eq 0 ]
-  HASH1=$(echo "$output" | cut -d' ' -f2)
-
-  echo "## Findings
-- v2" > "$SPACE_ROOT/.lbwc-planning/phases/02-test phase/02-RESEARCH.md"
-  run bash "$SCRIPTS_DIR/cache-context.sh" 02 dev .lbwc-planning/config.json \
-    ".lbwc-planning/phases/02-test phase/02-01-PLAN.md"
-  [ "$status" -eq 0 ]
-  HASH2=$(echo "$output" | cut -d' ' -f2)
-
-  [ "$HASH1" != "$HASH2" ]
-}
-
-@test "cache-context.sh: roadmap fingerprint changes hash when ROADMAP.md changes" {
-  cd "$TEST_TEMP_DIR"
-  run bash "$SCRIPTS_DIR/cache-context.sh" 02 dev .lbwc-planning/config.json \
-    .lbwc-planning/phases/02-test-phase/02-01-PLAN.md
-  [ "$status" -eq 0 ]
-  HASH1=$(echo "$output" | cut -d' ' -f2)
-
-  cat > .lbwc-planning/ROADMAP.md <<'EOF'
-# Test Roadmap
-## Phase 2: Test Phase
-**Goal:** Updated goal
-**Success:** Tests pass
-**Reqs:** REQ-01
-EOF
-
-  run bash "$SCRIPTS_DIR/cache-context.sh" 02 dev .lbwc-planning/config.json \
-    .lbwc-planning/phases/02-test-phase/02-01-PLAN.md
-  [ "$status" -eq 0 ]
-  HASH2=$(echo "$output" | cut -d' ' -f2)
-
-  [ "$HASH1" != "$HASH2" ]
-}
-
-@test "cache-context.sh: requirements fingerprint changes hash for lead role" {
-  cd "$TEST_TEMP_DIR"
-  echo "- [REQ-01] Original requirement" > .lbwc-planning/REQUIREMENTS.md
-  run bash "$SCRIPTS_DIR/cache-context.sh" 02 lead .lbwc-planning/config.json \
-    .lbwc-planning/phases/02-test-phase/02-01-PLAN.md
-  [ "$status" -eq 0 ]
-  HASH1=$(echo "$output" | cut -d' ' -f2)
-
-  echo "- [REQ-01] Updated requirement" > .lbwc-planning/REQUIREMENTS.md
-  run bash "$SCRIPTS_DIR/cache-context.sh" 02 lead .lbwc-planning/config.json \
-    .lbwc-planning/phases/02-test-phase/02-01-PLAN.md
-  [ "$status" -eq 0 ]
-  HASH2=$(echo "$output" | cut -d' ' -f2)
-
-  [ "$HASH1" != "$HASH2" ]
-}
-
-@test "cache-context.sh: state fingerprint changes hash for lead role" {
-  cd "$TEST_TEMP_DIR"
-  cat > .lbwc-planning/STATE.md <<'EOF'
-# State
-
-## Key Decisions
-| Decision | Date | Rationale |
-|----------|------|-----------|
-| Use API v1 | | |
-EOF
-
-  run bash "$SCRIPTS_DIR/cache-context.sh" 02 lead .lbwc-planning/config.json \
-    .lbwc-planning/phases/02-test-phase/02-01-PLAN.md
-  [ "$status" -eq 0 ]
-  HASH1=$(echo "$output" | cut -d' ' -f2)
-
-  cat > .lbwc-planning/STATE.md <<'EOF'
-# State
-
-## Key Decisions
-| Decision | Date | Rationale |
-|----------|------|-----------|
-| Use API v2 | | |
-EOF
-
-  run bash "$SCRIPTS_DIR/cache-context.sh" 02 lead .lbwc-planning/config.json \
-    .lbwc-planning/phases/02-test-phase/02-01-PLAN.md
-  [ "$status" -eq 0 ]
-  HASH2=$(echo "$output" | cut -d' ' -f2)
-
-  [ "$HASH1" != "$HASH2" ]
-}
-
-@test "compile-context.sh: lead reads legacy Decisions heading for Active Decisions" {
-  cd "$TEST_TEMP_DIR"
-  cat > .lbwc-planning/STATE.md <<'EOF'
-# State
-
-## Decisions
-- Keep feature flags conservative
-EOF
-
-  run bash "$SCRIPTS_DIR/compile-context.sh" 02 lead .lbwc-planning/phases .lbwc-planning/phases/02-test-phase/02-01-PLAN.md
-  [ "$status" -eq 0 ]
-  grep -q 'Keep feature flags conservative' .lbwc-planning/phases/02-test-phase/.context-lead.md
-}
-
-@test "compile-context.sh: lead active decisions strips legacy skills and pending todos" {
-  cd "$TEST_TEMP_DIR"
-  cat > .lbwc-planning/STATE.md <<'EOF'
-# State
-
-## Decisions
-- Keep feature flags conservative
-
-### skills   
-**Installed:** foo, bar
-**Suggested:** baz
-
-### Pending Todos
-- Migrate session store
-EOF
-
-  run bash "$SCRIPTS_DIR/compile-context.sh" 02 lead .lbwc-planning/phases .lbwc-planning/phases/02-test-phase/02-01-PLAN.md
-  [ "$status" -eq 0 ]
-  grep -q 'Keep feature flags conservative' .lbwc-planning/phases/02-test-phase/.context-lead.md
-  ! grep -q 'Installed:' .lbwc-planning/phases/02-test-phase/.context-lead.md
-  ! grep -q 'Suggested:' .lbwc-planning/phases/02-test-phase/.context-lead.md
-  ! grep -q 'Migrate session store' .lbwc-planning/phases/02-test-phase/.context-lead.md
-}
-
-@test "cache-context.sh: conventions fingerprint changes hash for dev role" {
-  cd "$TEST_TEMP_DIR"
-  cat > .lbwc-planning/conventions.json <<'EOF'
-{"conventions":[{"tag":"STYLE","rule":"Use v1"}]}
-EOF
-
-  run bash "$SCRIPTS_DIR/cache-context.sh" 02 dev .lbwc-planning/config.json \
-    .lbwc-planning/phases/02-test-phase/02-01-PLAN.md
-  [ "$status" -eq 0 ]
-  HASH1=$(echo "$output" | cut -d' ' -f2)
-
-  cat > .lbwc-planning/conventions.json <<'EOF'
-{"conventions":[{"tag":"STYLE","rule":"Use v2"}]}
-EOF
-
-  run bash "$SCRIPTS_DIR/cache-context.sh" 02 dev .lbwc-planning/config.json \
-    .lbwc-planning/phases/02-test-phase/02-01-PLAN.md
-  [ "$status" -eq 0 ]
-  HASH2=$(echo "$output" | cut -d' ' -f2)
-
-  [ "$HASH1" != "$HASH2" ]
-}
-
-@test "cache-context.sh: scout conventions fingerprint changes hash" {
-  cd "$TEST_TEMP_DIR"
-  cat > .lbwc-planning/conventions.json <<'EOF'
-{"conventions":[{"tag":"STYLE","rule":"Scout v1"}]}
-EOF
-
-  run bash "$SCRIPTS_DIR/cache-context.sh" 02 scout .lbwc-planning/config.json \
-    .lbwc-planning/phases/02-test-phase/02-01-PLAN.md
-  [ "$status" -eq 0 ]
-  HASH1=$(echo "$output" | cut -d' ' -f2)
-
-  cat > .lbwc-planning/conventions.json <<'EOF'
-{"conventions":[{"tag":"STYLE","rule":"Scout v2"}]}
-EOF
-
-  run bash "$SCRIPTS_DIR/cache-context.sh" 02 scout .lbwc-planning/config.json \
-    .lbwc-planning/phases/02-test-phase/02-01-PLAN.md
-  [ "$status" -eq 0 ]
-  HASH2=$(echo "$output" | cut -d' ' -f2)
-
-  [ "$HASH1" != "$HASH2" ]
-}
-
-@test "cache-context.sh: research fingerprint changes hash for dev role" {
-  cd "$TEST_TEMP_DIR"
-  cat > .lbwc-planning/phases/02-test-phase/02-RESEARCH.md <<'EOF'
-## Findings
-- Initial research
-EOF
-
-  run bash "$SCRIPTS_DIR/cache-context.sh" 02 dev .lbwc-planning/config.json \
-    .lbwc-planning/phases/02-test-phase/02-01-PLAN.md
-  [ "$status" -eq 0 ]
-  HASH1=$(echo "$output" | cut -d' ' -f2)
-
-  cat > .lbwc-planning/phases/02-test-phase/02-RESEARCH.md <<'EOF'
-## Findings
-- Updated research
-EOF
-
-  run bash "$SCRIPTS_DIR/cache-context.sh" 02 dev .lbwc-planning/config.json \
-    .lbwc-planning/phases/02-test-phase/02-01-PLAN.md
-  [ "$status" -eq 0 ]
-  HASH2=$(echo "$output" | cut -d' ' -f2)
-
-  [ "$HASH1" != "$HASH2" ]
-}
-
-@test "cache-context.sh: delta content fingerprint changes hash when file content changes but file list stays same" {
-  cd "$TEST_TEMP_DIR"
-  cat > .lbwc-planning/phases/02-test-phase/02-01-SUMMARY.md <<'EOF'
-## Files Modified
-- sample.txt
-EOF
-  echo 'v1' > sample.txt
-
-  run bash "$SCRIPTS_DIR/cache-context.sh" 02 dev .lbwc-planning/config.json \
-    .lbwc-planning/phases/02-test-phase/02-01-PLAN.md
-  [ "$status" -eq 0 ]
-  HASH1=$(echo "$output" | cut -d' ' -f2)
-
-  echo 'v2' > sample.txt
-  run bash "$SCRIPTS_DIR/cache-context.sh" 02 dev .lbwc-planning/config.json \
-    .lbwc-planning/phases/02-test-phase/02-01-PLAN.md
-  [ "$status" -eq 0 ]
-  HASH2=$(echo "$output" | cut -d' ' -f2)
-
-  [ "$HASH1" != "$HASH2" ]
+  grep -q 'Test goal' "$PHASE_DIR/.context-lead.md"
+  ! grep -q 'Alternate goal' "$PHASE_DIR/.context-lead.md"
 }
