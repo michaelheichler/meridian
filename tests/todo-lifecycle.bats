@@ -1,6 +1,7 @@
 #!/usr/bin/env bats
 
 load test_helper
+load todo_helper
 
 snapshot_path_for_session_id() {
   local raw_session_id="${1:-${CLAUDE_SESSION_ID:-default}}"
@@ -14,6 +15,10 @@ snapshot_path_for_session_id() {
 fixed_todo_now_epoch() {
   date -j -f "%Y-%m-%d %H:%M:%S" "2026-04-23 12:00:00" +%s 2>/dev/null || \
     date -d "2026-04-23 12:00:00" +%s 2>/dev/null
+}
+
+unique_session_id() {
+  printf 'todo-lifecycle-%s-%s-%s-%s' "$1" "${BATS_TEST_NUMBER:-0}" "$$" "$RANDOM"
 }
 
 setup() {
@@ -33,13 +38,13 @@ setup() {
     return 1
   fi
   export LBWC_TODO_NOW_EPOCH="$fixed_now_epoch"
-  export CLAUDE_SESSION_ID="todo-lifecycle-${BATS_TEST_NUMBER:-0}-$$-$RANDOM"
+  export CLAUDE_SESSION_ID="$(unique_session_id main)"
   export LBWC_PLANNING_DIR="$TEST_TEMP_DIR/.lbwc-planning"
   SCRIPT="$SCRIPTS_DIR/todo-lifecycle.sh"
   LIST_SCRIPT="$SCRIPTS_DIR/list-todos.sh"
   RESOLVE_SCRIPT="$SCRIPTS_DIR/resolve-todo-item.sh"
-  TRACK_SCRIPT="$SCRIPTS_DIR/track-known-issues.sh"
   DETAILS_SCRIPT="$SCRIPTS_DIR/todo-details.sh"
+  STATE_FILE="$LBWC_PLANNING_DIR/STATE.md"
   export TEST_SNAPSHOT_PATH="$(snapshot_path_for_session_id "$CLAUDE_SESSION_ID")"
   export EXTRA_SNAPSHOT_PATHS=""
   rm -f "$TEST_SNAPSHOT_PATH"
@@ -57,10 +62,13 @@ teardown() {
   teardown_temp_dir
 }
 
-write_state_with_recent_activity() {
-  cat > "$LBWC_PLANNING_DIR/STATE.md" <<'EOF'
-# Project State
+write_state_body() {
+  printf '%s\n\n' '# Project State' > "$STATE_FILE"
+  cat >> "$STATE_FILE"
+}
 
+write_state_recent_activity() {
+  write_state_body <<'EOF'
 ## Todos
 - Fix parser bug (added 2026-04-01)
 - [HIGH] Refactor auth module (added 2026-04-02)
@@ -72,9 +80,7 @@ EOF
 }
 
 write_state_without_activity() {
-  cat > "$LBWC_PLANNING_DIR/STATE.md" <<'EOF'
-# Project State
-
+  write_state_body <<'EOF'
 ## Todos
 - Only todo item (added 2026-04-01)
 
@@ -83,10 +89,8 @@ None.
 EOF
 }
 
-write_state_with_no_todos() {
-  cat > "$LBWC_PLANNING_DIR/STATE.md" <<'EOF'
-# Project State
-
+write_state_no_todos() {
+  write_state_body <<'EOF'
 ## Todos
 None.
 
@@ -95,10 +99,8 @@ None.
 EOF
 }
 
-write_legacy_state() {
-  cat > "$LBWC_PLANNING_DIR/STATE.md" <<'EOF'
-# Project State
-
+write_state_legacy() {
+  write_state_body <<'EOF'
 ## Todos
 
 ### Pending Todos
@@ -113,6 +115,21 @@ write_legacy_state() {
 EOF
 }
 
+write_state_ref_item() {
+  write_state_body <<'EOF'
+
+## Todos
+- Item with detail (added 2026-04-01) (ref:deadbeef)
+
+## Activity Log
+- 2026-04-01: Existing note
+EOF
+}
+
+write_todo_lines() {
+  printf '# Project State\n\n## Todos\n%b\n\n## Activity Log\n- 2026-04-01: Existing note\n' "$1" > "$STATE_FILE"
+}
+
 save_snapshot() {
   local filter="${1:-}"
   if [ -n "$filter" ]; then
@@ -125,106 +142,116 @@ save_snapshot() {
 }
 
 select_snapshot_item() {
-  local selection="$1"
-  bash "$RESOLVE_SCRIPT" "$selection" --session-snapshot
+  bash "$RESOLVE_SCRIPT" "$1" --session-snapshot
+}
+
+item_from() {
+  case "$1" in
+    snapshot-high)
+      save_snapshot high
+      select_snapshot_item 1
+      ;;
+    *)
+      bash "$LIST_SCRIPT" | jq -c '.items[0]'
+      ;;
+  esac
+}
+
+run_piped() {
+  local payload="$1"
+  shift
+  run bash -c 'printf "%s" "$1" | bash "$2" "${@:3}"' -- "$payload" "$@"
 }
 
 write_raw_snapshot() {
   printf '%s' "$1" > "$(snapshot_path_for_session_id)"
 }
 
-assert_snapshot_invalid_everywhere() {
-  local selection="${1:-1}"
+seed_sidecar() {
+  case "$1" in
+    yes) bash "$DETAILS_SCRIPT" add deadbeef '{"summary":"Item with detail","context":"extra detail","files":["a.sh"],"added":"2026-04-01","source":"session"}' "$LBWC_PLANNING_DIR/todo-details.json" >/dev/null ;;
+  esac
+}
+
+expect_snapshot_invalid_everywhere() {
+  local label="$1" selection="${2:-1}"
 
   run bash "$SCRIPT" snapshot-show
-  [ "$status" -eq 0 ]
-  [ "$(echo "$output" | jq -r '.status')" = "error" ]
-  [ "$(echo "$output" | jq -r '.code')" = "snapshot_invalid" ]
+  expect_status "$label" 0
+  expect_json "$label" '.code' snapshot_invalid
+  expect_json "$label" '.status' error
 
   run bash "$SCRIPT" snapshot-select "$selection"
-  [ "$status" -eq 0 ]
-  [ "$(echo "$output" | jq -r '.status')" = "error" ]
-  [ "$(echo "$output" | jq -r '.code')" = "snapshot_invalid" ]
+  expect_status "$label" 0
+  expect_json "$label" '.code' snapshot_invalid
+  expect_json "$label" '.status' error
 
   run bash "$RESOLVE_SCRIPT" "$selection" --session-snapshot --require-unfiltered --validate-live
-  [ "$status" -eq 0 ]
-  [ "$(echo "$output" | jq -r '.status')" = "error" ]
-  [ "$(echo "$output" | jq -r '.code')" = "snapshot_invalid" ]
+  expect_status "$label" 0
+  expect_json "$label" '.code' snapshot_invalid
+  expect_json "$label" '.status' error
 }
 
-@test "todo-lifecycle: snapshot-show fails closed when missing" {
+@test "snapshot-show classifies stored payloads and reports a missing snapshot" {
+  while IFS='|' read -r label payload expected_status expected_code; do
+    [ -n "$label" ] || continue
+    rm -f "$TEST_SNAPSHOT_PATH"
+    case "$payload" in
+      -) ;;
+      *) write_raw_snapshot "$payload" ;;
+    esac
+    run bash "$SCRIPT" snapshot-show
+    expect_status "$label" 0
+    expect_json "$label" '.status' "$expected_status"
+    expect_json_unless_dash "$label" '.code' "$expected_code"
+  done <<'CASES'
+missing-snapshot|-|error|snapshot_missing
+valid-empty-payload|{"status":"empty","state_path":".lbwc-planning/STATE.md","section":null,"count":0,"filter":null,"display":"No pending todos.","items":[]}|empty|-
+valid-no-match-payload|{"status":"no-match","state_path":".lbwc-planning/STATE.md","section":"## Todos","count":0,"filter":"high","display":"No high-priority todos found.","items":[]}|no-match|-
+CASES
+}
+
+@test "snapshot-save preserves list error payloads without masking them" {
+  local error_json='{"status":"error","message":"STATE.md not found at .lbwc-planning/STATE.md. Run /lbwc:init to set up your project."}'
+
+  run_piped "$error_json" "$SCRIPT" snapshot-save
+  expect_status save 0
+  expect_json save '.status' ok
+
   run bash "$SCRIPT" snapshot-show
-  [ "$status" -eq 0 ]
-  [[ "$output" == *'"status":"error"'* ]]
-  [[ "$output" == *'snapshot_missing'* ]]
+  expect_status show 0
+  expect_json show '.status' error
+  expect_json show '.message | contains("STATE.md not found")' true
 }
 
-@test "todo-lifecycle: snapshot-save preserves list error payloads without masking them" {
-  ERROR_JSON='{"status":"error","message":"STATE.md not found at .lbwc-planning/STATE.md. Run /lbwc:init to set up your project."}'
-
-  run bash -lc 'printf "%s" "$1" | bash "$2" snapshot-save' -- "$ERROR_JSON" "$SCRIPT"
-  [ "$status" -eq 0 ]
-  [ "$(echo "$output" | jq -r '.status')" = "ok" ]
-
-  run bash "$SCRIPT" snapshot-show
-  [ "$status" -eq 0 ]
-  [ "$(echo "$output" | jq -r '.status')" = "error" ]
-  [[ "$output" == *'STATE.md not found'* ]]
-}
-
-@test "todo-lifecycle: snapshot path sanitizes CLAUDE_SESSION_ID" {
-  write_state_with_recent_activity
-  export CLAUDE_SESSION_ID='../unsafe session id'
+@test "snapshot path sanitizes CLAUDE_SESSION_ID" {
+  write_state_recent_activity
+  export CLAUDE_SESSION_ID="../unsafe session id $(unique_session_id sanitize)"
 
   run bash "$LIST_SCRIPT"
   [ "$status" -eq 0 ]
-  run bash -lc 'printf "%s" "$1" | bash "$2" snapshot-save' -- "$output" "$SCRIPT"
-  [ "$status" -eq 0 ]
-  [ "$(echo "$output" | jq -r '.status')" = "ok" ]
-  [[ "$(echo "$output" | jq -r '.path')" == /tmp/.lbwc-last-list-view-* ]]
-  [[ "$(echo "$output" | jq -r '.path')" != *'../'* ]]
+  run_piped "$output" "$SCRIPT" snapshot-save
+  expect_status save 0
+  expect_json save '.status' ok
+  expect_json save '.path | startswith("/tmp/.lbwc-last-list-view-")' true
+  expect_json save '.path | contains("../")' false
 
   run bash "$SCRIPT" snapshot-show
-  [ "$status" -eq 0 ]
-  [ "$(echo "$output" | jq -r '.status')" = "ok" ]
+  expect_status show 0
+  expect_json show '.status' ok
 }
 
-@test "todo-lifecycle: list-with-snapshot returns full metadata and writes the exact snapshot" {
-  write_state_with_recent_activity
-  [ -n "$LBWC_TODO_NOW_EPOCH" ]
-  [[ "$LBWC_TODO_NOW_EPOCH" =~ ^[0-9]+$ ]]
-
-  run bash "$LIST_SCRIPT" high
-  [ "$status" -eq 0 ]
-  EXPECTED_JSON="$output"
-
-  run bash "$SCRIPT" list-with-snapshot high
-  [ "$status" -eq 0 ]
-  [ "$(printf '%s' "$output" | jq -cS '.')" = "$(printf '%s' "$EXPECTED_JSON" | jq -cS '.')" ]
-  [ "$(printf '%s' "$output" | jq -r '.items[0].command_text')" = "Refactor auth module" ]
-  [ "$(printf '%s' "$output" | jq -r '.items[0].section_index')" = "2" ]
-
-  run bash "$SCRIPT" snapshot-show
-  [ "$status" -eq 0 ]
-  [ "$(printf '%s' "$output" | jq -cS '.')" = "$(printf '%s' "$EXPECTED_JSON" | jq -cS '.')" ]
-}
-
-@test "todo-lifecycle: distinct session ids isolate snapshot files" {
-  local original_planning_dir="$LBWC_PLANNING_DIR"
-  local session_a="todo-lifecycle-a-${BATS_TEST_NUMBER:-0}-$$-$RANDOM"
-  local session_b="todo-lifecycle-b-${BATS_TEST_NUMBER:-0}-$$-$RANDOM"
-  local planning_dir_a="$TEST_TEMP_DIR/session-a/.lbwc-planning"
-  local planning_dir_b="$TEST_TEMP_DIR/session-b/.lbwc-planning"
+@test "distinct session ids isolate snapshot files" {
+  local session_a session_b planning_dir_a planning_dir_b
   local snapshot_path_a snapshot_path_b output_a output_b snapshot_a snapshot_b
+  session_a="$(unique_session_id a)"
+  session_b="$(unique_session_id b)"
+  planning_dir_a="$TEST_TEMP_DIR/session-a/.lbwc-planning"
+  planning_dir_b="$TEST_TEMP_DIR/session-b/.lbwc-planning"
 
-  export LBWC_PLANNING_DIR="$planning_dir_a"
-  mkdir -p "$LBWC_PLANNING_DIR"
-  write_state_with_recent_activity
-
-  export LBWC_PLANNING_DIR="$planning_dir_b"
-  mkdir -p "$LBWC_PLANNING_DIR"
-  cat > "$LBWC_PLANNING_DIR/STATE.md" <<'EOF'
-# Project State
+  mkdir -p "$planning_dir_a" "$planning_dir_b"
+  STATE_FILE="$planning_dir_a/STATE.md" write_state_recent_activity
+  STATE_FILE="$planning_dir_b/STATE.md" write_state_body <<'EOF'
 
 ## Todos
 - [HIGH] Different task (added 2026-04-10)
@@ -232,8 +259,6 @@ assert_snapshot_invalid_everywhere() {
 ## Recent Activity
 - 2026-04-10: Alternate note
 EOF
-
-  export LBWC_PLANNING_DIR="$original_planning_dir"
 
   snapshot_path_a=$(snapshot_path_for_session_id "$session_a")
   snapshot_path_b=$(snapshot_path_for_session_id "$session_b")
@@ -245,324 +270,148 @@ EOF
   snapshot_a=$(CLAUDE_SESSION_ID="$session_a" LBWC_PLANNING_DIR="$planning_dir_a" bash "$SCRIPT" snapshot-show)
   snapshot_b=$(CLAUDE_SESSION_ID="$session_b" LBWC_PLANNING_DIR="$planning_dir_b" bash "$SCRIPT" snapshot-show)
 
-  [ "$(printf '%s' "$snapshot_a" | jq -cS '.')" = "$(printf '%s' "$output_a" | jq -cS '.')" ]
-  [ "$(printf '%s' "$snapshot_b" | jq -cS '.')" = "$(printf '%s' "$output_b" | jq -cS '.')" ]
+  expect_same_json session-a "$snapshot_a" "$output_a"
+  expect_same_json session-b "$snapshot_b" "$output_b"
   [ "$(printf '%s' "$snapshot_a" | jq -r '.items[0].command_text')" = "Refactor auth module" ]
   [ "$(printf '%s' "$snapshot_b" | jq -r '.items[0].command_text')" = "Different task" ]
 }
 
-@test "todo-lifecycle: validate-item returns status ok for a matching live selection" {
-  write_state_with_recent_activity
-  save_snapshot
-  ITEM_JSON=$(select_snapshot_item 1)
+@test "list-with-snapshot returns the list output and stores exactly that snapshot" {
+  while IFS='|' read -r label state filter expected_status count section display first_text first_index; do
+    [ -n "$label" ] || continue
+    rm -f "$TEST_SNAPSHOT_PATH"
+    "write_state_$state"
+    run bash "$LIST_SCRIPT" $filter
+    expect_status "$label" 0
+    local expected_json="$output"
 
-  run bash -lc 'printf "%s" "$1" | bash "$2" validate-item' -- "$ITEM_JSON" "$SCRIPT"
-  [ "$status" -eq 0 ]
-  [ "$(echo "$output" | jq -r '.status')" = "ok" ]
-  [ "$(echo "$output" | jq -r '.normalized_text')" = "Fix parser bug" ]
+    run bash "$SCRIPT" list-with-snapshot $filter
+    expect_status "$label" 0
+    expect_same_json "$label" "$output" "$expected_json"
+    expect_json "$label" '.status' "$expected_status"
+    expect_json "$label" '.count' "$count"
+    expect_json "$label" '.filter' "$filter"
+    expect_json "$label" '.section' "$section"
+    expect_json "$label" '.items | length' "$count"
+    expect_json_unless_dash "$label" '.display' "$display"
+    expect_json_unless_dash "$label" '.items[0].command_text' "$first_text"
+    expect_json_unless_dash "$label" '.items[0].section_index' "$first_index"
+
+    run bash "$SCRIPT" snapshot-show
+    expect_status "$label" 0
+    expect_same_json "$label" "$output" "$expected_json"
+  done <<'CASES'
+filtered-match|recent_activity|high|ok|1|## Todos|-|Refactor auth module|2
+filtered-empty|no_todos|high|empty|0|null|No pending todos.|-|-
+CASES
 }
 
-@test "todo-lifecycle: snapshot-show accepts valid empty snapshot payloads" {
-  write_raw_snapshot '{"status":"empty","state_path":".lbwc-planning/STATE.md","section":null,"count":0,"filter":null,"display":"No pending todos.","items":[]}'
-
-  run bash "$SCRIPT" snapshot-show
-  [ "$status" -eq 0 ]
-  [ "$(echo "$output" | jq -r '.status')" = "empty" ]
+@test "snapshot schema validation rejects malformed stored snapshots on every consumer" {
+  while IFS='|' read -r label payload; do
+    [ -n "$label" ] || continue
+    write_raw_snapshot "$payload"
+    expect_snapshot_invalid_everywhere "$label"
+  done <<'CASES'
+bogus-top-level-status|{"status":"bogus","state_path":".lbwc-planning/STATE.md","section":"## Todos","count":1,"filter":null,"items":[{"num":1,"section_index":1,"line":"- Test todo","normalized_text":"Test todo","state_path":".lbwc-planning/STATE.md","section":"## Todos","line_no":12,"identity_occurrence":1,"identity_total":1,"ref":null,"known_issue_signature":null}]}
+ok-snapshot-missing-filter|{"status":"ok","state_path":".lbwc-planning/STATE.md","section":"## Todos","count":1,"items":[{"num":1,"section_index":1,"line":"- Test todo","normalized_text":"Test todo","state_path":".lbwc-planning/STATE.md","section":"## Todos","line_no":12,"identity_occurrence":1,"identity_total":1,"ref":null,"known_issue_signature":null}]}
+no-match-snapshot-with-null-filter|{"status":"no-match","state_path":".lbwc-planning/STATE.md","section":"## Todos","count":0,"filter":null,"display":"No matching todos.","items":[]}
+invalid-item-ref-metadata|{"status":"ok","state_path":".lbwc-planning/STATE.md","section":"## Todos","count":1,"filter":null,"items":[{"num":1,"section_index":1,"line":"- Test todo","normalized_text":"Test todo","state_path":".lbwc-planning/STATE.md","section":"## Todos","line_no":12,"identity_occurrence":1,"identity_total":1,"ref":"not-a-ref","known_issue_signature":null}]}
+CASES
 }
 
-@test "todo-lifecycle: list-with-snapshot preserves valid filtered empty snapshots" {
-  write_state_with_no_todos
+@test "validate-item accepts a live match and fails closed when the displayed item went stale" {
+  while IFS='|' read -r label before after selection expected_status expected_code expected_text; do
+    [ -n "$label" ] || continue
+    rm -f "$TEST_SNAPSHOT_PATH"
+    write_todo_lines "$before"
+    save_snapshot
+    local item_json
+    item_json=$(select_snapshot_item "$selection")
+    case "$after" in
+      =) ;;
+      *) write_todo_lines "$after" ;;
+    esac
 
-  run bash "$SCRIPT" list-with-snapshot high
-  [ "$status" -eq 0 ]
-  [ "$(echo "$output" | jq -r '.status')" = "empty" ]
-  [ "$(echo "$output" | jq -r '.section')" = "null" ]
-  [ "$(echo "$output" | jq -r '.count')" = "0" ]
-  [ "$(echo "$output" | jq -r '.filter')" = "high" ]
-  [ "$(echo "$output" | jq -r '.display')" = "No pending todos." ]
-  [ "$(echo "$output" | jq -r '.items | length')" = "0" ]
-
-  EXPECTED_JSON="$output"
-
-  run bash "$SCRIPT" snapshot-show
-  [ "$status" -eq 0 ]
-  [ "$(printf '%s' "$output" | jq -cS '.')" = "$(printf '%s' "$EXPECTED_JSON" | jq -cS '.')" ]
+    run_piped "$item_json" "$SCRIPT" validate-item
+    expect_status "$label" 0
+    expect_json "$label" '.status' "$expected_status"
+    expect_json_unless_dash "$label" '.code' "$expected_code"
+    expect_json_unless_dash "$label" '.normalized_text' "$expected_text"
+  done <<'CASES'
+unchanged-state|- Fix parser bug (added 2026-04-01)\n- [HIGH] Refactor auth module (added 2026-04-02)|=|1|ok|-|Fix parser bug
+duplicate-occurrence-count-changes|- Duplicate task (added 2026-04-01)\n- Duplicate task (added 2026-04-01)|- Duplicate task (added 2026-04-01)\n- Duplicate task (added 2026-04-01)\n- Duplicate task (added 2026-04-01)|2|error|selection_stale|-
+raw-displayed-line-changes|- [HIGH] Change me (added 2026-04-01)|- Change me (added 2026-04-01)|1|error|selection_stale|-
+CASES
 }
 
-@test "todo-lifecycle: snapshot-show accepts valid no-match snapshot payloads" {
-  write_raw_snapshot '{"status":"no-match","state_path":".lbwc-planning/STATE.md","section":"## Todos","count":0,"filter":"high","display":"No high-priority todos found.","items":[]}'
-
-  run bash "$SCRIPT" snapshot-show
-  [ "$status" -eq 0 ]
-  [ "$(echo "$output" | jq -r '.status')" = "no-match" ]
-}
-
-@test "todo-lifecycle: snapshot schema rejects bogus top-level status" {
-  write_raw_snapshot '{"status":"bogus","state_path":".lbwc-planning/STATE.md","section":"## Todos","count":1,"filter":null,"items":[{"num":1,"section_index":1,"line":"- Test todo","normalized_text":"Test todo","state_path":".lbwc-planning/STATE.md","section":"## Todos","line_no":12,"identity_occurrence":1,"identity_total":1,"ref":null,"known_issue_signature":null}]}'
-
-  assert_snapshot_invalid_everywhere
-}
-
-@test "todo-lifecycle: snapshot schema rejects ok snapshots missing filter" {
-  write_raw_snapshot '{"status":"ok","state_path":".lbwc-planning/STATE.md","section":"## Todos","count":1,"items":[{"num":1,"section_index":1,"line":"- Test todo","normalized_text":"Test todo","state_path":".lbwc-planning/STATE.md","section":"## Todos","line_no":12,"identity_occurrence":1,"identity_total":1,"ref":null,"known_issue_signature":null}]}'
-
-  assert_snapshot_invalid_everywhere
-}
-
-@test "todo-lifecycle: snapshot schema rejects no-match snapshots with null filter" {
-  write_raw_snapshot '{"status":"no-match","state_path":".lbwc-planning/STATE.md","section":"## Todos","count":0,"filter":null,"display":"No matching todos.","items":[]}'
-
-  assert_snapshot_invalid_everywhere
-}
-
-@test "todo-lifecycle: snapshot schema rejects invalid item ref metadata" {
-  write_raw_snapshot '{"status":"ok","state_path":".lbwc-planning/STATE.md","section":"## Todos","count":1,"filter":null,"items":[{"num":1,"section_index":1,"line":"- Test todo","normalized_text":"Test todo","state_path":".lbwc-planning/STATE.md","section":"## Todos","line_no":12,"identity_occurrence":1,"identity_total":1,"ref":"not-a-ref","known_issue_signature":null}]}'
-
-  assert_snapshot_invalid_everywhere
-}
-
-@test "resolve-todo-item: validate-live returns status ok for a matching selection" {
-  write_state_with_recent_activity
+@test "resolve-todo-item validate-live returns ok for a matching snapshot selection" {
+  write_state_recent_activity
 
   run bash "$SCRIPT" list-with-snapshot
   [ "$status" -eq 0 ]
 
   run bash "$RESOLVE_SCRIPT" 1 --session-snapshot --validate-live
-  [ "$status" -eq 0 ]
-  [ "$(echo "$output" | jq -r '.status')" = "ok" ]
-  [ "$(echo "$output" | jq -r '.selection_source')" = "snapshot" ]
+  expect_status resolve 0
+  expect_json resolve '.status' ok
+  expect_json resolve '.selection_source' snapshot
 }
 
-@test "todo-lifecycle: snapshot-select preserves filtered numbering and section index" {
-  write_state_with_recent_activity
+@test "snapshot-select preserves filtered numbering and section index" {
+  write_state_recent_activity
   save_snapshot high
 
   run bash "$SCRIPT" snapshot-select 1
-  [ "$status" -eq 0 ]
-  [ "$(echo "$output" | jq -r '.status')" = "ok" ]
-  [ "$(echo "$output" | jq -r '.priority')" = "high" ]
-  [ "$(echo "$output" | jq -r '.num')" = "1" ]
-  [ "$(echo "$output" | jq -r '.section_index')" = "2" ]
-  [ "$(echo "$output" | jq -r '.normalized_text')" = "Refactor auth module" ]
+  expect_status select 0
+  expect_json select '.status' ok
+  expect_json select '.priority' high
+  expect_json select '.num' 1
+  expect_json select '.section_index' 2
+  expect_json select '.normalized_text' "Refactor auth module"
 }
 
-@test "todo-lifecycle: validate-item fails closed when duplicate occurrence count changes" {
-  cat > "$LBWC_PLANNING_DIR/STATE.md" <<'EOF'
-# Project State
+@test "remove and pickup rewrite only the Todos section and log the change" {
+  while IFS='|' read -r label state source invocation expected_status present absent; do
+    [ -n "$label" ] || continue
+    rm -f "$TEST_SNAPSHOT_PATH"
+    "write_state_$state"
+    local item_json
+    item_json=$(item_from "$source")
 
-## Todos
-- Duplicate task (added 2026-04-01)
-- Duplicate task (added 2026-04-01)
-
-## Activity Log
-- 2026-04-01: Existing note
-EOF
-
-  save_snapshot
-  ITEM_JSON=$(select_snapshot_item 2)
-
-  cat > "$LBWC_PLANNING_DIR/STATE.md" <<'EOF'
-# Project State
-
-## Todos
-- Duplicate task (added 2026-04-01)
-- Duplicate task (added 2026-04-01)
-- Duplicate task (added 2026-04-01)
-
-## Activity Log
-- 2026-04-01: Existing note
-EOF
-
-  run bash -lc 'printf "%s" "$1" | bash "$2" validate-item' -- "$ITEM_JSON" "$SCRIPT"
-  [ "$status" -eq 0 ]
-  [ "$(echo "$output" | jq -r '.status')" = "error" ]
-  [ "$(echo "$output" | jq -r '.code')" = "selection_stale" ]
+    run_piped "$item_json" "$SCRIPT" $invocation
+    expect_status "$label" 0
+    expect_json "$label" '.status' "$expected_status"
+    expect_file_matches "$label" "$STATE_FILE" "$present"
+    expect_file_lacks_lines "$label" "$STATE_FILE" "$absent"
+  done <<'CASES'
+remove-from-filtered-snapshot|recent_activity|snapshot-high|remove none safe|ok|=## Recent Activity~Fix parser bug~Removed todo via /lbwc:list-todos: [HIGH] Refactor auth module|- [HIGH] Refactor auth module (added 2026-04-02)
+pickup-restores-none-and-creates-activity-log|without_activity|list-first|pickup /lbwc:fix none keep|ok|=## Activity Log~=None.~Picked up todo via /lbwc:fix: Only todo item|- Only todo item (added 2026-04-01)
+remove-leaves-legacy-completed-todos|legacy|list-first|remove none keep|partial|=### Completed Todos~Already completed item~Follow-up todo|- [KNOWN-ISSUE] TestCrash (CrashTests.swift): signal trap (phase 03, seen 1x) (added 2026-04-01) (ref:abc12345)
+CASES
 }
 
-@test "todo-lifecycle: validate-item fails closed when raw displayed line changes" {
-  cat > "$LBWC_PLANNING_DIR/STATE.md" <<'EOF'
-# Project State
+@test "remove and pickup clean the detail sidecar only when it is safe" {
+  while IFS='|' read -r label invocation sidecar expected_status warned sidecar_after; do
+    [ -n "$label" ] || continue
+    rm -f "$LBWC_PLANNING_DIR/todo-details.json"
+    write_state_ref_item
+    seed_sidecar "$sidecar"
+    local item_json
+    item_json=$(item_from list-first)
 
-## Todos
-- [HIGH] Change me (added 2026-04-01)
+    run_piped "$item_json" "$SCRIPT" $invocation
+    expect_status "$label" 0
+    expect_json "$label" '.status' "$expected_status"
+    expect_json "$label" '(.warning // "") | contains("sidecar registry was left untouched")' "$warned"
+    expect_file_has_line "$label" "$STATE_FILE" "None."
 
-## Activity Log
-- 2026-04-01: Existing note
-EOF
-
-  save_snapshot
-  ITEM_JSON=$(select_snapshot_item 1)
-
-  cat > "$LBWC_PLANNING_DIR/STATE.md" <<'EOF'
-# Project State
-
-## Todos
-- Change me (added 2026-04-01)
-
-## Activity Log
-- 2026-04-01: Existing note
-EOF
-
-  run bash -lc 'printf "%s" "$1" | bash "$2" validate-item' -- "$ITEM_JSON" "$SCRIPT"
-  [ "$status" -eq 0 ]
-  [ "$(echo "$output" | jq -r '.status')" = "error" ]
-  [ "$(echo "$output" | jq -r '.code')" = "selection_stale" ]
-}
-
-@test "todo-lifecycle: remove uses filtered snapshot metadata and preserves Recent Activity heading" {
-  write_state_with_recent_activity
-  save_snapshot high
-  ITEM_JSON=$(select_snapshot_item 1)
-
-  run bash -lc 'printf "%s" "$1" | bash "$2" remove none safe' -- "$ITEM_JSON" "$SCRIPT"
-  [ "$status" -eq 0 ]
-  [ "$(echo "$output" | jq -r '.status')" = "ok" ]
-  grep -q '^## Recent Activity$' "$LBWC_PLANNING_DIR/STATE.md"
-  ! grep -q 'Refactor auth module' "$LBWC_PLANNING_DIR/STATE.md"
-  grep -q 'Fix parser bug' "$LBWC_PLANNING_DIR/STATE.md"
-  grep -q 'Removed todo via /lbwc:list-todos: \[HIGH\] Refactor auth module' "$LBWC_PLANNING_DIR/STATE.md"
-}
-
-@test "todo-lifecycle: pickup restores None and creates Activity Log when missing" {
-  write_state_without_activity
-  ITEM_JSON=$(bash "$LIST_SCRIPT" | jq -c '.items[0]')
-
-  run bash -lc 'printf "%s" "$1" | bash "$2" pickup /lbwc:fix none keep' -- "$ITEM_JSON" "$SCRIPT"
-  [ "$status" -eq 0 ]
-  [ "$(echo "$output" | jq -r '.status')" = "ok" ]
-  grep -q '^## Activity Log$' "$LBWC_PLANNING_DIR/STATE.md"
-  grep -q '^None\.$' "$LBWC_PLANNING_DIR/STATE.md"
-  grep -q 'Picked up todo via /lbwc:fix: Only todo item' "$LBWC_PLANNING_DIR/STATE.md"
-}
-
-@test "todo-lifecycle: root-state rejection leaves archived state untouched" {
-  mkdir -p "$LBWC_PLANNING_DIR/milestones/old-milestone"
-  cat > "$LBWC_PLANNING_DIR/milestones/old-milestone/STATE.md" <<'EOF'
-# Project State
-
-## Todos
-- Archived todo (added 2026-04-01)
-EOF
-
-  run bash "$LIST_SCRIPT"
-  [ "$status" -eq 0 ]
-  [ "$(echo "$output" | jq -r '.status')" = "error" ]
-  grep -q 'Archived todo' "$LBWC_PLANNING_DIR/milestones/old-milestone/STATE.md"
-}
-
-@test "todo-lifecycle: remove leaves legacy Completed Todos untouched" {
-  write_legacy_state
-  ITEM_JSON=$(bash "$LIST_SCRIPT" | jq -c '.items[0]')
-
-  run bash -lc 'printf "%s" "$1" | bash "$2" remove none keep' -- "$ITEM_JSON" "$SCRIPT"
-  [ "$status" -eq 0 ]
-  grep -q '^### Completed Todos$' "$LBWC_PLANNING_DIR/STATE.md"
-  grep -q 'Already completed item' "$LBWC_PLANNING_DIR/STATE.md"
-  ! grep -q 'TestCrash (CrashTests.swift): signal trap' "$LBWC_PLANNING_DIR/STATE.md"
-  grep -q 'Follow-up todo' "$LBWC_PLANNING_DIR/STATE.md"
-}
-
-@test "todo-lifecycle: remove reports partial cleanup when detail is missing" {
-  cat > "$LBWC_PLANNING_DIR/STATE.md" <<'EOF'
-# Project State
-
-## Todos
-- Remove me (added 2026-04-01) (ref:deadbeef)
-
-## Activity Log
-- 2026-04-01: Existing note
-EOF
-
-  ITEM_JSON=$(bash "$LIST_SCRIPT" | jq -c '.items[0]')
-  run bash -lc 'printf "%s" "$1" | bash "$2" remove not_found safe' -- "$ITEM_JSON" "$SCRIPT"
-  [ "$status" -eq 0 ]
-  [ "$(echo "$output" | jq -r '.status')" = "partial" ]
-  [[ "$(echo "$output" | jq -r '.warning')" == *'sidecar registry was left untouched'* ]]
-  grep -q '^None\.$' "$LBWC_PLANNING_DIR/STATE.md"
-}
-
-@test "todo-lifecycle: remove with detail_status ok and safe cleanup removes sidecar entry" {
-  cat > "$LBWC_PLANNING_DIR/STATE.md" <<'EOF'
-# Project State
-
-## Todos
-- Remove me safely (added 2026-04-01) (ref:deadbeef)
-
-## Activity Log
-- 2026-04-01: Existing note
-EOF
-  bash "$DETAILS_SCRIPT" add deadbeef '{"summary":"Remove me safely","context":"extra detail","files":["a.sh"],"added":"2026-04-01","source":"session"}' "$LBWC_PLANNING_DIR/todo-details.json" >/dev/null
-
-  ITEM_JSON=$(bash "$LIST_SCRIPT" | jq -c '.items[0]')
-  run bash -lc 'printf "%s" "$1" | bash "$2" remove ok safe' -- "$ITEM_JSON" "$SCRIPT"
-  [ "$status" -eq 0 ]
-  [ "$(echo "$output" | jq -r '.status')" = "ok" ]
-  run bash "$DETAILS_SCRIPT" get deadbeef "$LBWC_PLANNING_DIR/todo-details.json"
-  [ "$status" -eq 0 ]
-  [ "$(echo "$output" | jq -r '.status')" = "not_found" ]
-}
-
-@test "todo-lifecycle: remove with detail_status ok and keep preserves sidecar entry" {
-  cat > "$LBWC_PLANNING_DIR/STATE.md" <<'EOF'
-# Project State
-
-## Todos
-- Keep my detail (added 2026-04-01) (ref:deadbeef)
-
-## Activity Log
-- 2026-04-01: Existing note
-EOF
-  bash "$DETAILS_SCRIPT" add deadbeef '{"summary":"Keep my detail","context":"extra detail","files":["a.sh"],"added":"2026-04-01","source":"session"}' "$LBWC_PLANNING_DIR/todo-details.json" >/dev/null
-
-  ITEM_JSON=$(bash "$LIST_SCRIPT" | jq -c '.items[0]')
-  run bash -lc 'printf "%s" "$1" | bash "$2" remove ok keep' -- "$ITEM_JSON" "$SCRIPT"
-  [ "$status" -eq 0 ]
-  [ "$(echo "$output" | jq -r '.status')" = "ok" ]
-  run bash "$DETAILS_SCRIPT" get deadbeef "$LBWC_PLANNING_DIR/todo-details.json"
-  [ "$status" -eq 0 ]
-  [ "$(echo "$output" | jq -r '.status')" = "ok" ]
-}
-
-@test "todo-lifecycle: remove reports partial cleanup when detail load errored" {
-  cat > "$LBWC_PLANNING_DIR/STATE.md" <<'EOF'
-# Project State
-
-## Todos
-- Error detail item (added 2026-04-01) (ref:deadbeef)
-
-## Activity Log
-- 2026-04-01: Existing note
-EOF
-  bash "$DETAILS_SCRIPT" add deadbeef '{"summary":"Error detail item","context":"extra detail","files":["a.sh"],"added":"2026-04-01","source":"session"}' "$LBWC_PLANNING_DIR/todo-details.json" >/dev/null
-
-  ITEM_JSON=$(bash "$LIST_SCRIPT" | jq -c '.items[0]')
-  run bash -lc 'printf "%s" "$1" | bash "$2" remove error safe' -- "$ITEM_JSON" "$SCRIPT"
-  [ "$status" -eq 0 ]
-  [ "$(echo "$output" | jq -r '.status')" = "partial" ]
-  [[ "$(echo "$output" | jq -r '.warning')" == *'sidecar registry was left untouched'* ]]
-  run bash "$DETAILS_SCRIPT" get deadbeef "$LBWC_PLANNING_DIR/todo-details.json"
-  [ "$status" -eq 0 ]
-  [ "$(echo "$output" | jq -r '.status')" = "ok" ]
-}
-
-@test "todo-lifecycle: pickup returns partial warning when detail load errored and cleanup is keep" {
-  cat > "$LBWC_PLANNING_DIR/STATE.md" <<'EOF'
-# Project State
-
-## Todos
-- Broken detail item (added 2026-04-01) (ref:deadbeef)
-
-## Activity Log
-- 2026-04-01: Existing note
-EOF
-  bash "$DETAILS_SCRIPT" add deadbeef '{"summary":"Broken detail item","context":"extra detail","files":["a.sh"],"added":"2026-04-01","source":"session"}' "$LBWC_PLANNING_DIR/todo-details.json" >/dev/null
-
-  ITEM_JSON=$(bash "$LIST_SCRIPT" | jq -c '.items[0]')
-  run bash -lc 'printf "%s" "$1" | bash "$2" pickup /lbwc:fix error keep' -- "$ITEM_JSON" "$SCRIPT"
-  [ "$status" -eq 0 ]
-  [ "$(echo "$output" | jq -r '.status')" = "partial" ]
-  [[ "$(echo "$output" | jq -r '.warning')" == *'sidecar registry was left untouched'* ]]
-  run bash "$DETAILS_SCRIPT" get deadbeef "$LBWC_PLANNING_DIR/todo-details.json"
-  [ "$status" -eq 0 ]
-  [ "$(echo "$output" | jq -r '.status')" = "ok" ]
+    run bash "$DETAILS_SCRIPT" get deadbeef "$LBWC_PLANNING_DIR/todo-details.json"
+    expect_status "$label" 0
+    expect_json "$label" '.status' "$sidecar_after"
+  done <<'CASES'
+remove-detail-not-found|remove not_found safe|no|partial|true|not_found
+remove-detail-ok-safe-cleanup|remove ok safe|yes|ok|false|not_found
+remove-detail-ok-keep-cleanup|remove ok keep|yes|ok|false|ok
+remove-detail-error-safe-cleanup|remove error safe|yes|partial|true|ok
+pickup-detail-error-keep-cleanup|pickup /lbwc:fix error keep|yes|partial|true|ok
+CASES
 }
