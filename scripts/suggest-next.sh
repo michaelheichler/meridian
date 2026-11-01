@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 
-set -eo pipefail
+set -euo pipefail
 
 CMD="${1:-}"
 RESULT="${2:-}"
 TARGET_PHASE_ARG="${3:-}"
 PLANNING_DIR="${LBWC_PLANNING_DIR:-.lbwc-planning}"
+PHASES_DIR="$PLANNING_DIR/phases"
 SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd)"
 RESOLVE_VERIF_SCRIPT="$SCRIPT_DIR/resolve-verification-path.sh"
 
