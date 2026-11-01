@@ -15,8 +15,8 @@ You type one command, and Meridian takes the project one correct step forward.
 
 | Step | What happens |
 | :---: | --- |
-| <img src="assets/icons/compass.png" alt="" width="40"><br>1 | You run `/meridian:transit`. Meridian reads the project state and finds the one artifact that is missing next. It asks you before it starts. |
-| <img src="assets/icons/book-skills.png" alt="" width="40"><br>2 | Meridian writes a fresh agent for the job, and that agent reads its book-based skills before it touches a file. |
+| <img src="assets/icons/compass.png" alt="" width="40"><br>1 | You run `/meridian:transit`. Meridian reads the project state and finds the next missing piece, such as a plan or a test result. It asks you before it starts. |
+| <img src="assets/icons/book-skills.png" alt="" width="40"><br>2 | Meridian generates a fresh agent definition for the job, and that agent reads its book-based skills before it touches a file. |
 | <img src="assets/icons/team.png" alt="" width="40"><br>3 | An engineer builds while a separate critic reviews, so no agent ever approves its own work. |
 | <img src="assets/icons/guard.png" alt="" width="40"><br>4 | Shell guards check every write, command, and spawn against the agent's contract before anything reaches your repository. |
 | <img src="assets/icons/logbook.png" alt="" width="40"><br>5 | The logbook records what happened and what comes next, so the next agent or session continues without guessing. |
@@ -34,11 +34,11 @@ You type one command, and Meridian takes the project one correct step forward.
 | <img src="assets/icons/build.png" alt="" width="32"><br>**Phases** | Each phase moves through a reviewed plan, contract-bound building, a QA verdict, and your own acceptance test. |
 | <img src="assets/icons/compass.png" alt="" width="32"><br>**Status** | The statusline shows the phase, the team, and the checks. Every step ends with a short card that names the next action. |
 
-Meridian runs on local files, small bash scripts, and hooks. It needs no server, database, or account, and it runs on the bash that ships with macOS.
+Meridian runs on local files and small bash scripts, so it needs no server or account. It runs on the bash that ships with macOS.
 
 ## Quick start
 
-Add the marketplace, install the plugin, and restart Claude Code.
+Add the marketplace and install the plugin. Then restart Claude Code.
 
 ```bash
 claude plugin marketplace add michaelheichler/lbwc
@@ -61,7 +61,7 @@ Meridian tells you what it found, what it wants to do next, and what it needs fr
 
 ## Using Meridian day to day
 
-You stay the decision maker. Meridian proposes the next step, and you approve it, change it, or stop it. When a phase needs your judgment, such as accepting finished work, Meridian walks you through it one checkpoint at a time.
+You stay the decision maker. Meridian proposes the next step, and you approve it or change it. You can stop at any point. When a phase needs your judgment, such as accepting finished work, Meridian walks you through it one checkpoint at a time.
 
 When you come back after a break, run `/meridian:transit` again. Meridian reads its logbook and the Git history, and it picks up where the work stopped.
 
