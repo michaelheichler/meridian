@@ -26,6 +26,13 @@ teardown_temp_dir() {
   unset _ORIG_HOME _ORIG_LBWC_PLANNING_DIR
 }
 
+# Close bats fds so that a spawned daemon cannot keep the run open.
+await_git_ai() {
+  command -v git-ai >/dev/null || return 0
+  git-ai await --timeout 5 </dev/null >/dev/null 2>&1 3>&- 4>&- 5>&- 6>&- 7>&- 8>&- 9>&- || true
+  return 0
+}
+
 create_test_config() {
   local dir="${1:-.lbwc-planning}"
   echo '{}' > "$TEST_TEMP_DIR/$dir/config.json"

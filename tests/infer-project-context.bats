@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 
+load test_helper
 load gate_case_helper
 load gate_case_files
 
@@ -14,9 +15,7 @@ setup() {
 }
 
 teardown() {
-  if command -v git-ai >/dev/null; then
-    git-ai await --timeout 5 >/dev/null 2>&1 || true
-  fi
+  await_git_ai
   rm -rf "$TEST_ROOT"
 }
 

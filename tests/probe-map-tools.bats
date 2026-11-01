@@ -20,9 +20,7 @@ setup() {
 
 teardown() {
   cd "$PROJECT_ROOT"
-  if command -v git-ai >/dev/null; then
-    git-ai await --timeout 5 >/dev/null 2>&1 || true
-  fi
+  await_git_ai
   teardown_temp_dir
 }
 

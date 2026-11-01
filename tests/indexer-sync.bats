@@ -89,9 +89,7 @@ EOF
 
 teardown() {
   cd "$REPO_ROOT"
-  if command -v git-ai >/dev/null; then
-    git-ai await --timeout 5 >/dev/null 2>&1 || true
-  fi
+  await_git_ai
   rm -rf "$TEST_ROOT"
   rm -rf "$ROOT_LINK"
 }
