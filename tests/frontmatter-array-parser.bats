@@ -1,5 +1,7 @@
 #!/usr/bin/env bats
 
+load gate_case_helper
+
 REPO_ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
 PARSER="$REPO_ROOT/scripts/extract-frontmatter-array-items.awk"
 SUMMARY_UTILS="$REPO_ROOT/scripts/summary-utils.sh"
@@ -25,31 +27,32 @@ teardown() {
   rm -f "$FIXTURE"
 }
 
-assert_canonical_items() {
-  local key_name="$1"
+canonical_row() {
+  local label="$1" key_name="$2"
   local expected=$'app/one.py\nlib/it\'s.py\nbare.py'
 
   run awk -v key="$key_name" -f "$PARSER" "$FIXTURE"
-  [ "$status" -eq 0 ]
-  [ "$output" = "$expected" ]
+  [ "$status" -eq 0 ] && [ "$output" = "$expected" ] \
+    || record_case_failure "$label-awk" "status=$status output=$output"
 
   run bash -c 'source "$1"; summary_extract_frontmatter_array_items "$2" "$3"' \
     _ "$SUMMARY_UTILS" "$FIXTURE" "$key_name"
-  [ "$status" -eq 0 ]
-  [ "$output" = "$expected" ]
+  [ "$status" -eq 0 ] && [ "$output" = "$expected" ] \
+    || record_case_failure "$label-summary-utils" "status=$status output=$output"
 
   run bash -c 'source "$1"; extract_frontmatter_array_items "$2" "$3"' \
     _ "$QA_PATH_EVIDENCE" "$FIXTURE" "$key_name"
-  [ "$status" -eq 0 ]
-  [ "$output" = "$expected" ]
+  [ "$status" -eq 0 ] && [ "$output" = "$expected" ] \
+    || record_case_failure "$label-qa-path-evidence" "status=$status output=$output"
 }
 
-@test "frontmatter array consumers canonicalize quoted flow items" {
-  assert_canonical_items flow_paths
-}
+@test "frontmatter array consumers canonicalize quoted flow and block items" {
+  reset_case_failures
 
-@test "frontmatter array consumers canonicalize quoted block items" {
-  assert_canonical_items block_paths
+  canonical_row flow flow_paths
+  canonical_row block block_paths
+
+  assert_no_case_failures
 }
 
 @test "verification freshness preserves commas in quoted recorded paths" {
