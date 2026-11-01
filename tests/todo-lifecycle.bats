@@ -415,3 +415,71 @@ remove-detail-error-safe-cleanup|remove error safe|yes|partial|true|ok
 pickup-detail-error-keep-cleanup|pickup /lbwc:fix error keep|yes|partial|true|ok
 CASES
 }
+
+TRACK_SCRIPT="$BATS_TEST_DIRNAME/../scripts/track-known-issues.sh"
+KNOWN_ISSUE_REF_LINE='- [KNOWN-ISSUE] TransferTests (tests/transfer.sh): timeout (phase 03, seen 1x) (added 2026-04-01) (ref:deadbeef)'
+KNOWN_ISSUE_LEGACY_LINE='- [KNOWN-ISSUE] TransferTests (tests/transfer.sh): timeout (phase 03, seen 1x) (added 2026-04-01)'
+
+seed_phase_registry() {
+  local phase_dir="$LBWC_PLANNING_DIR/phases/03-test-phase"
+  cat > "$phase_dir/03-01-SUMMARY.md" <<'SUMMARY'
+---
+phase: 03
+pre_existing_issues:
+  - '{"test":"TransferTests","file":"tests/transfer.sh","error":"timeout"}'
+---
+SUMMARY
+  bash "$TRACK_SCRIPT" sync-summaries "$phase_dir" >/dev/null
+}
+
+seed_signature_sidecar() {
+  jq -n --arg dir "$LBWC_PLANNING_DIR/phases/03-test-phase" '{
+    schema_version: 1,
+    items: {deadbeef: {summary: "TransferTests", added: "2026-04-01", source: "session",
+      known_issue_signature: {phase: "03", phase_dir: $dir, test: "TransferTests", file: "tests/transfer.sh", error: "timeout"}}}
+  }' > "$LBWC_PLANNING_DIR/todo-details.json"
+}
+
+remove_known_issue_case() {
+  local todo_line="$1" sidecar="$2" registry="$3" item_json
+  write_todo_lines "$todo_line"
+  case "$sidecar" in yes) seed_signature_sidecar ;; esac
+  case "$registry" in yes) seed_phase_registry ;; esac
+  item_json=$(item_from list-first)
+  run_piped "$item_json" "$SCRIPT" remove none keep
+}
+
+@test "removing a known-issue todo backed by the registry ends ok and blocks re-promotion" {
+  while IFS='|' read -r label todo_line sidecar; do
+    [ -n "$label" ] || continue
+    rm -f "$LBWC_PLANNING_DIR/todo-details.json" "$LBWC_PLANNING_DIR/phases/03-test-phase/known-issues.json"
+
+    remove_known_issue_case "$todo_line" "$sidecar" yes
+
+    expect_status "$label" 0
+    expect_json "$label" '.status' ok
+    expect_json "$label" '.warning' null
+    run bash "$TRACK_SCRIPT" promote-todos "$LBWC_PLANNING_DIR/phases/03-test-phase"
+    [[ "$output" == *"promoted_count=0"* ]] || fail_case "$label" "known issue was promoted again"
+  done <<CASES
+remove-with-signature-in-sidecar|$KNOWN_ISSUE_REF_LINE|yes
+remove-legacy-line-resolved-through-registry|$KNOWN_ISSUE_LEGACY_LINE|no
+CASES
+}
+
+@test "removing a known-issue todo without a usable registry ends partial with a re-promotion warning" {
+  while IFS='|' read -r label todo_line sidecar; do
+    [ -n "$label" ] || continue
+    rm -f "$LBWC_PLANNING_DIR/todo-details.json" "$LBWC_PLANNING_DIR/phases/03-test-phase/known-issues.json"
+
+    remove_known_issue_case "$todo_line" "$sidecar" no
+
+    expect_status "$label" 0
+    expect_json "$label" '.status' partial
+    expect_json "$label" '.warning | type' string
+    expect_json "$label" '.warning | contains("re-promoted")' true
+  done <<CASES
+remove-without-registry-signature-in-sidecar|$KNOWN_ISSUE_REF_LINE|yes
+remove-without-registry-legacy-line|$KNOWN_ISSUE_LEGACY_LINE|no
+CASES
+}
