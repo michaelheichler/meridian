@@ -154,7 +154,8 @@ teardown() {
     set -euo pipefail
     source "$1"
     configure_platform_tools
-    exec {LOCK_FD}>> "$2"
+    LOCK_FD=8
+    exec 8>> "$2"
     invoke_lock_backend "$LOCK_BACKEND" "$LOCK_TOOL" "$LOCK_FD"
     printf "%s\n" "$LOCK_TOOL" > "$3"
     : > "$4"
@@ -170,7 +171,8 @@ teardown() {
     set -euo pipefail
     source "$1"
     configure_platform_tools
-    exec {LOCK_FD}>> "$2"
+    LOCK_FD=8
+    exec 8>> "$2"
     invoke_lock_backend "$LOCK_BACKEND" "$LOCK_TOOL" "$LOCK_FD"
   ' _ "$ROUTING" "$guard"
   [ "$status" -ne 0 ]
@@ -182,7 +184,8 @@ teardown() {
     set -euo pipefail
     source "$1"
     configure_platform_tools
-    exec {LOCK_FD}>> "$2"
+    LOCK_FD=8
+    exec 8>> "$2"
     invoke_lock_backend "$LOCK_BACKEND" "$LOCK_TOOL" "$LOCK_FD"
   ' _ "$ROUTING" "$guard"
   [ "$status" -eq 0 ]
