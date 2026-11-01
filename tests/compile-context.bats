@@ -48,3 +48,110 @@ teardown() {
   run python3 -c 'import json,sys; records=[json.loads(line) for line in open(sys.argv[1])]; assert records[-1]["event"]=="command"; assert records[-1]["outcome"]=="success"' "$TEST_TEMP_DIR/.lbwc-planning/telemetry/session.jsonl"
   [ "$status" -eq 0 ]
 }
+
+seed_full_planning() {
+  local planning="$TEST_TEMP_DIR/.lbwc-planning"
+  printf '%s\n' '## Phase 1: Test Phase' '**Goal:** Ship the widget' '**Success:** Widget renders' '**Reqs:** REQ-01' '## Phase 2: Next Phase' > "$planning/ROADMAP.md"
+  printf '%s\n' '- [ ] REQ-01: Phase requirement' '- [ ] REQ-02: Other requirement' > "$planning/REQUIREMENTS.md"
+  printf '%s\n' '## Key Decisions' '- chose sqlite' '## Recent Activity' '- ran the scout' '## Other' 'ignored' > "$planning/STATE.md"
+  printf '%s\n' '{"conventions":[{"tag":"style","rule":"use tabs"}]}' > "$planning/conventions.json"
+  mkdir -p "$planning/codebase"
+  printf 'meta\n' > "$planning/codebase/META.md"
+  printf 'arch\n' > "$planning/codebase/ARCHITECTURE.md"
+  printf 'research body\n' > "$planning/phases/01-test-phase/01-RESEARCH.md"
+}
+
+check_role() {
+  local label="$1" role="$2" present="$3" absent="$4" marker content
+  cd "$TEST_TEMP_DIR"
+  run bash "$SCRIPTS_DIR/compile-context.sh" 01 "$role" .lbwc-planning/phases ${5:+"$5"}
+  [ "$status" -eq 0 ] || { echo "[$label] exit $status: $output" >&2; return 1; }
+  content=$(cat "$TEST_TEMP_DIR/.lbwc-planning/phases/01-test-phase/.context-${role}.md")
+  while IFS= read -r marker; do
+    [ -z "$marker" ] && continue
+    [[ "$content" == *"$marker"* ]] || { echo "[$label] missing '$marker' in context:"$'\n'"$content" >&2; return 1; }
+  done <<< "$present"
+  while IFS= read -r marker; do
+    [ -z "$marker" ] && continue
+    [[ "$content" != *"$marker"* ]] || { echo "[$label] forbidden '$marker' in context:"$'\n'"$content" >&2; return 1; }
+  done <<< "$absent"
+}
+
+@test "compile-context: every role emits its own heading and section set" {
+  seed_full_planning
+  local retired=$'### Available Skills\n### Mandatory Skill Activation'
+
+  check_role "lead sections" lead \
+    $'## Phase 01 Context (Compiled)\n### Goal\nShip the widget\n### Success Criteria\nWidget renders\n### Requirements (REQ-01)\nREQ-01: Phase requirement\n### Active Decisions\n- chose sqlite' \
+    $'### Conventions\n'"Verification Context"$'\n'"REQ-02: Other"$'\n'"$retired"
+  check_role "dev sections" dev \
+    $'## Phase 01 Context\n### Goal\nShip the widget\n### Conventions\n- [style] use tabs\n### Research Findings\nresearch body' \
+    $'### Success Criteria\n### Requirements\n### Active Decisions\n'"$retired"
+  check_role "qa sections" qa \
+    $'## Phase 01 Verification Context\n### Success Criteria\n### Requirements to Verify\nREQ-01: Phase requirement\n### Conventions to Check' \
+    $'### Research Findings\n### Active Decisions\n'"$retired"
+  check_role "scout sections" scout \
+    $'## Phase 01 Research Context\n### Requirements (REQ-01)\n### Conventions\n### Research Findings' \
+    $'### Active Decisions\n### Recent Activity\n'"$retired"
+  check_role "debugger sections" debugger \
+    $'## Phase 01 Debug Context\n### Recent Activity\n- ran the scout\n### Conventions' \
+    $'ignored\n'"$retired"
+  check_role "architect sections" architect \
+    $'## Phase 01 Architecture Context\n### Full Requirements\nREQ-02: Other requirement\n### Conventions\n### Research Findings' \
+    $'### Requirements (\n### Recent Activity\n'"$retired"
+}
+
+@test "compile-context: lead reports hidden requirements and falls back to the codebase map without research" {
+  seed_full_planning
+  rm "$TEST_TEMP_DIR/.lbwc-planning/phases/01-test-phase/01-RESEARCH.md"
+
+  check_role "lead no research" lead \
+    $'(1 other requirements exist for other phases -- not shown)\n### Codebase Map Available\nRead ARCHITECTURE.md first' \
+    $'### Research Findings'
+}
+
+@test "compile-context: lead omits the codebase map hint when research exists" {
+  seed_full_planning
+
+  check_role "lead with research" lead $'### Research Findings' $'### Codebase Map Available'
+}
+
+@test "compile-context: dev embeds the active plan only when a plan path is given" {
+  seed_full_planning
+  local plan="$TEST_TEMP_DIR/.lbwc-planning/phases/01-test-phase/PLAN.md"
+
+  check_role "dev with plan" dev $'### Active Plan\nTASK-01: Do something' "" "$plan"
+  check_role "dev without plan" dev "" $'### Active Plan'
+}
+
+@test "compile-context: debugger activity falls back to None without STATE.md" {
+  seed_full_planning
+  rm "$TEST_TEMP_DIR/.lbwc-planning/STATE.md"
+
+  check_role "debugger no state" debugger $'### Recent Activity\nNone\n### Conventions' $'ran the scout'
+}
+
+@test "compile-context: architect states when no requirements file exists" {
+  seed_full_planning
+  rm "$TEST_TEMP_DIR/.lbwc-planning/REQUIREMENTS.md"
+
+  check_role "architect no requirements" architect $'### Full Requirements\nNo requirements file found' $'REQ-01:'
+}
+
+@test "compile-context: caveman directive adds the commit note for dev and the review note for qa only" {
+  seed_full_planning
+  printf '%s\n' '{"caveman_style":"full","caveman_commit":true,"caveman_review":true}' > "$TEST_TEMP_DIR/.lbwc-planning/config.json"
+
+  check_role "dev caveman" dev $'### Caveman Language (full)\ncaveman-commit.md' $'caveman-review.md'
+  check_role "qa caveman" qa $'### Caveman Language (full)\ncaveman-review.md' $'caveman-commit.md'
+  check_role "scout caveman" scout $'### Caveman Language (full)' $'caveman-commit.md\ncaveman-review.md'
+}
+
+@test "compile-context: unknown role exits non-zero and lists the valid roles" {
+  cd "$TEST_TEMP_DIR"
+
+  run bash "$SCRIPTS_DIR/compile-context.sh" 01 janitor .lbwc-planning/phases
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"Unknown role: janitor. Valid roles: lead, dev, qa, scout, debugger, architect"* ]]
+}
