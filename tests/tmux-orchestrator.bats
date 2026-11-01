@@ -651,3 +651,53 @@ SCRIPT
   [ "$status" -eq 0 ]
   [ ! -e "$CONTROL_ROOT/.runtime/tmux-bus/inboxes/worker-a" ]
 }
+
+prepare_teardown_agent() {
+  export HOME="$TEST_ROOT/home"
+  mkdir -p "$HOME"
+  cd "$PROJECT_ROOT" || return 1
+  git init -q
+  provision_main
+  SESSION="$(provisioned_session)"
+  tmux_on_test_server set-option -t "$SESSION" default-command 'sleep 600'
+  DEFINITIONS="$(prepare_tmux_agents worker-a)"
+  split_group "$SESSION" "$DEFINITIONS"
+  [ "$status" -eq 0 ]
+  AGENT_PANE="$(jq -r '.agents[] | select(.agent_id == "worker-a") | .tmux_pane_id' "$(registry_file)")"
+  AGENT_TARGET="$(jq -r '.agents[] | select(.agent_id == "worker-a") | .tmux_target' "$(registry_file)")"
+}
+
+@test "agent teardown finalizes an agent whose pane already exited without killing the orchestrator" {
+  prepare_teardown_agent
+  tmux_on_test_server kill-pane -t "$AGENT_PANE"
+  run_orchestrator kill-agent --project-root "$PROJECT_ROOT" --control-root "$CONTROL_ROOT" --target "$AGENT_TARGET"
+  [ "$status" -eq 0 ]
+  jq -e '.agents[] | select(.agent_id == "worker-a") | .state == "shutdown" and .tmux_pane_id == null' "$(registry_file)"
+  jq -e '.routes | has("worker-a") | not' "$(routing_file)"
+  [ ! -e "$CONTROL_ROOT/.runtime/tmux-bus/inboxes/worker-a" ]
+  tmux_on_test_server has-session -t "$SESSION"
+}
+
+@test "repeated agent teardown reports shutdown without changing terminal registry or routes" {
+  prepare_teardown_agent
+  run_orchestrator kill-agent --project-root "$PROJECT_ROOT" --control-root "$CONTROL_ROOT" --target "$AGENT_TARGET"
+  [ "$status" -eq 0 ]
+  local before
+  before="$(bus_state_digest)"
+  run_orchestrator kill-agent --project-root "$PROJECT_ROOT" --control-root "$CONTROL_ROOT" --target "$AGENT_TARGET"
+  [ "$status" -eq 0 ]
+  [ "$(jq -r '.state' <<< "$output")" = shutdown ]
+  [ "$(bus_state_digest)" = "$before" ]
+}
+
+@test "focus returns selection to the registered orchestrator rather than an active agent pane" {
+  prepare_teardown_agent
+  tmux_on_test_server select-pane -t "$AGENT_PANE"
+  local orchestrator_target expected_pane
+  orchestrator_target="$(jq -r '.tmux.orchestrator_target' "$(registry_file)")"
+  expected_pane="$(tmux_on_test_server display-message -p -t "$orchestrator_target" '#{pane_id}')"
+  run_orchestrator focus-orchestrator --project-root "$PROJECT_ROOT" --control-root "$CONTROL_ROOT"
+  [ "$status" -eq 0 ]
+  [ "$(jq -r '.orchestrator_target' <<< "$output")" = "$orchestrator_target" ]
+  [ "$(tmux_on_test_server display-message -p -t "$SESSION" '#{pane_id}')" = "$expected_pane" ]
+}

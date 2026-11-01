@@ -302,3 +302,45 @@ CASES
 
   assert_no_case_failures
 }
+
+cache_input_rows() {
+  local label role input expected first_hash second_hash
+  cd "$TEST_TEMP_DIR" || return 1
+  git init -q
+  reset_case_failures
+  printf '%s\n' '.lbwc-planning/' > .gitignore
+  git -c user.name=Test -c user.email=test@example.invalid commit --allow-empty -qm baseline
+  await_git_ai
+  mkdir -p "$PLANNING/codebase"
+  while IFS='|' read -r label role input expected; do
+    printf '%s\n' 'Initial map' > "$PLANNING/codebase/architecture.md"
+    printf '%s\n' 'Initial research' > "$PHASE_DIR/02-RESEARCH.md"
+    run bash "$SCRIPTS_DIR/cache-context.sh" 02 "$role"
+    expect_case "$label-initial" 0
+    first_hash="${output#* }"
+    case "$input" in
+      map) printf '%s\n' 'Changed map' > "$PLANNING/codebase/architecture.md" ;;
+      research) printf '%s\n' 'Changed research' > "$PHASE_DIR/02-RESEARCH.md" ;;
+    esac
+    run bash "$SCRIPTS_DIR/cache-context.sh" 02 "$role"
+    expect_case "$label-changed" 0
+    second_hash="${output#* }"
+    if [ "$expected" = different ]; then
+      [ "$first_hash" != "$second_hash" ] || record_case_failure "$label" 'context edit did not invalidate hash'
+    else
+      [ "$first_hash" = "$second_hash" ] || record_case_failure "$label" 'unconsumed context invalidated hash'
+    fi
+  done
+  assert_no_case_failures
+}
+
+@test "context cache invalidates discovered research and codebase inputs only for roles that consume them" {
+  cache_input_rows <<'CASES'
+dev-map|dev|map|different
+qa-map|qa|map|different
+lead-map|lead|map|different
+scout-map|scout|map|same
+dev-research|dev|research|different
+qa-research|qa|research|same
+CASES
+}

@@ -7,9 +7,11 @@ setup() {
   setup_temp_dir
   create_test_config
   cd "$TEST_TEMP_DIR"
+  git init -q
 }
 
 teardown() {
+  await_git_ai
   cd "$PROJECT_ROOT"
   teardown_temp_dir
 }
@@ -69,4 +71,47 @@ trio|trio|python-engineer|python-engineer|python-critic
 pair|pair|python-engineer|ENGINEER|CRITIC
 TABLE
   assert_no_case_failures
+}
+
+workflow_capability_rows() {
+  local label mutation
+  reset_case_failures
+  while IFS='|' read -r label mutation; do
+    stage_team pair python-engineer
+    case "$mutation" in
+      disabled) printf '%s\n' '{"workflow_execution":{"enabled":false}}' > "$CONTROL_ROOT/config.json" ;;
+      missing-config) rm "$CONTROL_ROOT/config.json" ;;
+      missing-catalog) rm "$CONTROL_ROOT/claude-capabilities.json" ;;
+      malformed-catalog) printf '%s\n' '{}' > "$CONTROL_ROOT/claude-capabilities.json" ;;
+      unavailable) printf '%s\n' '{"workflow":{"available":false,"unavailable_reasons":["disabled by host"]}}' > "$CONTROL_ROOT/claude-capabilities.json" ;;
+      session-disabled) export CLAUDE_CODE_DISABLE_WORKFLOWS=1 ;;
+      model-override) export CLAUDE_CODE_SUBAGENT_MODEL=sample-model ;;
+      dispatched) bash "$SCRIPTS_DIR/task-contract.sh" state "$(jq -r '.project_root' "$CONTRACT")" "$TASK_ID" dispatched >/dev/null ;;
+    esac
+    run_workflow_generator pair python-engineer ENGINEER CRITIC
+    expect_case "$label" 1
+    [ ! -e "$CONTROL_ROOT/workflow-manifest.json" ] || record_case_failure "$label" 'rejected generation registered a workflow'
+    [ ! -e "$CONTROL_ROOT/workflows/$TASK_ID.js" ] || record_case_failure "$label" 'rejected generation published a workflow'
+    unset CLAUDE_CODE_DISABLE_WORKFLOWS CLAUDE_CODE_SUBAGENT_MODEL
+    rm -rf "$TEST_TEMP_DIR/project-pair"
+  done
+  assert_no_case_failures
+}
+
+@test "workflow generation rechecks live availability before publishing any runnable workflow" {
+  workflow_capability_rows <<'CASES'
+configuration-disabled|disabled
+configuration-missing|missing-config
+catalog-missing|missing-catalog
+catalog-without-probe|malformed-catalog
+host-unavailable|unavailable
+session-disabled|session-disabled
+session-model-override|model-override
+CASES
+}
+
+@test "workflow generation refuses a contract that has already left the planned state" {
+  workflow_capability_rows <<'CASES'
+already-dispatched|dispatched
+CASES
 }
