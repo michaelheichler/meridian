@@ -14,6 +14,7 @@ setup() {
 }
 
 teardown() {
+  chmod -R u+w "$TEST_ROOT"
   rm -rf "$TEST_ROOT"
 }
 
@@ -218,6 +219,21 @@ lookup-payload-not-an-object~lookup-signature~seeded~array~suppression_missing_s
 suppress-test-absent~suppress~seeded~no-test~suppression_missing_signature
 suppress-error-not-a-string~suppress~seeded~number-error~suppression_missing_signature
 CASES
+}
+
+@test "suppress reports suppression_write_failed and keeps the registry when the phase dir is read-only" {
+  [ "$(id -u)" -ne 0 ] || skip "root bypasses chmod, so the registry cannot be made unwritable"
+  seed_registry
+  local before
+  before="$(registry_digest)"
+  chmod a-w "$PHASE_DIR"
+
+  run --separate-stderr bash -c 'printf "%s" "$1" | bash "${@:2}"' -- "$(payload_named transfer-via)" "$SCRIPT" suppress "$PHASE_DIR"
+
+  expect_status write-failed 0
+  expect_json write-failed '.status + ":" + .code' "error:suppression_write_failed"
+  expect_json write-failed '(.message | length) > 0' true
+  [ "$before" = "$(registry_digest)" ] || fail_case write-failed "registry bytes changed"
 }
 
 @test "suppress marks only the matching entry with via and a UTC timestamp" {
