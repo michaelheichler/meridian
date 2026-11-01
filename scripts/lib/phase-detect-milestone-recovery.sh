@@ -1,6 +1,3 @@
-#!/bin/bash
-set -u
-
 MISNAMED_PLANS=false
 if [ ${#PHASE_DIRS[@]} -gt 0 ]; then
   for _mn_dir in ${PHASE_DIRS[@]+"${PHASE_DIRS[@]}"}; do

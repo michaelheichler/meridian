@@ -1,6 +1,3 @@
-#!/bin/bash
-set -u
-
 PHASE_COUNT=0
 NEXT_PHASE="none"
 NEXT_PHASE_SLUG="none"

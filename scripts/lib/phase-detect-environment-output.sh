@@ -1,6 +1,3 @@
-#!/bin/bash
-set -u
-
 CONFIG_FILE="$PLANNING_DIR/config.json"
 
 CFG_EFFORT="balanced"

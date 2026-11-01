@@ -1,5 +1,3 @@
-#!/bin/bash
-
 qa_gate_summary_gap_is_allowed() {
   local plans_total="${1:-}"
   local summaries_total="${2:-}"
