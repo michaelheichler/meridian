@@ -113,6 +113,37 @@ _copy_lib_assets_referenced_by() {
   done < <(grep -oE '(lib/[A-Za-z0-9_.-]+|[A-Za-z0-9_-]+\.(jq|awk|py|tmpl))' "$file" | sed 's|^lib/||' | grep -v '\.sh$')
 }
 
+write_seeded_claude_fixture() {
+  local binary="$1" host_enum="$2" models_json="$3"
+  mkdir -p "$(dirname "$binary")"
+  cat > "$binary" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+case "\${1:-}" in
+  --version)
+    printf '%s\n' '91.7.3 (Fixture Code)'
+    ;;
+  --help)
+    printf '%s\n' '  --effort <level>  Session reasoning' '                      (low, high, max)'
+    ;;
+  *)
+    exit 97
+    ;;
+esac
+exit 0
+: 'models:$models_json'
+: '$host_enum'
+EOF
+  chmod +x "$binary"
+}
+
+use_claude_fixture() {
+  write_seeded_claude_fixture "$1" \
+    '["haiku","sonnet","opus"]' \
+    '[{id:"claude-haiku-route",family:"haiku",display_name:"Haiku Route"},{id:"claude-sonnet-5",family:"sonnet",display_name:"Sonnet 5"},{id:"claude-opus-5",family:"opus",display_name:"Opus 5"}]'
+  export CLAUDE_CODE_EXECPATH="$1"
+}
+
 copy_script_with_libs() {
   local src="$1" dest="$2" base prefix dest_dir libs_dest lib
   base="$(basename "$src")"

@@ -16,6 +16,7 @@ setup() {
   cp "$BATS_TEST_DIRNAME/fixture-agent-manifest.sh" "$WORK/scripts/lib/agent-manifest.sh"
   chmod +x "$WORK/scripts/agent-spawn-guard.sh" "$WORK/scripts/agent-lifecycle.sh" "$WORK/scripts/task-contract.sh"
   MANIFEST="$WORK/.lbwc-planning/.agent-manifest.json"
+  use_claude_fixture "$WORK/host-claude"
 }
 
 teardown() {

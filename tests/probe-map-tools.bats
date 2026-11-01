@@ -40,6 +40,14 @@ mock_lsp_enabled() {
   mkdir -p "$HOME/.claude"
   printf '%s' '{"enabledPlugins":{},"env":{"ENABLE_LSP_TOOL":"1"}}' > "$HOME/.claude/settings.json"
   echo '#!/usr/bin/env bash' > "$PROJECT_DIR/probe.sh"
+  stub_bash_language_server
+}
+
+stub_bash_language_server() {
+  mkdir -p "$TEST_TEMP_DIR/bin"
+  printf '%s\n' '#!/bin/sh' 'echo 1.0.0' > "$TEST_TEMP_DIR/bin/bash-language-server"
+  chmod +x "$TEST_TEMP_DIR/bin/bash-language-server"
+  PATH="$TEST_TEMP_DIR/bin:$PATH"
 }
 
 run_probe() {
