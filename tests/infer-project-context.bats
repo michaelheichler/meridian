@@ -35,6 +35,8 @@ write_stack() {
     '' \
     '| Language | Evidence |' \
     '| --- | --- |' \
+    '| :---: | ---: |' \
+    '|---|---|' \
     '| Bash | scripts and hooks |' \
     '' \
     '## Key Technologies' \
@@ -85,7 +87,7 @@ run_infer() {
   expect_jq_output canonical-map ".purpose == {value: \"$purpose\", source: \"STACK.md: Purpose\"}"
   expect_jq_output canonical-map '(.purpose.value | contains("DO NOT USE THIS AS PURPOSE") | not)'
   expect_jq_output canonical-map '(.purpose.value | contains("Catastrophic data loss risk") | not)'
-  expect_jq_output canonical-map '.tech_stack.source == "STACK.md" and (.tech_stack.value | index("Bash") != null and index("jq") != null)'
+  expect_jq_output canonical-map '.tech_stack.source == "STACK.md" and .tech_stack.value == ["Bash","jq"]'
   expect_jq_output canonical-map '.architecture == {value: "Markdown commands delegate work to Bash scripts.", source: "ARCHITECTURE.md"}'
   expect_jq_output canonical-map '.features == {value: ["Lifecycle"], source: "INDEX.md"}'
 

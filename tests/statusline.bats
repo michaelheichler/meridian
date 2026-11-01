@@ -28,6 +28,7 @@ case "$*" in
 esac
 EOF
   chmod +x "$BIN/git"
+  unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN
   reset_case_failures
 }
 
@@ -107,6 +108,38 @@ EOF
   expect_case no-rate-limits 0 "Telemetry"
   expect_output_lacks no-rate-limits "Quota"
   expect_output_has no-rate-limits "off"
+
+  assert_no_case_failures
+}
+
+@test "statusline: hides the Quota line for the hide-limits switches and keeps it for unset, false or non-boolean values" {
+  local config="$PROJECT/.lbwc-planning/config.json"
+
+  printf '%s' '{"statusline_hide_limits":true}' > "$config"
+  run_statusline "$(status_input)"
+  expect_output_lacks hide-limits "Quota"
+
+  printf '%s' '{"statusline_hide_limits_for_api_key":true}' > "$config"
+  run_statusline "$(status_input)" ANTHROPIC_API_KEY=x
+  expect_output_lacks api-key-flag-with-key "Quota"
+
+  run_statusline "$(status_input)" ANTHROPIC_AUTH_TOKEN=x
+  expect_output_lacks api-key-flag-with-auth-token "Quota"
+
+  run_statusline "$(status_input)"
+  expect_output_has api-key-flag-without-credentials "Quota"
+
+  printf '%s' '{"statusline_hide_limits":true,"statusline_hide_limits_for_api_key":false}' > "$config"
+  run_statusline "$(status_input)" ANTHROPIC_API_KEY=x
+  expect_output_lacks hide-limits-beats-api-key-false "Quota"
+
+  printf '%s' '{"statusline_hide_limits":"yes"}' > "$config"
+  run_statusline "$(status_input)"
+  expect_output_has non-boolean-hide-limits "Quota"
+
+  rm -f "$config"
+  run_statusline "$(status_input)"
+  expect_output_has no-config "Quota"
 
   assert_no_case_failures
 }
