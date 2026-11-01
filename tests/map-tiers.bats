@@ -73,15 +73,19 @@ CASES
   assert_no_case_failures
 }
 
-@test "resolve_map_tier rejects unknown forced tiers even when teams are disabled" {
-  local label count prefer forced
-  while IFS='|' read -r label count prefer forced; do
+@test "resolve_map_tier rejects unknown forced tiers and file counts that are not whole numbers" {
+  local label count prefer forced message
+  while IFS='|' read -r label count prefer forced message; do
     [ -n "$label" ] || continue
     run_tier "$count" "$prefer" "$forced"
-    expect_case "$label" 1 "map-tiers: unknown tier: $forced"
+    expect_case "$label" 1 "$message"
   done <<'CASES'
-unknown-forced-tier|50|auto|octet
-unknown-forced-tier-with-never|5000|never|octet
+unknown-forced-tier|50|auto|octet|map-tiers: unknown tier: octet
+unknown-forced-tier-with-never|5000|never|octet|map-tiers: unknown tier: octet
+empty-count||auto||map-tiers: file count is not a whole number:
+letter-count|abc|auto||map-tiers: file count is not a whole number: abc
+trailing-letter-count|12x|auto||map-tiers: file count is not a whole number: 12x
+letter-count-before-never|abc|never||map-tiers: file count is not a whole number: abc
 CASES
 
   assert_no_case_failures

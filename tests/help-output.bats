@@ -35,7 +35,7 @@ teardown() {
   rm -rf "$TEST_ROOT"
 }
 
-@test "help-output: derives names from the plugin manifest and filenames and groups commands by category" {
+@test "help-output: groups manifest-named commands by category and exits 1 when commands or manifest name are missing" {
   run bash "$HELP_OUTPUT" "$PLUGIN_ROOT"
   expect_case manifest-and-filenames 0 "/lbwc:vibe '[brief]'"
   expect_output_has manifest-and-filenames '/lbwc:list-todos'
@@ -66,10 +66,6 @@ EOF
   expect_output_lacks hidden-command-skipped "/lbwc:secret"
   expect_output_lacks hidden-command-section "Advanced, "
 
-  assert_no_case_failures
-}
-
-@test "help-output: exits 1 with a warning when the commands, manifest or manifest name is missing" {
   mv "$PLUGIN_ROOT/commands" "$PLUGIN_ROOT/commands-away"
   run bash "$HELP_OUTPUT" "$PLUGIN_ROOT"
   expect_case missing-commands-dir 1 "Commands directory not found"

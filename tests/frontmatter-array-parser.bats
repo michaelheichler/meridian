@@ -46,17 +46,12 @@ canonical_row() {
     || record_case_failure "$label-qa-path-evidence" "status=$status output=$output"
 }
 
-@test "frontmatter array consumers canonicalize quoted flow and block items" {
+@test "frontmatter array consumers canonicalize quoted items and keep commas inside quoted paths" {
+  local phase_dir="$BATS_TEST_TMPDIR/phase"
   reset_case_failures
 
   canonical_row flow flow_paths
   canonical_row block block_paths
-
-  assert_no_case_failures
-}
-
-@test "verification freshness preserves commas in quoted recorded paths" {
-  local phase_dir="$BATS_TEST_TMPDIR/phase"
 
   mkdir -p "$phase_dir"
   cat > "$phase_dir/01-PLAN.md" <<'FRONTMATTER'
@@ -67,6 +62,9 @@ FRONTMATTER
 
   run bash -c 'source "$1"; _freshness_recorded_paths "$2"' \
     _ "$FRESHNESS" "$phase_dir"
-  [ "$status" -eq 0 ]
-  [ "$output" = "src/has,comma.py" ]
+  expect_case freshness-comma-path 0
+  [ "$output" = "src/has,comma.py" ] \
+    || record_case_failure freshness-comma-path "output=$output"
+
+  assert_no_case_failures
 }

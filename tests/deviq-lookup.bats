@@ -18,7 +18,7 @@ expect_absent() {
   [[ "$output" != *"$fragment"* ]] || record_case_failure "$label" "unexpected fragment=[$fragment] output=$output"
 }
 
-@test "lookup finds articles by index text, body text, category and id with exit 0" {
+@test "lookup finds articles by index, body, category and id, caps results at 8, and answers misses with exit 0" {
   reset_case_failures
 
   lookup blob
@@ -34,11 +34,10 @@ expect_absent() {
   lookup --show antipatterns/blob
   expect_case show-prints-vendored-body 0 "title: The Blob"
 
-  assert_no_case_failures
-}
-
-@test "lookup answers misses and garbage input with exit 0 and a plain message" {
-  reset_case_failures
+  lookup the
+  expect_case results-capped 0
+  [ "$(printf '%s\n' "$output" | wc -l | tr -d ' ')" -eq 8 ] \
+    || record_case_failure results-capped "expected 8 lines output=$output"
 
   lookup --category design-patterns blob
   expect_case category-excludes-other-categories 0
@@ -55,13 +54,6 @@ expect_absent() {
   expect_case garbage-arguments 0
 
   assert_no_case_failures
-}
-
-@test "search results are capped at 8 lines" {
-  lookup the
-
-  [ "$status" -eq 0 ]
-  [ "$(echo "$output" | wc -l | tr -d ' ')" -eq 8 ]
 }
 
 @test "vendored corpus matches MANIFEST.json sha256 hashes" {

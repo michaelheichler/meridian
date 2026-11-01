@@ -11,7 +11,7 @@ teardown() {
   teardown_temp_dir
 }
 
-@test "compile-verify-context lists only FAIL rows in the verification history" {
+@test "compile-verify-context lists FAIL history rows, picks the source verification, and tracks each original FAIL" {
   cvc_run_cases <<'CASES'
 == phase-level-verification-history
 @plan 03-01-PLAN.md|01|Test plan|Item one
@@ -116,11 +116,6 @@ teardown() {
 | 2 | ART-02 | docs/guide.md | Yes | Stable output | PASS |
 ?+ === VERIFICATION HISTORY ===
 ?h- Contains FAIL example
-CASES
-}
-
-@test "compile-verify-context picks the verification that holds the original FAILs" {
-  cvc_run_cases <<'CASES'
 == round-two-uses-previous-round-verification
 @stage qa|verify|02
 @plan 03-01-PLAN.md|01|Original phase plan|Original requirement
@@ -184,11 +179,6 @@ CASES
 ?f --remediation-only
 ?+ --- ORIGINAL FAIL RESOLUTION STATUS ---
 ?+ source_verification_missing=true
-CASES
-}
-
-@test "compile-verify-context emits one resolution entry per original FAIL row" {
-  cvc_run_cases <<'CASES'
 == truth-condition-header-lists-fail-rows-only
 @plan 03-01-PLAN.md|01|Test plan|Item one
 @sum 03-01-SUMMARY.md|complete|Feature A

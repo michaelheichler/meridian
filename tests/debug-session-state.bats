@@ -105,7 +105,7 @@ expect_line() {
 }
 
 expect_no_line_prefix() {
-  ! printf '%s\n' "$output" | grep -q -- "^$2" || fail_case "$1" "unexpected output line starting with: $2"
+  [[ $'\n'"$output" != *$'\n'"$2"* ]] || fail_case "$1" "unexpected output line starting with: $2"
 }
 
 expect_file() {
@@ -118,6 +118,16 @@ expect_no_file() {
 
 expect_frontmatter() {
   grep -qxF -- "$3" "$2" || fail_case "$1" "expected line '$3' in $2, found: $(grep ':' "$2" | head -12 | tr '\n' ' ')"
+}
+
+expect_no_frontmatter() {
+  local found
+  found=$(grep -cxF -- "$3" "$2" || true)
+  [ "$found" -eq 0 ] || fail_case "$1" "unexpected line '$3' in $2"
+}
+
+expect_file_grep() {
+  grep -q -- "$3" "$2" || fail_case "$1" "expected pattern '$3' in $2"
 }
 
 expect_presence() {
@@ -174,24 +184,27 @@ expect_selection() {
   esac
 }
 
-@test "start creates the session file, active pointer, and initial frontmatter" {
+@test "start creates the session file, pointer and frontmatter, sanitizes the slug, and clear-active keeps the file" {
+  local long60 long50 label input expected
+
   run dss start test-bug
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"session_id="* ]]
-  [[ "$output" == *"session_file="* ]]
-  [ -f "$DBG/.active-session" ]
-
+  expect_status start 0
+  expect_out start "session_id="
+  expect_out start "session_file="
+  expect_file start-pointer "$DBG/.active-session"
   eval "$output"
-  [ -f "$session_file" ]
-  [[ "$session_file" == *"/debugging/active/"* ]]
-  [ "$(cat "$DBG/.active-session")" = "$(basename "$session_file")" ]
-  grep -q '^status: investigating$' "$session_file"
-  grep -q '^qa_round: 0$' "$session_file"
-  grep -q '^uat_round: 0$' "$session_file"
-}
+  expect_file start-session-file "$session_file"
+  [[ "$session_file" == *"/debugging/active/"* ]] || fail_case start-session-file "not under active: $session_file"
+  [ "$(cat "$DBG/.active-session")" = "$(basename "$session_file")" ] || fail_case start-pointer "pointer does not name $session_file"
+  expect_file_grep start-frontmatter "$session_file" '^status: investigating$'
+  expect_file_grep start-frontmatter "$session_file" '^qa_round: 0$'
+  expect_file_grep start-frontmatter "$session_file" '^uat_round: 0$'
 
-@test "start sanitizes the slug into the session id suffix" {
-  local long60 long50
+  run dss clear-active
+  expect_status clear-active 0
+  expect_no_file clear-active-pointer "$DBG/.active-session"
+  expect_file clear-active-keeps-session "$session_file"
+
   long60=$(printf 'a%.0s' $(seq 1 60))
   long50=$(printf 'a%.0s' $(seq 1 50))
   while IFS='|' read -r label input expected; do
@@ -210,7 +223,9 @@ truncated-to-fifty|$long60|$long50
 CASES
 }
 
-@test "commands that need an argument reject a missing one with their usage line" {
+@test "commands reject missing arguments, bad session names, a missing active session, unknown commands and invalid statuses" {
+  local label command usage name reason argument
+
   while IFS='|' read -r label command usage; do
     [ -n "$label" ] || continue
     reset_planning
@@ -224,70 +239,105 @@ start-with-selected-todo|start-with-selected-todo|start-with-selected-todo <plan
 resume|resume|resume <planning-dir> <session-id>
 set-status|set-status|set-status <planning-dir> <status>
 CASES
+
+  while IFS='|' read -r label name reason; do
+    [ -n "$label" ] || continue
+    reset_planning
+    run dss resume "$name"
+    expect_status "$label" 1
+    expect_out "$label" "$reason"
+  done <<'CASES'
+path-traversal|../etc/passwd|path traversal
+missing-timestamp-prefix|nonexistent|YYYYMMDD-HHMMSS-slug
+wrong-extension|20990101-000000-foo.txt|must be .md
+unknown-session|20990101-000000-no-such-session.md|not found
+CASES
+
+  while IFS='|' read -r label command argument; do
+    [ -n "$label" ] || continue
+    reset_planning
+    run dss "$command" $argument
+    expect_status "$label" 1
+    expect_out "$label" "no active"
+  done <<'CASES'
+no-active-set-status|set-status|qa_pending
+no-active-increment-qa|increment-qa|
+no-active-increment-uat|increment-uat|
+CASES
+
+  run dss bogus
+  expect_status unknown-command 1
+  expect_out unknown-command "unknown command"
+
+  reset_planning
+  start_session invalid-test
+  run dss set-status bogus
+  expect_status invalid-status 1
+  expect_out invalid-status "invalid status"
+  expect_file_grep invalid-status-unchanged "$session_file" '^status: investigating$'
 }
 
-@test "start-with-source-todo writes Source Todo and keeps session active on success" {
+@test "start-with-source-todo and start-with-selected-todo write Source Todo and roll back on writer failure" {
+  local first_session_name
+
   run_piped '{"mode":"source-todo","text":"Investigate parser crash","raw_line":"- Investigate parser crash (ref:abcd1234)","ref":"abcd1234","detail_status":"ok","related_files":["src/parser.sh"],"detail_context":"Persisted detail"}' \
     start-with-source-todo "$LBWC_PLANNING_DIR" "source-todo-success"
-  [ "$status" -eq 0 ]
+  expect_status source-todo-success 0
   eval "$output"
-  [ -f "$session_file" ]
-  [ -f "$DBG/.active-session" ]
-  grep -q '^## Source Todo$' "$session_file"
-  grep -q 'Investigate parser crash' "$session_file"
-  grep -q 'Persisted detail' "$session_file"
-}
+  expect_file source-todo-success "$session_file"
+  expect_file source-todo-success-pointer "$DBG/.active-session"
+  expect_file_grep source-todo-success "$session_file" '^## Source Todo$'
+  expect_file_grep source-todo-success "$session_file" 'Investigate parser crash'
+  expect_file_grep source-todo-success "$session_file" 'Persisted detail'
 
-@test "start-with-source-todo rolls back the new session on writer failure" {
+  reset_planning
   run_piped 'not-json' start-with-source-todo "$LBWC_PLANNING_DIR" "source-todo-failure"
-  [ "$status" -eq 1 ]
-  [ ! -f "$DBG/.active-session" ]
+  expect_status source-todo-rollback 1
+  expect_no_file source-todo-rollback-pointer "$DBG/.active-session"
   run find "$DBG/active" -maxdepth 1 -type f -name '*.md'
-  [ "$status" -eq 0 ]
-  [ -z "$output" ]
-}
+  expect_status source-todo-rollback-files 0
+  [ -z "$output" ] || fail_case source-todo-rollback-files "session files remained"
 
-@test "start-with-source-todo restores the prior active pointer on writer failure" {
+  reset_planning
   start_session first-bug
-  local first_session_name
   first_session_name=$(basename "$session_file")
-
   run_piped 'not-json' start-with-source-todo "$LBWC_PLANNING_DIR" "source-todo-failure"
-  [ "$status" -eq 1 ]
-  [ -f "$DBG/.active-session" ]
-  [ "$(cat "$DBG/.active-session")" = "$first_session_name" ]
-  [ -f "$DBG/active/$first_session_name" ]
-}
+  expect_status source-todo-restores-pointer 1
+  expect_file source-todo-restores-pointer "$DBG/.active-session"
+  [ "$(cat "$DBG/.active-session")" = "$first_session_name" ] || fail_case source-todo-restores-pointer "pointer is $(cat "$DBG/.active-session")"
+  expect_file source-todo-restores-pointer "$DBG/active/$first_session_name"
 
-@test "start-with-selected-todo builds Source Todo from selected todo without detail" {
+  reset_planning
   run_piped '{"command_text":"Investigate parser crash","normalized_text":"Investigate parser crash","line":"- [HIGH] Investigate parser crash (added 2026-04-01) (ref:abcd1234)","ref":"abcd1234"}' \
     start-with-selected-todo "$LBWC_PLANNING_DIR" "selected-todo-no-detail" none
-  [ "$status" -eq 0 ]
+  expect_status selected-no-detail 0
   eval "$output"
-  [ -f "$session_file" ]
-  grep -q '\*\*Text:\*\* Investigate parser crash' "$session_file"
-  grep -q '\*\*Raw Line:\*\* - \[HIGH\] Investigate parser crash' "$session_file"
-  grep -q '\*\*Ref:\*\* abcd1234' "$session_file"
-  grep -q '\*\*Detail Status:\*\* none' "$session_file"
-  grep -q 'None recorded\.' "$session_file"
-  grep -q 'No persisted detail context\.' "$session_file"
-}
+  expect_file selected-no-detail "$session_file"
+  expect_file_grep selected-no-detail "$session_file" '\*\*Text:\*\* Investigate parser crash'
+  expect_file_grep selected-no-detail "$session_file" '\*\*Raw Line:\*\* - \[HIGH\] Investigate parser crash'
+  expect_file_grep selected-no-detail "$session_file" '\*\*Ref:\*\* abcd1234'
+  expect_file_grep selected-no-detail "$session_file" '\*\*Detail Status:\*\* none'
+  expect_file_grep selected-no-detail "$session_file" 'None recorded\.'
+  expect_file_grep selected-no-detail "$session_file" 'No persisted detail context\.'
 
-@test "start-with-selected-todo builds Source Todo from selected todo and detail helper output" {
+  reset_planning
   export TODO_DETAIL_RESULT_JSON='{"status":"ok","detail":{"context":"Persisted detail context","files":["src/parser.sh","tests/parser.bats"]}}'
   run_piped '{"command_text":"Investigate parser crash","line":"- Investigate parser crash (ref:abcd1234)","ref":"abcd1234"}' \
     start-with-selected-todo "$LBWC_PLANNING_DIR" "selected-todo-with-detail" ok
-  [ "$status" -eq 0 ]
+  unset TODO_DETAIL_RESULT_JSON
+  expect_status selected-with-detail 0
   eval "$output"
-  [ -f "$session_file" ]
-  grep -q '\*\*Text:\*\* Investigate parser crash' "$session_file"
-  grep -q '\*\*Detail Status:\*\* ok' "$session_file"
-  grep -q 'src/parser.sh' "$session_file"
-  grep -q 'tests/parser.bats' "$session_file"
-  grep -q 'Persisted detail context' "$session_file"
+  expect_file selected-with-detail "$session_file"
+  expect_file_grep selected-with-detail "$session_file" '\*\*Text:\*\* Investigate parser crash'
+  expect_file_grep selected-with-detail "$session_file" '\*\*Detail Status:\*\* ok'
+  expect_file_grep selected-with-detail "$session_file" 'src/parser.sh'
+  expect_file_grep selected-with-detail "$session_file" 'tests/parser.bats'
+  expect_file_grep selected-with-detail "$session_file" 'Persisted detail context'
 }
 
-@test "get and get-or-latest report none when nothing is active or resumable" {
+@test "get, get-or-latest and resume print session_status metadata and get-or-latest selects the latest unresolved session" {
+  local label command expected_active drop_pointer sid pointer specs expected_id
+
   while IFS='|' read -r label command; do
     [ -n "$label" ] || continue
     reset_planning
@@ -295,12 +345,10 @@ CASES
     expect_status "$label" 0
     expect_line "$label" "active_session=none"
   done <<'CASES'
-get|get
-get-or-latest|get-or-latest
+nothing-active-get|get
+nothing-active-get-or-latest|get-or-latest
 CASES
-}
 
-@test "session metadata prints session_status instead of status for every entry command" {
   while IFS='|' read -r label command expected_active drop_pointer; do
     [ -n "$label" ] || continue
     reset_planning
@@ -317,14 +365,12 @@ get-active-pointer|get|true|no
 get-or-latest-fallback|get-or-latest|fallback|yes
 resume|resume|true|yes
 CASES
-}
 
-@test "metadata output evaluates cleanly when the status shell variable is readonly" {
   while IFS='|' read -r label command expected_active; do
     [ -n "$label" ] || continue
     reset_planning
     start_session readonly-case
-    local sid="$session_id"
+    sid="$session_id"
     rm -f "$DBG/.active-session"
     run bash -c '
       readonly status=0
@@ -339,12 +385,10 @@ CASES
     expect_line "$label" "session_id=$sid"
     expect_out "$label" "session_file=$DBG/active/"
   done <<'CASES'
-get-or-latest|get-or-latest|fallback
-resume|resume|true
+readonly-status-get-or-latest|get-or-latest|fallback
+readonly-status-resume|resume|true
 CASES
-}
 
-@test "get-or-latest selects the latest unresolved session and recovers stranded ones" {
   while IFS='|' read -r label pointer specs expected_active expected_id; do
     [ -n "$label" ] || continue
     reset_planning
@@ -363,21 +407,6 @@ pointer-to-complete-in-active-falls-back|20240101-120000-early.md|active:2024010
 unresolved-stranded-in-completed|-|completed:20240101-120000-stranded:uat_pending|fallback|20240101-120000-stranded
 pointer-to-unresolved-stranded-in-completed|20240101-120000-stranded.md|completed:20240101-120000-stranded:qa_failed|true|20240101-120000-stranded
 only-completed-sessions|-|completed:20240101-120000-done:complete|none|-
-CASES
-}
-
-@test "resume rejects invalid or unknown session names with a reason" {
-  while IFS='|' read -r label name reason; do
-    [ -n "$label" ] || continue
-    reset_planning
-    run dss resume "$name"
-    expect_status "$label" 1
-    expect_out "$label" "$reason"
-  done <<'CASES'
-path-traversal|../etc/passwd|path traversal
-missing-timestamp-prefix|nonexistent|YYYYMMDD-HHMMSS-slug
-wrong-extension|20990101-000000-foo.txt|must be .md
-unknown-session|20990101-000000-no-such-session.md|not found
 CASES
 }
 
@@ -406,8 +435,10 @@ unresolved-in-active-becomes-active|active|investigating|no|investigating|active
 CASES
 }
 
-@test "set-status writes each non-complete status and refreshes the updated stamp" {
-  local id="20240101-120000-status-case" target
+@test "set-status writes statuses and completes sessions, and increment bumps only its own round and result" {
+  local id="20240101-120000-status-case" complete_id="20240101-120000-complete-case" bump_id="20240101-120000-bump-case"
+  local target label qa_round qa_result uat_round uat_result expected_qa expected_uat kind other
+
   for target in fix_applied qa_pending qa_failed uat_pending uat_failed; do
     reset_planning
     make_session active "$id" investigating
@@ -416,97 +447,55 @@ CASES
     expect_status "$target" 0
     expect_line "$target" "status=$target"
     expect_frontmatter "$target" "$DBG/active/$id.md" "status: $target"
-    ! grep -qxF 'updated: 2024-01-01 12:00:00' "$DBG/active/$id.md" || fail_case "$target" "updated stamp unchanged"
+    expect_no_frontmatter "$target" "$DBG/active/$id.md" 'updated: 2024-01-01 12:00:00'
   done
-}
 
-@test "set-status complete moves the session, clears the pointer, and normalizes only unverified results" {
-  local id="20240101-120000-complete-case"
   while IFS='|' read -r label qa_round qa_result uat_round uat_result expected_qa expected_uat; do
     [ -n "$label" ] || continue
     reset_planning
-    make_session active "$id" investigating "$qa_round" "$qa_result" "$uat_round" "$uat_result"
-    point_to "$id.md"
+    make_session active "$complete_id" investigating "$qa_round" "$qa_result" "$uat_round" "$uat_result"
+    point_to "$complete_id.md"
     run dss set-status complete
     expect_status "$label" 0
     expect_line "$label" "status=complete"
-    expect_no_file "$label" "$DBG/active/$id.md"
+    expect_no_file "$label" "$DBG/active/$complete_id.md"
     expect_no_file "$label" "$DBG/.active-session"
-    expect_frontmatter "$label" "$DBG/completed/$id.md" "status: complete"
-    expect_frontmatter "$label" "$DBG/completed/$id.md" "qa_round: $qa_round"
-    expect_frontmatter "$label" "$DBG/completed/$id.md" "uat_round: $uat_round"
-    expect_frontmatter "$label" "$DBG/completed/$id.md" "qa_last_result: ${expected_qa//SKIPPED/$SKIPPED}"
-    expect_frontmatter "$label" "$DBG/completed/$id.md" "uat_last_result: ${expected_uat//SKIPPED/$SKIPPED}"
+    expect_frontmatter "$label" "$DBG/completed/$complete_id.md" "status: complete"
+    expect_frontmatter "$label" "$DBG/completed/$complete_id.md" "qa_round: $qa_round"
+    expect_frontmatter "$label" "$DBG/completed/$complete_id.md" "uat_round: $uat_round"
+    expect_frontmatter "$label" "$DBG/completed/$complete_id.md" "qa_last_result: ${expected_qa//SKIPPED/$SKIPPED}"
+    expect_frontmatter "$label" "$DBG/completed/$complete_id.md" "uat_last_result: ${expected_uat//SKIPPED/$SKIPPED}"
   done <<'CASES'
 no-verification|0|pending|0|pending|SKIPPED|SKIPPED
 fully-verified|1|pass|1|pass|pass|pass
 qa-only-verified|1|pass|0|pending|pass|pending
 CASES
-}
 
-@test "set-status rejects an invalid status and leaves the session unchanged" {
-  start_session invalid-test
-  run dss set-status bogus
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"invalid status"* ]]
-  grep -q '^status: investigating$' "$session_file"
-}
-
-@test "state-changing commands fail when no session is active" {
-  while IFS='|' read -r label command argument; do
-    [ -n "$label" ] || continue
-    reset_planning
-    run dss "$command" $argument
-    expect_status "$label" 1
-    expect_out "$label" "no active"
-  done <<'CASES'
-set-status|set-status|qa_pending
-increment-qa|increment-qa|
-increment-uat|increment-uat|
-CASES
-}
-
-@test "increment commands bump their own round, reset their own result, and leave the other kind alone" {
-  local id="20240101-120000-bump-case"
   while IFS='|' read -r kind other; do
     [ -n "$kind" ] || continue
     reset_planning
-    make_session active "$id" investigating 0 pass 0 pass
-    point_to "$id.md"
+    make_session active "$bump_id" investigating 0 pass 0 pass
+    point_to "$bump_id.md"
     run dss "increment-$kind"
     expect_status "$kind-first" 0
     expect_line "$kind-first" "${kind}_round=1"
     run dss "increment-$kind"
     expect_status "$kind-second" 0
     expect_line "$kind-second" "${kind}_round=2"
-    expect_frontmatter "$kind" "$DBG/active/$id.md" "${kind}_round: 2"
-    expect_frontmatter "$kind" "$DBG/active/$id.md" "${kind}_last_result: pending"
-    expect_frontmatter "$kind" "$DBG/active/$id.md" "${other}_last_result: pass"
-    expect_frontmatter "$kind" "$DBG/active/$id.md" "${other}_round: 0"
+    expect_frontmatter "$kind" "$DBG/active/$bump_id.md" "${kind}_round: 2"
+    expect_frontmatter "$kind" "$DBG/active/$bump_id.md" "${kind}_last_result: pending"
+    expect_frontmatter "$kind" "$DBG/active/$bump_id.md" "${other}_last_result: pass"
+    expect_frontmatter "$kind" "$DBG/active/$bump_id.md" "${other}_round: 0"
   done <<'CASES'
 qa|uat
 uat|qa
 CASES
 }
 
-@test "clear-active removes the pointer and keeps the session file" {
-  start_session clear-test
-  [ -f "$DBG/.active-session" ]
+@test "legacy sessions migrate with collisions resolved or reported, and completed sessions normalize through every entry command" {
+  local id="20250101-120000-legacy-case" norm_id="20240101-120000-norm-case"
+  local label entry pointer specs expected_out warn legacy_remains expected_files expected_round expected_qa expected_uat
 
-  run dss clear-active
-  [ "$status" -eq 0 ]
-  [ ! -f "$DBG/.active-session" ]
-  [ -f "$session_file" ]
-}
-
-@test "unknown command fails with error" {
-  run dss bogus
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"unknown command"* ]]
-}
-
-@test "legacy sessions migrate out of the flat directory and collisions are resolved or reported" {
-  local id="20250101-120000-legacy-case"
   while IFS='|' read -r label entry pointer specs expected_out warn legacy_remains expected_files; do
     [ -n "$label" ] || continue
     reset_planning
@@ -526,26 +515,23 @@ fallback-collision-with-symlink|get-or-latest|no|legacy:@:investigating symlink:
 list-collision-with-unresolved-file|list|no|legacy:@:investigating active:@:investigating|session_count=2|yes|yes|
 list-legacy-complete|list|no|legacy:@:complete|PIPEcompleted|no|no|completed/@.md
 CASES
-}
 
-@test "completed sessions are normalized and relocated through every entry command" {
-  local id="20240101-120000-norm-case"
   while IFS='|' read -r label entry pointer specs expected_out expected_round expected_qa expected_uat; do
     [ -n "$label" ] || continue
     reset_planning
-    build_specs "${specs//@/$id}"
-    point_if "$pointer" "$id.md"
-    run dss "$entry" "$id.md"
+    build_specs "${specs//@/$norm_id}"
+    point_if "$pointer" "$norm_id.md"
+    run dss "$entry" "$norm_id.md"
     expect_status "$label" 0
     expect_out "$label" "${expected_out//PIPE/|}"
-    expect_file "$label" "$DBG/completed/$id.md"
-    expect_no_file "$label" "$DBG/active/$id.md"
-    expect_no_file "$label" "$DBG/$id.md"
+    expect_file "$label" "$DBG/completed/$norm_id.md"
+    expect_no_file "$label" "$DBG/active/$norm_id.md"
+    expect_no_file "$label" "$DBG/$norm_id.md"
     expect_no_file "$label" "$DBG/.active-session"
-    expect_frontmatter "$label" "$DBG/completed/$id.md" "qa_round: $expected_round"
-    expect_frontmatter "$label" "$DBG/completed/$id.md" "uat_round: $expected_round"
-    expect_frontmatter "$label" "$DBG/completed/$id.md" "qa_last_result: ${expected_qa//SKIPPED/$SKIPPED}"
-    expect_frontmatter "$label" "$DBG/completed/$id.md" "uat_last_result: ${expected_uat//SKIPPED/$SKIPPED}"
+    expect_frontmatter "$label" "$DBG/completed/$norm_id.md" "qa_round: $expected_round"
+    expect_frontmatter "$label" "$DBG/completed/$norm_id.md" "uat_round: $expected_round"
+    expect_frontmatter "$label" "$DBG/completed/$norm_id.md" "qa_last_result: ${expected_qa//SKIPPED/$SKIPPED}"
+    expect_frontmatter "$label" "$DBG/completed/$norm_id.md" "uat_last_result: ${expected_uat//SKIPPED/$SKIPPED}"
   done <<'CASES'
 canonical-unverified-via-get-or-latest|get-or-latest|no|completed:@:complete|active_session=none|0|SKIPPED|SKIPPED
 canonical-verified-via-get-or-latest|get-or-latest|no|completed:@:complete:v|active_session=none|1|pass|pass

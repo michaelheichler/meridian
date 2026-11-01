@@ -103,7 +103,20 @@ prepare_raw_setup() {
   esac
 }
 
-@test "spawn guard blocks malformed input and unresolved generated identities" {
+snapshot_planning() {
+  rm -rf "$BATS_TEST_TMPDIR/planning-snapshot"
+  cp -R "$TEST_TEMP_DIR/.lbwc-planning" "$BATS_TEST_TMPDIR/planning-snapshot"
+}
+
+restore_planning() {
+  rm -rf "$TEST_TEMP_DIR/.lbwc-planning"
+  cp -R "$BATS_TEST_TMPDIR/planning-snapshot" "$TEST_TEMP_DIR/.lbwc-planning"
+}
+
+@test "spawn guard blocks malformed input, passes non-LBWC calls untouched, and strips sidechain fields" {
+  local before after json no_jq_path="$TEST_TEMP_DIR/no-jq-bin"
+  snapshot_planning
+
   while IFS='|' read -r label setup reason stdin; do
     [ -n "$label" ] || continue
     prepare_raw_setup "$setup"
@@ -115,21 +128,15 @@ malformed-json|-|could not parse tool call input|not json at all
 generated-identity-without-control-root|no-planning|no resolvable control root or manifest|{"tool_name":"Agent","tool_input":{"subagent_type":"lbwc-docs-missing"}}
 generated-identity-without-manifest|-|no resolvable control root or manifest|{"tool_name":"Agent","tool_input":{"subagent_type":"lbwc-docs-missing"}}
 CASES
-}
 
-@test "spawn guard fails closed when jq is missing" {
-  local no_jq_path="$TEST_TEMP_DIR/no-jq-bin"
+  restore_planning
   mkdir -p "$no_jq_path"
   ln -s "$(command -v bash)" "$no_jq_path/bash"
-
   run env PATH="$no_jq_path" bash -c "printf '%s' '{}' | bash '$SCRIPTS_DIR/agent-spawn-guard.sh'"
-
   expect_status jq-missing 2
   expect_output_has jq-missing "jq not available"
-}
+  rm -rf "$no_jq_path"
 
-@test "spawn guard lets calls outside LBWC enforcement through untouched" {
-  local before after
   while IFS='|' read -r label setup stdin; do
     [ -n "$label" ] || continue
     prepare_raw_setup "$setup"
@@ -149,10 +156,8 @@ call-without-subagent-type|empty-manifest|{"tool_name":"Agent","tool_input":{}}
 ordinary-cwd-and-isolation-kept|empty-manifest|{"tool_name":"Agent","tool_input":{"subagent_type":"general-purpose","cwd":"/work/project","isolation":"none"}}
 empty-stdin|-|
 CASES
-}
 
-@test "spawn guard strips sidechain cwd and worktree isolation without blocking" {
-  local before after json
+  restore_planning
   while IFS='|' read -r label stripped_field extra; do
     [ -n "$label" ] || continue
     prepare_raw_setup empty-manifest
@@ -175,7 +180,8 @@ worktree-isolation|isolation|{"isolation":"worktree"}
 CASES
 }
 
-@test "spawn guard refuses a generated agent whose contract, policy, call, or state is wrong" {
+@test "spawn guard refuses wrong generated agents, claims registered ones with host model ids, and holds open groups" {
+  local first_contract second_contract first_id second_id first_engineer second_engineer
   while IFS='|' read -r label preset mutation call_name call_extra expected_state reason; do
     [ -n "$label" ] || continue
     build_native_agent "$label" "$preset" "$mutation" </dev/null
@@ -202,9 +208,7 @@ agent-already-used|default|used|@agent||used|is already used and cannot be spawn
 agent-already-expired|default|expired|@agent||expired|is already expired and cannot be spawned again
 generated-name-absent-from-manifest|default|none|lbwc-ghost||registered|has no manifest entry
 CASES
-}
 
-@test "spawn guard claims a registered agent and maps its model to the live host id" {
   while IFS='|' read -r label preset mutation expected_model; do
     [ -n "$label" ] || continue
     build_native_agent "$label" "$preset" "$mutation" </dev/null
@@ -219,19 +223,16 @@ CASES
 full-selector-mapped-to-host-alias|alias|alias-model|sonnet
 custom-host-id-left-unchanged|custom|custom-model|leverframe:openai-oauth:codex-auto-review
 CASES
-}
 
-@test "spawn guard rejects a member of a second unclaimed generated group" {
-  local first_contract second_contract first_id second_id
+  CONTROL_ROOT=""
   first_contract=$(bash "$SCRIPTS_DIR/task-contract.sh" issue "$TEST_TEMP_DIR" first-pair \
     --command test --role python-engineer --team pair --job "first build team")
   first_id=$(basename "$first_contract" .json)
   run bash "$SCRIPTS_DIR/agent-generator.sh" --pair python-engineer \
     --job "first build team" --contract "$first_contract" --task-id "$first_id"
-  [ "$status" -eq 0 ]
-  local first_engineer
+  expect_status first-group-generated 0
   first_engineer=$(printf '%s\n' "$output" | grep 'ENGINEER: SPAWN_READY' | awk '{print $3}')
-  [ -n "$first_engineer" ]
+  [ -n "$first_engineer" ] || fail_case first-group-generated "no engineer name"
   bash "$SCRIPTS_DIR/task-contract.sh" state "$TEST_TEMP_DIR" "$first_id" dispatched >/dev/null
 
   second_contract=$(bash "$SCRIPTS_DIR/task-contract.sh" issue "$TEST_TEMP_DIR" second-pair \
@@ -239,10 +240,9 @@ CASES
   second_id=$(basename "$second_contract" .json)
   run bash "$SCRIPTS_DIR/agent-generator.sh" --pair python-engineer \
     --job "second build team" --contract "$second_contract" --task-id "$second_id"
-  [ "$status" -eq 0 ]
-  local second_engineer
+  expect_status second-group-generated 0
   second_engineer=$(printf '%s\n' "$output" | grep 'ENGINEER: SPAWN_READY' | awk '{print $3}')
-  [ -n "$second_engineer" ]
+  [ -n "$second_engineer" ] || fail_case second-group-generated "no engineer name"
   bash "$SCRIPTS_DIR/task-contract.sh" state "$TEST_TEMP_DIR" "$second_id" dispatched >/dev/null
 
   run run_spawn "$second_engineer"
@@ -250,5 +250,6 @@ CASES
   expect_status second-group-member 2
   expect_output_has second-group-member "is open, spawn every member before starting other work."
   expect_output_has second-group-member "$first_engineer"
-  [ "$(jq -r --arg name "$second_engineer" '.agents[$name].state' "$TEST_TEMP_DIR/.lbwc-planning/.agent-manifest.json")" = "registered" ]
+  [ "$(jq -r --arg name "$second_engineer" '.agents[$name].state' "$TEST_TEMP_DIR/.lbwc-planning/.agent-manifest.json")" = "registered" ] \
+    || fail_case second-group-member "second group member left the registered state"
 }

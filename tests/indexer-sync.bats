@@ -179,7 +179,7 @@ run_resolved_build_gate() {
     bash -c "cd \"$PROJECT_DIR\" && $gate"
 }
 
-@test "indexer-sync accepts: records routes that need no failing refresh" {
+@test "indexer-sync records usable routes, blocks missing, stale, failed and unsupported indexes, and rejects bad arguments" {
   set_probe false false grep-only
   run_sync
   expect_status fresh-project-grep-only 0
@@ -237,10 +237,7 @@ run_resolved_build_gate() {
   expect_case lsp-gap 0 "LSP route selected"
   expect_jq lsp-gap "$SYNC_JSON" '.map_route == "lsp" and .capability_gap.code == "lsp-refresh-unsupported"'
 
-  assert_no_case_failures
-}
-
-@test "indexer-sync rejects: blocks missing, stale, failed and unsupported indexes" {
+  reset_row
   initialize_planning
   set_probe true false gitnexus
   run_sync
@@ -353,10 +350,6 @@ EOF
   expect_case probe-unavailable-uninitialized 2 "required map-tools probe is unavailable"
   expect_no_path probe-unavailable-uninitialized "$PROJECT_DIR/.lbwc-planning"
 
-  assert_no_case_failures
-}
-
-@test "indexer-sync arguments: prints usage and rejects unusable invocations" {
   run bash "$PLUGIN_DIR/indexer-sync.sh" --help
   expect_case help-flag 0 "Usage:"
 
@@ -372,7 +365,7 @@ EOF
   assert_no_case_failures
 }
 
-@test "indexer-sync command gates: vibe, team and build run the helper" {
+@test "indexer-sync command gates: vibe, team and build run the helper and stop when it fails" {
   run_command_gate vibe
   expect_status vibe-gate 0
   run_command_gate team
@@ -386,19 +379,15 @@ EOF
   [ "$RESOLVED_PROJECT_ROOT" = "$PROJECT_DIR" ] || record_case_failure build-gate "resolved project root is $RESOLVED_PROJECT_ROOT"
   expect_no_path build-gate "$PROJECT_DIR/.lbwc-planning"
 
-  assert_no_case_failures
-}
-
-@test "indexer-sync command gates reject: vibe, team and build stop when the helper fails" {
+  reset_row
   rm -f "$PLUGIN_DIR/probe-map-tools.sh"
-
   run_command_gate vibe
-  expect_case vibe-gate 2 "required map-tools probe is unavailable"
+  expect_case vibe-gate-helper-fails 2 "required map-tools probe is unavailable"
   run_command_gate team
-  expect_case team-gate 2 "required map-tools probe is unavailable"
+  expect_case team-gate-helper-fails 2 "required map-tools probe is unavailable"
   run_resolved_build_gate
-  expect_case build-gate 2 "required map-tools probe is unavailable"
-  expect_no_path command-gates "$PROJECT_DIR/.lbwc-planning"
+  expect_case build-gate-helper-fails 2 "required map-tools probe is unavailable"
+  expect_no_path command-gates-helper-fails "$PROJECT_DIR/.lbwc-planning"
 
   assert_no_case_failures
 }

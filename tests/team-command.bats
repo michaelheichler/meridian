@@ -1,6 +1,8 @@
 #!/usr/bin/env bats
 
 load test_helper
+load gate_case_helper
+load gate_case_files
 
 setup() {
   REPO_ROOT="$BATS_TEST_DIRNAME/.."
@@ -15,6 +17,7 @@ setup() {
   export CLAUDE_CONFIG_DIR="$TEST_ROOT/claude"
   unset CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS || true
   use_claude_fixture "$TEST_ROOT/host-claude"
+  reset_case_failures
 }
 
 teardown() {
@@ -116,104 +119,90 @@ run_seeded_host_model() {
   run jq -r -f "$REPO_ROOT/scripts/lib/seeded-host-model.jq" "$TEST_ROOT/host-model.json"
 }
 
-@test "seeded host model skips a custom enum head and prefers sonnet when present" {
+copy_plugin() {
+  PLUGIN="$TEST_ROOT/plugin"
+  mkdir -p "$PLUGIN/templates" "$PROJECT/.lbwc-planning"
+  cp -R "$REPO_ROOT/scripts" "$PLUGIN/scripts"
+  ln -s "$REPO_ROOT/config" "$PLUGIN/config"
+  cp -R "$REPO_ROOT/templates/." "$PLUGIN/templates/"
+}
+
+write_routing_stub() {
+  printf '%s\n' '#!/usr/bin/env bash' "printf '%s\\n' '$1'" > "$PLUGIN/scripts/lbwc-routing.sh"
+}
+
+run_plugin_preflight() {
+  run bash "$PLUGIN/scripts/team-command-transaction.sh" preflight --project-root "$PROJECT" "$@"
+}
+
+expect_exact_output() {
+  [ "$output" = "$2" ] || record_case_failure "$1" "output=[$output] want=[$2]"
+}
+
+expect_refused() {
+  local label=$1 fragment=$2
+  [ "$status" -ne 0 ] || record_case_failure "$label" "command succeeded output=$output"
+  expect_output_has "$label" "$fragment"
+}
+
+preflight_turns_row() {
+  local label="$1" engineer="$2" config="$3" defaults_filter="$4" want="$5"
+  jq "$defaults_filter" "$REPO_ROOT/templates/agent-roles/defaults.json" > "$PLUGIN/templates/agent-roles/defaults.json"
+  printf '%s\n' "$config" > "$PROJECT/.lbwc-planning/config.json"
+  run_plugin_preflight --engineer "$engineer"
+}
+
+@test "seeded host model skips custom enum heads, prefers sonnet, maps claude selectors, and fails closed on custom ids" {
   run_seeded_host_model '["leverframe:openai-oauth:codex-auto-review","opus","sonnet"]' '[]' '{}'
+  expect_case prefers-sonnet 0
+  expect_exact_output prefers-sonnet sonnet
 
-  [ "$status" -eq 0 ]
-  [ "$output" = "sonnet" ]
-}
-
-@test "seeded host model uses the first native family when sonnet is absent" {
   run_seeded_host_model '["leverframe:openai-oauth:codex-auto-review","amber","violet"]' '[]' '{}'
+  expect_case first-native-family 0
+  expect_exact_output first-native-family amber
 
-  [ "$status" -eq 0 ]
-  [ "$output" = "amber" ]
-}
-
-@test "seeded host model maps a claude selector when the enum is only custom ids" {
   run_seeded_host_model '["leverframe:openai-oauth:codex-auto-review"]' \
     '[{"selector":"claude-amber-route","label":"Amber Route","description":"Amber Route"}]' \
     '{"claude-amber-route":"amber"}'
+  expect_case claude-selector-mapped 0
+  expect_exact_output claude-selector-mapped amber
 
-  [ "$status" -eq 0 ]
-  [ "$output" = "amber" ]
-}
-
-@test "seeded host model fails closed when only custom ids exist" {
   run_seeded_host_model '["leverframe:openai-oauth:codex-auto-review"]' \
     '[{"selector":"leverframe:openai-oauth:codex-auto-review","label":"custom","description":"custom"}]' \
     '{"leverframe:openai-oauth:codex-auto-review":"leverframe:openai-oauth:codex-auto-review"}'
+  expect_case_silent only-custom-ids 0
 
-  [ "$status" -eq 0 ]
-  [ -z "$output" ]
+  assert_no_case_failures
 }
 
-@test "preflight reports agent teams enabled from project settings" {
-  mkdir -p "$PROJECT/.claude"
-  jq -n '{env:{CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS:"1"}}' \
-    > "$PROJECT/.claude/settings.json"
+@test "preflight routing reports the seeded model, saved null profiles, and effort-scaled turn budgets with documented precedence" {
+  local binary="$TEST_ROOT/claude-seeded" label effort expected base engineer config defaults_filter want
 
-  run env -u CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS \
-    bash "$TRANSACTION" preflight --project-root "$PROJECT"
-
-  [ "$status" -eq 0 ]
-  jq -e '.agent_teams.enabled == true and .agent_teams.status.source == "settings"' \
-    <<< "$output" >/dev/null
-}
-
-@test "preflight seeded routing prefers sonnet over enum order" {
-  local binary="$TEST_ROOT/claude-seeded"
   write_seeded_claude_fixture \
     "$binary" \
     '["haiku","sonnet","opus","leverframe:openai-oauth:codex-auto-review"]' \
     '[{id:"claude-haiku-route",family:"haiku",display_name:"Haiku Route"},{id:"claude-sonnet-5",family:"sonnet",display_name:"Sonnet 5"},{id:"claude-opus-5",family:"opus",display_name:"Opus 5"}]'
+  run env CLAUDE_CODE_EXECPATH="$binary" bash "$TRANSACTION" preflight --project-root "$PROJECT"
+  expect_case seeded-prefers-sonnet 0
+  expect_jq_output seeded-prefers-sonnet '.routing.mode == "seeded" and .routing.model == "sonnet"'
 
-  run env CLAUDE_CODE_EXECPATH="$binary" \
-    bash "$TRANSACTION" preflight --project-root "$PROJECT"
-
-  [ "$status" -eq 0 ]
-  jq -e '.routing.mode == "seeded" and .routing.model == "sonnet"' <<< "$output" >/dev/null
-}
-
-@test "preflight reports the string null for a null saved-route profile" {
-  local plugin="$TEST_ROOT/plugin"
-  mkdir -p "$plugin" "$PROJECT/.lbwc-planning"
-  cp -R "$REPO_ROOT/scripts" "$plugin/scripts"
-  ln -s "$REPO_ROOT/config" "$plugin/config"
-  ln -s "$REPO_ROOT/templates" "$plugin/templates"
+  copy_plugin
   printf '%s\n' '{"routing":{"active_profile":"balanced"}}' > "$PROJECT/.lbwc-planning/config.json"
-  printf '%s\n' '#!/usr/bin/env bash' \
-    "printf '%s\\n' '{\"model\":\"nova-route\",\"profile\":null,\"reasoning\":\"deliberate\",\"role\":\"web-engineer\"}'" \
-    > "$plugin/scripts/lbwc-routing.sh"
+  write_routing_stub '{"model":"nova-route","profile":null,"reasoning":"deliberate","role":"web-engineer"}'
+  run_plugin_preflight
+  expect_case null-saved-profile 0
+  expect_jq_output null-saved-profile '.routing.mode == "saved" and .routing.profile == "null"'
 
-  run bash "$plugin/scripts/team-command-transaction.sh" preflight --project-root "$PROJECT"
-
-  [ "$status" -eq 0 ]
-  jq -e '.routing.mode == "saved" and .routing.profile == "null"' <<< "$output" >/dev/null
-}
-
-@test "preflight scales the engineer turn budget by the configured workflow effort" {
-  local plugin="$TEST_ROOT/plugin" label effort expected
-  mkdir -p "$plugin" "$PROJECT/.lbwc-planning"
-  cp -R "$REPO_ROOT/scripts" "$plugin/scripts"
-  ln -s "$REPO_ROOT/config" "$plugin/config"
-  ln -s "$REPO_ROOT/templates" "$plugin/templates"
-  printf '%s\n' '#!/usr/bin/env bash' \
-    "printf '%s\\n' '{\"model\":\"nova-route\",\"profile\":\"balanced\",\"reasoning\":\"deliberate\",\"role\":\"web-engineer\"}'" \
-    > "$plugin/scripts/lbwc-routing.sh"
-  local base
+  write_routing_stub '{"model":"nova-route","profile":"balanced","reasoning":"deliberate","role":"web-engineer"}'
   base=$(jq -r '.["web-engineer"].maxTurns' "$REPO_ROOT/templates/agent-roles/defaults.json")
-
   while IFS='|' read -r label effort expected; do
     [ -n "$label" ] || continue
     jq -n --arg effort "$effort" '{routing: {active_profile: "balanced"}, effort: $effort}' \
       > "$PROJECT/.lbwc-planning/config.json"
-
-    run bash "$plugin/scripts/team-command-transaction.sh" preflight --project-root "$PROJECT"
-
-    [ "$status" -eq 0 ] || { echo "case=$label status=$status output=$output" >&2; return 1; }
+    run_plugin_preflight
+    expect_case "$label" 0
     [ "$(jq -r '.routing.max_turns' <<< "$output")" = "$(( (base * expected + 5) / 10 ))" ] \
-      || { echo "case=$label expected tenths=$expected of base=$base output=$output" >&2; return 1; }
+      || record_case_failure "$label" "expected tenths=$expected of base=$base output=$output"
   done <<'CASES'
 thorough|thorough|15
 balanced|balanced|10
@@ -221,37 +210,14 @@ fast|fast|8
 turbo|turbo|6
 unknown-value-falls-back-to-balanced|reckless|10
 CASES
-}
 
-preflight_turns_row() {
-  local label="$1" engineer="$2" config="$3" defaults_filter="$4" want="$5" plugin="$TEST_ROOT/plugin"
-  jq "$defaults_filter" "$REPO_ROOT/templates/agent-roles/defaults.json" > "$plugin/templates/agent-roles/defaults.json"
-  printf '%s\n' "$config" > "$PROJECT/.lbwc-planning/config.json"
-
-  run bash "$plugin/scripts/team-command-transaction.sh" preflight --project-root "$PROJECT" --engineer "$engineer"
-
-  if [ "${want:0:1}" = '!' ]; then
-    [ "$status" -ne 0 ] && [[ "$output" == *"${want:1}"* ]] \
-      || { echo "case=$label status=$status output=$output" >&2; return 1; }
-  else
-    [ "$status" -eq 0 ] && [ "$(jq -c '.routing.max_turns' <<< "$output")" = "$want" ] \
-      || { echo "case=$label want=$want status=$status output=$output" >&2; return 1; }
-  fi
-}
-
-@test "preflight resolves the engineer turn budget from the planning config with the documented precedence" {
-  local plugin="$TEST_ROOT/plugin" label engineer config defaults_filter want
-  mkdir -p "$plugin/templates" "$PROJECT/.lbwc-planning"
-  cp -R "$REPO_ROOT/scripts" "$plugin/scripts"
-  ln -s "$REPO_ROOT/config" "$plugin/config"
-  cp -R "$REPO_ROOT/templates/." "$plugin/templates/"
-  printf '%s\n' '#!/usr/bin/env bash' \
-    "printf '%s\\n' '{\"model\":\"nova-route\",\"profile\":\"balanced\",\"reasoning\":\"deliberate\",\"role\":\"python-engineer\"}'" \
-    > "$plugin/scripts/lbwc-routing.sh"
-
+  write_routing_stub '{"model":"nova-route","profile":"balanced","reasoning":"deliberate","role":"python-engineer"}'
   while IFS='@' read -r label engineer config defaults_filter want; do
     [ -n "$label" ] || continue
     preflight_turns_row "$label" "$engineer" "$config" "$defaults_filter" "$want"
+    expect_case "$label" 0
+    [ "$(jq -c '.routing.max_turns' <<< "$output")" = "$want" ] \
+      || record_case_failure "$label" "want=$want output=$output"
   done <<'CASES'
 agent-max-turns-is-absolute@python-engineer@{"routing":{"active_profile":"balanced"},"effort":"thorough","agent_max_turns":{"python-engineer":10}}@.@10
 agent-max-turns-false-is-unlimited@python-engineer@{"routing":{"active_profile":"balanced"},"agent_max_turns":{"python-engineer":false}}@.@null
@@ -259,52 +225,60 @@ dev-alias-reaches-the-engineer@python-engineer@{"routing":{"active_profile":"bal
 roles-max-turns-is-effort-scaled@python-engineer@{"routing":{"active_profile":"balanced"},"effort":"thorough","roles":{"python-engineer":{"max_turns":20}}}@.@30
 roles-zero-is-unlimited@python-engineer@{"routing":{"active_profile":"balanced"},"effort":"thorough","roles":{"python-engineer":{"max_turns":0}}}@.@null
 defaults-zero-is-unlimited@python-engineer@{"routing":{"active_profile":"balanced"}}@.["python-engineer"].maxTurns = 0@null
-invalid-agent-max-turns-names-its-key@python-engineer@{"routing":{"active_profile":"balanced"},"agent_max_turns":{"python-engineer":"abc"}}@.@!invalid agent_max_turns.python-engineer value 'abc'
 CASES
+
+  preflight_turns_row invalid-agent-max-turns-names-its-key python-engineer \
+    '{"routing":{"active_profile":"balanced"},"agent_max_turns":{"python-engineer":"abc"}}' . ''
+  expect_refused invalid-agent-max-turns-names-its-key "invalid agent_max_turns.python-engineer value 'abc'"
+
+  assert_no_case_failures
 }
 
-@test "preflight is read-only and reports the canonical root, pair mode, and no side effects" {
-  run bash "$TRANSACTION" preflight --project-root "$PROJECT" --scope src
+@test "preflight is read-only, canonicalizes scopes, rejects protected scopes, and reads agent teams from project settings" {
+  local expected_root label scope_args expected
+  local -a scope_array
 
-  [ "$status" -eq 0 ]
+  run bash "$TRANSACTION" preflight --project-root "$PROJECT" --scope src
+  expect_case read-only 0
   expected_root=$(cd -P "$PROJECT" && pwd -P)
   jq -e --arg root "$expected_root" '
     .project_root == $root
     and .side_effects == false
     and .team_mode == "pair"
-  ' <<< "$output" >/dev/null
-  [ ! -e "$PROJECT/.temporary-agent-runfiles" ]
-}
+  ' <<< "$output" >/dev/null || record_case_failure read-only "root, side effects or team mode differ output=$output"
+  expect_no_path read-only-no-runfiles "$PROJECT/.temporary-agent-runfiles"
 
-@test "preflight resolves scope arguments to a canonical deduplicated list" {
-  local label scope_args expected
-  local -a scope_array
   while IFS='|' read -r label scope_args expected; do
     [ -n "$label" ] || continue
     scope_array=()
     [ -z "$scope_args" ] || read -r -a scope_array <<< "$scope_args"
     run bash "$TRANSACTION" preflight --project-root "$PROJECT" ${scope_array[@]+"${scope_array[@]}"}
-    [ "$status" -eq 0 ] || { echo "case=$label status=$status output=$output" >&2; return 1; }
+    expect_case "$label" 0
     [ "$(jq -c '.scopes' <<< "$output")" = "$expected" ] \
-      || { echo "case=$label expected=$expected output=$output" >&2; return 1; }
+      || record_case_failure "$label" "expected=$expected output=$output"
   done <<'CASES'
 default-is-repository-root||["."]
 repeated-scope-deduplicates|--scope src --scope src|["src"]
 CASES
-}
 
-@test "preflight rejects a protected scope" {
   mkdir -p "$PROJECT/.claude"
   run bash "$TRANSACTION" preflight --project-root "$PROJECT" --scope .claude
+  expect_refused protected-scope "protected"
+  expect_no_path protected-scope-no-runfiles "$PROJECT/.temporary-agent-runfiles"
 
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"protected"* ]]
-  [ ! -e "$PROJECT/.temporary-agent-runfiles" ]
+  jq -n '{env:{CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS:"1"}}' > "$PROJECT/.claude/settings.json"
+  run env -u CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS \
+    bash "$TRANSACTION" preflight --project-root "$PROJECT"
+  expect_case agent-teams-from-settings 0
+  expect_jq_output agent-teams-from-settings '.agent_teams.enabled == true and .agent_teams.status.source == "settings"'
+
+  assert_no_case_failures
 }
 
-@test "prepare creates a run root, one dispatched pair contract, and generated definitions" {
-  prepare_run run-pair --scope src
+@test "prepare issues one dispatched pair or trio contract with generated definitions and keeps an initialized control root" {
+  local contract_path manifest name
 
+  prepare_run run-pair --scope src
   jq -e --argjson scopes '["src"]' '.ordered_actions == ["agent_spawn", "task_create"]
     and .schema_version == 3
     and .team_mode == "pair"
@@ -312,18 +286,19 @@ CASES
     and .requested_backend == "in_process"
     and .resolved_backend == "in_process"
     and (.teammates | length) == 2
-    and .contract_state == "dispatched"' <<< "$output" >/dev/null
-  [ -f "$RUN_ROOT/run.json" ]
-  [ -f "$RUN_ROOT/diagnostics.jsonl" ]
-  jq -e '.status == "planned"
+    and .contract_state == "dispatched"' <<< "$output" >/dev/null \
+    || record_case_failure pair-output "prepare output differs output=$output"
+  expect_path pair-run-json "$RUN_ROOT/run.json"
+  expect_path pair-diagnostics "$RUN_ROOT/diagnostics.jsonl"
+  expect_jq pair-run-json "$RUN_ROOT/run.json" '.status == "planned"
     and .requested_backend == "in_process"
     and .resolved_backend == "in_process"
-    and (.teammates | length) == 2' "$RUN_ROOT/run.json" >/dev/null
-  jq -e '.requested_backend == "in_process" and .resolved_backend == "in_process"' \
-    "$RUN_ROOT/contract.json" >/dev/null
+    and (.teammates | length) == 2'
+  expect_jq pair-run-contract "$RUN_ROOT/contract.json" '.requested_backend == "in_process" and .resolved_backend == "in_process"'
   contract_path="$RUN_ROOT/contracts/tasks/$CONTRACT_ID.json"
-  [ -f "$contract_path" ]
-  [ "$(find "$RUN_ROOT/contracts/tasks" -name '*.json' | wc -l | tr -d ' ')" -eq 1 ]
+  expect_path pair-contract "$contract_path"
+  [ "$(find "$RUN_ROOT/contracts/tasks" -name '*.json' | wc -l | tr -d ' ')" -eq 1 ] \
+    || record_case_failure pair-contract "expected exactly one task contract"
   jq -e --arg id "$CONTRACT_ID" '
     .schema_version == 3
     and .contract_id == $id
@@ -336,181 +311,145 @@ CASES
     and .state == "dispatched"
     and .capabilities_by_role["web-engineer"] == [{access:"write",kind:"directory",path:"src"}]
     and .capabilities_by_role["web-code-critic"] == []
-  ' "$contract_path" >/dev/null
+  ' "$contract_path" >/dev/null || record_case_failure pair-contract "contract fields differ"
   manifest="$RUN_ROOT/agent-manifest.json"
-  [ -f "$manifest" ]
+  expect_path pair-manifest "$manifest"
   while IFS= read -r name; do
     jq -e --arg name "$name" --arg id "$CONTRACT_ID" '
       .agents[$name].contract_id == $id
       and .agents[$name].schema_version == 3
       and .agents[$name].runtime_kind == "native-team"
       and .agents[$name].state == "registered"
-    ' "$manifest" >/dev/null
-    [ -f "$PROJECT/.claude/agents/$name.md" ]
+    ' "$manifest" >/dev/null || record_case_failure "pair-teammate-$name" "manifest entry differs"
+    expect_path "pair-definition-$name" "$PROJECT/.claude/agents/$name.md"
   done < <(jq -r '.teammates[].name' <<< "$output")
-}
 
-@test "prepare with --test-dev issues a trio contract and registers three teammates" {
   prepare_run run-trio --scope src --test-dev
-
-  jq -e '.team_mode == "trio" and (.teammates | length) == 3' <<< "$output" >/dev/null
-  contract_path="$RUN_ROOT/contracts/tasks/$CONTRACT_ID.json"
-  jq -e '
+  expect_jq_output trio-output '.team_mode == "trio" and (.teammates | length) == 3'
+  expect_jq trio-contract "$RUN_ROOT/contracts/tasks/$CONTRACT_ID.json" '
     .team_mode == "trio"
     and .roles == ["web-engineer", "web-code-critic", "test-dev"]
     and .test_dev == true
     and .capabilities_by_role["test-dev"] == []
-  ' "$contract_path" >/dev/null
-}
+  '
 
-@test "prepare keeps an initialized project control root while always creating a run root" {
   seed_saved_routing_root
-
   prepare_run run-init --scope src
+  expect_jq_output init-output '.control_root_kind == "active-planning" and (.run_root | length) > 0'
+  expect_path init-run-json "$RUN_ROOT/run.json"
+  expect_path init-run-contract "$RUN_ROOT/contract.json"
+  expect_path init-diagnostics "$RUN_ROOT/diagnostics.jsonl"
+  expect_path init-manifest "$PROJECT/.lbwc-planning/.agent-manifest.json"
+  expect_path init-task-contract "$PROJECT/.lbwc-planning/.contracts/tasks/$CONTRACT_ID.json"
 
-  jq -e '.control_root_kind == "active-planning" and (.run_root | length) > 0' <<< "$output" >/dev/null
-  [ -f "$RUN_ROOT/run.json" ]
-  [ -f "$RUN_ROOT/contract.json" ]
-  [ -f "$RUN_ROOT/diagnostics.jsonl" ]
-  [ -f "$PROJECT/.lbwc-planning/.agent-manifest.json" ]
-  [ -f "$PROJECT/.lbwc-planning/.contracts/tasks/$CONTRACT_ID.json" ]
+  assert_no_case_failures
 }
 
-@test "spawn-payload accepts a run whose contract uses a tmux or workflow backend" {
-  local backend
-  for backend in tmux workflow; do
-    prepare_run "run-$backend" --scope src
-    retarget_run_backend "$backend"
+@test "spawn-payload emits name-only Agent calls for in-process, tmux and workflow runs and blocks contract drift" {
+  local backend name
 
-    run bash "$TRANSACTION" spawn-payload --project-root "$PROJECT" --run-root "$RUN_ROOT"
-
-    [ "$status" -eq 0 ] || { echo "backend=$backend status=$status output=$output" >&2; return 1; }
-    [ "$(jq '.agent_payloads | length' <<< "$output")" -eq 2 ] \
-      || { echo "backend=$backend output=$output" >&2; return 1; }
-  done
-}
-
-@test "spawn-payload emits Agent calls with only subagent_type and name" {
   prepare_run run-spawn --scope src
-
   run bash "$TRANSACTION" spawn-payload --project-root "$PROJECT" --run-root "$RUN_ROOT"
-
-  [ "$status" -eq 0 ]
-  jq -e '
+  expect_case payload-shape 0
+  expect_jq_output payload-shape '
     (.agent_payloads | length) == 2
     and all(.agent_payloads[]; (keys | sort) == ["name", "subagent_type"])
     and (.next_action == "task-payload")
-  ' <<< "$output" >/dev/null
-  jq -e '[.agent_payloads[].subagent_type] == .roster' <<< "$output" >/dev/null
-}
+  '
+  expect_jq_output payload-roster '[.agent_payloads[].subagent_type] == .roster'
 
-@test "spawn-payload rejects backend sidecar drift from the contract" {
+  for backend in tmux workflow; do
+    prepare_run "run-$backend" --scope src
+    retarget_run_backend "$backend"
+    run bash "$TRANSACTION" spawn-payload --project-root "$PROJECT" --run-root "$RUN_ROOT"
+    expect_case "backend-$backend" 0
+    [ "$(jq '.agent_payloads | length' <<< "$output")" -eq 2 ] \
+      || record_case_failure "backend-$backend" "expected two payloads output=$output"
+  done
+
   prepare_run run-backend-drift --scope src
   rewrite_json "$RUN_ROOT/run.json" '.resolved_backend = "tmux"'
-
   run bash "$TRANSACTION" spawn-payload --project-root "$PROJECT" --run-root "$RUN_ROOT"
+  expect_refused backend-sidecar-drift "backend metadata does not match the contract"
 
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"backend metadata does not match the contract"* ]]
-}
-
-@test "spawn-payload blocks a teammate whose manifest identity does not match the contract" {
   prepare_run run-spawn-guard --scope src
   name=$(jq -r '.teammates[0].name' "$RUN_ROOT/run.json")
   rewrite_json "$RUN_ROOT/agent-manifest.json" --arg name "$name" '.agents[$name].contract_id = "tampered"'
-
   run bash "$TRANSACTION" spawn-payload --project-root "$PROJECT" --run-root "$RUN_ROOT"
+  expect_refused manifest-identity-drift "manifest backend metadata does not match the contract"
 
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"manifest backend metadata does not match the contract"* ]]
+  assert_no_case_failures
 }
 
-@test "record-spawn tracks the roster and blocks unknown or unclaimed teammates" {
-  prepare_run run-record --scope src
+@test "record-spawn, task-payload and record-task gate each step on registered, running and bound teammates" {
+  local name first second
 
+  prepare_run run-record --scope src
   run bash "$TRANSACTION" record-spawn --project-root "$PROJECT" --run-root "$RUN_ROOT" \
     --contract-id "$CONTRACT_ID" --teammate "lbwc-ghost"
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"not registered"* ]]
-
+  expect_refused record-spawn-unknown "not registered"
   name=$(jq -r '.teammates[0].name' "$RUN_ROOT/run.json")
   run bash "$TRANSACTION" record-spawn --project-root "$PROJECT" --run-root "$RUN_ROOT" \
     --contract-id "$CONTRACT_ID" --teammate "$name"
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"not running"* ]]
-
+  expect_refused record-spawn-unclaimed "not running"
   manifest_set_running
   run bash "$TRANSACTION" record-spawn --project-root "$PROJECT" --run-root "$RUN_ROOT" \
     --contract-id "$CONTRACT_ID" --teammate "$name"
-  [ "$status" -eq 0 ]
-  jq -e '.recorded == true and .spawn_complete == false' <<< "$output" >/dev/null
-}
+  expect_case record-spawn-running 0
+  expect_jq_output record-spawn-running '.recorded == true and .spawn_complete == false'
 
-@test "task-payload blocks until every roster teammate has recorded spawn evidence" {
   prepare_run run-gate --scope src
   manifest_set_running
-
   run bash "$TRANSACTION" task-payload --project-root "$PROJECT" --run-root "$RUN_ROOT"
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"spawn evidence is missing"* ]]
-
+  expect_refused task-payload-no-spawns "spawn evidence is missing"
   first=$(jq -r '.teammates[0].name' "$RUN_ROOT/run.json")
   run bash "$TRANSACTION" record-spawn --project-root "$PROJECT" --run-root "$RUN_ROOT" \
     --contract-id "$CONTRACT_ID" --teammate "$first"
-  [ "$status" -eq 0 ]
-
+  expect_case task-payload-first-spawn 0
   run bash "$TRANSACTION" task-payload --project-root "$PROJECT" --run-root "$RUN_ROOT"
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"spawn evidence is missing"* ]]
-
+  expect_refused task-payload-one-spawn "spawn evidence is missing"
   second=$(jq -r '.teammates[1].name' "$RUN_ROOT/run.json")
   run bash "$TRANSACTION" record-spawn --project-root "$PROJECT" --run-root "$RUN_ROOT" \
     --contract-id "$CONTRACT_ID" --teammate "$second"
-  [ "$status" -eq 0 ]
-  jq -e '.spawn_complete == true' <<< "$output" >/dev/null
-
+  expect_case task-payload-second-spawn 0
+  expect_jq_output task-payload-second-spawn '.spawn_complete == true'
   run bash "$TRANSACTION" task-payload --project-root "$PROJECT" --run-root "$RUN_ROOT"
-  [ "$status" -eq 0 ]
-  jq -e --arg id "$CONTRACT_ID" '.task.subject == $id and .task.description == $id' <<< "$output" >/dev/null
-}
+  expect_case task-payload-ready 0
+  jq -e --arg id "$CONTRACT_ID" '.task.subject == $id and .task.description == $id' <<< "$output" >/dev/null \
+    || record_case_failure task-payload-ready "task subject or description differs output=$output"
 
-@test "record-task binds the contract-bound native task after spawns" {
   prepare_run run-task --scope src
   manifest_set_running
   record_full_roster
-
   run bash "$TRANSACTION" record-task --project-root "$PROJECT" --run-root "$RUN_ROOT" \
     --contract-id "$CONTRACT_ID" --task-id task-1
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"not bound"* ]]
-
+  expect_refused record-task-unbound "not bound"
   manifest_bind_task task-1
   run bash "$TRANSACTION" record-task --project-root "$PROJECT" --run-root "$RUN_ROOT" \
     --contract-id "$CONTRACT_ID" --task-id task-1
-  [ "$status" -eq 0 ]
-  jq -e '.recorded == true' <<< "$output" >/dev/null
-  jq -e '.records["task:task-1"].status == "bound"' "$RUN_ROOT/run.json" >/dev/null
+  expect_case record-task-bound 0
+  expect_jq_output record-task-bound '.recorded == true'
+  expect_jq record-task-bound-run "$RUN_ROOT/run.json" '.records["task:task-1"].status == "bound"'
+
+  assert_no_case_failures
 }
 
-@test "fail retains runfiles and appends diagnostics" {
+@test "fail retains runfiles with diagnostics and summary reports the terminal status and records" {
   prepare_run run-fail --scope src
-
   run bash "$TRANSACTION" fail --project-root "$PROJECT" --run-root "$RUN_ROOT" --event "spawn rejected"
-  [ "$status" -eq 0 ]
-  jq -e '.status == "failed"' <<< "$output" >/dev/null
-  [ -f "$RUN_ROOT/run.json" ]
-  jq -e '.status == "failed"' "$RUN_ROOT/run.json" >/dev/null
-  grep -F 'spawn rejected' "$RUN_ROOT/diagnostics.jsonl" >/dev/null
-}
+  expect_case fail 0
+  expect_jq_output fail '.status == "failed"'
+  expect_path fail-run-json "$RUN_ROOT/run.json"
+  expect_jq fail-run-json "$RUN_ROOT/run.json" '.status == "failed"'
+  expect_file_line fail-diagnostics "$RUN_ROOT/diagnostics.jsonl" 'spawn rejected'
 
-@test "summary reports terminal status and records" {
   prepare_run run-summary --scope src
   run bash "$TRANSACTION" complete --project-root "$PROJECT" --run-root "$RUN_ROOT" --event "done"
-  [ "$status" -eq 0 ]
-
+  expect_case complete 0
   run bash "$TRANSACTION" summary --project-root "$PROJECT" --run-root "$RUN_ROOT"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"run_id: run-summary"* ]]
-  [[ "$output" == *"status: completed"* ]]
-  [[ "$output" == *"$CONTRACT_ID=dispatched"* ]]
+  expect_case summary 0 "run_id: run-summary"
+  expect_output_has summary "status: completed"
+  expect_output_has summary "$CONTRACT_ID=dispatched"
+
+  assert_no_case_failures
 }

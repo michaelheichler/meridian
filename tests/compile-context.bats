@@ -1,6 +1,8 @@
 #!/usr/bin/env bats
 
 load test_helper
+load gate_case_helper
+load gate_case_files
 
 setup() {
   setup_temp_dir
@@ -25,28 +27,24 @@ teardown() {
   teardown_temp_dir
 }
 
-@test "compile-context: default configuration skips session telemetry" {
+@test "compile-context: session telemetry stays off by default and records a command when metrics opt in" {
+  local telemetry="$TEST_TEMP_DIR/.lbwc-planning/telemetry/session.jsonl"
+  reset_case_failures
   cd "$TEST_TEMP_DIR"
 
   run bash -x "$SCRIPTS_DIR/compile-context.sh" 01 dev .lbwc-planning/phases
+  expect_case metrics-default-off 0 "V3_METRICS_ENABLED=false"
+  expect_output_lacks metrics-default-off "session-telemetry.py"
+  expect_no_path metrics-default-off "$telemetry"
 
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"V3_METRICS_ENABLED=false"* ]]
-  [[ "$output" != *"session-telemetry.py"* ]]
-  [ ! -e "$TEST_TEMP_DIR/.lbwc-planning/telemetry/session.jsonl" ]
-}
-
-@test "compile-context: project metrics opt-in records session telemetry" {
   printf '%s\n' '{"metrics":true}' > "$TEST_TEMP_DIR/.lbwc-planning/config.json"
-  cd "$TEST_TEMP_DIR"
-
   run bash -x "$SCRIPTS_DIR/compile-context.sh" 01 dev .lbwc-planning/phases
+  expect_case metrics-opt-in 0 "V3_METRICS_ENABLED=true"
+  expect_output_has metrics-opt-in "session-telemetry.py"
+  run python3 -c 'import json,sys; records=[json.loads(line) for line in open(sys.argv[1])]; assert records[-1]["event"]=="command"; assert records[-1]["outcome"]=="success"' "$telemetry"
+  expect_case metrics-opt-in-record 0
 
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"V3_METRICS_ENABLED=true"* ]]
-  [[ "$output" == *"session-telemetry.py"* ]]
-  run python3 -c 'import json,sys; records=[json.loads(line) for line in open(sys.argv[1])]; assert records[-1]["event"]=="command"; assert records[-1]["outcome"]=="success"' "$TEST_TEMP_DIR/.lbwc-planning/telemetry/session.jsonl"
-  [ "$status" -eq 0 ]
+  assert_no_case_failures
 }
 
 seed_full_planning() {
@@ -77,9 +75,10 @@ check_role() {
   done <<< "$absent"
 }
 
-@test "compile-context: every role emits its own heading and section set" {
+@test "compile-context: each role emits its own sections, adapts to missing inputs and caveman settings, and rejects unknown roles" {
   seed_full_planning
   local retired=$'### Available Skills\n### Mandatory Skill Activation'
+  local plan="$TEST_TEMP_DIR/.lbwc-planning/phases/01-test-phase/PLAN.md"
 
   check_role "lead sections" lead \
     $'## Phase 01 Context (Compiled)\n### Goal\nShip the widget\n### Success Criteria\nWidget renders\n### Requirements (REQ-01)\nREQ-01: Phase requirement\n### Active Decisions\n- chose sqlite' \
@@ -99,56 +98,36 @@ check_role() {
   check_role "architect sections" architect \
     $'## Phase 01 Architecture Context\n### Full Requirements\nREQ-02: Other requirement\n### Conventions\n### Research Findings' \
     $'### Requirements (\n### Recent Activity\n'"$retired"
-}
 
-@test "compile-context: lead reports hidden requirements and swaps research for the codebase map when research is missing" {
-  seed_full_planning
   check_role "lead with research" lead $'### Research Findings' $'### Codebase Map Available'
 
   rm "$TEST_TEMP_DIR/.lbwc-planning/phases/01-test-phase/01-RESEARCH.md"
   check_role "lead no research" lead \
     $'(1 other requirements exist for other phases -- not shown)\n### Codebase Map Available\nRead ARCHITECTURE.md first' \
     $'### Research Findings'
-}
 
-@test "compile-context: dev embeds the active plan only when a plan path is given" {
   seed_full_planning
-  local plan="$TEST_TEMP_DIR/.lbwc-planning/phases/01-test-phase/PLAN.md"
-
   check_role "dev with plan" dev $'### Active Plan\nTASK-01: Do something' "" "$plan"
   check_role "dev without plan" dev "" $'### Active Plan'
-}
 
-@test "compile-context: debugger activity falls back to None without STATE.md" {
-  seed_full_planning
   rm "$TEST_TEMP_DIR/.lbwc-planning/STATE.md"
-
   check_role "debugger no state" debugger $'### Recent Activity\nNone\n### Conventions' $'ran the scout'
-}
 
-@test "compile-context: architect states when no requirements file exists" {
   seed_full_planning
   rm "$TEST_TEMP_DIR/.lbwc-planning/REQUIREMENTS.md"
-
   check_role "architect no requirements" architect $'### Full Requirements\nNo requirements file found' $'REQ-01:'
-}
 
-@test "compile-context: caveman directive adds the commit note for dev and the review note for qa only" {
+  cd "$TEST_TEMP_DIR"
+  run bash "$SCRIPTS_DIR/compile-context.sh" 01 janitor .lbwc-planning/phases
+  [ "$status" -eq 1 ] || { echo "[unknown role] exit $status: $output" >&2; return 1; }
+  [[ "$output" == *"Unknown role: janitor. Valid roles: lead, dev, qa, scout, debugger, architect"* ]] \
+    || { echo "[unknown role] output: $output" >&2; return 1; }
+
   seed_full_planning
   printf '%s\n' '{"caveman_style":"full","caveman_commit":true,"caveman_review":true}' > "$TEST_TEMP_DIR/.lbwc-planning/config.json"
-
   check_role "dev caveman" dev $'### Caveman Language (full)\ncaveman-commit.md' $'caveman-review.md'
   check_role "qa caveman" qa $'### Caveman Language (full)\ncaveman-review.md' $'caveman-commit.md'
   check_role "scout caveman" scout $'### Caveman Language (full)' $'caveman-commit.md\ncaveman-review.md'
-}
-
-@test "compile-context: unknown role exits non-zero and lists the valid roles" {
-  cd "$TEST_TEMP_DIR"
-
-  run bash "$SCRIPTS_DIR/compile-context.sh" 01 janitor .lbwc-planning/phases
-
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"Unknown role: janitor. Valid roles: lead, dev, qa, scout, debugger, architect"* ]]
 }
 
 check_roadmap_phase() {
@@ -172,40 +151,24 @@ check_roadmap_phase() {
   done <<< "$absent"
 }
 
-@test "compile-context: the only roadmap phase keeps its Reqs line" {
+@test "compile-context: a roadmap phase keeps its own last line and excludes the next phase" {
   rm -rf "$TEST_TEMP_DIR/.lbwc-planning/phases/01-test-phase"
 
   check_roadmap_phase "single phase, Reqs last" 1 \
     $'## Phase 1: Only\n**Goal:** Ship the widget\n**Success:** Widget renders\n**Reqs:** REQ-01' \
     $'### Requirements (REQ-01)\nREQ-01: First requirement' ""
-}
-
-@test "compile-context: the last of several roadmap phases keeps its Reqs line" {
-  rm -rf "$TEST_TEMP_DIR/.lbwc-planning/phases/01-test-phase"
 
   check_roadmap_phase "two phases, Reqs last in phase 2" 2 \
     $'## Phase 1: First\n**Goal:** Early goal\n**Reqs:** REQ-01\n## Phase 2: Second\n**Goal:** Ship the widget\n**Success:** Widget renders\n**Reqs:** REQ-02' \
     $'### Requirements (REQ-02)\nREQ-02: Second requirement' $'REQ-01:'
-}
-
-@test "compile-context: the last roadmap phase keeps its Success line" {
-  rm -rf "$TEST_TEMP_DIR/.lbwc-planning/phases/01-test-phase"
 
   check_roadmap_phase "last phase, Success last" 2 \
     $'## Phase 1: First\n**Reqs:** REQ-01\n## Phase 2: Second\n**Goal:** Ship the widget\n**Reqs:** REQ-02\n**Success:** Widget renders' \
     $'### Success Criteria\nWidget renders' ""
-}
-
-@test "compile-context: the last roadmap phase keeps its Goal line" {
-  rm -rf "$TEST_TEMP_DIR/.lbwc-planning/phases/01-test-phase"
 
   check_roadmap_phase "last phase, Goal last" 2 \
     $'## Phase 1: First\n**Reqs:** REQ-01\n## Phase 2: Second\n**Success:** Widget renders\n**Reqs:** REQ-02\n**Goal:** Ship the widget' \
     $'### Goal\nShip the widget' ""
-}
-
-@test "compile-context: a middle roadmap phase excludes the next phase heading and content" {
-  rm -rf "$TEST_TEMP_DIR/.lbwc-planning/phases/01-test-phase"
 
   check_roadmap_phase "middle phase" 2 \
     $'## Phase 1: First\n**Reqs:** REQ-01\n## Phase 2: Second\n**Goal:** Second goal\n**Success:** Second success\n**Reqs:** REQ-02\n## Phase 3: Third\n**Goal:** Third goal\n**Reqs:** REQ-03' \
