@@ -23,6 +23,7 @@ One shared table in `scripts/lib/` holds both glyph sets, and `visual_format` pi
 | Meaning | `unicode` | `ascii` |
 | --- | --- | --- |
 | Brand mark | `✦` | `*` |
+| Dirty worktree | `●` | `~` |
 | Done | `✔` | `[ok]` |
 | Running | `◐` | `[..]` |
 | Needs you | `?` | `[?]` |
@@ -46,13 +47,13 @@ L4  Quota 5h ▮▮▮▯▯ 38% resets 14:00 · 7d ▮▯▯▯▯ 12% resets F
 The same lines with `visual_format: ascii` read as follows.
 
 ```text
-L1  * meridian | sonnet high | lbwc@refactor/meridian-2.0 * | 2h 14m
+L1  * meridian | sonnet high | lbwc@refactor/meridian-2.0 ~ | 2h 14m
 L2  [####------] 42% context | in 1.2M | out 88k | cache 900k/40k | $3.10 | +120 -40
 L3  Flow phase 03 build | task 2/5 | pair engineer+critic | QA [..] | UAT - | tmux 3 agents (2 run, 1 idle)
 L4  Quota 5h [###--] 38% resets 14:00 | 7d [#----] 12% resets Fri
 ```
 
-1. Line 1 colors the mark brand teal, the model sky blue, and the dirty dot amber.
+1. Line 1 colors the mark turquoise, the model sky blue, and the dirty dot amber. Deep teal on a dark terminal background reaches only about 2.6 to 1 contrast, so the statusline uses turquoise by default. When `COLORFGBG` reports a light background, the mark and the bars switch to deep teal, because turquoise on white reaches only about 2.4 to 1.
 2. Line 2 colors the bar turquoise up to 70 percent, amber up to 85 percent, and orange above that, the same thresholds the caveman level uses.
 3. Line 3 shows telemetry only when it is not healthy, and it shows a tmux failure count in brick red with the diagnostics text.
 4. Line 4 follows `statusline_hide_limits` and `statusline_hide_limits_for_api_key`.

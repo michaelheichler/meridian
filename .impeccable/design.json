@@ -1,0 +1,80 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-01T12:00:00Z",
+  "title": "Meridian Design System",
+  "extensions": {
+    "colorMeta": {
+      "brand-teal": { "role": "primary", "displayName": "Deep Harbor Teal", "canonical": "#1F5F66", "tonalRamp": ["oklch(15% 0.06 205)", "oklch(26% 0.07 205)", "oklch(37% 0.07 205)", "oklch(48% 0.07 205)", "oklch(59% 0.07 205)", "oklch(70% 0.06 205)", "oklch(81% 0.05 205)", "oklch(92% 0.03 205)"] },
+      "active-turquoise": { "role": "secondary", "displayName": "Orbit Turquoise", "canonical": "#3FB8AF", "tonalRamp": ["oklch(15% 0.05 183)", "oklch(26% 0.07 183)", "oklch(37% 0.09 183)", "oklch(48% 0.10 183)", "oklch(59% 0.11 183)", "oklch(70% 0.11 183)", "oklch(81% 0.08 183)", "oklch(92% 0.04 183)"] },
+      "info-sky": { "role": "secondary", "displayName": "Explore Sky", "canonical": "#3A9AD9", "tonalRamp": ["oklch(15% 0.05 245)", "oklch(26% 0.08 245)", "oklch(37% 0.10 245)", "oklch(48% 0.12 245)", "oklch(59% 0.13 245)", "oklch(70% 0.11 245)", "oklch(81% 0.07 245)", "oklch(92% 0.03 245)"] },
+      "star-amber": { "role": "tertiary", "displayName": "Starlight Amber", "canonical": "#F2B233", "tonalRamp": ["oklch(15% 0.04 80)", "oklch(26% 0.06 80)", "oklch(37% 0.09 80)", "oklch(48% 0.11 80)", "oklch(59% 0.13 80)", "oklch(70% 0.15 80)", "oklch(81% 0.15 80)", "oklch(92% 0.07 80)"] },
+      "warning-orange": { "role": "tertiary", "displayName": "Book Page Orange", "canonical": "#EE8434", "tonalRamp": ["oklch(15% 0.04 55)", "oklch(26% 0.07 55)", "oklch(37% 0.10 55)", "oklch(48% 0.13 55)", "oklch(59% 0.15 55)", "oklch(70% 0.16 55)", "oklch(81% 0.10 55)", "oklch(92% 0.04 55)"] },
+      "failure-brick": { "role": "tertiary", "displayName": "Brick", "canonical": "#C8553D", "tonalRamp": ["oklch(15% 0.05 35)", "oklch(26% 0.08 35)", "oklch(37% 0.11 35)", "oklch(48% 0.14 35)", "oklch(59% 0.15 35)", "oklch(70% 0.12 35)", "oklch(81% 0.07 35)", "oklch(92% 0.03 35)"] },
+      "muted-grey-teal": { "role": "neutral", "displayName": "Grey Teal", "canonical": "#7A9497", "tonalRamp": ["oklch(15% 0.015 205)", "oklch(26% 0.02 205)", "oklch(37% 0.02 205)", "oklch(48% 0.025 205)", "oklch(59% 0.025 205)", "oklch(70% 0.025 205)", "oklch(81% 0.02 205)", "oklch(92% 0.01 205)"] }
+    },
+    "typographyMeta": {},
+    "shadows": [],
+    "motion": [],
+    "breakpoints": []
+  },
+  "components": [
+    {
+      "name": "Statusline",
+      "kind": "custom",
+      "refersTo": "statusline-mark",
+      "description": "Four-line terminal statusline in the unicode glyph set, colored per the frontmatter.",
+      "html": "<pre class=\"ds-statusline\"><span class=\"ds-t ds-b\">✦ meridian</span><span class=\"ds-m\"> · </span><span class=\"ds-s\">sonnet high</span><span class=\"ds-m\"> · </span>lbwc@refactor/meridian-2.0 <span class=\"ds-a\">●</span><span class=\"ds-m\"> · </span>2h 14m\n<span class=\"ds-t\">▮▮▮▮</span><span class=\"ds-m\">▯▯▯▯▯▯</span> 42% context<span class=\"ds-m\"> · </span><span class=\"ds-t\">+120</span> <span class=\"ds-o\">−40</span>\nFlow phase 03 build<span class=\"ds-m\"> · </span>QA <span class=\"ds-a\">◐</span><span class=\"ds-m\"> · </span>UAT <span class=\"ds-m\">○</span>\nQuota 5h <span class=\"ds-t\">▮▮▮</span><span class=\"ds-m\">▯▯</span> 38% resets 14:00</pre>",
+      "css": ".ds-statusline { background: #0b1416; color: #c9d1d9; border: 1px solid #1F5F66; border-radius: 8px; padding: 14px 16px; font: 14px/1.6 ui-monospace, Menlo, monospace; white-space: pre; } .ds-b { font-weight: 700; } .ds-t { color: #3FB8AF; } .ds-s { color: #3A9AD9; } .ds-a { color: #F2B233; } .ds-o { color: #EE8434; } .ds-m { color: #7A9497; }"
+    },
+    {
+      "name": "Feedback Card",
+      "kind": "card",
+      "refersTo": "feedback-card",
+      "description": "Per-step chat card with the result in the header row and two closing paragraphs.",
+      "html": "<div class=\"ds-card\"><table><thead><tr><th>✔ Build</th><th>phase 03, plan 02 done</th></tr></thead><tbody><tr><td>Changed</td><td>4 files</td></tr><tr><td>Proof</td><td>38 tests pass, rerun by the main session</td></tr><tr><td>Agents</td><td>engineer and critic, both used</td></tr><tr><td>Open</td><td>none</td></tr></tbody></table><p><strong>Next.</strong> QA for phase 03.</p><p><strong>You approve.</strong> Start QA? (yes or no)</p></div>",
+      "css": ".ds-card { font: 16px/1.5 -apple-system, sans-serif; color: #e6edf3; background: #0d1117; padding: 16px; } .ds-card table { border-collapse: collapse; } .ds-card th, .ds-card td { border: 1px solid #30363d; padding: 6px 13px; text-align: left; } .ds-card th { font-weight: 600; } .ds-card p { margin: 12px 0 0; }"
+    },
+    {
+      "name": "Status Card",
+      "kind": "card",
+      "refersTo": "status-card",
+      "description": "Three-column phase table with glyph, word, and ten-cell bar, then four closing paragraphs.",
+      "html": "<div class=\"ds-card\"><table><thead><tr><th>✦ Meridian</th><th>lbwc, milestone 2.0</th><th></th></tr></thead><tbody><tr><td>02 Guards</td><td>✔ done</td><td>▮▮▮▮▮▮▮▮▮▮ 100%</td></tr><tr><td>03 Build loop</td><td>◐ build</td><td>▮▮▮▮▯▯▯▯▯▯ 40%</td></tr><tr><td>04 Handover</td><td>○ next</td><td>▯▯▯▯▯▯▯▯▯▯ 0%</td></tr></tbody></table><p><strong>Now.</strong> Plan 02 of phase 03.</p><p><strong>Next.</strong> QA for phase 03 after the last plan.</p><p><strong>Needs you.</strong> Nothing right now.</p></div>",
+      "css": ".ds-card { font: 16px/1.5 -apple-system, sans-serif; color: #e6edf3; background: #0d1117; padding: 16px; } .ds-card table { border-collapse: collapse; } .ds-card th, .ds-card td { border: 1px solid #30363d; padding: 6px 13px; text-align: left; } .ds-card th { font-weight: 600; } .ds-card p { margin: 12px 0 0; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Explorer Logbook",
+    "overview": "Meridian looks like a field journal that an explorer keeps by hand. The owner drew every brand element on one board at `assets/brand/meridian-brand-board.png`. The board holds the mark (orbit, star, and open book) and a rounded wordmark. It also holds eight icons, five capability pills, and an app icon tile. Soft painted texture, warm amber light, and calm teal water set the mood. The art carries all the warmth, so the words around it stay plain and short.\n\nThe system lives on two surfaces that own no stylesheet. The GitHub README renders markdown without CSS, so the brand reaches it only through sliced raster art. The terminal surfaces in Claude Code speak through glyphs, plain markdown tables, and ANSI color in the statusline. Both surfaces end every view with the next step.\n\nDensity stays low. One idea fills each table row, one sentence fills each cell, and short paragraphs separate the tables.",
+    "keyCharacteristics": [
+      "Hand-illustrated raster art supplies every brand color on GitHub.",
+      "Light and dark README variants switch through a `<picture>` element.",
+      "Terminal state reads from a glyph or a word first, and color only reinforces it.",
+      "Two glyph sets, `unicode` and `ascii`, produce the same line count.",
+      "Every surface closes with what happens next and what the human approves."
+    ],
+    "rules": [
+      { "name": "The Art Carries Color Rule", "body": "On GitHub, brand color appears only inside the owner's raster art. Markdown text, tables, and code blocks keep the default GitHub theme in both light and dark mode.", "section": "colors" },
+      { "name": "The Glyph First Rule", "body": "Color never carries meaning alone. Every colored state in the statusline also has a glyph or a word, and the markdown cards carry no color at all.", "section": "colors" },
+      { "name": "The Lettered Name Rule", "body": "The wordmark appears only as the owner's artwork. No surface sets \"meridian\" in a display font as a substitute.", "section": "typography" },
+      { "name": "The Separate Lines Rule", "body": "Each closing line of a card stands as its own paragraph with a blank line before it. Markdown joins adjacent lines into one paragraph.", "section": "layout" },
+      { "name": "The Same Lines Rule", "body": "The `ascii` set renders in any terminal font and produces exactly the same line count as the `unicode` set.", "section": "components" }
+    ],
+    "dos": [
+      "Do bring brand color to GitHub only through slices of `assets/brand/meridian-brand-board.png`.",
+      "Do ship a light and a dark variant for any art that sits on the page background, and switch them with `<picture>`.",
+      "Do give every table a real header row. Cards put the status in that header row.",
+      "Do write each closing card line as its own paragraph.",
+      "Do pair every colored state with a glyph or a word.",
+      "Do keep the `unicode` and `ascii` glyph sets at the same line count.",
+      "Do give every image alt text. Where the adjacent text already names an icon, leave its alt text empty."
+    ],
+    "donts": [
+      "Do not add shields.io badges or emoji to stand in for brand color.",
+      "Do not set the wordmark in a font. Use the art.",
+      "Do not let color alone signal a state in the statusline or anywhere else.",
+      "Do not leave a card header row empty.",
+      "Do not paint the mark glyph Deep Harbor Teal on a dark terminal."
+    ]
+  }
+}
