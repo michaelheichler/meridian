@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-set -eo pipefail
+set -euo pipefail
 
 KEEP_LATEST=false
 if [[ "${1:-}" == "--keep-latest" ]]; then
@@ -40,11 +40,11 @@ if [[ -d "$PLUGIN_CACHE_DIR" ]]; then
     COUNT=$(printf '%s\n' "$VERSIONS" | awk 'NF { c++ } END { print c + 0 }')
     if [[ "$COUNT" -gt 1 ]]; then
       versions_removed=0
-      i=0
+      version_index=0
       while IFS= read -r dir; do
         [ -n "$dir" ] || continue
-        i=$((i + 1))
-        if [[ "$i" -ge "$COUNT" ]]; then
+        version_index=$((version_index + 1))
+        if [[ "$version_index" -ge "$COUNT" ]]; then
           continue
         fi
         if rm -rf "$dir" 2>/dev/null; then
@@ -66,17 +66,11 @@ if [[ -d "$PLUGIN_CACHE_DIR" ]]; then
   fi
 fi
 
-TEMP_FILES=$(ls "$TMP_CACHE_ROOT"/lbwc-*-"${UID_TAG}"-* "$TMP_CACHE_ROOT"/lbwc-*-"${UID_TAG}" "$TMP_CACHE_ROOT"/lbwc-update-check-"${UID_TAG}" 2>/dev/null || true)
-if [[ -n "$TEMP_FILES" ]]; then
-  while IFS= read -r f; do
-    if [ -d "$f" ]; then
-      rm -rf "$f" 2>/dev/null || true
-    else
-      rm -f "$f" 2>/dev/null || true
-    fi
-  done <<< "$TEMP_FILES"
+for temp_path in "$TMP_CACHE_ROOT"/lbwc-*-"${UID_TAG}"-* "$TMP_CACHE_ROOT"/lbwc-*-"${UID_TAG}"; do
+  [ -e "$temp_path" ] || [ -L "$temp_path" ] || continue
+  rm -rf "$temp_path" 2>/dev/null || true
   wiped_temp_caches=true
-fi
+done
 
 cat <<EOF
 {"wiped":{"plugin_cache":${wiped_plugin_cache},"temp_caches":${wiped_temp_caches},"versions_removed":${versions_removed}}}
