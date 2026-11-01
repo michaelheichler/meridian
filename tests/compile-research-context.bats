@@ -9,7 +9,6 @@ setup() {
   export LBWC_PLANNING_DIR="$TEST_TEMP_DIR/.lbwc-planning"
   mkdir -p "$LBWC_PLANNING_DIR"
 
-  # Init a git repo for staleness checks
   cd "$TEST_TEMP_DIR"
   git init --quiet
   git config user.email "test@test.com"
@@ -23,16 +22,35 @@ teardown() {
   teardown_temp_dir
 }
 
-# Helper: create a completed research file with known base_commit
+fail_case() {
+  printf 'case=%s %s\nactual=[%s]\n' "$1" "$2" "$3" >&2
+  return 1
+}
+
+expect_has() {
+  case "$3" in
+    *"$2"*) ;;
+    *) fail_case "$1" "expected to contain=[$2]" "$3" ;;
+  esac
+}
+
+expect_lacks() {
+  case "$3" in
+    *"$2"*) fail_case "$1" "expected to lack=[$2]" "$3" ;;
+  esac
+}
+
+compile_context() {
+  bash "$SCRIPTS_DIR/compile-research-context.sh" "$@"
+}
+
 create_research_file() {
-  local slug="${1:-test-topic}"
-  local title="${2:-$slug}"
+  local slug="$1"
   cd "$TEST_TEMP_DIR"
   eval "$(bash "$SCRIPTS_DIR/research-session-state.sh" start "$LBWC_PLANNING_DIR" "$slug")"
-  # Write actual findings content
   cat > "$research_file" << ENDCONTENT
 ---
-title: ${title}
+title: ${slug}
 type: standalone-research
 status: complete
 confidence: high
@@ -42,231 +60,134 @@ base_commit: $(git -C "$TEST_TEMP_DIR" rev-parse HEAD)
 linked_sessions: []
 ---
 
-# Research: ${title}
-
-## Summary
-
-Research findings about ${title}.
-
-## Findings
-
-Found something important.
+Research findings about ${slug}.
 ENDCONTENT
   echo "$research_file"
 }
 
-# ── Empty cases ──────────────────────────────────────────
-
-@test "outputs nothing when no research exists" {
-  cd "$TEST_TEMP_DIR"
-  run bash "$SCRIPTS_DIR/compile-research-context.sh" "$LBWC_PLANNING_DIR" "some bug"
-  [ "$status" -eq 0 ]
-  [ -z "$output" ]
-}
-
-@test "outputs nothing when no description and multiple files exist" {
-  cd "$TEST_TEMP_DIR"
-  create_research_file "topic-one" "topic-one"
-  create_research_file "topic-two" "topic-two"
-
-  run bash "$SCRIPTS_DIR/compile-research-context.sh" "$LBWC_PLANNING_DIR"
-  [ "$status" -eq 0 ]
-  [ -z "$output" ]
-}
-
-@test "outputs nothing when research is active (not complete)" {
-  cd "$TEST_TEMP_DIR"
-  eval "$(bash "$SCRIPTS_DIR/research-session-state.sh" start "$LBWC_PLANNING_DIR" "active-only")"
-  # Don't complete it — leave as active
-
-  run bash "$SCRIPTS_DIR/compile-research-context.sh" "$LBWC_PLANNING_DIR" "active only"
-  [ "$status" -eq 0 ]
-  [ -z "$output" ]
-}
-
-# ── Single file discovery ────────────────────────────────
-
-@test "outputs nothing for single completed research without description" {
-  cd "$TEST_TEMP_DIR"
-  create_research_file "only-topic" "only-topic"
-
-  run bash "$SCRIPTS_DIR/compile-research-context.sh" "$LBWC_PLANNING_DIR"
-  [ "$status" -eq 0 ]
-  # No description = no match = no output (AC#6: no recency fallback)
-  [ -z "$output" ]
-}
-
-@test "returns single completed research with 2+ keyword match" {
-  cd "$TEST_TEMP_DIR"
-  create_research_file "api-design" "api-design"
-
-  # 2+ keywords match: "api" and "design" both appear in title
-  run bash "$SCRIPTS_DIR/compile-research-context.sh" "$LBWC_PLANNING_DIR" "api design issue"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"Research findings about"* ]]
-}
-
-@test "outputs nothing for single file with only 1 keyword match" {
-  cd "$TEST_TEMP_DIR"
-  create_research_file "api-design" "api-design"
-
-  # Only 1 keyword matches: "api" matches but "crash" does not
-  run bash "$SCRIPTS_DIR/compile-research-context.sh" "$LBWC_PLANNING_DIR" "api crash report"
-  [ "$status" -eq 0 ]
-  [ -z "$output" ]
-}
-
-# ── Keyword matching ─────────────────────────────────────
-
-@test "matches research by keyword hits in title (2+ required)" {
-  cd "$TEST_TEMP_DIR"
-  create_research_file "swift-concurrency-patterns" "swift-concurrency-patterns"
-  create_research_file "python-web-server" "python-web-server"
-
-  # Description with 2+ keywords matching first file
-  run bash "$SCRIPTS_DIR/compile-research-context.sh" "$LBWC_PLANNING_DIR" "swift concurrency issue"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"swift-concurrency-patterns"* ]]
-}
-
-@test "outputs nothing when only 1 keyword matches" {
-  cd "$TEST_TEMP_DIR"
-  create_research_file "swift-concurrency-patterns" "swift-concurrency-patterns"
-  create_research_file "python-web-server" "python-web-server"
-
-  # Only 1 keyword match
-  run bash "$SCRIPTS_DIR/compile-research-context.sh" "$LBWC_PLANNING_DIR" "swift memory leak"
-  [ "$status" -eq 0 ]
-  [ -z "$output" ]
-}
-
-@test "outputs nothing when no keywords match" {
-  cd "$TEST_TEMP_DIR"
-  create_research_file "topic-alpha" "topic-alpha"
-  create_research_file "topic-beta" "topic-beta"
-
-  run bash "$SCRIPTS_DIR/compile-research-context.sh" "$LBWC_PLANNING_DIR" "something completely unrelated"
-  [ "$status" -eq 0 ]
-  [ -z "$output" ]
-}
-
-# ── Explicit file override ───────────────────────────────
-
-@test "explicit file override returns content directly" {
-  cd "$TEST_TEMP_DIR"
-  local rfile
-  rfile=$(create_research_file "override-test" "override-test")
-
-  run bash "$SCRIPTS_DIR/compile-research-context.sh" "$LBWC_PLANNING_DIR" --file "$rfile"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"Research findings about"* ]]
-}
-
-@test "explicit file override bypasses staleness" {
-  cd "$TEST_TEMP_DIR"
-  local rfile
-  rfile=$(create_research_file "stale-override" "stale-override")
-
-  # Add many commits to make it stale
-  for i in $(seq 1 15); do
-    echo "change $i" >> "$TEST_TEMP_DIR/dummy"
-    git -C "$TEST_TEMP_DIR" add dummy
-    git -C "$TEST_TEMP_DIR" commit -m "commit $i" --quiet
+build_fixture() {
+  local entry
+  for entry in $(printf '%s' "$1" | tr ',' ' '); do
+    case "$entry" in
+      done:*) create_research_file "${entry#done:}" > /dev/null ;;
+      active:*)
+        cd "$TEST_TEMP_DIR"
+        bash "$SCRIPTS_DIR/research-session-state.sh" start "$LBWC_PLANNING_DIR" "${entry#active:}" > /dev/null
+        ;;
+    esac
   done
-
-  # With --file, should still return content despite staleness
-  run bash "$SCRIPTS_DIR/compile-research-context.sh" "$LBWC_PLANNING_DIR" --file "$rfile"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"Research findings about"* ]]
 }
 
-@test "explicit file override returns empty for nonexistent file" {
-  run --separate-stderr bash "$SCRIPTS_DIR/compile-research-context.sh" "$LBWC_PLANNING_DIR" --file "/nonexistent/path.md"
-  [ "$status" -eq 0 ]
-  [ -z "$output" ]
-}
-
-# ── Staleness checks ────────────────────────────────────
-
-@test "fresh research is returned without warning" {
-  cd "$TEST_TEMP_DIR"
-  create_research_file "fresh-topic" "fresh-topic"
-
-  run bash "$SCRIPTS_DIR/compile-research-context.sh" "$LBWC_PLANNING_DIR" "fresh topic"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"Research findings about"* ]]
-  # Should NOT contain staleness warning
-  [[ "$output" != *"commits have landed"* ]]
-}
-
-@test "moderately stale research includes warning" {
-  cd "$TEST_TEMP_DIR"
-  create_research_file "warn-topic" "warn-topic"
-
-  # Add commits within warn threshold (5 commits, under STALE_WARN_THRESHOLD=10)
-  for i in $(seq 1 5); do
-    echo "change $i" >> "$TEST_TEMP_DIR/dummy"
-    git -C "$TEST_TEMP_DIR" add dummy
-    git -C "$TEST_TEMP_DIR" commit -m "commit $i" --quiet
+add_commits() {
+  local count="$1" target="$2" index
+  index=0
+  while [ "$index" -lt "$count" ]; do
+    index=$((index + 1))
+    if [ "$target" = "planning" ]; then
+      echo "change $index" > "$TEST_TEMP_DIR/.lbwc-planning/state-change-$index"
+      git -C "$TEST_TEMP_DIR" add .lbwc-planning
+    else
+      echo "change $index" >> "$TEST_TEMP_DIR/dummy"
+      git -C "$TEST_TEMP_DIR" add dummy
+    fi
+    git -C "$TEST_TEMP_DIR" commit -m "commit $index" --quiet
   done
-
-  run bash "$SCRIPTS_DIR/compile-research-context.sh" "$LBWC_PLANNING_DIR" "warn topic"
-  [ "$status" -eq 0 ]
-  # Should contain both the warning and the content
-  [[ "$output" == *"commits have landed"* ]]
-  [[ "$output" == *"Research findings about"* ]]
 }
 
-@test "very stale research is skipped entirely" {
-  cd "$TEST_TEMP_DIR"
-  create_research_file "stale-topic" "stale-topic"
+@test "emits nothing when no completed research matches the description" {
+  local label fixture description
+  while IFS='|' read -r label fixture description; do
+    [ -n "$label" ] || continue
+    rm -rf "$LBWC_PLANNING_DIR/research"
+    build_fixture "$fixture"
+    cd "$TEST_TEMP_DIR"
+    if [ "$fixture" = "MISSING" ]; then
+      run --separate-stderr compile_context "/nonexistent/dir" "$description"
+    elif [ -z "$description" ]; then
+      run --separate-stderr compile_context "$LBWC_PLANNING_DIR"
+    else
+      run --separate-stderr compile_context "$LBWC_PLANNING_DIR" "$description"
+    fi
+    [ "$status" -eq 0 ] || fail_case "$label" "status=0" "status=$status output=$output"
+    [ -z "$output" ] || fail_case "$label" "empty stdout" "$output"
+  done <<'CASES'
+no-research|none|some bug
+planning-dir-missing|MISSING|some query
+active-research-only|active:active-only|active only
+no-description-single|done:only-topic|
+no-description-multiple|done:topic-one,done:topic-two|
+one-keyword-single|done:api-design|api crash report
+one-keyword-multiple|done:swift-concurrency-patterns,done:python-web-server|swift memory leak
+no-keyword-match|done:topic-alpha,done:topic-beta|something completely unrelated
+only-short-keywords|done:api-design,done:ui-layout|an is at
+CASES
+}
 
-  # Add many commits to exceed STALE_SKIP_THRESHOLD=11
-  for i in $(seq 1 15); do
-    echo "change $i" >> "$TEST_TEMP_DIR/dummy"
-    git -C "$TEST_TEMP_DIR" add dummy
-    git -C "$TEST_TEMP_DIR" commit -m "commit $i" --quiet
-  done
+@test "emits the best research with at least two keyword hits in the title" {
+  local label fixture description expected absent
+  while IFS='|' read -r label fixture description expected absent; do
+    [ -n "$label" ] || continue
+    rm -rf "$LBWC_PLANNING_DIR/research"
+    build_fixture "$fixture"
+    cd "$TEST_TEMP_DIR"
+    run --separate-stderr compile_context "$LBWC_PLANNING_DIR" "$description"
+    [ "$status" -eq 0 ] || fail_case "$label" "status=0" "status=$status output=$output"
+    expect_has "$label" "$expected" "$output"
+    expect_lacks "$label fresh" "commits have landed" "$output"
+    [ -z "$absent" ] || expect_lacks "$label other file" "$absent" "$output"
+  done <<'CASES'
+single-file|done:api-design|api design issue|Research findings about api-design|
+picks-matching-file|done:swift-concurrency-patterns,done:python-web-server|swift concurrency issue|Research findings about swift-concurrency-patterns|python-web-server
+CASES
+}
 
-  run --separate-stderr bash "$SCRIPTS_DIR/compile-research-context.sh" "$LBWC_PLANNING_DIR" "stale topic"
+@test "explicit file override returns the content even when the research is stale" {
+  local label commits rfile
+  while IFS='|' read -r label commits; do
+    [ -n "$label" ] || continue
+    rm -rf "$LBWC_PLANNING_DIR/research"
+    rfile=$(create_research_file "override-$label")
+    add_commits "$commits" dummy
+    run --separate-stderr compile_context "$LBWC_PLANNING_DIR" --file "$rfile"
+    [ "$status" -eq 0 ] || fail_case "$label" "status=0" "status=$status output=$output"
+    expect_has "$label" "Research findings about override-$label" "$output"
+    expect_lacks "$label" "commits have landed" "$output"
+  done <<'CASES'
+fresh|0
+stale|11
+CASES
+}
+
+@test "explicit file override prints nothing for a nonexistent file" {
+  run --separate-stderr compile_context "$LBWC_PLANNING_DIR" --file "/nonexistent/path.md"
   [ "$status" -eq 0 ]
-  # Should produce no stdout content
   [ -z "$output" ]
 }
 
-@test "staleness ignores commits in .lbwc-planning" {
-  cd "$TEST_TEMP_DIR"
-  create_research_file "planning-ignore" "planning-ignore"
-
-  # Add commits only touching .lbwc-planning
-  for i in $(seq 1 15); do
-    echo "change $i" >> "$TEST_TEMP_DIR/.lbwc-planning/state-change-$i"
-    git -C "$TEST_TEMP_DIR" add .lbwc-planning
-    git -C "$TEST_TEMP_DIR" commit -m "planning change $i" --quiet
-  done
-
-  run bash "$SCRIPTS_DIR/compile-research-context.sh" "$LBWC_PLANNING_DIR" "planning ignore"
-  [ "$status" -eq 0 ]
-  # Should still be fresh — .lbwc-planning commits are excluded
-  [[ "$output" == *"Research findings about"* ]]
-  [[ "$output" != *"commits have landed"* ]]
-}
-
-# ── Edge cases ───────────────────────────────────────────
-
-@test "exits 0 with empty output when planning dir missing" {
-  run bash "$SCRIPTS_DIR/compile-research-context.sh" "/nonexistent/dir" "some query"
-  [ "$status" -eq 0 ]
-  [ -z "$output" ]
-}
-
-@test "handles short keywords gracefully" {
-  cd "$TEST_TEMP_DIR"
-  create_research_file "api-design" "api-design"
-  create_research_file "ui-layout" "ui-layout"
-
-  # All keywords < 3 chars should be filtered out
-  run bash "$SCRIPTS_DIR/compile-research-context.sh" "$LBWC_PLANNING_DIR" "an is at"
-  [ "$status" -eq 0 ]
-  [ -z "$output" ]
+@test "staleness decides between plain, warned, and skipped output" {
+  local label commits target want_content want_warning
+  while IFS='|' read -r label commits target want_content want_warning; do
+    [ -n "$label" ] || continue
+    rm -rf "$LBWC_PLANNING_DIR/research"
+    create_research_file "stale-case" > /dev/null
+    add_commits "$commits" "$target"
+    run --separate-stderr compile_context "$LBWC_PLANNING_DIR" "stale case"
+    [ "$status" -eq 0 ] || fail_case "$label" "status=0" "status=$status output=$output"
+    if [ "$want_content" = "yes" ]; then
+      expect_has "$label content" "Research findings about stale-case" "$output"
+    else
+      [ -z "$output" ] || fail_case "$label" "empty stdout" "$output"
+    fi
+    if [ "$want_warning" = "yes" ]; then
+      expect_has "$label warning" "commits have landed" "$output"
+    else
+      expect_lacks "$label warning" "commits have landed" "$output"
+    fi
+  done <<'CASES'
+no-new-commits|0|dummy|yes|no
+five-commits-warn|5|dummy|yes|yes
+ten-commits-still-warn|10|dummy|yes|yes
+eleven-commits-skipped|11|dummy|no|no
+planning-only-commits-ignored|11|planning|yes|no
+CASES
 }
