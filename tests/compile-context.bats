@@ -27,22 +27,35 @@ teardown() {
   teardown_temp_dir
 }
 
+compile_with_config() {
+  local planning="$TEST_TEMP_DIR/.lbwc-planning"
+  rm -rf "$planning/telemetry" "$planning/.cache"
+  printf '%s\n' "$1" > "$planning/config.json"
+  run bash "$SCRIPTS_DIR/compile-context.sh" 01 dev .lbwc-planning/phases
+}
+
+expect_command_recorded() {
+  local label=$1 telemetry="$TEST_TEMP_DIR/.lbwc-planning/telemetry/session.jsonl"
+  run python3 -c 'import json,sys; records=[json.loads(line) for line in open(sys.argv[1])]; assert records[-1]["event"]=="command"; assert records[-1]["outcome"]=="success"' "$telemetry"
+  expect_status "$label" 0
+}
+
 @test "compile-context: session telemetry stays off by default and records a command when metrics opt in" {
   local telemetry="$TEST_TEMP_DIR/.lbwc-planning/telemetry/session.jsonl"
   reset_case_failures
   cd "$TEST_TEMP_DIR"
 
-  run bash -x "$SCRIPTS_DIR/compile-context.sh" 01 dev .lbwc-planning/phases
-  expect_case metrics-default-off 0 "V3_METRICS_ENABLED=false"
-  expect_output_lacks metrics-default-off "session-telemetry.py"
+  compile_with_config '{}'
+  expect_status metrics-default-off 0
   expect_no_path metrics-default-off "$telemetry"
 
-  printf '%s\n' '{"metrics":true}' > "$TEST_TEMP_DIR/.lbwc-planning/config.json"
-  run bash -x "$SCRIPTS_DIR/compile-context.sh" 01 dev .lbwc-planning/phases
-  expect_case metrics-opt-in 0 "V3_METRICS_ENABLED=true"
-  expect_output_has metrics-opt-in "session-telemetry.py"
-  run python3 -c 'import json,sys; records=[json.loads(line) for line in open(sys.argv[1])]; assert records[-1]["event"]=="command"; assert records[-1]["outcome"]=="success"' "$telemetry"
-  expect_case metrics-opt-in-record 0
+  compile_with_config '{"metrics":true}'
+  expect_status metrics-opt-in 0
+  expect_command_recorded metrics-opt-in
+
+  compile_with_config '{"metrics":false,"v3_metrics":true}'
+  expect_status metrics-overrides-legacy 0
+  expect_no_path metrics-overrides-legacy "$telemetry"
 
   assert_no_case_failures
 }
