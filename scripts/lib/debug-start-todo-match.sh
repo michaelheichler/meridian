@@ -61,12 +61,12 @@ canonicalize_debug_sessions() {
 }
 
 load_ref_count() {
-  local out_name="$1" count
-  count=$(live_ref_count "$SEL_REF")
-  case "$count" in
-    ''|*[!0-9]*) count=0 ;;
+  local _lrc_out="$1" _lrc_count
+  _lrc_count=$(live_ref_count "$SEL_REF")
+  case "$_lrc_count" in
+    ''|*[!0-9]*) _lrc_count=0 ;;
   esac
-  printf -v "$out_name" '%s' "$count"
+  printf -v "$_lrc_out" '%s' "$_lrc_count"
 }
 
 matches_by_ref() {
