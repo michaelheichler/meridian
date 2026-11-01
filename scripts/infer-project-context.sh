@@ -64,8 +64,9 @@ STACK_FILE="$CODEBASE_DIR/STACK.md"
 if [[ -f "$STACK_FILE" ]]; then
   stack_items=()
 
-  # Parse Languages table: lines matching "| Name | ..." pattern (skip header/separator)
+  # Header and separator rows name no language, so the loop skips them.
   in_languages=false
+  separator_row_pattern='^[|[:space:]:-]+$'
   while IFS= read -r line; do
     if [[ "$line" == "## Languages" ]]; then
       in_languages=true
@@ -75,7 +76,7 @@ if [[ -f "$STACK_FILE" ]]; then
       if [[ "$line" == "##"* ]]; then
         break
       fi
-      if [[ "$line" == "| "* && "$line" != "| Language"* && "$line" != "|--"* && "$line" != "|-"* ]]; then
+      if [[ "$line" == "| "* && "$line" != "| Language"* && ! "$line" =~ $separator_row_pattern ]]; then
         lang=$(echo "$line" | sed 's/^| *//' | sed 's/ *|.*//')
         if [[ -n "$lang" ]]; then
           stack_items+=("$lang")
@@ -147,7 +148,7 @@ fi
 extract_first_paragraph() {
   local file="$1" heading="$2" in_section=false paragraph="" line
 
-  # Invariant: paragraph contains only the selected section's first paragraph. Variant: unread input lines.
+  # The first blank line after text ends the loop, so only one paragraph is kept.
   while IFS= read -r line || [[ -n "$line" ]]; do
     if [[ "$line" == "$heading" ]]; then
       in_section=true
