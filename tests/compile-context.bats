@@ -150,3 +150,65 @@ check_role() {
   [ "$status" -eq 1 ]
   [[ "$output" == *"Unknown role: janitor. Valid roles: lead, dev, qa, scout, debugger, architect"* ]]
 }
+
+check_roadmap_phase() {
+  local label="$1" phase="$2" roadmap="$3" present="$4" absent="$5" dir marker content
+  local planning="$TEST_TEMP_DIR/.lbwc-planning"
+  dir="$planning/phases/0${phase}-case"
+  mkdir -p "$dir"
+  printf '%s\n' "$roadmap" > "$planning/ROADMAP.md"
+  printf '%s\n' '- [ ] REQ-01: First requirement' '- [ ] REQ-02: Second requirement' '- [ ] REQ-03: Third requirement' > "$planning/REQUIREMENTS.md"
+  cd "$TEST_TEMP_DIR"
+  run bash "$SCRIPTS_DIR/compile-context.sh" "0${phase}" lead .lbwc-planning/phases
+  [ "$status" -eq 0 ] || { echo "[$label] exit $status: $output" >&2; return 1; }
+  content=$(cat "$dir/.context-lead.md")
+  while IFS= read -r marker; do
+    [ -z "$marker" ] && continue
+    [[ "$content" == *"$marker"* ]] || { echo "[$label] missing '$marker' in context:"$'\n'"$content" >&2; return 1; }
+  done <<< "$present"
+  while IFS= read -r marker; do
+    [ -z "$marker" ] && continue
+    [[ "$content" != *"$marker"* ]] || { echo "[$label] forbidden '$marker' in context:"$'\n'"$content" >&2; return 1; }
+  done <<< "$absent"
+}
+
+@test "compile-context: the only roadmap phase keeps its Reqs line" {
+  rm -rf "$TEST_TEMP_DIR/.lbwc-planning/phases/01-test-phase"
+
+  check_roadmap_phase "single phase, Reqs last" 1 \
+    $'## Phase 1: Only\n**Goal:** Ship the widget\n**Success:** Widget renders\n**Reqs:** REQ-01' \
+    $'### Requirements (REQ-01)\nREQ-01: First requirement' ""
+}
+
+@test "compile-context: the last of several roadmap phases keeps its Reqs line" {
+  rm -rf "$TEST_TEMP_DIR/.lbwc-planning/phases/01-test-phase"
+
+  check_roadmap_phase "two phases, Reqs last in phase 2" 2 \
+    $'## Phase 1: First\n**Goal:** Early goal\n**Reqs:** REQ-01\n## Phase 2: Second\n**Goal:** Ship the widget\n**Success:** Widget renders\n**Reqs:** REQ-02' \
+    $'### Requirements (REQ-02)\nREQ-02: Second requirement' $'REQ-01:'
+}
+
+@test "compile-context: the last roadmap phase keeps its Success line" {
+  rm -rf "$TEST_TEMP_DIR/.lbwc-planning/phases/01-test-phase"
+
+  check_roadmap_phase "last phase, Success last" 2 \
+    $'## Phase 1: First\n**Reqs:** REQ-01\n## Phase 2: Second\n**Goal:** Ship the widget\n**Reqs:** REQ-02\n**Success:** Widget renders' \
+    $'### Success Criteria\nWidget renders' ""
+}
+
+@test "compile-context: the last roadmap phase keeps its Goal line" {
+  rm -rf "$TEST_TEMP_DIR/.lbwc-planning/phases/01-test-phase"
+
+  check_roadmap_phase "last phase, Goal last" 2 \
+    $'## Phase 1: First\n**Reqs:** REQ-01\n## Phase 2: Second\n**Success:** Widget renders\n**Reqs:** REQ-02\n**Goal:** Ship the widget' \
+    $'### Goal\nShip the widget' ""
+}
+
+@test "compile-context: a middle roadmap phase excludes the next phase heading and content" {
+  rm -rf "$TEST_TEMP_DIR/.lbwc-planning/phases/01-test-phase"
+
+  check_roadmap_phase "middle phase" 2 \
+    $'## Phase 1: First\n**Reqs:** REQ-01\n## Phase 2: Second\n**Goal:** Second goal\n**Success:** Second success\n**Reqs:** REQ-02\n## Phase 3: Third\n**Goal:** Third goal\n**Reqs:** REQ-03' \
+    $'### Goal\nSecond goal\n### Success Criteria\nSecond success\n### Requirements (REQ-02)\nREQ-02: Second requirement' \
+    $'Third goal\nREQ-03:\nREQ-01:'
+}
