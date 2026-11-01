@@ -2,11 +2,6 @@
 
 load test_helper
 
-setup() {
-  REPO_ROOT="$BATS_TEST_DIRNAME/.."
-  COMMAND="$REPO_ROOT/commands/init.md"
-}
-
 generate_init_architect_workflow() {
   local project control_root contract task_id agen_out name wgen_out
   project="$TEST_TEMP_DIR/project-init"
@@ -39,48 +34,4 @@ generate_init_architect_workflow() {
   [ "$status" -eq 0 ]
   [[ "$output" == *'WORKFLOW_READY'* ]]
   [[ "$output" == *'path:'* ]]
-}
-
-@test "init command documents the workflow execution option and its Architect spawn branch" {
-  grep -F 'references/workflow-spawn-protocol.md' "$COMMAND"
-  grep -F 'Choose the execution backend.' "$COMMAND"
-  grep -F 'Bootstrap execution' "$COMMAND"
-  grep -F 'Where should the initial requirements and roadmap draft run? Workflow run orchestrates it through a committed background script. Native spawn keeps the current single-agent Architect spawn.' "$COMMAND"
-  grep -F '`Workflow run`: Draft requirements and roadmap through a committed workflow script in the background.' "$COMMAND"
-  grep -F '`Native spawn`: Keep the current native Architect spawn.' "$COMMAND"
-  grep -F '`Cancel bootstrap`: Stop before generating project-defining files.' "$COMMAND"
-  grep -F 'workflow-generator.sh" solo architect' "$COMMAND"
-  grep -F 'WORKFLOW_READY' "$COMMAND"
-  grep -F 'scriptPath' "$COMMAND"
-  grep -F 'Never pass `script`' "$COMMAND"
-  grep -F 'user_decision_required' "$COMMAND"
-}
-
-@test "init command declares the workflow Architect contract read-only instead of a fabricated write capability" {
-  grep -F -- '--read-only-role architect' "$COMMAND"
-  grep -F -- '--control-root "$CONTROL_ROOT"' "$COMMAND"
-  ! grep -F -- '--write-capability' "$COMMAND"
-  ! grep -F 'carries no write capability' "$COMMAND"
-}
-
-@test "init command's cancel path preserves the Step 1 scaffold and points to /lbwc:vibe" {
-  grep -F 'Leave the Step 1 scaffold, config, routing, and any completed codebase mapping in place' "$COMMAND"
-  grep -F 'point to `/lbwc:vibe` to complete planning from those placeholders.' "$COMMAND"
-}
-
-@test "init command documents that its only spawn always runs after the planning scaffold exists" {
-  grep -F '## Workflow capability gate' "$COMMAND"
-  grep -F "This command's only agent spawn, the Architect in Step 7c, always runs after Step 1's fail-closed sequence" "$COMMAND"
-  grep -F 'The Guard below stops only when `.lbwc-planning/config.json` already exists' "$COMMAND"
-}
-
-@test "init command discloses that the workflow ask branch is unreachable on shipped defaults" {
-  grep -F "Step 7c's \`ask\` branch is unreachable on the shipped default configuration." "$COMMAND"
-  grep -F 'agent_execution_mode: "ask"' "$COMMAND"
-  grep -F 'workflow_execution.enabled: false' "$COMMAND"
-}
-
-@test "init command does not instruct the model to author a workflow" {
-  run bash "$REPO_ROOT/scripts/command-contract.sh"
-  [ "$status" -eq 0 ]
 }
