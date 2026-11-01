@@ -41,7 +41,7 @@ promote_todos() {
   [ -f "$state_path" ] || { echo "promoted_count=0"; echo "already_tracked_count=0"; echo "total_known_issues=0"; echo "promote_status=no_state_file"; return 1; }
   registry_valid || { echo "promote_status=malformed_registry"; return 1; }
   grep -q '^## Todos$' "$state_path" || { echo "promote_status=no_todos_section"; return 1; }
-  issues=$(jq -c '[.issues[] | select((.disposition // "unresolved") == "unresolved")]' "$REGISTRY")
+  issues=$(jq -c '[.issues[] | select((.disposition // "unresolved") == "unresolved") | select((.suppressed // null) == null)]' "$REGISTRY")
   total=$(jq 'length' <<< "$issues")
   scan_promotable_issues "$state_path" "$issues"
   if [ "$PROMOTED" -gt 0 ]; then
