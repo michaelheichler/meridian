@@ -439,15 +439,7 @@ else
   idx=0
   for phase_dir in "${phase_dirs[@]}"; do
     idx=$((idx + 1))
-    case "$display_numbering_scheme" in
-      prefix)
-        display_num=$(roadmap_phase_num_for_dir "prefix" "$phase_dir" "$PHASES_DIR")
-        [ -n "$display_num" ] || display_num="$idx"
-        ;;
-      *)
-        display_num="$idx"
-        ;;
-    esac
+    display_num="$idx"
     append_phase_status_for_dir_index "$status_lines_file" "$display_num" "$((idx - 1))"
   done
 fi
