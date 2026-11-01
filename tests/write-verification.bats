@@ -70,7 +70,7 @@ leftover_temp_files() {
   find "$PHASE_DIR" -name '*.tmp.*'
 }
 
-@test "valid payloads replace the old artifact atomically with the rendered content" {
+@test "valid payloads replace the old artifact atomically, and outside Git they omit the commit stamp" {
   local label filter plans expected_lines line count expanded
   while IFS='~' read -r label filter plans expected_lines; do
     [ -n "$label" ] || continue
@@ -99,6 +99,14 @@ rich-failed-artifact-check~.result = "FAIL" | .checks = {passed: 0, failed: 1, t
 rich-failed-key-link-check~.result = "FAIL" | .checks = {passed: 0, failed: 1, total: 1} | .checks_detail[0] = {id: "qa-route", status: "FAIL", category: "key_link", description: "QA command invokes the writer", from: "commands/qa.md", to: "scripts/write-verification.sh", via: "subprocess call", evidence: "commands/qa.md bypasses the writer, so route QA through it."}~-~| NUM | ID | From | To | Via | Evidence | Status |;;| 1 | qa-route | commands/qa.md | scripts/write-verification.sh | subprocess call | commands/qa.md bypasses the writer, so route QA through it. | FAIL |
 each-canonical-plan-id-once~.checks = {passed: 2, failed: 0, total: 2} | .plans_verified = ["01-01", "01-02"] | .checks_detail[0].plan_ref = "01-01" | .checks_detail += [{"id":"artifact","status":"PASS","plan_ref":"01-02"}]~01-01-PLAN.md,01-02-PLAN.md~  - 01-01;;  - 01-02
 CASES
+
+  reset_phase_dir
+  run bash -c 'cd "$1" && printf "%s\\n" "$2" | bash "$3" "$4"' bash "$TEST_TEMP_DIR" "$(passing_payload)" "$SCRIPT" "$TARGET"
+  [ "$status" -eq 0 ] || fail_case outside-git "status=0" "status=$status output=$output"
+  count=$(grep -Fxc 'result: PASS' "$TARGET" || true)
+  [ "$count" = "1" ] || fail_case outside-git "result line written" "$(cat "$TARGET")"
+  count=$(grep -Fc 'verified_at_commit:' "$TARGET" || true)
+  [ "$count" = "0" ] || fail_case outside-git "no commit stamp" "$(cat "$TARGET")"
 }
 
 @test "invalid payloads are rejected with a reason and leave the target untouched" {
@@ -148,13 +156,4 @@ plans-verified-without-plan-files~no~-~.plans_verified = ["01-01"]~must be empty
 plan-file-missing-from-plans-verified~no~01-01-PLAN.md,01-02-PLAN.md~.plans_verified = ["01-01"] | .checks_detail[0].plan_ref = "01-01"~plans_verified has
 phase-frontmatter-injection~yes~-~.phase = "01\\nwriter: forged"~phase
 CASES
-}
-
-@test "valid payload outside a Git repository omits the commit stamp" {
-  run bash -c 'cd "$1" && printf "%s\\n" "$2" | bash "$3" "$4"' bash "$TEST_TEMP_DIR" "$(passing_payload)" "$SCRIPT" "$TARGET"
-
-  [ "$status" -eq 0 ]
-  grep -Fx 'result: PASS' "$TARGET"
-  run grep -Fc 'verified_at_commit:' "$TARGET"
-  [ "$output" = "0" ]
 }

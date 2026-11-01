@@ -1,6 +1,9 @@
 #!/usr/bin/env bats
 
 load capability_helper
+load gate_case_helper
+load gate_case_files
+load rejection_case_helper
 
 setup() {
   setup_capability_sandbox
@@ -74,45 +77,41 @@ custom-last|["amber","violet","leverframe:openai-oauth:codex-auto-review"]
 CASES
 }
 
-@test "map-agent-model rewrites a full selector to its alias and keeps a live custom id" {
+map_agent_model() {
+  run env CLAUDE_CODE_EXECPATH="$BINARY" bash "$SCRIPT" map-agent-model "$BINARY" "$1" </dev/null
+}
+
+expect_mapped() {
+  map_agent_model "$2"
+  expect_case "$1" 0 ""
+  [ "$output" = "$3" ] || record_case_failure "$1" "output=[$output] want=[$3]"
+}
+
+@test "map-agent-model rewrites a full selector to its alias, keeps a live custom id and fails closed for an unknown model" {
+  reset_case_failures
+
   write_sonnet_opus_fixture '["sonnet","opus","haiku","fable","leverframe:openai-oauth:codex-auto-review"]'
+  expect_mapped full-selector-to-alias claude-sonnet-5 sonnet
+  expect_mapped live-custom-id-unchanged "$CUSTOM_ID" "$CUSTOM_ID"
 
-  while IFS='|' read -r label selector expected; do
-    [ -n "$label" ] || continue
-
-    run env CLAUDE_CODE_EXECPATH="$BINARY" bash "$SCRIPT" map-agent-model "$BINARY" "$selector" </dev/null
-
-    [ "$status" -eq 0 ] || { case_fail "$label" "status=$status"; return 1; }
-    [ "$output" = "$expected" ] || { case_fail "$label" "expected=$expected"; return 1; }
-  done <<'CASES'
-full-selector-to-alias|claude-sonnet-5|sonnet
-live-custom-id-unchanged|leverframe:openai-oauth:codex-auto-review|leverframe:openai-oauth:codex-auto-review
-CASES
-}
-
-@test "map-agent-model fails closed for an unknown model" {
+  rm -f "$CATALOG"
   make_claude_fixture "$BINARY"
+  map_agent_model not-a-model
+  expect_rejected unknown-model "not present in the live host Agent enum"
 
-  run env CLAUDE_CODE_EXECPATH="$BINARY" bash "$SCRIPT" map-agent-model "$BINARY" "not-a-model"
-
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"not present in the live host Agent enum"* ]]
+  assert_no_case_failures
 }
 
-@test "routing check accepts an extracted host alias" {
+@test "routing check accepts an extracted host alias and rejects a model missing from the extracted catalog" {
+  reset_case_failures
   seed_routing_catalog
 
   run bash "$ROUTING" check "$PLANNING_DIR" sonnet '"careful"'
-
-  [ "$status" -eq 0 ]
-  jq -e '.model == "sonnet"' <<< "$output" >/dev/null
-}
-
-@test "routing check rejects a model missing from the extracted catalog" {
-  seed_routing_catalog
+  expect_status host-alias-accepted 0
+  expect_jq_output host-alias-model '.model == "sonnet"'
 
   run bash "$ROUTING" check "$PLANNING_DIR" missing-route '"careful"'
+  expect_rejected missing-model "not present in the saved capability catalog"
 
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"not present in the saved capability catalog"* ]]
+  assert_no_case_failures
 }

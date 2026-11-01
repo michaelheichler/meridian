@@ -141,7 +141,14 @@ with tarfile.open(out, "w:gz") as archive:
   printf '%s  rtk-%s.tar.gz\n' "$(sha256_value "$TEST_TEMP_DIR/release/archive.tar.gz")" "$(target_name)" > "$TEST_TEMP_DIR/release/checksums.txt"
 }
 
-@test "rtk-manager usage: reports status, verify and rejects bad invocations" {
+expect_needs_yes() {
+  reset_rtk
+  run manager "$1"
+  expect_case "$1-needs-yes" 2 "$1 requires --yes"
+  expect_no_path "$1-needs-yes-installs-nothing" "$LBWC_RTK_BINARY"
+}
+
+@test "rtk-manager usage and guards: reports status, rejects bad invocations, demands --yes and keeps state inside the project" {
   run manager status --json
   expect_status status-missing 0
   expect_jq_output status-missing '.installed == false'
@@ -162,18 +169,9 @@ with tarfile.open(out, "w:gz") as archive:
   run manager status --help
   expect_case help-after-command 0 "Usage: rtk-manager.sh"
 
-  assert_no_case_failures
-}
-
-@test "rtk-manager guards: demand --yes and keep state inside the project" {
-  local command_name
-
-  for command_name in install update uninstall; do
-    reset_rtk
-    run manager "$command_name"
-    expect_case "$command_name-needs-yes" 2 "$command_name requires --yes"
-    expect_no_path "$command_name-needs-yes" "$LBWC_RTK_BINARY"
-  done
+  expect_needs_yes install
+  expect_needs_yes update
+  expect_needs_yes uninstall
 
   run env LBWC_RTK_DIR="$TEST_TEMP_DIR/outside" bash "$RTK_TEST_ROOT/scripts/rtk-manager.sh" status
   expect_case state-outside-project 2 "state must stay inside this project"
@@ -187,7 +185,7 @@ with tarfile.open(out, "w:gz") as archive:
   assert_no_case_failures
 }
 
-@test "rtk-manager install: validates a dry run, then writes a receipt that verify accepts" {
+@test "rtk-manager install: validates a dry run, writes a receipt that verify accepts, and refuses bad checksums and unsafe archive paths" {
   reset_rtk
   run manager install --yes --dry-run
   expect_case dry-run 0 "dry-run: install RTK v9.9.9"
@@ -208,10 +206,6 @@ with tarfile.open(out, "w:gz") as archive:
   expect_status status-installed 0
   expect_jq_output status-installed '.installed == true'
 
-  assert_no_case_failures
-}
-
-@test "rtk-manager install reject: refuses bad checksums and unsafe archive paths" {
   reset_rtk
   printf '%064d  rtk-%s.tar.gz\n' 0 "$(target_name)" > "$TEST_TEMP_DIR/release/checksums.txt"
   run manager install --yes

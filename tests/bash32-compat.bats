@@ -38,7 +38,9 @@ entry_scripts() {
 guard_callers() {
   local script
   while IFS= read -r script; do
-    ! calls_bash_guard "$script" || basename "$script"
+    if calls_bash_guard "$script"; then
+      basename "$script"
+    fi
   done < <(entry_scripts)
 }
 
@@ -229,6 +231,11 @@ case_tmux_bus_watchdog() {
 @test "no entry script calls the bash 4.3 guard" {
   run guard_callers
   [ -z "$output" ] || { echo "$output" >&2; return 1; }
+}
+
+@test "no test line opens with a bare negation that set -e never fails on" {
+  run bash -c 'cd "$1" && grep -nE "^[[:space:]]*! " -- *.bats *.bash' _ "$BATS_TEST_DIRNAME"
+  [ "$status" -eq 1 ] || { printf 'hollow negation at file:line\n%s\n' "$output" >&2; return 1; }
 }
 
 @test "previously guarded entry scripts complete a full run under bash 3.2" {

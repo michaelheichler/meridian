@@ -1,6 +1,8 @@
 #!/usr/bin/env bats
 
 load test_helper
+load gate_case_helper
+load gate_case_files
 
 setup() {
   setup_temp_dir
@@ -37,28 +39,29 @@ stop_event() {
   printf '{"agent_type":"dev","agent_id":"agent-1","agent_transcript_path":"%s"}' "$TRANSCRIPT"
 }
 
-@test "routing evidence records a resolved route and transcript match" {
-  local record
-  install_route_stub '{"model":"claude-sonnet-5","reasoning":"high","role":"dev"}'
-  write_transcript '{"type":"assistant","effort":"high","message":{"model":"claude-sonnet-5","content":[]}}'
-
+evidence_round() {
+  rm -f "$LBWC_PLANNING_DIR/.agent-routing-evidence.jsonl"
+  install_route_stub "$2"
+  write_transcript "$3"
   run_evidence start '{"agent_type":"dev","agent_id":"agent-1"}'
-  [ "$status" -eq 0 ]
+  expect_status "$1-start" 0
   run_evidence stop "$(stop_event)"
-  [ "$status" -eq 0 ]
-
-  record=$(jq -s '[.[] | select(.event == "stop")][0]' "$LBWC_PLANNING_DIR/.agent-routing-evidence.jsonl")
-  [ "$(jq -r '.verdict.model' <<< "$record")" = "pass" ]
-  [ "$(jq -r '.verdict.effort' <<< "$record")" = "pass" ]
 }
 
-@test "routing evidence reports a transcript model mismatch" {
-  install_route_stub '{"model":"claude-sonnet-5","reasoning":null,"role":"dev"}'
-  write_transcript '{"type":"assistant","message":{"model":"claude-opus-5","content":[]}}'
+@test "routing evidence records a transcript match and reports a transcript model mismatch" {
+  local record
+  reset_case_failures
 
-  run_evidence start '{"agent_type":"dev","agent_id":"agent-1"}'
-  run_evidence stop "$(stop_event)"
+  evidence_round match '{"model":"claude-sonnet-5","reasoning":"high","role":"dev"}' \
+    '{"type":"assistant","effort":"high","message":{"model":"claude-sonnet-5","content":[]}}'
+  expect_status match-stop 0
+  record=$(jq -s '[.[] | select(.event == "stop")][0]' "$LBWC_PLANNING_DIR/.agent-routing-evidence.jsonl")
+  [ "$(jq -r '.verdict.model' <<< "$record")" = "pass" ] || record_case_failure match-model "record=$record"
+  [ "$(jq -r '.verdict.effort' <<< "$record")" = "pass" ] || record_case_failure match-effort "record=$record"
 
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"Agent routing evidence mismatch for dev"* ]]
+  evidence_round mismatch '{"model":"claude-sonnet-5","reasoning":null,"role":"dev"}' \
+    '{"type":"assistant","message":{"model":"claude-opus-5","content":[]}}'
+  expect_case mismatch-stop 0 "Agent routing evidence mismatch for dev"
+
+  assert_no_case_failures
 }

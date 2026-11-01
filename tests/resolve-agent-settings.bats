@@ -78,7 +78,7 @@ resolve() {
   run bash "$RESOLVER" "$@"
 }
 
-@test "the resolver renders the saved or explicit route into renderer variables" {
+@test "the resolver renders the saved or explicit route into renderer variables and fails closed on an unknown model or an absent route" {
   resolve lead "$CONFIG_PATH" "$PROJECT_ROOT"
   expect_case profile-value 0 "RESOLVED_AGENT_MODEL='nova-route'"
   expect_fragment profile-value "RESOLVED_MODEL='nova-route'"
@@ -109,10 +109,7 @@ resolve() {
   expect_case reasoning-named-default 0 "RESOLVED_REASONING='default'"
   expect_fragment reasoning-named-default "RESOLVED_REASONING_JSON='\"default\"'"
 
-  assert_no_case_failures
-}
-
-@test "the resolver fails closed on an unknown model or an absent route" {
+  reset_config
   resolve lead "$CONFIG_PATH" "$PROJECT_ROOT" --model missing-route
   expect_case unknown-model 3 "saved capability catalog"
 

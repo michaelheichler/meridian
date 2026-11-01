@@ -73,7 +73,7 @@ expect_map() {
     || record_case_failure "$label" "map filter failed=[$filter] output=$output"
 }
 
-@test "probe-map-tools route: prefers serena, then gitnexus, then lsp, then grep-only" {
+@test "probe-map-tools route: prefers serena, then gitnexus, then lsp, then grep-only, and finds gitnexus in every config scope" {
   serena_enabled
   gitnexus_global
   run_probe
@@ -107,10 +107,7 @@ expect_map() {
   expect_status nothing-configured 0
   expect_map nothing-configured '.recommended_route == "grep-only" and (.serena.reason | endswith("settings.json not found"))'
 
-  assert_no_case_failures
-}
-
-@test "probe-map-tools gitnexus: finds the server in project, per-project and global config" {
+  reset_row
   serena_absent
   printf '%s' '{"mcpServers":{"gitnexus":{"command":"gitnexus"}}}' > "$PROJECT_DIR/.mcp.json"
   run_probe
@@ -142,8 +139,8 @@ expect_map() {
   assert_no_case_failures
 }
 
-@test "probe-map-tools state: reports the codebase map and persists only into an existing planning directory" {
-  local current_hash digest map_dir
+@test "probe-map-tools state: reports the codebase map, persists only into an existing planning directory, and reports a missing jq" {
+  local current_hash digest map_dir bash_bin empty_path
 
   serena_absent
   gitnexus_absent
@@ -182,12 +179,7 @@ expect_map() {
   expect_status map-zero-files 0
   expect_map map-zero-files '.codebase_map.freshness == "stale"'
 
-  assert_no_case_failures
-}
-
-@test "probe-map-tools without jq: reports the missing dependency as hook context" {
-  local bash_bin empty_path
-
+  reset_row
   bash_bin=$(command -v bash)
   empty_path="$TEST_TEMP_DIR/empty-path"
   mkdir -p "$empty_path"

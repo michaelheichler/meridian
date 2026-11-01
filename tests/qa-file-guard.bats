@@ -184,29 +184,19 @@ main-session-product-after-pair-used|-|main-pair-used|src/main.py|-|-
 CASES
 }
 
-@test "file-guard role scope denies a granted path outside the role domain" {
-  while IFS='|' read -r label role grant path reason; do
-    [ -n "$label" ] || continue
-    guard_case "$label" "$role" "$grant" "$path"
-    expect_status "$label" 2
-    expect_output_has "$label" "$reason"
-  done <<'CASES'
-scout-product-source|scout|allow:src/main.py|src/main.py|role 'scout' can only write under the control root
-architect-product-source|architect|allow:src/main.py|src/main.py|role 'architect' can only write under the control root
-lead-product-source|lead|allow:src/main.py|src/main.py|role 'lead' can only write under the control root
-docs-product-source|docs|allow:src/main.py|src/main.py|role 'docs' can only write documentation files
-qa-author-product-source|qa-author|allow:src/main.py|src/main.py|role 'qa-author' can only write test files
-test-dev-product-source|test-dev|allow:src/main.py|src/main.py|role 'test-dev' can only write test files
-CASES
-}
-
-@test "file-guard capability check denies writes outside the assigned allowance" {
+@test "file-guard denies writes outside the role domain, the allowance, the contract, an open pair or a safe path shape" {
   while IFS='|' read -r label role grant path tool cwd_mode reason; do
     [ -n "$label" ] || continue
-    guard_case "$label" "$role" "$grant" "$path" "$tool" "$cwd_mode"
+    guard_case "$label" "$role" "$grant" "$(printf '%b' "$path")" "$tool" "$cwd_mode"
     expect_status "$label" 2
     expect_output_has "$label" "$reason"
   done <<'CASES'
+scout-product-source|scout|allow:src/main.py|src/main.py|-|-|role 'scout' can only write under the control root
+architect-product-source|architect|allow:src/main.py|src/main.py|-|-|role 'architect' can only write under the control root
+lead-product-source|lead|allow:src/main.py|src/main.py|-|-|role 'lead' can only write under the control root
+docs-product-source|docs|allow:src/main.py|src/main.py|-|-|role 'docs' can only write documentation files
+qa-author-product-source|qa-author|allow:src/main.py|src/main.py|-|-|role 'qa-author' can only write test files
+test-dev-product-source|test-dev|allow:src/main.py|src/main.py|-|-|role 'test-dev' can only write test files
 manifest-entry-without-project-root|python-engineer|no-root|src/main.py|-|-|outside worker 'dev-1' assigned write allowance
 different-hook-path|python-engineer|allow:hooks/skill_gate.py|hooks/context_usage.py|-|-|outside worker 'dev-1' assigned write allowance
 notebook-outside-allowance|python-engineer|allow:notebooks/allowed.ipynb|notebooks/unassigned.ipynb|NotebookEdit|-|outside worker 'dev-1' assigned write allowance
@@ -230,24 +220,21 @@ root-capability-runfiles|python-engineer|root-capability|.temporary-agent-runfil
 root-capability-dotenv|python-engineer|root-capability|.env|-|-|cannot write LBWC policy
 root-capability-private-key|python-engineer|root-capability|config/private.key|-|-|cannot write LBWC policy
 root-capability-credentials|python-engineer|root-capability|credentials.json|-|-|cannot write LBWC policy
-CASES
-}
-
-@test "file-guard rejects a contract worker whose contract no longer matches the manifest" {
-  while IFS='|' read -r label mutation path; do
-    [ -n "$label" ] || continue
-    guard_case "$label" python-engineer "contract:$mutation" "$path"
-    expect_status "$label" 2
-    expect_output_has "$label" "contract is missing, mismatched, stale, or outside allowance"
-  done <<'CASES'
-contract-file-missing|missing|src/allowed.py
-contract-tampered|tampered|src/allowed.py
-manifest-contract-id-mismatch|wrong-id|src/allowed.py
-manifest-task-identity-stale|stale-task|src/allowed.py
-manifest-digest-mismatch|wrong-digest|src/allowed.py
-manifest-allowance-drifted|allowance-drift|src/other.py
-contract-never-dispatched|undispatched|src/allowed.py
-generated-identity-without-contract-path|no-contract-path|src/allowed.py
+contract-file-missing|python-engineer|contract:missing|src/allowed.py|-|-|contract is missing, mismatched, stale, or outside allowance
+contract-tampered|python-engineer|contract:tampered|src/allowed.py|-|-|contract is missing, mismatched, stale, or outside allowance
+manifest-contract-id-mismatch|python-engineer|contract:wrong-id|src/allowed.py|-|-|contract is missing, mismatched, stale, or outside allowance
+manifest-task-identity-stale|python-engineer|contract:stale-task|src/allowed.py|-|-|contract is missing, mismatched, stale, or outside allowance
+manifest-digest-mismatch|python-engineer|contract:wrong-digest|src/allowed.py|-|-|contract is missing, mismatched, stale, or outside allowance
+manifest-allowance-drifted|python-engineer|contract:allowance-drift|src/other.py|-|-|contract is missing, mismatched, stale, or outside allowance
+contract-never-dispatched|python-engineer|contract:undispatched|src/allowed.py|-|-|contract is missing, mismatched, stale, or outside allowance
+generated-identity-without-contract-path|python-engineer|contract:no-contract-path|src/allowed.py|-|-|contract is missing, mismatched, stale, or outside allowance
+pair-running|-|main-pair-running|src/main.py|-|-|delegate product writes
+pair-registered|-|main-pair-registered|src/main.py|-|-|delegate product writes
+leading-parent-traversal|-|unscoped|../outside/secret.py|-|-|path traversal in file path
+bare-parent-reference|-|unscoped|..|-|-|path traversal in file path
+embedded-parent-traversal|-|unscoped|src/../../secret.py|-|-|path traversal in file path
+trailing-parent-reference|-|unscoped|src/..|-|-|path traversal in file path
+newline-in-path|-|unscoped|src/a\nb.py|-|-|newline in file path
 CASES
 }
 
@@ -266,54 +253,22 @@ absolute-path-outside-root|absolute|/elsewhere/hooks/skill_gate.py
 CASES
 }
 
-@test "file-guard makes the main session delegate product writes while a pair is open" {
-  while IFS='|' read -r label grant path; do
-    [ -n "$label" ] || continue
-    guard_case "$label" - "$grant" "$path"
-    expect_status "$label" 2
-    expect_output_has "$label" "delegate product writes"
-  done <<'CASES'
-pair-running|main-pair-running|src/main.py
-pair-registered|main-pair-registered|src/main.py
-CASES
-}
-
-@test "file-guard blocks unsafe path shapes before consulting any manifest" {
-  while IFS='|' read -r label path reason; do
-    [ -n "$label" ] || continue
-    guard_case "$label" - unscoped "$(printf '%b' "$path")"
-    expect_status "$label" 2
-    expect_output_has "$label" "$reason"
-  done <<'CASES'
-leading-parent-traversal|../outside/secret.py|path traversal in file path
-bare-parent-reference|..|path traversal in file path
-embedded-parent-traversal|src/../../secret.py|path traversal in file path
-trailing-parent-reference|src/..|path traversal in file path
-newline-in-path|src/a\nb.py|newline in file path
-CASES
-}
-
-@test "file-guard fails closed when jq is missing" {
+@test "file-guard ignores calls that carry no file path and fails closed when jq is missing" {
   local no_jq_path="$TEST_TEMP_DIR/no-jq-bin"
+
+  run run_raw_guard ''
+  expect_status empty-stdin 0
+  expect_output_empty empty-stdin
+
+  run run_raw_guard '{"tool_name":"Write","tool_input":{}}'
+  expect_status tool-input-without-path 0
+  expect_output_empty tool-input-without-path
+
   mkdir -p "$no_jq_path"
   ln -s "$(command -v bash)" "$no_jq_path/bash"
-
   run env PATH="$no_jq_path" bash -c "printf '%s' '{}' | bash '$SCRIPTS_DIR/file-guard.sh'"
-
   expect_status jq-missing 2
   expect_output_has jq-missing "jq not available"
-}
-
-@test "file-guard ignores calls that carry no file path" {
-  while IFS='|' read -r label stdin; do
-    [ -n "$label" ] || continue
-    run run_raw_guard "$stdin"
-    expect_status "$label" 0
-    expect_output_empty "$label"
-  done <<'CASES'
-empty-stdin|
-tool-input-without-path|{"tool_name":"Write","tool_input":{}}
-CASES
 }
 
 @test "file-guard stays registered for Write, Edit, and NotebookEdit" {

@@ -25,7 +25,7 @@ run_manual() {
     bash -c 'printf %s "$1" | bash "$2" "$3"' _ "$input" "$SCRIPT" "$planning"
 }
 
-@test "debug-start-manual starts a session with a normalized description slug and detail" {
+@test "debug-start-manual starts a session with a normalized slug and detail, and rejects bad input without creating one" {
   local label input detail_status detail_json ref want_desc want_slug want_context want_files want_ref planning
   local session_file BUG_DESC SLUG MANUAL_REF MANUAL_DETAIL_CONTEXT MANUAL_DETAIL_FILES DETAIL_STATUS
   while IFS='|' read -r label input detail_status detail_json ref want_desc want_slug want_context want_files want_ref; do
@@ -56,11 +56,7 @@ not-found-status-keeps-description|Parser crash|not_found|||Parser crash|parser-
 error-status-keeps-description|Parser crash|error|||Parser crash|parser-crash||[]|none
 CASES
 
-  assert_no_case_failures
-}
-
-@test "debug-start-manual rejects bad input without creating a session" {
-  local label planning_arg input detail_status detail_json fragment planning
+  local planning_arg fragment
   while IFS='|' read -r label planning_arg input detail_status detail_json fragment; do
     [ -n "$label" ] || continue
     planning="$BATS_TEST_TMPDIR/$label/.lbwc-planning"

@@ -25,8 +25,9 @@ expect_exact_line() {
 
 expect_no_exact_line() {
   local label=$1 file=$2 line=$3
-  ! grep -Fxq -- "$line" "$file" 2>/dev/null \
-    || record_case_failure "$label" "file=$file has exact line=[$line]"
+  if grep -Fxq -- "$line" "$file" 2>/dev/null; then
+    record_case_failure "$label" "file=$file has exact line=[$line]"
+  fi
 }
 
 expect_exact_output() {
@@ -226,46 +227,39 @@ write_phase_detect_stub() {
   { echo '#!/usr/bin/env bash'; echo "printf '%s\\n' $kv"; } > "$dir/phase-detect.sh"
 }
 
-@test "archive-uat-guard allows archiving when no UAT work is pending" {
-  local dir label kv
-  while IFS='|' read -r label kv; do
-    [ -n "$label" ] || continue
-    dir=$(fresh_dir "guard-ok-$label")
-    write_phase_detect_stub "$dir" "$kv"
-    run bash "$dir/archive-uat-guard.sh"
-    expect_case_silent "$label" 0
-  done <<'CASES'
-clean|phase_detect_complete=true planning_dir_exists=true project_exists=true uat_issues_phase=none uat_blocking_phase=none milestone_uat_issues=false
-no-planning-dir|phase_detect_complete=true planning_dir_exists=false project_exists=true uat_issues_phase=01
-no-project|phase_detect_complete=true planning_dir_exists=true project_exists=false uat_issues_phase=01
-CASES
-
-  assert_no_case_failures
+run_uat_guard() {
+  local dir
+  dir=$(fresh_dir "guard-$1")
+  write_phase_detect_stub "$dir" "$2"
+  run bash "$dir/archive-uat-guard.sh"
 }
 
-@test "archive-uat-guard blocks archiving with exit 2 and a reason" {
-  local dir label kv fragment
+guard_allows() {
+  run_uat_guard "$1" "$2"
+  expect_case_silent "$1" 0
+}
+
+guard_blocks() {
+  run_uat_guard "$1" "$2"
+  expect_case "$1" 2 "$3"
+}
+
+@test "archive-uat-guard allows archiving without pending UAT work and blocks it with exit 2 and a reason" {
   local common='phase_detect_complete=true planning_dir_exists=true project_exists=true'
-  while IFS='|' read -r label kv fragment; do
-    [ -n "$label" ] || continue
-    dir=$(fresh_dir "guard-block-$label")
-    case "$kv" in
-      @*) kv="$common ${kv#@}" ;;
-    esac
-    write_phase_detect_stub "$dir" "$kv"
-    run bash "$dir/archive-uat-guard.sh"
-    expect_case "$label" 2 "$fragment"
-  done <<'CASES'
-phase-detect-error|phase_detect_error=true|Archive blocked: phase detection failed
-phase-detect-incomplete|phase_detect_complete=false|Archive blocked: phase detection failed
-phase-detect-empty||Archive blocked: phase detection failed
-active-phase-issues|@uat_issues_phase=01 uat_blocking_phase=none milestone_uat_issues=false|unresolved active-phase UAT issues in Phase 01
-blocking-issues-found|@uat_issues_phase=none uat_blocking_phase=02 uat_blocking_status=issues_found|unresolved active-phase UAT issues in Phase 02
-blocking-in-progress|@uat_issues_phase=none uat_blocking_phase=02 uat_blocking_status=active|active-phase UAT is still in progress for Phase 02
-blocking-status-unset|@uat_issues_phase=none uat_blocking_phase=03|active-phase UAT is still in progress for Phase 03
-milestone-issues-located|@uat_issues_phase=none uat_blocking_phase=none milestone_uat_issues=true milestone_uat_slug=v1 milestone_uat_phase=04|unresolved milestone UAT issues in v1 Phase 04
-milestone-issues-unlocated|@uat_issues_phase=none uat_blocking_phase=none milestone_uat_issues=true|unresolved milestone UAT issues detected
-CASES
+
+  guard_allows clean "$common uat_issues_phase=none uat_blocking_phase=none milestone_uat_issues=false"
+  guard_allows no-planning-dir 'phase_detect_complete=true planning_dir_exists=false project_exists=true uat_issues_phase=01'
+  guard_allows no-project 'phase_detect_complete=true planning_dir_exists=true project_exists=false uat_issues_phase=01'
+
+  guard_blocks phase-detect-error 'phase_detect_error=true' 'Archive blocked: phase detection failed'
+  guard_blocks phase-detect-incomplete 'phase_detect_complete=false' 'Archive blocked: phase detection failed'
+  guard_blocks phase-detect-empty '' 'Archive blocked: phase detection failed'
+  guard_blocks active-phase-issues "$common uat_issues_phase=01 uat_blocking_phase=none milestone_uat_issues=false" 'unresolved active-phase UAT issues in Phase 01'
+  guard_blocks blocking-issues-found "$common uat_issues_phase=none uat_blocking_phase=02 uat_blocking_status=issues_found" 'unresolved active-phase UAT issues in Phase 02'
+  guard_blocks blocking-in-progress "$common uat_issues_phase=none uat_blocking_phase=02 uat_blocking_status=active" 'active-phase UAT is still in progress for Phase 02'
+  guard_blocks blocking-status-unset "$common uat_issues_phase=none uat_blocking_phase=03" 'active-phase UAT is still in progress for Phase 03'
+  guard_blocks milestone-issues-located "$common uat_issues_phase=none uat_blocking_phase=none milestone_uat_issues=true milestone_uat_slug=v1 milestone_uat_phase=04" 'unresolved milestone UAT issues in v1 Phase 04'
+  guard_blocks milestone-issues-unlocated "$common uat_issues_phase=none uat_blocking_phase=none milestone_uat_issues=true" 'unresolved milestone UAT issues detected'
 
   assert_no_case_failures
 }
