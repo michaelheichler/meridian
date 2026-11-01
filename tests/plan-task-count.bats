@@ -67,7 +67,7 @@ ${fields}---
 EOF
 }
 
-@test "normalize-plan-filenames phase dir: renames legacy names without overwriting" {
+@test "normalize-plan-filenames renames legacy phase-dir names without overwriting and skips quietly unless the path is a placeholder" {
   fresh_dir renames
   printf 'plan\n' > "$DIR/PLAN-1.md"
   printf 'summary\n' > "$DIR/plan-02-summary.md"
@@ -132,10 +132,6 @@ EOF
   expect_case_silent research-ambiguous 0
   expect_path research-ambiguous "$DIR/07-widgets/07-01-RESEARCH.md"
 
-  assert_no_case_failures
-}
-
-@test "normalize-plan-filenames arguments: skips quietly unless the path is a placeholder" {
   run bash "$NORMALIZE"
   expect_case_silent no-argument 0
 
@@ -148,7 +144,7 @@ EOF
   assert_no_case_failures
 }
 
-@test "normalize-plan-filenames round dir: promotes only valid, current candidates" {
+@test "normalize-plan-filenames round dir promotes only valid current candidates, keeps the newest valid plan, and fails closed on ties" {
   fresh_dir uat/remediation/uat/round-01
   write_round_plan "$DIR/plan-1.md" 1
   run bash "$NORMALIZE" "$DIR"
@@ -197,10 +193,6 @@ EOF
   run bash "$NORMALIZE" "$DIR"
   expect_case legacy-round 0 "renamed: plan-3.md -> R03-PLAN.md"
 
-  assert_no_case_failures
-}
-
-@test "normalize-plan-filenames round dir conflicts: keeps the newest valid plan and fails closed on ties" {
   fresh_dir conflicting-candidates/remediation/uat/round-01
   write_round_plan "$DIR/plan-1.md" 1
   write_round_plan "$DIR/PLAN-R1.md" 01
@@ -264,7 +256,13 @@ EOF
   assert_no_case_failures
 }
 
-@test "plan-task-count accepts: counts balanced task records within the cap" {
+invalid_cap_row() {
+  printf '{"max_tasks_per_plan": %s}\n' "$2" > "$CONFIG"
+  run bash "$SCRIPT" "$PLAN" "$CONFIG"
+  expect_case "$1" 1 "max_tasks_per_plan must be a positive integer"
+}
+
+@test "plan-task-count counts balanced task records within the cap and fails closed on bad plans, configs and caps" {
   printf '{"max_tasks_per_plan": 2}\n' > "$CONFIG"
   write_plan '<task type="auto">
   <name>First</name>
@@ -290,12 +288,6 @@ EOF
   </task>'
   run bash "$SCRIPT" "$PLAN" "$CONFIG"
   expect_case attribute-and-indent-forms 0 "plan_task_count=2"
-
-  assert_no_case_failures
-}
-
-@test "plan-task-count rejects: fails closed on bad plans, configs and caps" {
-  local invalid_cap
 
   printf '{"max_tasks_per_plan": 1}\n' > "$CONFIG"
   write_plan '<task type="auto">
@@ -345,11 +337,10 @@ EOF
   run bash "$SCRIPT" "$PLAN"
   expect_case wrong-arity 1 "usage: plan-task-count.sh"
 
-  for invalid_cap in 0 1.5 '"2"' null; do
-    printf '{"max_tasks_per_plan": %s}\n' "$invalid_cap" > "$CONFIG"
-    run bash "$SCRIPT" "$PLAN" "$CONFIG"
-    expect_case "invalid-cap-$invalid_cap" 1 "max_tasks_per_plan must be a positive integer"
-  done
+  invalid_cap_row invalid-cap-0 0
+  invalid_cap_row invalid-cap-1.5 1.5
+  invalid_cap_row invalid-cap-string '"2"'
+  invalid_cap_row invalid-cap-null null
 
   assert_no_case_failures
 }

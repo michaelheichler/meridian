@@ -56,8 +56,8 @@ run_extract_no_cfg() {
   run env -u CLAUDE_CONFIG_DIR HOME="$row/home" bash "$SCRIPT" --project-dir "$row/project" "$@"
 }
 
-@test "extract-skill-follow-up-files emits absolute paths of in-skill markdown link targets" {
-  local row project cfg home
+@test "extract-skill-follow-up-files emits deduplicated absolute paths of in-skill link targets for every listed skill and drops links that leave the skill" {
+  local row project cfg home first_count
 
   row=$(row_dir project-skill)
   project=$(phys "$row/project")
@@ -102,12 +102,6 @@ run_extract_no_cfg() {
   run_extract_no_cfg "$row" find-docs
   expect_case "home-claude" 0 "$home/.claude/skills/find-docs/references/first.md"
 
-  assert_no_case_failures
-}
-
-@test "extract-skill-follow-up-files splits skill lists and keeps valid skills next to unsafe names" {
-  local row project
-
   row=$(row_dir whitespace-list)
   make_standard_skill "$row/project/.claude/skills" swiftdata
   make_standard_skill "$row/project/.claude/skills" swift-testing
@@ -135,12 +129,6 @@ run_extract_no_cfg() {
   run_extract "$row" "swiftdata ../../.agents/skills/swiftdata"
   expect_case "traversal-token-in-list" 0 "$project/.claude/skills/swiftdata/references/first.md"
   expect_output_lacks "traversal-token-in-list-no-agents" "$project/.agents/skills"
-
-  assert_no_case_failures
-}
-
-@test "extract-skill-follow-up-files normalizes in-tree links and drops links that leave the skill" {
-  local row project cfg first_count
 
   row=$(row_dir normalize-dedupe)
   project=$(phys "$row/project")
@@ -200,7 +188,7 @@ run_extract_no_cfg() {
   assert_no_case_failures
 }
 
-@test "extract-skill-follow-up-files stays silent for unresolvable or unsafe skills" {
+@test "extract-skill-follow-up-files stays silent for unresolvable or unsafe skills and handles help and option errors" {
   local row
 
   row=$(row_dir lookalike-roots)
@@ -244,11 +232,6 @@ run_extract_no_cfg() {
   run_extract "$row" " , ,"
   expect_case_silent "only-separators" 0
 
-  assert_no_case_failures
-}
-
-@test "extract-skill-follow-up-files handles help and option errors" {
-  local row
   row=$(row_dir options)
 
   run bash "$SCRIPT" --help

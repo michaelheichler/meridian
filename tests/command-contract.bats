@@ -1,22 +1,28 @@
 #!/usr/bin/env bats
 
 load gate_case_helper
+load rejection_case_helper
 
 setup() {
   REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/.." && pwd)"
   CHECKER="$REPO_ROOT/scripts/command-contract.sh"
   TEST_ROOT="$(mktemp -d)"
   FIXTURE="$TEST_ROOT/repo"
+  reset_case_failures
+}
+
+teardown() {
+  rm -rf "$TEST_ROOT"
+}
+
+fresh_fixture() {
+  rm -rf "$FIXTURE"
   mkdir -p "$FIXTURE/commands" "$FIXTURE/config" "$FIXTURE/references" "$FIXTURE/scripts" "$FIXTURE/templates"
   : > "$FIXTURE/config/legacy-identifier-allowlist.txt"
   : > "$FIXTURE/config/gated-tool-prose-allowlist.txt"
   : > "$FIXTURE/scripts/workflow-generator.sh"
   write_valid_command alpha
   write_manifest alpha.md
-}
-
-teardown() {
-  rm -rf "$TEST_ROOT"
 }
 
 write_valid_command() {
@@ -107,10 +113,9 @@ append_prose() {
 
 run_prose_table() {
   local want_status=$1 grants=$2 label prose fragment tool
-  reset_case_failures
   while IFS='|' read -r label prose fragment; do
     [ -n "$label" ] || continue
-    write_valid_command alpha
+    fresh_fixture
     for tool in $grants; do grant_tool "$tool"; done
     append_prose "$prose"
     run_checker </dev/null
@@ -118,14 +123,13 @@ run_prose_table() {
   done
 }
 
-@test "command-contract accepts a complete command set" {
+checker_row() {
+  local label="$1" want_status="$2" fragment="$3"
   run_checker
-
-  [ "$status" -eq 0 ]
-  [[ "$output" == *'Command contract passed: 1 commands'* ]]
+  expect_case "$label" "$want_status" "$fragment"
 }
 
-@test "command-contract rejects missing fields, empty values, and obsolete names" {
+break_frontmatter() {
   write_valid_command beta
   write_manifest alpha.md beta.md
   python3 - "$FIXTURE/commands/alpha.md" <<'PY'
@@ -144,89 +148,69 @@ path = sys.argv[1]
 text = open(path, encoding="utf-8").read().replace("---\ncategory:", "---\nname: lbwc:beta\ncategory:")
 open(path, "w", encoding="utf-8").write(text)
 PY
-
-  run_checker
-
-  [ "$status" -eq 1 ]
-  [[ "$output" == *'alpha.md: empty frontmatter field: category'* ]]
-  [[ "$output" == *'alpha.md: missing frontmatter field: argument-hint'* ]]
-  [[ "$output" == *'beta.md: frontmatter must not define name'* ]]
 }
 
-@test "command-contract rejects command filenames outside the local slug format" {
-  write_valid_command Beta
-  write_manifest alpha.md Beta.md
-
-  run_checker
-
-  [ "$status" -eq 1 ]
-  [[ "$output" == *'Beta.md: command filename must match [a-z0-9][a-z0-9-]*.md'* ]]
-}
-
-@test "command-contract rejects unallowlisted legacy identifiers" {
-  printf 'Legacy command: /vbw:plan\n' > "$FIXTURE/references/legacy.md"
-
-  run_checker
-
-  [ "$status" -eq 1 ]
-  [[ "$output" == *'references/legacy.md: forbidden legacy identifier'* ]]
-}
-
-@test "command-contract accepts a legacy identifier listed in the allowlist" {
-  printf 'Legacy command: /vbw:plan\n' > "$FIXTURE/references/legacy.md"
-  printf 'references/legacy.md\n' > "$FIXTURE/config/legacy-identifier-allowlist.txt"
-
-  run_checker
-
-  [ "$status" -eq 0 ]
-  [[ "$output" == *'Command contract passed: 1 commands'* ]]
-}
-
-@test "command-contract rejects missing referenced paths" {
-  append_prose 'Use `scripts/missing-helper.sh` and `references/missing.md`.'
-
-  run_checker
-
-  [ "$status" -eq 1 ]
-  [[ "$output" == *'alpha.md: missing referenced path: scripts/missing-helper.sh'* ]]
-  [[ "$output" == *'alpha.md: missing referenced path: references/missing.md'* ]]
-}
-
-@test "command-contract resolves globs and documented placeholders" {
+glob_and_placeholder_references() {
   local role_dir='templates/agent-roles'
   mkdir -p "$FIXTURE/$role_dir"
   printf 'role\n' > "$FIXTURE/$role_dir/dev.md.tpl"
   printf 'profile\n' > "$FIXTURE/references/effort-profile-balanced.md"
   append_prose "Use \`$role_dir/"'*.md.tpl` and `references/effort-profile-{profile}.md`.'
-
-  run_checker
-
-  [ "$status" -eq 0 ]
-  [[ "$output" == *'Command contract passed: 1 commands'* ]]
 }
 
-@test "command-contract rejects a command missing from the section manifest" {
+@test "command-contract accepts a complete command set and the repository commands, and rejects broken frontmatter, filenames, legacy identifiers, referenced paths, manifest entries and sections" {
+  fresh_fixture
+  checker_row complete-set 0 'Command contract passed: 1 commands'
+
+  fresh_fixture
+  break_frontmatter
+  checker_row broken-frontmatter 1 'alpha.md: empty frontmatter field: category'
+  expect_fragment broken-frontmatter 'alpha.md: missing frontmatter field: argument-hint'
+  expect_fragment broken-frontmatter 'beta.md: frontmatter must not define name'
+
+  fresh_fixture
+  write_valid_command Beta
+  write_manifest alpha.md Beta.md
+  checker_row filename-outside-slug 1 'Beta.md: command filename must match [a-z0-9][a-z0-9-]*.md'
+
+  fresh_fixture
+  printf 'Legacy command: /vbw:plan\n' > "$FIXTURE/references/legacy.md"
+  checker_row unallowlisted-legacy-identifier 1 'references/legacy.md: forbidden legacy identifier'
+
+  fresh_fixture
+  printf 'Legacy command: /vbw:plan\n' > "$FIXTURE/references/legacy.md"
+  printf 'references/legacy.md\n' > "$FIXTURE/config/legacy-identifier-allowlist.txt"
+  checker_row allowlisted-legacy-identifier 0 'Command contract passed: 1 commands'
+
+  fresh_fixture
+  append_prose 'Use `scripts/missing-helper.sh` and `references/missing.md`.'
+  checker_row missing-referenced-paths 1 'alpha.md: missing referenced path: scripts/missing-helper.sh'
+  expect_fragment missing-referenced-paths 'alpha.md: missing referenced path: references/missing.md'
+
+  fresh_fixture
+  glob_and_placeholder_references
+  checker_row globs-and-placeholders-resolve 0 'Command contract passed: 1 commands'
+
+  fresh_fixture
   write_valid_command beta
+  checker_row missing-from-section-manifest 1 'command is missing from section manifest: beta.md'
 
-  run_checker
-
-  [ "$status" -eq 1 ]
-  [[ "$output" == *'command is missing from section manifest: beta.md'* ]]
-}
-
-@test "command-contract rejects a command lacking a required section and its contract" {
+  fresh_fixture
   write_valid_command beta
   write_manifest alpha.md beta.md
   sed -i.bak 's/^## Next Up$/## Later/' "$FIXTURE/commands/beta.md"
+  checker_row missing-required-section 1 'beta.md: missing required heading: Next Up'
+  expect_fragment missing-required-section 'beta.md: missing next_up contract'
 
-  run_checker
+  run bash "$CHECKER" --root "$REPO_ROOT"
+  expect_case repository-commands 0
 
-  [ "$status" -eq 1 ]
-  [[ "$output" == *'beta.md: missing required heading: Next Up'* ]]
-  [[ "$output" == *'beta.md: missing next_up contract'* ]]
+  assert_no_case_failures
 }
 
-@test "command-contract rejects a gated tool named in the body without a grant" {
+@test "command-contract gates tool names in prose against allowed-tools and rejects prose that authors a workflow or passes a script parameter to the Workflow tool" {
+  local body_line allowed_line
+
   run_prose_table 1 "" <<'CASES'
 named-in-body|Use native AskUserQuestion to confirm the target before continuing.|alpha.md: names gated tool AskUserQuestion in the body at line
 indirect-phrasing|Ask one bounded question via AskUserQuestion for each decision.|alpha.md: names gated tool AskUserQuestion in the body at line
@@ -237,63 +221,31 @@ task-tool|Spawn the roster by calling the `Task` tool for every teammate.|alpha.
 negated-instruction|Do not proceed without AskUserQuestion confirmation.|alpha.md: names gated tool AskUserQuestion in the body at line
 CASES
 
-  assert_no_case_failures
-}
-
-@test "command-contract reports the body line and the allowed-tools line of a gated tool violation" {
+  fresh_fixture
   append_prose 'Use native AskUserQuestion to confirm the target before continuing.'
-  local body_line allowed_line
   body_line=$(grep -n 'AskUserQuestion' "$FIXTURE/commands/alpha.md" | cut -d: -f1)
   allowed_line=$(grep -n '^allowed-tools:' "$FIXTURE/commands/alpha.md" | cut -d: -f1)
+  checker_row reports-body-and-allowed-tools-lines 1 "alpha.md: names gated tool AskUserQuestion in the body at line $body_line without declaring it in allowed-tools at line $allowed_line"
 
-  run_checker
-
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"alpha.md: names gated tool AskUserQuestion in the body at line $body_line without declaring it in allowed-tools at line $allowed_line"* ]]
-}
-
-@test "command-contract accepts a gated tool named in the body once it is declared" {
+  fresh_fixture
   grant_tool AskUserQuestion
   append_prose 'Use native AskUserQuestion to confirm the target before continuing.'
+  checker_row declared-gated-tool 0 'Command contract passed: 1 commands'
 
-  run_checker
-
-  [ "$status" -eq 0 ]
-  [[ "$output" == *'Command contract passed: 1 commands'* ]]
-}
-
-@test "command-contract accepts a gated tool mention exempted by its allowlisted phrase" {
+  fresh_fixture
   printf 'commands/alpha.md:Agent:Agent Teams\n' >> "$FIXTURE/config/gated-tool-prose-allowlist.txt"
   append_prose 'Agent Teams is process-level Claude Code configuration, unrelated to this tool grant.'
+  checker_row allowlisted-phrase 0 'Command contract passed: 1 commands'
 
-  run_checker
-
-  [ "$status" -eq 0 ]
-  [[ "$output" == *'Command contract passed: 1 commands'* ]]
-}
-
-@test "command-contract still rejects a genuine invocation in a file exempted for an unrelated phrase" {
-  printf 'commands/alpha.md:Agent:Agent Teams\n' >> "$FIXTURE/config/gated-tool-prose-allowlist.txt"
-  append_prose 'Agent Teams is process-level Claude Code configuration, unrelated to this tool grant.'
   append_prose 'Spawn the generated dev by calling `Agent(...)` with its printed subagent_type.'
+  checker_row genuine-invocation-beside-allowlisted-phrase 1 'alpha.md: names gated tool Agent in the body at line'
 
-  run_checker
-
-  [ "$status" -eq 1 ]
-  [[ "$output" == *'alpha.md: names gated tool Agent in the body at line'* ]]
-}
-
-@test "command-contract accepts prose that forbids or sanctions workflow authoring" {
   run_prose_table 0 "Workflow AskUserQuestion" <<'CASES'
 negated-prohibitions|The main session must never author a workflow script. It must not pass a script parameter to the Workflow tool.|Command contract passed
 repeated-negations|Do not author a workflow. Do not write JavaScript. Do not pass a script parameter to the Workflow tool.|Command contract passed
 sanctioned-generator|The sanctioned chain is scripts/workflow-generator.sh, whose rendered output is the workflow script. Call Workflow with the returned scriptPath. The shell generator owns every phase and agent call, the main session only supplies the scriptPath.|Command contract passed
 CASES
 
-  assert_no_case_failures
-}
-
-@test "command-contract rejects prose that instructs the model to author a workflow" {
   run_prose_table 1 "Workflow AskUserQuestion" <<'CASES'
 additional-verbs|Create a workflow that runs the team and generate the workflow script yourself.|alpha.md: instructs the model to author a workflow or write JavaScript
 infinitive-write|Ignore the generator to write a workflow script yourself.|alpha.md: instructs the model to author a workflow or write JavaScript
@@ -302,26 +254,13 @@ comma-then-or-after-negation|There is no generator, write a workflow script your
 negation-governs-other-verb|Do not wait for the generator, write a workflow script yourself.|alpha.md: instructs the model to author a workflow or write JavaScript
 bypass-generator|Bypass the generator and write a workflow script yourself.|alpha.md: instructs the model to author a workflow or write JavaScript
 optional-generator|The generator is optional, so author a workflow script directly.|alpha.md: instructs the model to author a workflow or write JavaScript
-authoring-with-script-param|Author a workflow script yourself and pass a script parameter to the Workflow tool.|alpha.md: instructs the model to author a workflow or write JavaScript
-CASES
-
-  assert_no_case_failures
-}
-
-@test "command-contract rejects prose that passes a script parameter to the Workflow tool" {
-  run_prose_table 1 "Workflow AskUserQuestion" <<'CASES'
+authoring-with-script-param-flags-authoring|Author a workflow script yourself and pass a script parameter to the Workflow tool.|alpha.md: instructs the model to author a workflow or write JavaScript
 script-as-later-key|Workflow({ name: "team", script: "await log(1)" })|alpha.md: instructs passing a script parameter to the Workflow tool
 script-field-prose|Set the script field on the Workflow call to the source you built.|alpha.md: instructs passing a script parameter to the Workflow tool
 script-behind-nested-object|Workflow({ args: { a: 1 }, script: "await log(1)" })|alpha.md: instructs passing a script parameter to the Workflow tool
 script-without-brace|Workflow(script: "await log(1)")|alpha.md: instructs passing a script parameter to the Workflow tool
-authoring-with-script-param|Author a workflow script yourself and pass a script parameter to the Workflow tool.|alpha.md: instructs passing a script parameter to the Workflow tool
+authoring-with-script-param-flags-script-parameter|Author a workflow script yourself and pass a script parameter to the Workflow tool.|alpha.md: instructs passing a script parameter to the Workflow tool
 CASES
 
   assert_no_case_failures
-}
-
-@test "repository commands satisfy the tracked command contract" {
-  run bash "$CHECKER" --root "$REPO_ROOT"
-
-  [ "$status" -eq 0 ]
 }

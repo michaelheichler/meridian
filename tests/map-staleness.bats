@@ -47,7 +47,9 @@ run_map_staleness() {
   run env LBWC_PLANNING_DIR="$PLANNING_DIR" bash "$SCRIPT"
 }
 
-@test "map-staleness: reports no_map, fresh or stale from the recorded git hash" {
+@test "map-staleness reports no_map, fresh, stale or no_git and stays silent right after a compaction" {
+  local plain
+
   run_map_staleness
   expect_case missing-meta 0 "status: no_map"
 
@@ -104,12 +106,6 @@ run_map_staleness() {
   expect_output_has unknown-hash "staleness: 100%"
   expect_output_has unknown-hash "changed: unknown"
   expect_output_has unknown-hash "Codebase map is stale (100% files changed)"
-
-  assert_no_case_failures
-}
-
-@test "map-staleness: reports no_git outside a repository and honors the compaction marker" {
-  local plain
 
   write_meta "$BASE_HASH" 10
   plain="$TEST_ROOT/plain"

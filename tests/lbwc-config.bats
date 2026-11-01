@@ -223,7 +223,13 @@ VALUES
   assert_no_case_failures
 }
 
-@test "set rejects invalid values for every writable setting without changing the saved configuration" {
+config_row_dir() {
+  printf '%s\n' "$TEST_ROOT/$1/.lbwc-planning"
+}
+
+@test "set, init and validate reject invalid values, invalid existing configurations and symbolic links without changing the saved configuration" {
+  local external="$TEST_ROOT/external" dir
+
   init_config "$PLANNING_DIR"
 
   while IFS='|' read -r setting literal; do
@@ -260,16 +266,6 @@ max_uat_remediation_rounds|"many"
 routing.active_profile|"budget"
 VALUES
 
-  assert_no_case_failures
-}
-
-config_row_dir() {
-  printf '%s\n' "$TEST_ROOT/$1/.lbwc-planning"
-}
-
-@test "init and validate reject an invalid existing configuration without overwriting it" {
-  local dir
-
   dir=$(config_row_dir unknown-root-key)
   mkdir -p "$dir"
   printf '%s\n' '{"unknown_setting":true}' > "$dir/config.json"
@@ -291,12 +287,6 @@ config_row_dir() {
   jq '.routing.profiles.shadow = {roles:{}}' "$dir/config.json" > "$dir/config.json.tmp"
   mv "$dir/config.json.tmp" "$dir/config.json"
   reject_unchanged_row unexpected-routing-profile "$dir" "invalid configuration" validate "$dir"
-
-  assert_no_case_failures
-}
-
-@test "init rejects symbolic links in the planning path, config path and lock path" {
-  local external="$TEST_ROOT/external" dir
 
   mkdir -p "$external"
   dir="$TEST_ROOT/linked-planning/.lbwc-planning"

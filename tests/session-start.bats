@@ -1,5 +1,8 @@
 #!/usr/bin/env bats
 
+load gate_case_helper
+load rejection_case_helper
+
 setup() {
   unset TMUX TMUX_PANE
   REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/.." && pwd)"
@@ -109,130 +112,114 @@ prepare_unavailable_manifest() {
     "printf '%s\n' 'agent_manifest_status=unavailable'; exit 1"
 }
 
-assert_context_fragments() {
-  local label="$1" expected="$2" absent="$3" fragment
-  local -a fragments=()
-  jq -e '.hookSpecificOutput.additionalContext | type == "string"' <<<"$output" >/dev/null \
-    || { echo "case=$label output is not a SessionStart hook document: $output" >&2; return 1; }
-  IFS='~' read -r -a fragments <<<"$expected"
-  for fragment in "${fragments[@]}"; do
-    [[ "$output" == *"$fragment"* ]] || { echo "case=$label missing=[$fragment] output=$output" >&2; return 1; }
-  done
-  [ -z "$absent" ] || [[ "$output" != *"$absent"* ]] \
-    || { echo "case=$label unexpected=[$absent] output=$output" >&2; return 1; }
+expect_lacks() {
+  [[ "$output" != *"$2"* ]] || record_case_failure "$1" "unexpected fragment=[$2] output=$output"
 }
 
-@test "session-start fails clearly when a required root link cannot be created" {
-  local plugin_root="$TEST_ROOT/plugin"
+context_row() {
+  local label="$1" prepare="$2"
+  rm -rf "$PLANNING_DIR" "$TEST_ROOT/scripts-shim"
+  SHIM_DIR=""
+  "$prepare"
+  run run_session_start_from "${SHIM_DIR:-$REPO_ROOT/scripts}"
+  expect_case "$label" 0
+  jq -e '.hookSpecificOutput.additionalContext | type == "string"' <<<"$output" >/dev/null \
+    || record_case_failure "$label" "output is not a SessionStart hook document: $output"
+}
+
+compaction_count_row() {
+  local label="$1" input="$2" expected="$3"
+  rm -rf "$PLANNING_DIR"
+  seed_compaction_count 5
+  run run_session_start_with_input "$input"
+  expect_case "$label" 0
+  [ "$(read_compaction_count)" = "$expected" ] \
+    || record_case_failure "$label" "expected=$expected actual=$(read_compaction_count)"
+}
+
+@test "session-start links the exact session plugin root, fails clearly when it cannot, and persists unset CDPATH to a writable CLAUDE_ENV_FILE exactly once" {
+  local plugin_root="$TEST_ROOT/plugin" canonical_root
+  canonical_root=$(cd "$REPO_ROOT" && pwd -P)
+  reset_case_failures
+
   copy_scripts_to "$plugin_root/scripts"
   replace_script_in_copy "$plugin_root/scripts" ensure-plugin-root-link.sh 'exit 1'
-
   run run_session_start_from "$plugin_root/scripts"
-
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"LBWC: SessionStart plugin root link bootstrap failed"* ]]
-}
-
-@test "session-start creates the exact session plugin root link" {
-  local canonical_root
-  canonical_root=$(cd "$REPO_ROOT" && pwd -P)
+  expect_case link-bootstrap-fails 1 "LBWC: SessionStart plugin root link bootstrap failed"
 
   run run_session_start
+  expect_case exact-root-link 0
+  [ -L "$ROOT_LINK" ] || record_case_failure exact-root-link "no session link at $ROOT_LINK"
+  [ "$(readlink "$ROOT_LINK")" = "$canonical_root" ] \
+    || record_case_failure exact-root-link "link points to $(readlink "$ROOT_LINK") want $canonical_root"
 
-  [ "$status" -eq 0 ]
-  [ -L "$ROOT_LINK" ]
-  [ "$(readlink "$ROOT_LINK")" = "$canonical_root" ]
-}
-
-@test "session-start persists unset CDPATH to CLAUDE_ENV_FILE exactly once across runs" {
   export CLAUDE_ENV_FILE="$TEST_ROOT/claude-env"
   : > "$CLAUDE_ENV_FILE"
-
   run run_session_start
-  [ "$status" -eq 0 ]
+  expect_case env-file-first-run 0
   run run_session_start
-  [ "$status" -eq 0 ]
+  expect_case env-file-second-run 0
+  [ "$(grep -cxF 'unset CDPATH' "$CLAUDE_ENV_FILE")" -eq 1 ] \
+    || record_case_failure env-file-once "unset CDPATH is not present exactly once"
 
-  [ "$(grep -cxF 'unset CDPATH' "$CLAUDE_ENV_FILE")" -eq 1 ]
-}
-
-@test "session-start still succeeds when CLAUDE_ENV_FILE is not writable" {
-  export CLAUDE_ENV_FILE="$TEST_ROOT/claude-env"
   printf 'export KEEP=1\n' > "$CLAUDE_ENV_FILE"
   chmod 444 "$CLAUDE_ENV_FILE"
-
   run run_session_start
+  expect_case env-file-not-writable 0
+  [ "$(cat "$CLAUDE_ENV_FILE")" = 'export KEEP=1' ] \
+    || record_case_failure env-file-not-writable "read-only env file changed"
 
-  [ "$status" -eq 0 ]
-  [ "$(cat "$CLAUDE_ENV_FILE")" = 'export KEEP=1' ]
+  assert_no_case_failures
 }
 
 @test "session-start context reflects planning and subsystem state" {
-  local label prepare expected absent
-  while IFS='|' read -r label prepare expected absent; do
-    [ -n "$label" ] || continue
-    rm -rf "$PLANNING_DIR" "$TEST_ROOT/scripts-shim"
-    SHIM_DIR=""
-    "$prepare"
+  reset_case_failures
 
-    if [ -n "$SHIM_DIR" ]; then
-      run run_session_start_from "$SHIM_DIR"
-    else
-      run run_session_start
-    fi
+  context_row cold-start-reports-init-needed prepare_cold_start
+  expect_fragment cold-start-reports-init-needed "no ${PLANNING_DIR}/ directory found"
+  context_row warm-start-reports-phase-brief prepare_warm_start
+  expect_fragment warm-start-reports-phase-brief "lbwc phase"
+  context_row phase-needing-plan-routes-to-plan prepare_phase_needing_plan
+  expect_fragment phase-needing-plan-routes-to-plan "missing PLAN.md"
+  expect_fragment phase-needing-plan-routes-to-plan "/plan 01"
+  context_row phase-needing-discussion-routes-to-discuss prepare_phase_needing_discussion
+  expect_fragment phase-needing-discussion-routes-to-discuss "missing CONTEXT.md"
+  expect_fragment phase-needing-discussion-routes-to-discuss "/discuss 01"
+  expect_lacks phase-needing-discussion-routes-to-discuss "/plan 01"
+  context_row phase-setup-failure-is-unavailable-not-missing prepare_phase_detect_setup_failure
+  expect_fragment phase-setup-failure-is-unavailable-not-missing "lbwc: phase status unavailable (setup_failed)."
+  expect_lacks phase-setup-failure-is-unavailable-not-missing "no ${PLANNING_DIR}/ directory found"
+  context_row malformed-agent-manifest-surfaces prepare_malformed_manifest
+  expect_fragment malformed-agent-manifest-surfaces "lbwc: agent manifest status malformed."
+  context_row unavailable-agent-manifest-surfaces prepare_unavailable_manifest
+  expect_fragment unavailable-agent-manifest-surfaces "lbwc: agent manifest status unavailable."
 
-    [ "$status" -eq 0 ] || { echo "case=$label status=$status output=$output" >&2; return 1; }
-    assert_context_fragments "$label" "$expected" "$absent"
-  done <<CASES
-cold-start-reports-init-needed|prepare_cold_start|no ${PLANNING_DIR}/ directory found|
-warm-start-reports-phase-brief|prepare_warm_start|lbwc phase|
-phase-needing-plan-routes-to-plan|prepare_phase_needing_plan|missing PLAN.md~/plan 01|
-phase-needing-discussion-routes-to-discuss|prepare_phase_needing_discussion|missing CONTEXT.md~/discuss 01|/plan 01
-phase-setup-failure-is-unavailable-not-missing|prepare_phase_detect_setup_failure|lbwc: phase status unavailable (setup_failed).|no ${PLANNING_DIR}/ directory found
-malformed-agent-manifest-surfaces|prepare_malformed_manifest|lbwc: agent manifest status malformed.|
-unavailable-agent-manifest-surfaces|prepare_unavailable_manifest|lbwc: agent manifest status unavailable.|
-CASES
+  assert_no_case_failures
 }
 
-@test "session-start applies the source-specific compaction count policy" {
-  local label input expected
-  while IFS='|' read -r label input expected; do
-    [ -n "$label" ] || continue
-    rm -rf "$PLANNING_DIR"
-    seed_compaction_count 5
+@test "session-start applies the source-specific compaction count policy, creates no planning dir on startup, and resets a near-limit count so the loop stop stays quiet" {
+  reset_case_failures
 
-    run run_session_start_with_input "$input"
+  compaction_count_row startup-resets-stale-count '{"source":"startup"}' 0
+  compaction_count_row clear-resets-stale-count '{"source":"clear"}' 0
+  compaction_count_row compact-keeps-count '{"source":"compact"}' 5
+  compaction_count_row resume-keeps-count '{"source":"resume"}' 5
+  compaction_count_row empty-stdin-keeps-count '' 5
 
-    [ "$status" -eq 0 ] || { echo "case=$label status=$status output=$output" >&2; return 1; }
-    [ "$(read_compaction_count)" = "$expected" ] \
-      || { echo "case=$label expected=$expected actual=$(read_compaction_count)" >&2; return 1; }
-  done <<'CASES'
-startup-resets-stale-count|{"source":"startup"}|0
-clear-resets-stale-count|{"source":"clear"}|0
-compact-keeps-count|{"source":"compact"}|5
-resume-keeps-count|{"source":"resume"}|5
-empty-stdin-keeps-count||5
-CASES
-}
-
-@test "session-start: a startup session without a planning dir creates nothing" {
+  rm -rf "$PLANNING_DIR"
   run run_session_start_with_input '{"source":"startup"}'
+  expect_case startup-without-planning-dir 0
+  [ ! -e "$PLANNING_DIR" ] || record_case_failure startup-without-planning-dir "planning dir was created"
 
-  [ "$status" -eq 0 ]
-  [ ! -e "$PLANNING_DIR" ]
-}
-
-@test "session-start: a fresh session after a near-limit run does not trip the compaction loop stop" {
   seed_compaction_count 9
-
   run run_session_start_with_input '{"source":"startup"}'
-  [ "$status" -eq 0 ]
-
+  expect_case near-limit-startup 0
   run env LBWC_PLANNING_DIR="$PLANNING_DIR" bash -c 'printf "%s" "{\"matcher\":\"auto\"}" | bash "$1"' _ "$REPO_ROOT/scripts/compaction-instructions.sh"
+  expect_case near-limit-compaction 0
+  expect_lacks near-limit-compaction "COMPACTION LOOP DETECTED"
+  [ "$(read_compaction_count)" = "1" ] || record_case_failure near-limit-compaction "count=$(read_compaction_count) want 1"
 
-  [ "$status" -eq 0 ]
-  [[ "$output" != *"COMPACTION LOOP DETECTED"* ]]
-  [ "$(read_compaction_count)" = "1" ]
+  assert_no_case_failures
 }
 
 fixture_session_bus() {
@@ -299,49 +286,20 @@ run_bound_session_start() {
   run env LBWC_TMUX_AGENT=1 LBWC_TMUX_AGENT_ID=agent-a LBWC_TMUX_CONTRACT_ID=contract-a LBWC_TMUX_CONTROL_ROOT="$BOUND_CONTROL_ROOT" LBWC_PLANNING_DIR="$PLANNING_DIR" CLAUDE_SESSION_ID="$child_session" bash "$SCRIPT" </dev/null
 }
 
-@test "session-start tmux bind fails closed on a missing or mismatched credential" {
-  local label credential
-  while IFS='|' read -r label credential; do
-    [ -n "$label" ] || continue
-    prepare_bound_agent
-    [ "$credential" = mismatched ] && write_credential agent-a fedcba9876543210fedcba9876543210
-
-    run_bound_session_start actual-child-session
-
-    [ "$status" -ne 0 ] || { echo "case=$label status=$status output=$output" >&2; return 1; }
-    [[ "$output" == *"tmux bind failed"* ]] || { echo "case=$label output=$output" >&2; return 1; }
-    run jq -e '.agents[] | select(.agent_id == "agent-a") | .claude_session_id == null' "$BOUND_CONTROL_ROOT/.runtime/tmux-bus/registry.json"
-    [ "$status" -eq 0 ] || { echo "case=$label agent was bound despite the failure" >&2; return 1; }
-  done <<'CASES'
-missing-credential|missing
-mismatched-credential|mismatched
-CASES
+expect_bound_registry() {
+  local label="$1" filter="$2"
+  jq -e ".agents[] | select(.agent_id == \"agent-a\") | $filter" "$BOUND_CONTROL_ROOT/.runtime/tmux-bus/registry.json" >/dev/null \
+    || record_case_failure "$label" "registry entry fails [$filter]"
 }
 
-@test "session-start consumes a one-shot credential and records a heartbeat" {
-  prepare_bound_agent
-  write_credential agent-a "$BOUND_CAPABILITY"
-
+bind_rejected_row() {
+  local label="$1"
   run_bound_session_start actual-child-session
-
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"lbwc tmux bind:"* ]]
-  [[ "$output" == *"$BOUND_CAPABILITY"* ]]
-  [ ! -e "$BOUND_CONTROL_ROOT/.runtime/tmux-bus/credentials/agent-a.json" ]
-  run jq -e '.agents[] | select(.agent_id == "agent-a") | .claude_session_id == "actual-child-session" and .state == "running" and (.heartbeat_at_ms | type == "number")' "$BOUND_CONTROL_ROOT/.runtime/tmux-bus/registry.json"
-  [ "$status" -eq 0 ]
-
-  write_credential agent-a "$BOUND_CAPABILITY"
-  run_bound_session_start second-child-session
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"tmux bind failed"* ]]
+  expect_rejected "$label" "tmux bind failed"
+  expect_bound_registry "$label" '.claude_session_id == null'
 }
 
-@test "concurrent SessionStart attempts bind a credential at most once" {
-  prepare_bound_agent
-  write_credential agent-a "$BOUND_CAPABILITY"
-  bash "$REPO_ROOT/scripts/ensure-plugin-root-link.sh" "$CONCURRENT_LINK" "$(cd -P "$REPO_ROOT" && pwd -P)"
-
+run_concurrent_session_starts() {
   run env SESSION_START="$SCRIPT" CONTROL_ROOT="$BOUND_CONTROL_ROOT" PLANNING_DIR="$PLANNING_DIR" bash -c '
     LBWC_TMUX_AGENT=1 LBWC_TMUX_AGENT_ID=agent-a LBWC_TMUX_CONTRACT_ID=contract-a LBWC_TMUX_CONTROL_ROOT="$CONTROL_ROOT" LBWC_PLANNING_DIR="$PLANNING_DIR" CLAUDE_SESSION_ID=concurrent-child-session bash "$SESSION_START" > "$CONTROL_ROOT/first-session-start.log" 2>&1 &
     first=$!
@@ -351,11 +309,41 @@ CASES
     wait "$second"; second_status=$?
     { [ "$first_status" -eq 0 ] && [ "$second_status" -ne 0 ]; } || { [ "$first_status" -ne 0 ] && [ "$second_status" -eq 0 ]; }
   '
+}
 
-  [ "$status" -eq 0 ]
-  [ ! -e "$BOUND_CONTROL_ROOT/.runtime/tmux-bus/credentials/agent-a.json" ]
-  run jq -e '.agents[] | select(.agent_id == "agent-a") | .claude_session_id == "concurrent-child-session"' "$BOUND_CONTROL_ROOT/.runtime/tmux-bus/registry.json"
-  [ "$status" -eq 0 ]
+@test "session-start tmux bind fails closed on a missing, mismatched or reused credential and binds a valid one-shot credential exactly once, even under concurrent attempts" {
+  reset_case_failures
+
+  prepare_bound_agent
+  bind_rejected_row missing-credential
+
+  prepare_bound_agent
+  write_credential agent-a fedcba9876543210fedcba9876543210
+  bind_rejected_row mismatched-credential
+
+  prepare_bound_agent
+  write_credential agent-a "$BOUND_CAPABILITY"
+  run_bound_session_start actual-child-session
+  expect_case one-shot-credential 0 "lbwc tmux bind:"
+  expect_fragment one-shot-credential "$BOUND_CAPABILITY"
+  [ ! -e "$BOUND_CONTROL_ROOT/.runtime/tmux-bus/credentials/agent-a.json" ] \
+    || record_case_failure one-shot-credential "credential was not consumed"
+  expect_bound_registry one-shot-credential '.claude_session_id == "actual-child-session" and .state == "running" and (.heartbeat_at_ms | type == "number")'
+
+  write_credential agent-a "$BOUND_CAPABILITY"
+  run_bound_session_start second-child-session
+  expect_rejected rebind-after-consumption "tmux bind failed"
+
+  prepare_bound_agent
+  write_credential agent-a "$BOUND_CAPABILITY"
+  bash "$REPO_ROOT/scripts/ensure-plugin-root-link.sh" "$CONCURRENT_LINK" "$(cd -P "$REPO_ROOT" && pwd -P)"
+  run_concurrent_session_starts
+  expect_case concurrent-binds-once 0
+  [ ! -e "$BOUND_CONTROL_ROOT/.runtime/tmux-bus/credentials/agent-a.json" ] \
+    || record_case_failure concurrent-binds-once "credential was not consumed"
+  expect_bound_registry concurrent-binds-once '.claude_session_id == "concurrent-child-session"'
+
+  assert_no_case_failures
 }
 
 build_cleanup_fixture() {
@@ -378,30 +366,40 @@ run_cleanup_fixture_session_start() {
   run bash -c 'cd "$1" && LBWC_PLANNING_DIR="$2" bash "$3/session-start.sh" </dev/null' _ "$CLEANUP_WORKDIR" "$PLANNING_DIR" "$CLEANUP_PLUGIN_SCRIPTS"
 }
 
+cleanup_row() {
+  local label="$1" stub_mode="$2" workdir_kind="$3"
+  build_cleanup_fixture "$stub_mode" "$workdir_kind"
+  run_cleanup_fixture_session_start
+  expect_case "$label" 0
+}
+
+expect_cleanup_called() {
+  [ "$(cat "$CLEANUP_ARGV_LOG" 2>/dev/null)" = "cleanup --project-root $CLEANUP_PROJECT_ROOT" ] \
+    || record_case_failure "$1" "argv=$(cat "$CLEANUP_ARGV_LOG" 2>&1) expected root=$CLEANUP_PROJECT_ROOT"
+}
+
+expect_cleanup_skipped() {
+  [ ! -e "$CLEANUP_ARGV_LOG" ] || record_case_failure "$1" "stub ran with argv=$(cat "$CLEANUP_ARGV_LOG")"
+}
+
 @test "session-start runs the temporary run cleanup for the project root and reports retained state" {
-  local label stub_mode workdir_kind expect_call expect_line
-  while IFS='|' read -r label stub_mode workdir_kind expect_call expect_line; do
-    [ -n "$label" ] || continue
-    build_cleanup_fixture "$stub_mode" "$workdir_kind"
+  reset_case_failures
 
-    run_cleanup_fixture_session_start
+  cleanup_row prints-output-adds-context prints git
+  expect_cleanup_called prints-output-adds-context
+  expect_fragment prints-output-adds-context "Temporary agent run cleanup inspected retained state."
 
-    [ "$status" -eq 0 ] || { echo "case=$label status=$status output=$output" >&2; return 1; }
-    if [ "$expect_call" = yes ]; then
-      [ "$(cat "$CLEANUP_ARGV_LOG" 2>/dev/null)" = "cleanup --project-root $CLEANUP_PROJECT_ROOT" ] \
-        || { echo "case=$label argv=$(cat "$CLEANUP_ARGV_LOG" 2>&1) expected root=$CLEANUP_PROJECT_ROOT" >&2; return 1; }
-    else
-      [ ! -e "$CLEANUP_ARGV_LOG" ] || { echo "case=$label stub ran with argv=$(cat "$CLEANUP_ARGV_LOG")" >&2; return 1; }
-    fi
-    if [ "$expect_line" = yes ]; then
-      [[ "$output" == *"Temporary agent run cleanup inspected retained state."* ]] || { echo "case=$label output=$output" >&2; return 1; }
-    else
-      [[ "$output" != *"Temporary agent run cleanup"* ]] || { echo "case=$label output=$output" >&2; return 1; }
-    fi
-  done <<'CASES'
-prints-output-adds-context|prints|git|yes|yes
-silent-stub-adds-no-context|silent|git|yes|no
-non-executable-stub-is-skipped|non-executable|git|no|no
-outside-a-git-repo-is-skipped|prints|plain|no|no
-CASES
+  cleanup_row silent-stub-adds-no-context silent git
+  expect_cleanup_called silent-stub-adds-no-context
+  expect_lacks silent-stub-adds-no-context "Temporary agent run cleanup"
+
+  cleanup_row non-executable-stub-is-skipped non-executable git
+  expect_cleanup_skipped non-executable-stub-is-skipped
+  expect_lacks non-executable-stub-is-skipped "Temporary agent run cleanup"
+
+  cleanup_row outside-a-git-repo-is-skipped prints plain
+  expect_cleanup_skipped outside-a-git-repo-is-skipped
+  expect_lacks outside-a-git-repo-is-skipped "Temporary agent run cleanup"
+
+  assert_no_case_failures
 }

@@ -137,7 +137,93 @@ expect_no_temporary_files() {
     || record_case_failure "$1" "temporary snapshot files remained"
 }
 
-@test "freeze writes the canonical snapshot atomically for each backend" {
+validate_matches_row() {
+  local label="$1" before
+  before=$(snapshot_digest)
+  run_snapshot validate
+  expect_case "$label" 0 '"status":"matched"'
+  [ "$(snapshot_digest)" = "$before" ] || record_case_failure "$label" "validation rewrote the snapshot"
+}
+
+frozen_command_rejected_row() {
+  local label="$1" fragment="$2" before
+  shift 2
+  before=$(snapshot_digest)
+  run_snapshot "$@"
+  expect_rejected "$label" "$fragment"
+  expect_digest "$label" "$before" "$(snapshot_digest)"
+}
+
+@test "validate accepts an identical frozen configuration without rewriting it, validate and cancel refuse to touch a frozen snapshot after drift or a second request, and cancel and cleanup leave terminal state" {
+  freeze_in_process in-process-validate-baseline
+  validate_matches_row in-process-validate
+
+  reset_phase
+  freeze_workflow workflow-validate-baseline
+  validate_matches_row workflow-validate
+
+  reset_phase
+  freeze_in_process effort-drift-baseline
+  edit_config '.effort = "thorough"'
+  frozen_command_rejected_row effort-drift 'backend drift' validate
+
+  reset_phase
+  freeze_in_process unrelated-key-drift-baseline
+  edit_config '.metrics = true'
+  frozen_command_rejected_row unrelated-key-drift 'frozen configuration differs' validate
+
+  reset_phase
+  freeze_in_process backend-drift-baseline
+  edit_config '.agent_execution_mode = "tmux" | .tmux_execution.enabled = true'
+  frozen_command_rejected_row backend-drift 'backend drift' validate
+
+  reset_phase
+  freeze_in_process routing-drift-baseline
+  edit_config '.routing.profiles.balanced.roles["coding-dijkstra"].model = "openai/gpt-5.6-luna"'
+  frozen_command_rejected_row routing-drift 'backend drift' validate
+
+  reset_phase
+  freeze_in_process workflow-config-baseline
+  edit_config '.agent_execution_mode = "workflow"'
+  frozen_command_rejected_row workflow-config-over-frozen-backend 'backend drift: configuration requires workflow' validate
+
+  reset_phase
+  freeze_in_process cancel-after-freeze-baseline
+  frozen_command_rejected_row cancel-after-freeze 'runtime snapshot already exists' cancel
+  [ ! -e "$CANCEL_PATH" ] || record_case_failure cancel-after-freeze "cancel marker was written"
+
+  reset_phase
+  printf '%s\n' '{"schema_version":1}' > "$SNAPSHOT_PATH"
+  run_snapshot validate
+  expect_rejected malformed-snapshot 'runtime snapshot is malformed'
+
+  reset_phase
+  run_snapshot cancel
+  expect_case cancel 0 '"status":"cancelled"'
+  [ ! -e "$SNAPSHOT_PATH" ] || record_case_failure cancel "cancel froze a backend"
+  jq -e --arg phase "phases/01-runtime-freeze" '
+    .schema_version == 1
+    and .phase == $phase
+    and .status == "cancelled"
+  ' "$CANCEL_PATH" >/dev/null || record_case_failure cancel "cancel marker has an unexpected shape"
+
+  reset_phase
+  freeze_in_process cleanup-baseline
+  run_snapshot cleanup
+  expect_case cleanup 0 '"status":"cleaned"'
+  [ ! -e "$SNAPSHOT_PATH" ] || record_case_failure cleanup "snapshot remained"
+
+  assert_no_case_failures
+}
+
+freeze_rejected_row() {
+  local label="$1" fragment="$2" requested="$3" resolved="$4"
+  run_snapshot freeze --requested-backend "$requested" --resolved-backend "$resolved"
+  expect_rejected "$label" "$fragment"
+  [ ! -f "$SNAPSHOT_PATH" ] || record_case_failure "$label" "a snapshot was written"
+}
+
+@test "freeze writes the canonical snapshot atomically for each backend and fails closed when the requested workflow backend cannot run" {
   freeze_in_process in-process-freeze
   [ -f "$SNAPSHOT_PATH" ] || record_case_failure in-process-freeze "snapshot file missing"
   expect_snapshot_jq in-process-freeze '
@@ -164,83 +250,7 @@ expect_no_temporary_files() {
     and (.source_config_digest | test("^[0-9a-f]{64}$"))
   '
 
-  assert_no_case_failures
-}
-
-validate_matches_row() {
-  local label="$1" before
-  before=$(snapshot_digest)
-  run_snapshot validate
-  expect_case "$label" 0 '"status":"matched"'
-  [ "$(snapshot_digest)" = "$before" ] || record_case_failure "$label" "validation rewrote the snapshot"
-}
-
-@test "validate accepts an identical frozen configuration without rewriting the snapshot" {
-  freeze_in_process in-process-freeze
-  validate_matches_row in-process-validate
-
   reset_phase
-  freeze_workflow workflow-freeze
-  validate_matches_row workflow-validate
-
-  assert_no_case_failures
-}
-
-frozen_command_rejected_row() {
-  local label="$1" fragment="$2" before
-  shift 2
-  before=$(snapshot_digest)
-  run_snapshot "$@"
-  expect_rejected "$label" "$fragment"
-  expect_digest "$label" "$before" "$(snapshot_digest)"
-}
-
-@test "validate and cancel refuse to touch a frozen snapshot after drift or a second request" {
-  freeze_in_process drift-baseline
-  edit_config '.effort = "thorough"'
-  frozen_command_rejected_row effort-drift 'backend drift' validate
-
-  reset_phase
-  freeze_in_process drift-baseline
-  edit_config '.metrics = true'
-  frozen_command_rejected_row unrelated-key-drift 'frozen configuration differs' validate
-
-  reset_phase
-  freeze_in_process drift-baseline
-  edit_config '.agent_execution_mode = "tmux" | .tmux_execution.enabled = true'
-  frozen_command_rejected_row backend-drift 'backend drift' validate
-
-  reset_phase
-  freeze_in_process drift-baseline
-  edit_config '.routing.profiles.balanced.roles["coding-dijkstra"].model = "openai/gpt-5.6-luna"'
-  frozen_command_rejected_row routing-drift 'backend drift' validate
-
-  reset_phase
-  freeze_in_process drift-baseline
-  edit_config '.agent_execution_mode = "workflow"'
-  frozen_command_rejected_row workflow-config-over-frozen-backend 'backend drift: configuration requires workflow' validate
-
-  reset_phase
-  freeze_in_process drift-baseline
-  frozen_command_rejected_row cancel-after-freeze 'runtime snapshot already exists' cancel
-  [ ! -e "$CANCEL_PATH" ] || record_case_failure cancel-after-freeze "cancel marker was written"
-
-  reset_phase
-  printf '%s\n' '{"schema_version":1}' > "$SNAPSHOT_PATH"
-  run_snapshot validate
-  expect_rejected malformed-snapshot 'runtime snapshot is malformed'
-
-  assert_no_case_failures
-}
-
-freeze_rejected_row() {
-  local label="$1" fragment="$2" requested="$3" resolved="$4"
-  run_snapshot freeze --requested-backend "$requested" --resolved-backend "$resolved"
-  expect_rejected "$label" "$fragment"
-  [ ! -f "$SNAPSHOT_PATH" ] || record_case_failure "$label" "a snapshot was written"
-}
-
-@test "freeze fails closed when the requested workflow backend cannot run" {
   edit_config '.agent_execution_mode = "ask"'
   freeze_rejected_row workflow-resolves-elsewhere \
     'workflow requested backend cannot resolve to another backend' workflow in_process
@@ -274,25 +284,6 @@ freeze_rejected_row() {
   assert_no_case_failures
 }
 
-@test "cancel writes a durable marker and cleanup removes a terminal snapshot" {
-  run_snapshot cancel
-  expect_case cancel 0 '"status":"cancelled"'
-  [ ! -e "$SNAPSHOT_PATH" ] || record_case_failure cancel "cancel froze a backend"
-  jq -e --arg phase "phases/01-runtime-freeze" '
-    .schema_version == 1
-    and .phase == $phase
-    and .status == "cancelled"
-  ' "$CANCEL_PATH" >/dev/null || record_case_failure cancel "cancel marker has an unexpected shape"
-
-  reset_phase
-  freeze_in_process cleanup-baseline
-  run_snapshot cleanup
-  expect_case cleanup 0 '"status":"cleaned"'
-  [ ! -e "$SNAPSHOT_PATH" ] || record_case_failure cleanup "snapshot remained"
-
-  assert_no_case_failures
-}
-
 doc_path() {
   case "$1" in
     build) printf '%s\n' "$REPO_ROOT/commands/build.md" ;;
@@ -301,11 +292,16 @@ doc_path() {
   esac
 }
 
-@test "vibe and build command documents wire the snapshot helper and the explicit tmux spawn branch" {
+doc_fragment_rows() {
+  local checker="$1" key fragment
   while IFS='|' read -r key fragment; do
     [ -n "$key" ] || continue
-    expect_doc_has "$key: $fragment" "$(doc_path "$key")" "$fragment"
-  done <<'FRAGMENTS'
+    "$checker" "$checker $key: $fragment" "$(doc_path "$key")" "$fragment"
+  done
+}
+
+@test "vibe and build command documents wire the snapshot helper and the explicit tmux spawn branch and drop the retired spawn wording" {
+  doc_fragment_rows expect_doc_has <<'FRAGMENTS'
 vibe|scripts/runtime-snapshot.sh" validate
 vibe|scripts/runtime-snapshot.sh" freeze
 vibe|scripts/runtime-snapshot.sh" cancel
@@ -352,14 +348,7 @@ execute-protocol|Do not call native Agent.
 execute-protocol|.runtime-cancelled.json
 FRAGMENTS
 
-  assert_no_case_failures
-}
-
-@test "vibe and build command documents no longer carry the retired spawn wording" {
-  while IFS='|' read -r key fragment; do
-    [ -n "$key" ] || continue
-    expect_doc_lacks "$key: $fragment" "$(doc_path "$key")" "$fragment"
-  done <<'FRAGMENTS'
+  doc_fragment_rows expect_doc_lacks <<'FRAGMENTS'
 build|MAIN_ID=main-session
 build|$AGENTS_JSON
 build|Pane spawn is not wired

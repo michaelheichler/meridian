@@ -55,7 +55,7 @@ open_question() {
   run_guard pretool "$(question_json "$1")"
 }
 
-@test "user_question_guard: a pending decision blocks orchestration and mutation but allows inspection" {
+@test "user_question_guard blocks orchestration and mutation while a decision is pending and resumes once it is killed, stopped or answered" {
   open_question pend
   expect_case_silent open-question 0
 
@@ -75,10 +75,6 @@ open_question() {
   run_guard pretool "$(tool_json 'bad session!' Agent)"
   expect_case invalid-session-id 0 "A valid session id is required"
 
-  assert_no_case_failures
-}
-
-@test "user_question_guard: a killed, stopped or answered question clears the pending state and resumes normally" {
   open_question killed
   run_guard posttool "$(question_json killed | jq -c '.tool_input = {} | .is_error = true')"
   expect_case_silent killed-question 0
