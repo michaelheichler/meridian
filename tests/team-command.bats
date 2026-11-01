@@ -192,6 +192,37 @@ run_seeded_host_model() {
   jq -e '.routing.mode == "saved" and .routing.profile == "null"' <<< "$output" >/dev/null
 }
 
+@test "preflight scales the engineer turn budget by the configured workflow effort" {
+  local plugin="$TEST_ROOT/plugin" label effort expected
+  mkdir -p "$plugin" "$PROJECT/.lbwc-planning"
+  cp -R "$REPO_ROOT/scripts" "$plugin/scripts"
+  ln -s "$REPO_ROOT/config" "$plugin/config"
+  ln -s "$REPO_ROOT/templates" "$plugin/templates"
+  printf '%s\n' '#!/usr/bin/env bash' \
+    "printf '%s\\n' '{\"model\":\"nova-route\",\"profile\":\"balanced\",\"reasoning\":\"deliberate\",\"role\":\"web-engineer\"}'" \
+    > "$plugin/scripts/lbwc-routing.sh"
+  local base
+  base=$(jq -r '.["web-engineer"].maxTurns' "$REPO_ROOT/templates/agent-roles/defaults.json")
+
+  while IFS='|' read -r label effort expected; do
+    [ -n "$label" ] || continue
+    jq -n --arg effort "$effort" '{routing: {active_profile: "balanced"}, effort: $effort}' \
+      > "$PROJECT/.lbwc-planning/config.json"
+
+    run bash "$plugin/scripts/team-command-transaction.sh" preflight --project-root "$PROJECT"
+
+    [ "$status" -eq 0 ] || { echo "case=$label status=$status output=$output" >&2; return 1; }
+    [ "$(jq -r '.routing.max_turns' <<< "$output")" = "$(( (base * expected + 5) / 10 ))" ] \
+      || { echo "case=$label expected tenths=$expected of base=$base output=$output" >&2; return 1; }
+  done <<'CASES'
+thorough|thorough|15
+balanced|balanced|10
+fast|fast|8
+turbo|turbo|6
+unknown-value-falls-back-to-balanced|reckless|10
+CASES
+}
+
 @test "preflight is read-only and reports the canonical root, pair mode, and no side effects" {
   run bash "$TRANSACTION" preflight --project-root "$PROJECT" --scope src
 
