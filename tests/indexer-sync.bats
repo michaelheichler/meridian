@@ -1,6 +1,8 @@
 #!/usr/bin/env bats
 
 load test_helper
+load gate_case_helper
+load gate_case_files
 
 setup() {
   REPO_ROOT="$BATS_TEST_DIRNAME/.."
@@ -26,36 +28,47 @@ setup() {
   cp "$REPO_ROOT/scripts/resolve-plugin-root.sh" "$PLUGIN_DIR/resolve-plugin-root.sh"
   copy_script_with_libs "$REPO_ROOT/scripts/lib/lbwc-control-root.sh" "$PLUGIN_DIR/lib/lbwc-control-root.sh"
   cp "$REPO_ROOT/scripts/lib/lbwc-target-root.sh" "$PLUGIN_DIR/lib/lbwc-target-root.sh"
-  cat > "$PLUGIN_DIR/probe-map-tools.sh" <<'EOF'
+  cat > "$TEST_ROOT/probe-stub.sh" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
+[ "${PROBE_FAIL:-false}" != true ] || exit 1
 jq -n \
   --argjson available "${PROBE_GITNEXUS_AVAILABLE:-false}" \
   --argjson indexed "${PROBE_GITNEXUS_INDEXED:-false}" \
   --arg route "${PROBE_ROUTE:-grep-only}" \
   '{hookSpecificOutput:{hookEventName:"SessionStart",additionalContext:({gitnexus:{available:$available,indexed:$indexed},recommended_route:$route} | tostring)}}'
 EOF
-  chmod +x "$PLUGIN_DIR/probe-map-tools.sh"
+  chmod +x "$TEST_ROOT/probe-stub.sh"
 
   cat > "$FAKE_BIN/node" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n' "$*" >> "$NODE_LOG"
-  case "${2:-}" in
+case "${2:-}" in
   analyze)
+    [ "${INDEXER_ANALYZE_MODE:-ok}" != fail ] || exit 1
     printf '%s\n' \
       'Repository indexed successfully (6.6s)' \
       '6,864 nodes | 8,200 edges | 138 clusters | 90 flows' \
       '/Users/michael/dev/skills/lbwc'
     ;;
   status)
-    if [ "${INDEXER_STATUS_MODE:-fresh}" = "fresh" ]; then
-      printf 'Repository: %s\nBranch: main\nIndexed: 8/14/2026, 2:32:25 PM\nIndexed commit: %s\nCurrent commit: %s\nStatus: ✅ up-to-date\n' \
-        "$PROJECT_DIR" "$INDEXED_COMMIT" "$CURRENT_COMMIT"
-    else
-      printf 'Repository: %s\nBranch: main\nIndexed: 8/13/2026, 11:08:53 AM\nIndexed commit: 0000000\nCurrent commit: %s\nStatus: ⚠️ stale (re-run gitnexus analyze)\n' \
-        "$PROJECT_DIR" "$CURRENT_COMMIT"
-    fi
+    case "${INDEXER_STATUS_MODE:-fresh}" in
+      fresh)
+        printf 'Repository: %s\nBranch: main\nIndexed: 8/14/2026, 2:32:25 PM\nIndexed commit: %s\nCurrent commit: %s\nStatus: ✅ up-to-date\n' \
+          "$PROJECT_DIR" "$INDEXED_COMMIT" "$CURRENT_COMMIT"
+        ;;
+      mismatch)
+        printf 'Indexed commit: 0000000\nCurrent commit: %s\nStatus: ✅ up-to-date\n' "$CURRENT_COMMIT"
+        ;;
+      fail)
+        exit 1
+        ;;
+      *)
+        printf 'Repository: %s\nBranch: main\nIndexed: 8/13/2026, 11:08:53 AM\nIndexed commit: 0000000\nCurrent commit: %s\nStatus: ⚠️ stale (re-run gitnexus analyze)\n' \
+          "$PROJECT_DIR" "$CURRENT_COMMIT"
+        ;;
+    esac
     ;;
   *)
     printf 'unexpected node arguments: %s\n' "$*" >&2
@@ -68,11 +81,26 @@ EOF
   ROOT_LINK="/tmp/.lbwc-plugin-root-link-${COMMAND_SESSION_ID}"
   rm -rf "$ROOT_LINK"
   export NODE_LOG PROJECT_DIR CURRENT_COMMIT INDEXED_COMMIT="$CURRENT_COMMIT" COMMAND_SESSION_ID ROOT_LINK
+  SYNC_JSON="$PROJECT_DIR/.lbwc-planning/.runtime/indexer-sync.json"
+  cd "$PROJECT_DIR"
+  reset_case_failures
+  reset_row
 }
 
 teardown() {
+  cd "$REPO_ROOT"
+  if command -v git-ai >/dev/null; then
+    git-ai await --timeout 5 >/dev/null 2>&1 || true
+  fi
   rm -rf "$TEST_ROOT"
   rm -rf "$ROOT_LINK"
+}
+
+reset_row() {
+  rm -rf "$PROJECT_DIR/.lbwc-planning" "$PROJECT_DIR/.gitnexus" "$NODE_LOG" "$FAKE_BIN/jq"
+  cp "$TEST_ROOT/probe-stub.sh" "$PLUGIN_DIR/probe-map-tools.sh"
+  unset INDEXER_STATUS_MODE INDEXER_ANALYZE_MODE PROBE_FAIL
+  set_probe false false grep-only
 }
 
 write_index() {
@@ -90,6 +118,17 @@ set_probe() {
 initialize_planning() {
   mkdir -p "$PROJECT_DIR/.lbwc-planning"
   printf '%s\n' '{}' > "$PROJECT_DIR/.lbwc-planning/config.json"
+}
+
+run_sync() {
+  run env \
+    PATH="$FAKE_BIN:$PATH" \
+    LBWC_PLANNING_DIR="$PROJECT_DIR/.lbwc-planning" \
+    bash "$PLUGIN_DIR/indexer-sync.sh" --project-root "$PROJECT_DIR" "$@"
+}
+
+node_calls() {
+  grep -c -- "$1" "$NODE_LOG" 2>/dev/null || true
 }
 
 extract_gate() {
@@ -140,143 +179,148 @@ run_resolved_build_gate() {
     bash -c "cd \"$PROJECT_DIR\" && $gate"
 }
 
-@test "indexer-sync leaves a fresh project uninitialized when grep-only mapping is selected" {
+@test "indexer-sync accepts: records routes that need no failing refresh" {
   set_probe false false grep-only
-
   run_sync
+  expect_status fresh-project-grep-only 0
+  expect_no_path fresh-project-grep-only "$PROJECT_DIR/.lbwc-planning"
+  expect_no_path fresh-project-grep-only "$NODE_LOG"
 
-  [ "$status" -eq 0 ]
-  [ ! -e "$PROJECT_DIR/.lbwc-planning" ]
-  [ ! -e "$NODE_LOG" ]
-}
-
-@test "indexer-sync does not persist probe state in an uninitialized planning directory" {
+  reset_row
   mkdir -p "$PROJECT_DIR/.lbwc-planning"
-  set_probe false false grep-only
-
   run_sync
+  expect_status uninitialized-planning 0
+  expect_no_path uninitialized-planning "$PROJECT_DIR/.lbwc-planning/MAP-TOOLS.json"
+  expect_no_path uninitialized-planning "$PROJECT_DIR/.lbwc-planning/.runtime"
 
-  [ "$status" -eq 0 ]
-  [ -d "$PROJECT_DIR/.lbwc-planning" ]
-  [ ! -e "$PROJECT_DIR/.lbwc-planning/MAP-TOOLS.json" ]
-  [ ! -e "$PROJECT_DIR/.lbwc-planning/.runtime" ]
-}
+  reset_row
+  initialize_planning
+  run_sync
+  expect_status grep-only 0
+  expect_no_path grep-only "$NODE_LOG"
+  expect_jq grep-only "$SYNC_JSON" '.map_route == "grep-only" and .gitnexus == "unavailable"'
 
-run_sync() {
-  run env \
-    PATH="$FAKE_BIN:$PATH" \
-    LBWC_PLANNING_DIR="$PROJECT_DIR/.lbwc-planning" \
-    bash "$PLUGIN_DIR/indexer-sync.sh" --project-root "$PROJECT_DIR" "$@"
-}
+  reset_row
+  initialize_planning
+  set_probe true false grep-only
+  run_sync
+  expect_status grep-only-gitnexus-available 0
+  expect_jq grep-only-gitnexus-available "$SYNC_JSON" '.map_route == "grep-only" and .gitnexus == "not-selected"'
 
-@test "indexer-sync refreshes and records a fresh configured GitNexus index" {
+  reset_row
   initialize_planning
   write_index
   set_probe true true gitnexus
-
   run_sync
+  expect_status gitnexus-fresh 0
+  [ "$(node_calls '.gitnexus/run.cjs analyze')" = 1 ] || record_case_failure gitnexus-fresh "analyze did not run exactly once"
+  [ "$(node_calls '.gitnexus/run.cjs status')" = 1 ] || record_case_failure gitnexus-fresh "status did not run exactly once"
+  expect_jq gitnexus-fresh "$SYNC_JSON" \
+    ".map_route == \"gitnexus\" and .gitnexus == \"up-to-date\" and .indexed_commit == \"$CURRENT_COMMIT\" and .capability_gap == null"
 
-  [ "$status" -eq 0 ]
-  grep -F -- '.gitnexus/run.cjs analyze' "$NODE_LOG"
-  grep -F -- '.gitnexus/run.cjs status' "$NODE_LOG"
-  jq -e --arg commit "$CURRENT_COMMIT" \
-    '.map_route == "gitnexus" and (.gitnexus | contains("up-to-date")) and .indexed_commit == $commit' \
-    "$PROJECT_DIR/.lbwc-planning/.runtime/indexer-sync.json" >/dev/null
+  reset_row
+  initialize_planning
+  set_probe false false serena
+  run_sync
+  expect_case serena-gap 0 "Serena route selected"
+  expect_output_has serena-gap "serena-refresh-unsupported"
+  expect_no_path serena-gap "$NODE_LOG"
+  expect_jq serena-gap "$SYNC_JSON" '
+    .map_route == "serena"
+    and .gitnexus == "not-selected"
+    and .capability_gap == {status: "unsupported", code: "serena-refresh-unsupported", route: "serena"}'
+
+  reset_row
+  initialize_planning
+  set_probe false false lsp
+  run_sync
+  expect_case lsp-gap 0 "LSP route selected"
+  expect_jq lsp-gap "$SYNC_JSON" '.map_route == "lsp" and .capability_gap.code == "lsp-refresh-unsupported"'
+
+  assert_no_case_failures
 }
 
-@test "indexer-sync blocks a configured GitNexus route when the index is missing" {
+@test "indexer-sync rejects: blocks missing, stale, failed and unsupported indexes" {
   initialize_planning
   set_probe true false gitnexus
-
   run_sync
+  expect_case index-missing 1 "GitNexus index is missing"
+  expect_no_path index-missing "$NODE_LOG"
+  expect_jq index-missing "$SYNC_JSON" '.map_route == "gitnexus" and .gitnexus == "missing"'
 
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"GitNexus index is missing"* ]]
-  [ ! -e "$NODE_LOG" ]
-  jq -e '.map_route == "gitnexus" and .gitnexus == "missing"' \
-    "$PROJECT_DIR/.lbwc-planning/.runtime/indexer-sync.json" >/dev/null
-}
+  reset_row
+  initialize_planning
+  write_index
+  set_probe false true gitnexus
+  run_sync
+  expect_case index-present-gitnexus-unavailable 1 "GitNexus index is missing"
+  expect_no_path index-present-gitnexus-unavailable "$NODE_LOG"
 
-@test "indexer-sync blocks a stale GitNexus status after refresh" {
+  reset_row
   initialize_planning
   write_index
   set_probe true true gitnexus
   INDEXER_STATUS_MODE=stale
   export INDEXER_STATUS_MODE
-
   run_sync
+  expect_case status-stale 1 "GitNexus index is stale"
+  [ "$(node_calls '.gitnexus/run.cjs analyze')" = 1 ] || record_case_failure status-stale "analyze did not run before the stale verdict"
+  expect_jq status-stale "$SYNC_JSON" '.map_route == "gitnexus" and (.gitnexus | contains("stale"))'
 
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"GitNexus index is stale"* ]]
-  grep -F -- '.gitnexus/run.cjs analyze' "$NODE_LOG"
-  grep -F -- '.gitnexus/run.cjs status' "$NODE_LOG"
-  jq -e '.map_route == "gitnexus" and (.gitnexus | contains("stale"))' \
-    "$PROJECT_DIR/.lbwc-planning/.runtime/indexer-sync.json" >/dev/null
-}
-
-@test "indexer-sync accepts an unavailable GitNexus when the map route is grep-only" {
+  reset_row
   initialize_planning
-  set_probe false false grep-only
-
+  write_index
+  set_probe true true gitnexus
+  INDEXER_STATUS_MODE=mismatch
+  export INDEXER_STATUS_MODE
   run_sync
+  expect_case commit-mismatch 1 "GitNexus index is stale"
+  expect_jq commit-mismatch "$SYNC_JSON" '.gitnexus == "up-to-date" and .indexed_commit == "0000000"'
 
-  [ "$status" -eq 0 ]
-  [ ! -e "$NODE_LOG" ]
-  jq -e '.map_route == "grep-only" and .gitnexus == "unavailable"' \
-    "$PROJECT_DIR/.lbwc-planning/.runtime/indexer-sync.json" >/dev/null
-}
-
-@test "indexer-sync exposes an explicit Serena refresh capability gap" {
+  reset_row
   initialize_planning
-  set_probe false false serena
-
+  write_index
+  set_probe true true gitnexus
+  INDEXER_ANALYZE_MODE=fail
+  export INDEXER_ANALYZE_MODE
   run_sync
+  expect_case analyze-failed 1 "GitNexus analyze failed"
+  expect_jq analyze-failed "$SYNC_JSON" '.gitnexus == "analyze-failed"'
 
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"Serena route selected"* ]]
-  [[ "$output" == *"serena-refresh-unsupported"* ]]
-  [ ! -e "$NODE_LOG" ]
-  jq -e '
-    .map_route == "serena"
-    and .gitnexus == "not-selected"
-    and .capability_gap == {
-      status: "unsupported",
-      code: "serena-refresh-unsupported",
-      route: "serena"
-    }
-  ' "$PROJECT_DIR/.lbwc-planning/.runtime/indexer-sync.json" >/dev/null
-}
+  reset_row
+  initialize_planning
+  write_index
+  set_probe true true gitnexus
+  INDEXER_STATUS_MODE=fail
+  export INDEXER_STATUS_MODE
+  run_sync
+  expect_case status-failed 1 "GitNexus status failed"
+  expect_jq status-failed "$SYNC_JSON" '.gitnexus == "status-failed"'
 
-@test "indexer-sync rejects an unknown map route" {
+  reset_row
   initialize_planning
   set_probe false false unknown
-
   run_sync
-
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"unsupported map route"* ]]
-  [[ "$output" == *"unknown"* ]]
-  jq -e '
+  expect_case unknown-route 1 "unsupported map route"
+  expect_output_has unknown-route "unknown"
+  expect_jq unknown-route "$SYNC_JSON" '
     .map_route == "unknown"
-    and .capability_gap == {
-      status: "unsupported",
-      code: "unknown-map-route",
-      route: "unknown"
-    }
-  ' "$PROJECT_DIR/.lbwc-planning/.runtime/indexer-sync.json" >/dev/null
-}
+    and .capability_gap == {status: "unsupported", code: "unknown-map-route", route: "unknown"}'
 
-@test "indexer-sync can require GitNexus explicitly" {
+  reset_row
   initialize_planning
   set_probe false false grep-only
-
   run_sync --require-gitnexus
+  expect_case require-gitnexus-other-route 1 "GitNexus index is required"
+  expect_jq require-gitnexus-other-route "$SYNC_JSON" '.gitnexus == "required"'
 
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"GitNexus index is required"* ]]
-}
+  reset_row
+  initialize_planning
+  set_probe true false gitnexus
+  run_sync --require-gitnexus
+  expect_case require-gitnexus-no-index 1 "GitNexus index is required"
 
-@test "indexer-sync reports missing jq as a tooling failure" {
+  reset_row
   initialize_planning
   write_index
   set_probe true true gitnexus
@@ -285,100 +329,97 @@ run_sync() {
 exit 127
 EOF
   chmod +x "$FAKE_BIN/jq"
-
   run_sync
+  expect_case jq-missing 2 "jq is required"
 
-  [ "$status" -eq 2 ]
-  [[ "$output" == *"jq"* ]]
-}
-
-@test "indexer-sync fails clearly when the map-tools probe is unavailable" {
-  rm -f "$PLUGIN_DIR/probe-map-tools.sh"
-
-  run_sync
-
-  [ "$status" -eq 2 ]
-  [[ "$output" == *"required map-tools probe is unavailable"* ]]
-  [ ! -e "$PROJECT_DIR/.lbwc-planning" ]
-}
-
-@test "indexer-sync accepts the current GitNexus status output format" {
+  reset_row
   initialize_planning
-  write_index
-  set_probe true true gitnexus
-
+  rm -f "$PLUGIN_DIR/probe-map-tools.sh"
   run_sync
+  expect_case probe-unavailable 2 "required map-tools probe is unavailable"
+  expect_jq probe-unavailable "$SYNC_JSON" '.gitnexus == "probe-missing"'
 
-  [ "$status" -eq 0 ]
-  jq -e --arg commit "$CURRENT_COMMIT" \
-    '.map_route == "gitnexus" and .gitnexus == "up-to-date" and .indexed_commit == $commit' \
-    "$PROJECT_DIR/.lbwc-planning/.runtime/indexer-sync.json" >/dev/null
+  reset_row
+  initialize_planning
+  PROBE_FAIL=true
+  export PROBE_FAIL
+  run_sync
+  expect_case probe-fails 2 "map-tools probe failed"
+  expect_jq probe-fails "$SYNC_JSON" '.gitnexus == "probe-failed"'
+
+  reset_row
+  rm -f "$PLUGIN_DIR/probe-map-tools.sh"
+  run_sync
+  expect_case probe-unavailable-uninitialized 2 "required map-tools probe is unavailable"
+  expect_no_path probe-unavailable-uninitialized "$PROJECT_DIR/.lbwc-planning"
+
+  assert_no_case_failures
 }
 
-@test "vibe and team execute the indexer gate before their workflows" {
-  set_probe false false grep-only
+@test "indexer-sync arguments: prints usage and rejects unusable invocations" {
+  run bash "$PLUGIN_DIR/indexer-sync.sh" --help
+  expect_case help-flag 0 "Usage:"
 
-  for command_name in vibe team; do
-    run_command_gate "$command_name"
-    [ "$status" -eq 0 ]
-  done
-  [ ! -e "$PROJECT_DIR/.lbwc-planning" ]
+  run bash "$PLUGIN_DIR/indexer-sync.sh" --project-root
+  expect_case root-without-value 2 "Usage:"
+
+  run bash "$PLUGIN_DIR/indexer-sync.sh" --bogus
+  expect_case unknown-option 2 "Usage:"
+
+  run bash "$PLUGIN_DIR/indexer-sync.sh" --project-root "$TEST_ROOT/does-not-exist"
+  expect_case root-inaccessible 2 "project root is not accessible"
+
+  assert_no_case_failures
 }
 
-@test "vibe and team stop when their indexer gate fails" {
+@test "indexer-sync command gates: vibe, team and build run the helper" {
+  run_command_gate vibe
+  expect_status vibe-gate 0
+  run_command_gate team
+  expect_status team-gate 0
+  expect_no_path command-gates "$PROJECT_DIR/.lbwc-planning"
+
+  [ "$(grep -c '^!`' "$REPO_ROOT/commands/build.md")" = 1 ] || record_case_failure build-directive "build.md must hold exactly one context directive"
+  run_resolved_build_gate
+  expect_status build-gate 0
+  [ "$RESOLVED_LINK" = "$PLUGIN_ROOT" ] || record_case_failure build-gate "resolved plugin root is $RESOLVED_LINK"
+  [ "$RESOLVED_PROJECT_ROOT" = "$PROJECT_DIR" ] || record_case_failure build-gate "resolved project root is $RESOLVED_PROJECT_ROOT"
+  expect_no_path build-gate "$PROJECT_DIR/.lbwc-planning"
+
+  assert_no_case_failures
+}
+
+@test "indexer-sync command gates reject: vibe, team and build stop when the helper fails" {
   rm -f "$PLUGIN_DIR/probe-map-tools.sh"
 
-  for command_name in vibe team; do
-    run_command_gate "$command_name"
-    [ "$status" -eq 2 ]
-    [[ "$output" == *"required map-tools probe is unavailable"* ]]
-  done
-  [ ! -e "$PROJECT_DIR/.lbwc-planning" ]
-}
-
-@test "build resolves its context and invokes the mandatory indexer helper" {
-  set_probe false false grep-only
-
-  run grep -c '^!`' "$REPO_ROOT/commands/build.md"
-  [ "$status" -eq 0 ]
-  [ "$output" -eq 1 ]
-
+  run_command_gate vibe
+  expect_case vibe-gate 2 "required map-tools probe is unavailable"
+  run_command_gate team
+  expect_case team-gate 2 "required map-tools probe is unavailable"
   run_resolved_build_gate
+  expect_case build-gate 2 "required map-tools probe is unavailable"
+  expect_no_path command-gates "$PROJECT_DIR/.lbwc-planning"
 
-  [ "$status" -eq 0 ]
-  [ "$RESOLVED_LINK" = "$PLUGIN_ROOT" ]
-  [ "$RESOLVED_PROJECT_ROOT" = "$PROJECT_DIR" ]
-  [ ! -e "$PROJECT_DIR/.lbwc-planning" ]
+  assert_no_case_failures
 }
 
-@test "build stops when its resolved mandatory indexer helper fails" {
-  rm -f "$PLUGIN_DIR/probe-map-tools.sh"
+@test "indexer-sync gate order: team and build run the helper before any state work" {
+  local gate_line enable_line preflight_line catalog_line phase_line plan_line
 
-  run_resolved_build_gate
-
-  [ "$status" -eq 2 ]
-  [[ "$output" == *"required map-tools probe is unavailable"* ]]
-}
-
-@test "team runs the indexer gate before agent teams enablement and preflight" {
-  local gate_line enable_line preflight_line catalog_line
   gate_line="$(grep -n 'indexer-sync.sh' "$REPO_ROOT/commands/team.md" | cut -d: -f1)"
   catalog_line="$(grep -n 'lbwc-model" refresh' "$REPO_ROOT/commands/team.md" | cut -d: -f1)"
   enable_line="$(grep -n 'agent-teams-enable --approved' "$REPO_ROOT/commands/team.md" | cut -d: -f1)"
   preflight_line="$(grep -n '\*\*Preflight (read-only)\.\*\*' "$REPO_ROOT/commands/team.md" | cut -d: -f1)"
+  [ "$gate_line" -lt "$enable_line" ] || record_case_failure team-before-enable "gate=$gate_line enable=$enable_line"
+  [ "$gate_line" -lt "$preflight_line" ] || record_case_failure team-before-preflight "gate=$gate_line preflight=$preflight_line"
+  [ "$gate_line" -lt "$catalog_line" ] || record_case_failure team-before-catalog "gate=$gate_line catalog=$catalog_line"
+  [ "$catalog_line" -lt "$preflight_line" ] || record_case_failure catalog-before-preflight "catalog=$catalog_line preflight=$preflight_line"
 
-  [ "$gate_line" -lt "$enable_line" ]
-  [ "$gate_line" -lt "$preflight_line" ]
-  [ "$gate_line" -lt "$catalog_line" ]
-  [ "$catalog_line" -lt "$preflight_line" ]
-}
-
-@test "build runs the indexer gate before phase and plan state reads" {
-  local gate_line phase_line plan_line
   gate_line="$(grep -n 'bash "{LINK}/scripts/indexer-sync.sh"' "$REPO_ROOT/commands/build.md" | cut -d: -f1)"
   phase_line="$(grep -n 'phase-detect.sh' "$REPO_ROOT/commands/build.md" | cut -d: -f1)"
   plan_line="$(grep -n 'Read the selected root' "$REPO_ROOT/commands/build.md" | cut -d: -f1)"
+  [ "$gate_line" -lt "$phase_line" ] || record_case_failure build-before-phase "gate=$gate_line phase=$phase_line"
+  [ "$gate_line" -lt "$plan_line" ] || record_case_failure build-before-plan "gate=$gate_line plan=$plan_line"
 
-  [ "$gate_line" -lt "$phase_line" ]
-  [ "$gate_line" -lt "$plan_line" ]
+  assert_no_case_failures
 }
