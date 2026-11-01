@@ -4,8 +4,6 @@ set -E
 umask 077
 
 SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
-. "$SCRIPT_DIR/lib/require-bash.sh"
-require_bash_43
 
 fail() {
   printf 'tmux-spawn-group: %s\n' "$1" >&2
@@ -33,7 +31,7 @@ parse_spawn_ready_names() {
 }
 
 collect_names() {
-  local from_text from_file name
+  local from_text from_file name seen_names
   NAMES=()
   if [ -n "$names_csv" ]; then
     IFS=',' read -r -a NAMES <<<"$names_csv"
@@ -51,11 +49,13 @@ collect_names() {
     done < <(parse_spawn_ready_names "$from_text")
   fi
   [ "${#NAMES[@]}" -gt 0 ] || fail 'no SPAWN_READY names supplied'
-  declare -A seen_names=()
+  seen_names=$'\n'
   for name in "${NAMES[@]}"; do
     require_token "$name" 'generated agent name'
-    [ -z "${seen_names[$name]:-}" ] || fail 'duplicate generated agent name'
-    seen_names[$name]=1
+    case "$seen_names" in
+      *$'\n'"$name"$'\n'*) fail 'duplicate generated agent name' ;;
+    esac
+    seen_names="$seen_names$name"$'\n'
   done
 }
 
