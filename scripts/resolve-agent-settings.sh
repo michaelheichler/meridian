@@ -17,8 +17,7 @@ shift 3
 
 TEMPORARY_ROUTING_MODE=false
 if [ "$CONFIG_PATH" = "--routing" ]; then
-  # Explicit routing authority: the config path must exist and is never replaced
-  # by a fallback. Used for temporary control roots outside .lbwc-planning.
+  # No fallback config, because a wrong route would misroute temporary roots.
   CONFIG_PATH="$PLUGIN_ROOT"
   PLUGIN_ROOT="${1:-}"
   [ -n "$PLUGIN_ROOT" ] || { usage; exit 1; }
@@ -52,9 +51,9 @@ ROUTING_SCRIPT="${LBWC_ROUTING_SCRIPT:-$PLUGIN_ROOT/scripts/lbwc-routing.sh}"
 [ -f "$TEMPLATE_DEFAULTS" ] || fail "role defaults not found: $TEMPLATE_DEFAULTS"
 [ -f "$SETTINGS_LIB" ] || fail "settings lib not found: $SETTINGS_LIB"
 [ -f "$ROUTING_SCRIPT" ] || fail "routing resolver not found: $ROUTING_SCRIPT"
-# shellcheck source=/dev/null
 . "$SETTINGS_LIB"
 . "$PLUGIN_ROOT/scripts/lib/agent-fields.sh"
+. "$PLUGIN_ROOT/scripts/lib/turn-value.sh"
 
 VALID_ROLES=$(jq -r 'keys[]' "$TEMPLATE_DEFAULTS")
 is_valid_role() { jq -e --arg role "$1" 'has($role)' "$TEMPLATE_DEFAULTS" >/dev/null 2>&1; }
@@ -86,16 +85,6 @@ multiplier_for_effort() {
   esac
 }
 
-normalize_turn_value() {
-  local value="$1"
-  case "$value" in
-    false|FALSE|False|null|"") printf '\n'; return 0 ;;
-  esac
-  [[ "$value" =~ ^-?[0-9]+$ ]] || return 1
-  [ "$value" -gt 0 ] || { printf '\n'; return 0; }
-  printf '%s\n' "$value"
-}
-
 if [ "$TEMPORARY_ROUTING_MODE" = true ]; then
   if [ -n "$CLI_MODEL" ] || [ -n "$CLI_REASONING" ]; then
     fail '--model and --reasoning require saved routing state; temporary control roots have none'
@@ -111,14 +100,7 @@ if [ "$TEMPORARY_ROUTING_MODE" = true ]; then
     EFFORT=""
   fi
   if [ -n "$CLI_MAX_TURNS" ]; then
-    case "$CLI_MAX_TURNS" in
-      false|FALSE|False|null|"") RESOLVED_MAX_TURNS="" ;;
-      *[!0-9]*|-*) fail "invalid --max-turns value '$CLI_MAX_TURNS'" ;;
-      *)
-        [ "$CLI_MAX_TURNS" -gt 0 ] || fail "invalid --max-turns value '$CLI_MAX_TURNS'"
-        RESOLVED_MAX_TURNS="$CLI_MAX_TURNS"
-        ;;
-    esac
+    normalize_turn_value "$CLI_MAX_TURNS" RESOLVED_MAX_TURNS || fail "invalid --max-turns value '$CLI_MAX_TURNS'"
   else
     WORKFLOW_EFFORT=""
     if [ -n "$CLI_WORKFLOW_EFFORT" ]; then
@@ -172,18 +154,8 @@ fi
 AGENT_MODEL="$MODEL"
 EFFORT=$(jq -r 'if . == null then "" else . end' <<< "$REASONING_JSON")
 
-normalize_turn_value() {
-  local value="$1"
-  case "$value" in
-    false|FALSE|False|null|"") printf '\n'; return 0 ;;
-  esac
-  [[ "$value" =~ ^-?[0-9]+$ ]] || return 1
-  [ "$value" -gt 0 ] || { printf '\n'; return 0; }
-  printf '%s\n' "$value"
-}
-
 if [ -n "$CLI_MAX_TURNS" ]; then
-  MAX_TURNS=$(normalize_turn_value "$CLI_MAX_TURNS") || fail "invalid --max-turns value '$CLI_MAX_TURNS'"
+  normalize_turn_value "$CLI_MAX_TURNS" MAX_TURNS || fail "invalid --max-turns value '$CLI_MAX_TURNS'"
 else
   WORKFLOW_EFFORT=""
   if [ -n "$CLI_WORKFLOW_EFFORT" ]; then
@@ -197,10 +169,10 @@ else
 
   ROLE_MAXTURNS_OVERRIDE=$(jq -r --arg r "$ROLE" '.roles[$r].max_turns // empty' <<< "$PROJECT_CONFIG")
   if [ -n "$ROLE_MAXTURNS_OVERRIDE" ]; then
-    BASE=$(normalize_turn_value "$ROLE_MAXTURNS_OVERRIDE") || BASE=""
+    normalize_turn_value "$ROLE_MAXTURNS_OVERRIDE" BASE || BASE=""
   else
     BASE=$(jq -r --arg r "$ROLE" '.[$r].maxTurns // empty' "$TEMPLATE_DEFAULTS")
-    [ -n "$BASE" ] && BASE=$(normalize_turn_value "$BASE" || true)
+    normalize_turn_value "$BASE" BASE || BASE=""
   fi
   [ -n "$BASE" ] || fail "no max_turns resolved for role '$ROLE': set roles.$ROLE.max_turns in project config or $ROLE.maxTurns in $TEMPLATE_DEFAULTS"
 
