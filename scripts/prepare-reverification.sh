@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-set -eo pipefail
+set -euo pipefail
 
 PHASE_DIR="${1:-}"
 
@@ -170,7 +170,7 @@ case "$UAT_FILE" in
           printf '%s\n' "$_cap_decision"
           exit 0
           ;;
-        false) ;; # continue to advance
+        false) ;;
         *)
           echo "Error: malformed round-limit helper output, missing or invalid cap_reached key" >&2
           exit 1
@@ -238,7 +238,7 @@ case "${_cap_reached:-}" in
     printf '%s\n' "$_cap_decision"
     exit 0
     ;;
-  false) ;; # continue to advance
+  false) ;;
   *)
     echo "Error: malformed round-limit helper output, missing or invalid cap_reached key" >&2
     exit 1
