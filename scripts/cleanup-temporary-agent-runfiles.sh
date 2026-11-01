@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/lib/iso-epoch.sh"
+
 RETENTION_SECONDS=259200
 ACTION="${1:-scan}"
 [ "$ACTION" = scan ] || [ "$ACTION" = cleanup ] || {
@@ -45,15 +48,6 @@ file_mtime() {
   fi
 }
 
-iso_epoch() {
-  local value="$1"
-  if [[ "$OSTYPE" == darwin* ]]; then
-    date -u -j -f '%Y-%m-%dT%H:%M:%SZ' "$value" +%s 2>/dev/null
-  else
-    date -u -d "$value" +%s 2>/dev/null
-  fi
-}
-
 is_terminal() {
   case "$1" in
     completed|failed|cancelled|terminal) return 0 ;;
@@ -90,7 +84,7 @@ inspect_run() {
     return 0
   fi
   timestamp=$(jq -r '.updated_at // .finished_at // .created_at // empty' "$run_file")
-  epoch=$(iso_epoch "$timestamp" 2>/dev/null || true)
+  epoch=$(iso_utc_to_epoch "$timestamp" 2>/dev/null || true)
   [ -n "$epoch" ] || epoch=$(file_mtime "$run_file")
   now=$(date +%s)
   age=$((now - epoch))
