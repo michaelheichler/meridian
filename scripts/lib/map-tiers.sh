@@ -1,14 +1,4 @@
-#!/usr/bin/env bash
-# Shared codebase-map detection helpers, sourced by commands (via Bash) and
-# exercised directly by tests/map-tiers.bats.
-#
-# Usage:
-#   . scripts/lib/map-tiers.sh
-#   MAP_TIER=$(resolve_map_tier <file_count> <prefer_teams> [forced_tier])
-#   eval "$(resolve_map_mode <planning_dir> [forced_mode])"   # sets MAPPING_MODE, CHANGED_FILES
-#
-# resolve_map_mode prints two lines: mode=full|incremental and
-# changed_files=<count> (0 when unknown or full).
+# /map sources this file, so tier and mode rules live in code, not prose.
 
 resolve_map_tier() {
   local file_count="$1" prefer_teams="${2:-auto}" forced="${3:-}"
@@ -16,15 +6,18 @@ resolve_map_tier() {
     solo|duo|quad|"") ;;
     *) echo "map-tiers: unknown tier: $forced" >&2; return 1 ;;
   esac
+  case "$file_count" in
+    ''|*[!0-9]*) echo "map-tiers: file count is not a whole number: $file_count" >&2; return 1 ;;
+  esac
   if [ "$prefer_teams" = "never" ]; then
     printf 'tier=solo\n'; return 0
   fi
   if [ -n "$forced" ]; then
     printf 'tier=%s\n' "$forced"; return 0
   fi
-  if [ "$file_count" -lt 200 ] 2>/dev/null; then
+  if [ "$file_count" -lt 200 ]; then
     printf 'tier=solo\n'
-  elif [ "$file_count" -le 1000 ] 2>/dev/null; then
+  elif [ "$file_count" -le 1000 ]; then
     printf 'tier=duo\n'
   else
     printf 'tier=quad\n'
