@@ -52,6 +52,10 @@ seed_check_case() {
       write_teams_flag "$TEST_ROOT/claude/settings.json" 1
       write_teams_flag "$PROJECT/.claude/settings.json" 0
       ;;
+    local-settings-beats-shared-settings)
+      write_teams_flag "$TEST_ROOT/claude/settings.local.json" 1
+      write_teams_flag "$TEST_ROOT/claude/settings.json" 0
+      ;;
     corrupt-sibling-skipped)
       printf '%s\n' 'not-json' > "$PROJECT/.claude/settings.local.json"
       write_teams_flag "$PROJECT/.claude/settings.json" 1
@@ -95,6 +99,7 @@ user-settings|$ENABLED_MESSAGE
 project-settings|$ENABLED_MESSAGE
 explicit-pin-beats-project|$DISABLED_MESSAGE
 project-disable-beats-user|$DISABLED_MESSAGE
+local-settings-beats-shared-settings|$ENABLED_MESSAGE
 corrupt-sibling-skipped|$ENABLED_MESSAGE
 CASES
 }
