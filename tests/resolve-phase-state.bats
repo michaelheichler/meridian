@@ -1,0 +1,79 @@
+#!/usr/bin/env bats
+
+load test_helper
+load gate_case_helper
+
+setup() {
+  setup_temp_dir
+  SID_PREFIX="covw2-rps-$$-$BATS_TEST_NUMBER"
+  mkdir -p "$TEST_TEMP_DIR/project/.lbwc-planning"
+  cd "$TEST_TEMP_DIR/project"
+  reset_case_failures
+}
+
+teardown() {
+  cd "$PROJECT_ROOT"
+  rm -rf /tmp/.lbwc-plugin-root-link-"$SID_PREFIX"-* /tmp/.lbwc-phase-detect-"$SID_PREFIX"-* /tmp/.lbwc-phase-detect-live-"$SID_PREFIX"-*
+  teardown_temp_dir
+}
+
+fake_plugin() {
+  local root="$TEST_TEMP_DIR/plugin-$1"
+  mkdir -p "$root/scripts"
+  cp "$SCRIPTS_DIR/ensure-plugin-root-link.sh" "$root/scripts/"
+  printf '%s\n' '#!/usr/bin/env bash' "$2" > "$root/scripts/phase-detect.sh"
+  printf '%s\n' "$root"
+}
+
+resolve_state() {
+  local sid="$SID_PREFIX-$1" root="$2"
+  CLAUDE_SESSION_ID="$sid" CLAUDE_PLUGIN_ROOT="$root" bash "$SCRIPTS_DIR/resolve-phase-state.sh"
+}
+
+lock_dir() {
+  printf '/tmp/.lbwc-phase-detect-live-%s-%s.lock\n' "$SID_PREFIX" "$1"
+}
+
+@test "phase state resolution prints the session link and fresh detector output or an error marker" {
+  local healthy failing flaky lock finished_pid
+  healthy=$(fake_plugin healthy 'printf "next_phase_state=needs_plan\nphase_detect_complete=true\n"')
+  failing=$(fake_plugin failing 'exit 1')
+  flaky=$(fake_plugin flaky 'n=$(cat "$(dirname "$0")/calls" 2>/dev/null || echo 0); echo $((n + 1)) > "$(dirname "$0")/calls"; [ "$n" -ge 1 ] || exit 1; echo "next_phase_state=needs_execute"')
+
+  run resolve_state healthy "$healthy"
+  expect_case healthy 0 "/tmp/.lbwc-plugin-root-link-$SID_PREFIX-healthy"$'\n'"next_phase_state=needs_plan"
+
+  run resolve_state failing "$failing"
+  expect_case failing-detector 0 "phase_detect_error=true"
+
+  run resolve_state flaky "$flaky"
+  expect_case detector-recovers-on-retry 0 "next_phase_state=needs_execute"
+  expect_case_absent detector-recovers-on-retry "phase_detect_error"
+
+  run resolve_state no-root "$TEST_TEMP_DIR/absent-plugin"
+  expect_case no-plugin-root 0 "/tmp/.lbwc-plugin-root-link-$SID_PREFIX-no-root"$'\n'"phase_detect_error=true"
+
+  lock=$(lock_dir dead-owner)
+  mkdir -p "$lock"
+  sleep 0 &
+  finished_pid=$!
+  wait "$finished_pid"
+  printf '%s\n' "$finished_pid" > "$lock/pid"
+  run resolve_state dead-owner "$healthy"
+  expect_case dead-lock-owner 0 "next_phase_state=needs_plan"
+
+  lock=$(lock_dir live-owner)
+  mkdir -p "$lock"
+  sleep 1 >/dev/null 2>&1 3>&- &
+  printf '%s\n' "$!" > "$lock/pid"
+  run resolve_state live-owner "$healthy"
+  expect_case lock-released-by-exiting-owner 0 "next_phase_state=needs_plan"
+
+  lock=$(lock_dir old-lock)
+  mkdir -p "$lock"
+  touch -t 200001010000 "$lock"
+  run resolve_state old-lock "$healthy"
+  expect_case old-ownerless-lock 0 "next_phase_state=needs_plan"
+
+  assert_no_case_failures
+}
