@@ -24,12 +24,16 @@ feed_filter() {
   printf '%s' "$1" | bash "$SCRIPTS_DIR/security-filter.sh"
 }
 
-allow_row() {
-  local label="$1" tool_name="$2" path_key="$3" target="$4" before
+allow_payload_row() {
+  local label="$1" json="$2" before
   before=$(tree_digest)
-  run feed_filter "$(payload "tool_name=$tool_name" "tool_input.$path_key=$target")"
+  run feed_filter "$json"
   expect_case_silent "$label" 0
   expect_digest "$label" "$before" "$(tree_digest)"
+}
+
+allow_row() {
+  allow_payload_row "$1" "$(payload "tool_name=$2" "tool_input.$3=$4")"
 }
 
 deny_row() {
@@ -38,7 +42,22 @@ deny_row() {
   expect_case "$label" 2 "Blocked: sensitive file ($target)"
 }
 
-@test "allow rows let ordinary paths, search patterns and build output reads through silently" {
+fail_closed_row() {
+  run feed_filter "$2"
+  expect_case_silent "$1" 2
+}
+
+jq_missing_row() {
+  local label="$1" no_jq_bin="$TEST_TEMP_DIR/no-jq-bin" json
+  mkdir -p "$no_jq_bin"
+  json=$(payload "tool_name=Write" "tool_input.file_path=.env")
+  run --separate-stderr env PATH="$no_jq_bin" "$BASH" -c 'printf "%s" "$1" | "$BASH" "$2"' _ "$json" "$SCRIPTS_DIR/security-filter.sh"
+  expect_case "$label" 0
+  [ "$stderr" = "meridian hook warning: security-filter jq not available, call allowed" ] \
+    || record_case_failure "$label" "stderr=[$stderr]"
+}
+
+@test "security-filter allows ordinary paths, blocks sensitive paths with exit 2, and allows with a warning only when jq is missing" {
   reset_case_failures
 
   allow_row normal-source-file Write file_path src/main.py
@@ -48,18 +67,7 @@ deny_row() {
   allow_row read-dist-dir Read file_path dist/y
   allow_row grep-build-dir Grep path build/x
   allow_row grep-dist-dir Grep path dist/y
-
-  local before
-  before=$(tree_digest)
-  run feed_filter "$(payload "tool_input.pattern=dist/|build/" "tool_input.path=src")"
-  expect_case_silent pattern-with-dist-and-real-path 0
-  expect_digest pattern-with-dist-and-real-path "$before" "$(tree_digest)"
-
-  assert_no_case_failures
-}
-
-@test "deny rows block sensitive paths with exit 2 and name the path" {
-  reset_case_failures
+  allow_payload_row pattern-with-dist-and-real-path "$(payload "tool_input.pattern=dist/|build/" "tool_input.path=src")"
 
   deny_row env-file Write file_path .env
   deny_row env-variant Write file_path config/.env.production
@@ -84,32 +92,11 @@ deny_row() {
   deny_row grep-env-file Grep path .env
   deny_row read-node-modules Read file_path node_modules/pkg/index.js
 
-  assert_no_case_failures
-}
+  fail_closed_row empty-file-path "$(payload "tool_input.file_path=")"
+  fail_closed_row empty-input ""
+  fail_closed_row malformed-json "not json{{{"
 
-@test "deny rows fail closed with exit 2 on an empty path or unreadable input" {
-  reset_case_failures
-
-  run feed_filter "$(payload "tool_input.file_path=")"
-  expect_case_silent empty-file-path 2
-
-  run feed_filter ""
-  expect_case_silent empty-input 2
-
-  run feed_filter "not json{{{"
-  expect_case_silent malformed-json 2
+  jq_missing_row jq-missing-allows-with-warning
 
   assert_no_case_failures
-}
-
-@test "allows the call and warns on stderr when jq is missing" {
-  local no_jq_bin="$TEST_TEMP_DIR/no-jq-bin"
-  mkdir -p "$no_jq_bin"
-  local json
-  json=$(payload "tool_name=Write" "tool_input.file_path=.env")
-
-  run --separate-stderr env PATH="$no_jq_bin" "$BASH" -c 'printf "%s" "$1" | "$BASH" "$2"' _ "$json" "$SCRIPTS_DIR/security-filter.sh"
-
-  [ "$status" -eq 0 ]
-  [ "$stderr" = "meridian hook warning: security-filter jq not available, call allowed" ]
 }

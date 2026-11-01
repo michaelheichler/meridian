@@ -162,91 +162,93 @@ unknown-command-changes-nothing|set dev-01 /work/tree|rename dev-01|none|present
 CASES
 }
 
-@test "worktree-cleanup validates its arguments and leaves unrelated directories alone" {
-  while IFS='|' read -r label args expected_status reason; do
-    [ -n "$label" ] || continue
-    plain_dir
-    mkdir -p outside-01
-
-    run bash "$SCRIPTS_DIR/worktree-cleanup.sh" $args
-
-    expect_status "$label" "$expected_status"
-    case "$reason" in
-      -) expect_output_empty "$label" ;;
-      *) expect_output_has "$label" "$reason" ;;
-    esac
-    expect_exists "$label" outside-01
-  done <<'CASES'
-no-arguments||0|-
-phase-without-plan|01|0|-
-worktree-absent|01 01|0|-
-traversal-in-phase|../outside 01|1|invalid cleanup target
-non-digit-plan|01 ab|1|invalid cleanup target
-three-digit-phase|001 01|1|invalid cleanup target
-CASES
+cleanup_argument_row() {
+  local label="$1" expected_status="$2"
+  shift 2
+  plain_dir
+  mkdir -p outside-01
+  run bash "$SCRIPTS_DIR/worktree-cleanup.sh" "$@"
+  expect_status "$label" "$expected_status"
+  expect_exists "$label" outside-01
 }
 
-@test "worktree-cleanup removes the target directory and its empty parent but keeps unrelated files" {
-  local entry
-  while IFS='|' read -r label siblings parent; do
-    [ -n "$label" ] || continue
-    plain_dir
-    mkdir -p .lbwc-worktrees/01-01/.lbwc-planning
-    for entry in $siblings; do
-      case "$entry" in
-        */) mkdir -p ".lbwc-worktrees/$entry" ;;
-        *) touch ".lbwc-worktrees/$entry" ;;
-      esac
-    done
-
-    run bash "$SCRIPTS_DIR/worktree-cleanup.sh" 01 01
-
-    expect_status "$label" 0
-    expect_missing "$label" .lbwc-worktrees/01-01
-    for entry in $siblings; do
-      expect_exists "$label" ".lbwc-worktrees/$entry"
-    done
-    case "$parent" in
-      removed) expect_missing "$label" .lbwc-worktrees ;;
-      kept) expect_exists "$label" .lbwc-worktrees ;;
-    esac
-  done <<'CASES'
-residual-directory-and-empty-parent||removed
-sibling-ds-store|.DS_Store|kept
-sibling-hidden-files|.DS_Store .localized|kept
-sibling-worktree|02-01/|kept
-CASES
+cleanup_residual_row() {
+  local label="$1" parent="$2"
+  run bash "$SCRIPTS_DIR/worktree-cleanup.sh" 01 01
+  expect_status "$label" 0
+  expect_missing "$label" .lbwc-worktrees/01-01
+  case "$parent" in
+    removed) expect_missing "$label" .lbwc-worktrees ;;
+    kept) expect_exists "$label" .lbwc-worktrees ;;
+  esac
 }
 
-@test "worktree-cleanup deregisters the git worktree, deletes its branch, and clears only its agent maps" {
-  local maps=".lbwc-planning/.agent-worktrees" map
-  while IFS='|' read -r label lock; do
-    [ -n "$label" ] || continue
-    fresh_repo
-    git worktree add -q -b lbwc/01-01 .lbwc-worktrees/01-01 HEAD
-    [ "$lock" != "locked" ] || git worktree lock .lbwc-worktrees/01-01
-    mkdir -p "$maps"
-    echo "{\"worktree_path\":\"$PWD/.lbwc-worktrees/01-01\"}" > "$maps/lbwc-dev-01-01.json"
-    echo '{}' > "$maps/agent-01-01.json"
-    echo '{}' > "$maps/dev-01-01-01.json"
-    echo '{}' > "$maps/lbwc-dev-02-02.json"
+residual_layout() {
+  plain_dir
+  mkdir -p .lbwc-worktrees/01-01/.lbwc-planning
+}
 
-    run bash "$SCRIPTS_DIR/worktree-cleanup.sh" 01 01
+registered_layout() {
+  local maps=".lbwc-planning/.agent-worktrees"
+  fresh_repo
+  git worktree add -q -b lbwc/01-01 .lbwc-worktrees/01-01 HEAD
+  [ "$1" != "locked" ] || git worktree lock .lbwc-worktrees/01-01
+  mkdir -p "$maps"
+  echo "{\"worktree_path\":\"$PWD/.lbwc-worktrees/01-01\"}" > "$maps/lbwc-dev-01-01.json"
+  echo '{}' > "$maps/agent-01-01.json"
+  echo '{}' > "$maps/dev-01-01-01.json"
+  echo '{}' > "$maps/lbwc-dev-02-02.json"
+}
 
-    expect_status "$label" 0
-    expect_missing "$label" .lbwc-worktrees/01-01
-    expect_output_lacks "$label" "scan_only"
-    [ -z "$(git worktree list | grep 01-01)" ] || fail_case "$label" "git still lists the worktree"
-    [ -z "$(branch_listing)" ] || fail_case "$label" "branch lbwc/01-01 survived"
-    expect_no_match_under "$label" .git/worktrees 01-01
-    for map in lbwc-dev-01-01 agent-01-01 dev-01-01-01; do
-      expect_missing "$label" "$maps/$map.json"
-    done
-    expect_exists "$label" "$maps/lbwc-dev-02-02.json"
-    run git worktree add -b lbwc/01-01 .lbwc-worktrees/01-01 HEAD
-    expect_status "$label" 0
-  done <<'CASES'
-registered-worktree|unlocked
-locked-worktree|locked
-CASES
+cleanup_registered_row() {
+  local label="$1" maps=".lbwc-planning/.agent-worktrees"
+  run bash "$SCRIPTS_DIR/worktree-cleanup.sh" 01 01
+  expect_status "$label" 0
+  expect_missing "$label" .lbwc-worktrees/01-01
+  expect_output_lacks "$label" "scan_only"
+  [ -z "$(git worktree list | grep 01-01)" ] || fail_case "$label" "git still lists the worktree"
+  [ -z "$(branch_listing)" ] || fail_case "$label" "branch lbwc/01-01 survived"
+  expect_no_match_under "$label" .git/worktrees 01-01
+  expect_missing "$label" "$maps/lbwc-dev-01-01.json"
+  expect_missing "$label" "$maps/agent-01-01.json"
+  expect_missing "$label" "$maps/dev-01-01-01.json"
+  expect_exists "$label" "$maps/lbwc-dev-02-02.json"
+  run git worktree add -b lbwc/01-01 .lbwc-worktrees/01-01 HEAD
+  expect_status "$label" 0
+}
+
+@test "worktree-cleanup validates its arguments, removes the target and its empty parent but keeps unrelated files, and deregisters the git worktree, its branch and only its agent maps" {
+  cleanup_argument_row no-arguments 0
+  expect_output_empty no-arguments
+  cleanup_argument_row phase-without-plan 0 01
+  expect_output_empty phase-without-plan
+  cleanup_argument_row worktree-absent 0 01 01
+  expect_output_empty worktree-absent
+  cleanup_argument_row traversal-in-phase 1 ../outside 01
+  expect_output_has traversal-in-phase "invalid cleanup target"
+  cleanup_argument_row non-digit-plan 1 01 ab
+  expect_output_has non-digit-plan "invalid cleanup target"
+  cleanup_argument_row three-digit-phase 1 001 01
+  expect_output_has three-digit-phase "invalid cleanup target"
+
+  residual_layout
+  cleanup_residual_row residual-directory-and-empty-parent removed
+  residual_layout
+  touch .lbwc-worktrees/.DS_Store
+  cleanup_residual_row sibling-ds-store kept
+  expect_exists sibling-ds-store .lbwc-worktrees/.DS_Store
+  residual_layout
+  touch .lbwc-worktrees/.DS_Store .lbwc-worktrees/.localized
+  cleanup_residual_row sibling-hidden-files kept
+  expect_exists sibling-hidden-files .lbwc-worktrees/.DS_Store
+  expect_exists sibling-hidden-files .lbwc-worktrees/.localized
+  residual_layout
+  mkdir -p .lbwc-worktrees/02-01
+  cleanup_residual_row sibling-worktree kept
+  expect_exists sibling-worktree .lbwc-worktrees/02-01
+
+  registered_layout unlocked
+  cleanup_registered_row registered-worktree
+  registered_layout locked
+  cleanup_registered_row locked-worktree
 }

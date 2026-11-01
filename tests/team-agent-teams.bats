@@ -1,6 +1,8 @@
 #!/usr/bin/env bats
 
 load test_helper
+load gate_case_helper
+load rejection_case_helper
 
 ENABLED_MESSAGE='TEAM CHECK IS ENABLED. MOVE TO THE NEXT CHECK.'
 DISABLED_MESSAGE='TEAM CHECK IS NOT ENABLED.'
@@ -83,52 +85,53 @@ context_directive() {
   [ "$(jq -c . "$SETTINGS")" = "{}" ]
 }
 
-@test "agent teams check resolves the enablement layers to the right verdict" {
-  local label expected
-  while IFS='|' read -r label expected; do
-    [ -n "$label" ] || continue
-    seed_check_case "$label" || { echo "case=$label unknown" >&2; return 1; }
-    run env -u CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS CLAUDE_CONFIG_DIR="$TEST_ROOT/claude" \
-      bash "$SCRIPT" agent-teams-check "${CHECK_ARGS[@]}"
-    [ "$status" -eq 0 ] || { echo "case=$label status=$status output=$output" >&2; return 1; }
-    [ "$output" = "$expected" ] \
-      || { echo "case=$label expected=$expected actual=$output" >&2; return 1; }
-  done <<CASES
-omitted-flag|$DISABLED_MESSAGE
-user-settings|$ENABLED_MESSAGE
-project-settings|$ENABLED_MESSAGE
-explicit-pin-beats-project|$DISABLED_MESSAGE
-project-disable-beats-user|$DISABLED_MESSAGE
-local-settings-beats-shared-settings|$ENABLED_MESSAGE
-corrupt-sibling-skipped|$ENABLED_MESSAGE
-CASES
+check_row() {
+  local label="$1" expected="$2"
+  seed_check_case "$label" || record_case_failure "$label" "unknown seed case"
+  run env -u CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS CLAUDE_CONFIG_DIR="$TEST_ROOT/claude" \
+    bash "$SCRIPT" agent-teams-check "${CHECK_ARGS[@]}"
+  expect_case "$label" 0
+  [ "$output" = "$expected" ] || record_case_failure "$label" "expected=$expected actual=$output"
 }
 
-@test "agent teams check fails closed on a pinned corrupt settings file" {
+pinned_corrupt_check_row() {
+  local label="$1"
+  reset_settings
   printf '%s\n' 'not-json' > "$SETTINGS"
-
   run env -u CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS \
     bash "$SCRIPT" agent-teams-check --settings "$SETTINGS"
-
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"settings file is not valid JSON"* ]]
+  expect_rejected "$label" "settings file is not valid JSON"
 }
 
-@test "agent teams enable requires explicit approval" {
+@test "agent teams check resolves the enablement layers to the right verdict and fails closed on a pinned corrupt settings file" {
+  reset_case_failures
+
+  check_row omitted-flag "$DISABLED_MESSAGE"
+  check_row user-settings "$ENABLED_MESSAGE"
+  check_row project-settings "$ENABLED_MESSAGE"
+  check_row explicit-pin-beats-project "$DISABLED_MESSAGE"
+  check_row project-disable-beats-user "$DISABLED_MESSAGE"
+  check_row local-settings-beats-shared-settings "$ENABLED_MESSAGE"
+  check_row corrupt-sibling-skipped "$ENABLED_MESSAGE"
+  pinned_corrupt_check_row pinned-corrupt-settings
+
+  assert_no_case_failures
+}
+
+@test "agent teams enable refuses without explicit approval and, once approved, writes settings and prints restart guidance" {
+  reset_case_failures
+
   run bash "$SCRIPT" agent-teams-enable --settings "$SETTINGS"
+  expect_rejected unapproved "explicit approval"
+  jq -e 'has("env") | not' "$SETTINGS" >/dev/null \
+    || record_case_failure unapproved "settings gained an env block"
 
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"explicit approval"* ]]
-  jq -e 'has("env") | not' "$SETTINGS" >/dev/null
-}
-
-@test "approved agent teams enable writes settings and restart guidance is observable" {
   run bash "$SCRIPT" agent-teams-enable --settings "$SETTINGS" --approved
+  expect_case approved 0 "restart Claude Code"
+  jq -e '.env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS == "1"' "$SETTINGS" >/dev/null \
+    || record_case_failure approved "settings lack the agent teams flag"
 
-  [ "$status" -eq 0 ]
-  jq -e '.env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS == "1"' \
-    "$SETTINGS" >/dev/null
-  [[ "$output" == *"restart Claude Code"* ]]
+  assert_no_case_failures
 }
 
 @test "team context directive resolves roots and the team check without side effects" {

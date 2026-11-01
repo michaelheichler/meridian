@@ -52,28 +52,7 @@ expect_link_target() {
     || record_case_failure "$1" "link $ROOT_LINK points to [$(readlink "$ROOT_LINK" 2>/dev/null)] want=[$2]"
 }
 
-@test "resolve-plugin-root: prints the first valid root and links the session to it" {
-  make_plugin_root
-
-  run env CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" bash "$SCRIPTS_DIR/resolve-plugin-root.sh"
-  expect_case configured-root 0 ""
-  expect_output_is configured-root "$CANONICAL_ROOT"
-  [ -L "$ROOT_LINK" ] || record_case_failure configured-root "session link was not created"
-  expect_link_target configured-root "$CANONICAL_ROOT"
-
-  run env -u CLAUDE_PLUGIN_ROOT bash "$SCRIPTS_DIR/resolve-plugin-root.sh"
-  expect_case session-link-fallback 0 ""
-  expect_output_is session-link-fallback "$CANONICAL_ROOT"
-
-  touch "$PLUGIN_ROOT/scripts/other.sh"
-  run env CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" bash "$SCRIPTS_DIR/resolve-plugin-root.sh" --require-script other.sh
-  expect_case require-script-present 0 ""
-  expect_output_is require-script-present "$CANONICAL_ROOT"
-
-  assert_no_case_failures
-}
-
-@test "resolve-plugin-root: fails on a missing root, a missing script, bad arguments or a broken link" {
+@test "resolve-plugin-root fails on a missing root, script, argument or link and otherwise prints the first valid root and links the session to it" {
   local cache_root="$CLAUDE_CONFIG_DIR/plugins/cache/lbwc-marketplace/lbwc/local"
   mkdir -p "$cache_root/scripts"
   touch "$cache_root/scripts/hook-wrapper.sh"
@@ -106,10 +85,26 @@ expect_link_target() {
   run env PATH="$TEST_TEMP_DIR/bin:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" bash "$SCRIPTS_DIR/resolve-plugin-root.sh" --nonfatal
   expect_case nonfatal-link-failure 0 ""
 
+  rm -rf "$ROOT_LINK"
+  run env CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" bash "$SCRIPTS_DIR/resolve-plugin-root.sh"
+  expect_case configured-root 0 ""
+  expect_output_is configured-root "$CANONICAL_ROOT"
+  [ -L "$ROOT_LINK" ] || record_case_failure configured-root "session link was not created"
+  expect_link_target configured-root "$CANONICAL_ROOT"
+
+  run env -u CLAUDE_PLUGIN_ROOT bash "$SCRIPTS_DIR/resolve-plugin-root.sh"
+  expect_case session-link-fallback 0 ""
+  expect_output_is session-link-fallback "$CANONICAL_ROOT"
+
+  touch "$PLUGIN_ROOT/scripts/other.sh"
+  run env CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" bash "$SCRIPTS_DIR/resolve-plugin-root.sh" --require-script other.sh
+  expect_case require-script-present 0 ""
+  expect_output_is require-script-present "$CANONICAL_ROOT"
+
   assert_no_case_failures
 }
 
-@test "ensure-plugin-root-link: creates or repairs the session symlink to the requested directory" {
+@test "ensure-plugin-root-link creates or repairs the session symlink and fails on bad arguments, a foreign link name, a missing target or a link that cannot be made" {
   mkdir -p "$PLUGIN_ROOT" "$ROOT_LINK"
   touch "$ROOT_LINK/stale"
   run bash "$SCRIPTS_DIR/ensure-plugin-root-link.sh" "$ROOT_LINK" "$PLUGIN_ROOT"
@@ -135,12 +130,7 @@ expect_link_target() {
   expect_case racing-winner-already-linked-target 0 ""
   expect_link_target racing-winner-already-linked-target "$PLUGIN_ROOT"
 
-  assert_no_case_failures
-}
-
-@test "ensure-plugin-root-link: fails on bad arguments, a foreign link name, a missing target or a link that cannot be made" {
-  mkdir -p "$PLUGIN_ROOT"
-
+  rm -rf "$ROOT_LINK" "$TEST_TEMP_DIR/bin/ln"
   run bash "$SCRIPTS_DIR/ensure-plugin-root-link.sh"
   expect_case missing-arguments 1 "Usage: ensure-plugin-root-link.sh"
 

@@ -81,7 +81,7 @@ create_qa_remediation_fixture() {
   printf -- '---\nresult: PASS\nwriter: write-verification.sh\n---\n' > "$round_dir/R01-VERIFICATION.md"
 }
 
-@test "allow rows route a trusted passing verification to UAT without touching the tree" {
+@test "qa-result-gate exits 0 without touching the tree and routes trusted passes to UAT, failures to remediation, and untrusted or incomplete evidence to a QA rerun" {
   reset_case_failures
 
   new_phase
@@ -113,12 +113,6 @@ VERIF
   create_verif "write-verification.sh" "PASS"
   mv "$PHASE_DIR/01-VERIFICATION.md" "$PHASE_DIR/CUSTOM-VERIF.md"
   GATE_NAME_ARG="CUSTOM-VERIF.md" gate_row custom-verif-name PROCEED_TO_UAT
-
-  assert_no_case_failures
-}
-
-@test "deny rows send failing results to remediation with exit 0 and the normalized result" {
-  reset_case_failures
 
   new_phase
   create_verif "write-verification.sh" "PaRtIaL"
@@ -175,12 +169,6 @@ VERIF
   gate_row uat-round-without-source-verification REMEDIATION_REQUIRED \
     "qa_gate_scope=uat round=01" qa_gate_result=PASS qa_gate_source_verification_missing=true
 
-  assert_no_case_failures
-}
-
-@test "deny rows send untrusted or incomplete evidence to a QA rerun with exit 0" {
-  reset_case_failures
-
   new_phase
   cat > "$PHASE_DIR/01-VERIFICATION.md" <<'VERIF'
 ---
@@ -231,15 +219,13 @@ SUMMARY
   assert_no_case_failures
 }
 
-@test "flow-style invalid classification with a deviation terminates and routes to remediation" {
+check_flow_invalid_terminates() {
+  local label="$1"
   create_qa_remediation_fixture 'fail_classifications: [{id: F1, type: bogus}]'
-
   run timeout 10 bash "$SCRIPT" "$PHASE_DIR"
-
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"qa_gate_classifications_invalid=true"* ]]
-  [[ "$output" == *"qa_gate_routing=REMEDIATION_REQUIRED"* ]]
-  [[ "$output" != *"PROCEED_TO_UAT"* ]]
+  expect_case "$label" 0 "qa_gate_classifications_invalid=true"
+  expect_fragment "$label" "qa_gate_routing=REMEDIATION_REQUIRED"
+  [[ "$output" != *"PROCEED_TO_UAT"* ]] || record_case_failure "$label" "output still proceeds to UAT output=$output"
 }
 
 check_flow_block_parity() {
@@ -254,9 +240,11 @@ check_flow_block_parity() {
     || record_case_failure "$label" "flow output differs from block output flow=$flow_output block=$output"
 }
 
-@test "flow-style and block-style fail_classifications produce identical output" {
+@test "qa-result-gate terminates on a flow-style invalid classification with a deviation and gives flow-style and block-style fail_classifications identical output" {
   reset_case_failures
 
+  check_flow_invalid_terminates flow-invalid-with-deviation-terminates
+  new_phase
   check_flow_block_parity invalid-type 'fail_classifications: [{id: F1, type: bogus}]' \
     $'fail_classifications:\n  - id: F1\n    type: bogus'
   new_phase

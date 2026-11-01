@@ -49,7 +49,7 @@ write_checkpoint_uat() {
   assert_no_case_failures
 }
 
-@test "extract-uat-resume: picks the active UAT file and reports the first open checkpoint" {
+@test "extract-uat-resume picks the active UAT file, counts checkpoint results and reports the first open checkpoint" {
   fresh_phase round-dir
   write_stage "$UAT_STATE" verify 01 round-dir
   write_issues_uat "$PHASE_DIR/remediation/uat/round-01/R01-UAT.md"
@@ -104,10 +104,6 @@ write_checkpoint_uat() {
   run bash "$SCRIPTS/extract-uat-resume.sh"
   expect_case no-argument 1 "Usage: extract-uat-resume.sh"
 
-  assert_no_case_failures
-}
-
-@test "extract-uat-resume checkpoints: counts results and reports the first open one" {
   fresh_phase checkpoints
   UAT_FILE="$PHASE_DIR/01-UAT.md"
 
@@ -195,7 +191,7 @@ write_checkpoint_uat() {
   assert_no_case_failures
 }
 
-@test "prepare-reverification gates: refuses to advance until the UAT and stage allow it" {
+@test "prepare-reverification refuses to advance until the UAT and stage allow it, then archives a flat UAT into the next round file and keeps, archives or defers a round-dir UAT by round" {
   run bash "$SCRIPTS/prepare-reverification.sh"
   expect_case no-argument 1 "Usage: prepare-reverification.sh"
 
@@ -232,10 +228,6 @@ write_checkpoint_uat() {
   run bash "$SCRIPTS/prepare-reverification.sh" "$PHASE_DIR"
   expect_case stage-in-progress 1 "remediation stage is 'execute'"
 
-  assert_no_case_failures
-}
-
-@test "prepare-reverification flat UAT: archives it into the next round file" {
   fresh_phase flat-done
   write_issues_uat "$PHASE_DIR/01-UAT.md"
   write_stage "$PHASE_DIR/.uat-remediation-stage" done 01 legacy
@@ -275,10 +267,6 @@ write_checkpoint_uat() {
   expect_output_has flat-cap-reached "cap_reached=true"
   expect_path flat-cap-reached "$PHASE_DIR/01-UAT.md"
 
-  assert_no_case_failures
-}
-
-@test "prepare-reverification round-dir UAT: keeps, archives or defers by round" {
   fresh_phase round-current-archives
   write_issues_uat "$PHASE_DIR/remediation/uat/round-01/R01-UAT.md"
   write_stage "$UAT_STATE" verify 01 round-dir
@@ -408,7 +396,7 @@ write_todo_state() {
   printf '%s\n' "$@" > "$STATE_FILE"
 }
 
-@test "track-uat-deviations todo-from-uat: files an accepted deviation into STATE.md once" {
+@test "track-uat-deviations todo-from-uat files an accepted deviation into STATE.md once and skips what is not an accepted, complete, persistable deviation" {
   fresh_phase todo-flat
   write_deviation_uat
   write_todo_state '# State' '## Todos' 'None.' '## Notes' 'keep me'
@@ -460,10 +448,6 @@ write_todo_state() {
   expect_case todo-long-text 0 "todo_status=added"
   expect_output_has todo-long-text "... (phase 01"
 
-  assert_no_case_failures
-}
-
-@test "track-uat-deviations todo-from-uat gates: skips what is not an accepted, complete, persistable deviation" {
   fresh_phase gate-not-accepted
   write_deviation_uat
   write_todo_state '# State' '## Todos' 'None.'

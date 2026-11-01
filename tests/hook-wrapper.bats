@@ -28,7 +28,7 @@ expect_output_is() {
   [ "$output" = "$2" ] || record_case_failure "$1" "output=[$output] want=[$2]"
 }
 
-@test "hook-wrapper: runs the resolved target with its input and arguments and passes success through silently" {
+@test "hook-wrapper resolves and runs its target, fails with exit 2 when none resolves, and downgrades target failures except exit 2" {
   local input='{"tool_input":{"command":"git status"}}'
   run env CLAUDE_PLUGIN_ROOT="$PROJECT_ROOT" bash "$SCRIPTS_DIR/hook-wrapper.sh" validate-commit.sh <<< "$input"
   expect_case real-target-with-stdin 0 ""
@@ -61,10 +61,6 @@ expect_output_is() {
   expect_case own-directory-fallback 0 ""
   expect_output_is own-directory-fallback "from-own-directory"
 
-  assert_no_case_failures
-}
-
-@test "hook-wrapper: exits 2 with an explicit resolution error when no target can be found" {
   run bash "$SCRIPTS_DIR/hook-wrapper.sh"
   expect_case omitted-target 2 "hook target resolution failed"
 
@@ -75,10 +71,6 @@ expect_output_is() {
   run_wrapper no-such-hook.sh
   expect_case missing-target-under-root 2 "unable to locate 'no-such-hook.sh'"
 
-  assert_no_case_failures
-}
-
-@test "hook-wrapper: keeps a blocking exit 2 and turns any other target failure into a warning exit 1" {
   run_wrapper stub-2.sh
   expect_case blocking-exit-2 2 ""
   expect_output_is blocking-exit-2 "policy says no"

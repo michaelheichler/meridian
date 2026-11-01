@@ -138,7 +138,7 @@ expect_digest_is() {
   [ "$actual" = "$2" ] || record_case_failure "$1" "registry bytes changed, before=$2 after=$actual"
 }
 
-@test "track-known-issues sync-summaries: builds an idempotent registry and keeps a suppression" {
+@test "track-known-issues sync-summaries builds an idempotent registry that keeps a suppression, and sync-verification counts a repeat, resolves on PASS and tolerates a missing file" {
   write_summary
   run bash "$SCRIPT" sync-summaries "$PHASE_DIR"
   expect_case first-sync 0 "known_issues_status=present"
@@ -161,10 +161,6 @@ expect_digest_is() {
   expect_entry_is suppression-survives-resync TransferTests .suppressed.via "\"$SUPPRESS_VIA\""
   expect_entry_is suppression-survives-resync TransferTests .times_seen 1
 
-  assert_no_case_failures
-}
-
-@test "track-known-issues sync-verification: counts a repeated issue again, resolves on PASS and tolerates a missing file" {
   seed_registry
   suppress_transfer
   write_verification FAIL
@@ -292,24 +288,52 @@ expect_digest_is() {
   assert_no_case_failures
 }
 
-@test "track-known-issues lookup-signature and suppress: answer ok with the registry entry and mark only the match" {
-  local label command payload filter expected phys_dir
+answer_row() {
+  local label="$1" command="$2" payload="$3" filter="$4" expected="$5"
+  seed_registry
+  run_with_stdin "$(payload_named "$payload")" "$SCRIPT" "$command" "$PHASE_DIR"
+  expect_status "$label" 0
+  expect_json_is "$label" "$filter" "$expected"
+}
+
+coded_error_row() {
+  local label="$1" command="$2" registry="$3" payload="$4" code="$5" before
+  prepare_registry "$registry"
+  before="$(registry_digest)"
+  run_with_stdin "$(payload_named "$payload")" "$SCRIPT" "$command" "$PHASE_DIR"
+  expect_status "$label" 0
+  expect_json_is "$label" '.status + ":" + .code' "error:$code"
+  expect_json_is "$label" '(.message | length) > 0' true
+  expect_digest_is "$label" "$before"
+}
+
+@test "track-known-issues lookup-signature and suppress answer ok with the registry entry and mark only the match, or report a coded error and leave the registry untouched" {
+  local phys_dir
   phys_dir="$(cd "$PHASE_DIR" && pwd -P)"
-  while IFS='~' read -r label command payload filter expected; do
-    [ -n "$label" ] || continue
-    seed_registry
-    run_with_stdin "$(payload_named "$payload")" "$SCRIPT" "$command" "$PHASE_DIR"
-    expect_status "$label" 0
-    expect_json_is "$label" "$filter" "${expected//@DIR@/$phys_dir}"
-  done <<'CASES'
-lookup-status~lookup-signature~transfer~.status~ok
-lookup-phase-from-registry-entry~lookup-signature~transfer~.signature.phase~07
-lookup-phase-dir-is-absolute~lookup-signature~transfer~.signature.phase_dir~@DIR@
-lookup-echoes-issue-identity~lookup-signature~transfer~.signature | [.test, .file, .error] | join(",")~TransferTests,tests/transfer.sh,timeout
-lookup-signature-keys~lookup-signature~transfer~.signature | keys | join(",")~disposition,error,file,phase,phase_dir,source_kind,source_path,test
-suppress-reports-suppressed~suppress~transfer-via~.action~suppressed
-suppress-returns-12-hex-signature~suppress~transfer-via~(.signature | test("^[0-9a-f]{12}$"))~true
-CASES
+
+  answer_row lookup-status lookup-signature transfer .status ok
+  answer_row lookup-phase-from-registry-entry lookup-signature transfer .signature.phase 07
+  answer_row lookup-phase-dir-is-absolute lookup-signature transfer .signature.phase_dir "$phys_dir"
+  answer_row lookup-echoes-issue-identity lookup-signature transfer '.signature | [.test, .file, .error] | join(",")' TransferTests,tests/transfer.sh,timeout
+  answer_row lookup-signature-keys lookup-signature transfer '.signature | keys | join(",")' disposition,error,file,phase,phase_dir,source_kind,source_path,test
+  answer_row suppress-reports-suppressed suppress transfer-via .action suppressed
+  answer_row suppress-returns-12-hex-signature suppress transfer-via '(.signature | test("^[0-9a-f]{12}$"))' true
+
+  coded_error_row lookup-issue-not-found lookup-signature seeded unknown suppression_issue_not_found
+  coded_error_row suppress-issue-not-found suppress seeded unknown-via suppression_issue_not_found
+  coded_error_row lookup-registry-missing lookup-signature missing transfer suppression_registry_unavailable
+  coded_error_row lookup-registry-malformed lookup-signature malformed transfer suppression_registry_unavailable
+  coded_error_row suppress-registry-missing suppress missing transfer-via suppression_registry_unavailable
+  coded_error_row suppress-registry-malformed suppress malformed transfer-via suppression_registry_unavailable
+  coded_error_row lookup-test-absent lookup-signature seeded no-test suppression_missing_signature
+  coded_error_row lookup-file-absent lookup-signature seeded no-file suppression_missing_signature
+  coded_error_row lookup-error-absent lookup-signature seeded no-error suppression_missing_signature
+  coded_error_row lookup-test-not-a-string lookup-signature seeded number-test suppression_missing_signature
+  coded_error_row lookup-file-not-a-string lookup-signature seeded number-file suppression_missing_signature
+  coded_error_row lookup-error-not-a-string lookup-signature seeded number-error suppression_missing_signature
+  coded_error_row lookup-payload-not-an-object lookup-signature seeded array suppression_missing_signature
+  coded_error_row suppress-test-absent suppress seeded no-test suppression_missing_signature
+  coded_error_row suppress-error-not-a-string suppress seeded number-error suppression_missing_signature
 
   seed_registry
   local other_before target_before
@@ -330,37 +354,6 @@ CASES
   expect_entry_is repeat-keeps-first-via TransferTests .suppressed.via "\"$SUPPRESS_VIA\""
   expect_digest_is repeat-bytes "$digest_after_first"
 
-  assert_no_case_failures
-}
-
-@test "track-known-issues lookup-signature and suppress: report a coded error and leave the registry untouched" {
-  local label command registry payload code before
-  while IFS='~' read -r label command registry payload code; do
-    [ -n "$label" ] || continue
-    prepare_registry "$registry"
-    before="$(registry_digest)"
-    run_with_stdin "$(payload_named "$payload")" "$SCRIPT" "$command" "$PHASE_DIR"
-    expect_status "$label" 0
-    expect_json_is "$label" '.status + ":" + .code' "error:$code"
-    expect_json_is "$label" '(.message | length) > 0' true
-    expect_digest_is "$label" "$before"
-  done <<'CASES'
-lookup-issue-not-found~lookup-signature~seeded~unknown~suppression_issue_not_found
-suppress-issue-not-found~suppress~seeded~unknown-via~suppression_issue_not_found
-lookup-registry-missing~lookup-signature~missing~transfer~suppression_registry_unavailable
-lookup-registry-malformed~lookup-signature~malformed~transfer~suppression_registry_unavailable
-suppress-registry-missing~suppress~missing~transfer-via~suppression_registry_unavailable
-suppress-registry-malformed~suppress~malformed~transfer-via~suppression_registry_unavailable
-lookup-test-absent~lookup-signature~seeded~no-test~suppression_missing_signature
-lookup-file-absent~lookup-signature~seeded~no-file~suppression_missing_signature
-lookup-error-absent~lookup-signature~seeded~no-error~suppression_missing_signature
-lookup-test-not-a-string~lookup-signature~seeded~number-test~suppression_missing_signature
-lookup-file-not-a-string~lookup-signature~seeded~number-file~suppression_missing_signature
-lookup-error-not-a-string~lookup-signature~seeded~number-error~suppression_missing_signature
-lookup-payload-not-an-object~lookup-signature~seeded~array~suppression_missing_signature
-suppress-test-absent~suppress~seeded~no-test~suppression_missing_signature
-suppress-error-not-a-string~suppress~seeded~number-error~suppression_missing_signature
-CASES
   assert_no_case_failures
 }
 

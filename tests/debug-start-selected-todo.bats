@@ -92,7 +92,8 @@ expect_pending() {
 }
 
 expect_not_pending() {
-  ! pending_todos_contain "$2" "${3:-}" || record_case_failure "$1" "pending todos still hold [$2]"
+  pending_todos_contain "$2" "${3:-}" && record_case_failure "$1" "pending todos still hold [$2]"
+  return 0
 }
 
 instrument_list_todos() {
@@ -107,8 +108,8 @@ instrument_list_todos() {
   chmod +x "$instrumented/list-todos.sh"
 }
 
-@test "debug-start-selected-todo starts a session for the selected todo and cleans the pending list" {
-  local session_file other_root target_planning other_planning
+@test "debug-start-selected-todo starts a session for the selected todo, cleans the pending list, and repairs todos a completed session already solved" {
+  local session_file other_root target_planning other_planning count_file
 
   reset_world
   write_state
@@ -193,12 +194,6 @@ instrument_list_todos() {
   expect_not_pending "other-cwd-target-todo-removed" 'Target-only bug' "$target_planning/STATE.md"
   expect_pending "other-cwd-other-todo-kept" 'Other repo bug' "$other_planning/STATE.md"
   expect_file_line "other-cwd-other-repo-untouched" "$other_planning/STATE.md" 'Other repo bug'
-
-  assert_no_case_failures
-}
-
-@test "debug-start-selected-todo repairs stale pending todos that a completed session already solved" {
-  local count_file
 
   reset_world
   write_todos_state '- Already completed bug (added 2026-04-04) (ref:f78562c0)'

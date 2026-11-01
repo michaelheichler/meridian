@@ -1,6 +1,19 @@
 #!/usr/bin/env bats
 
 load test_helper
+load gate_case_helper
+
+setup() {
+  setup_temp_dir
+  mkdir -p "$TEST_TEMP_DIR/map-steps/.lbwc-planning"
+  MAP_PROJECT=$(cd -P "$TEST_TEMP_DIR/map-steps" && pwd -P)
+  git -C "$MAP_PROJECT" init -q
+  reset_case_failures
+}
+
+teardown() {
+  teardown_temp_dir
+}
 
 generate_map_scout_workflow() {
   local domain="$1" project control_root contract task_id agen_out name wgen_out
@@ -27,11 +40,47 @@ generate_map_scout_workflow() {
   printf '%s\n' "$wgen_out"
 }
 
-@test "map command's read-only workflow Scout contract issues, generates, and registers end to end" {
-  setup_temp_dir
+map_step_block() {
+  local block
+  block=$(awk -v heading="$1" 'index($0, heading) == 1 { found = 1; next }
+    found && /^```bash$/ { inside = 1; next }
+    inside && /^```$/ { exit }
+    inside { print }' "$PROJECT_ROOT/commands/map.md")
+  printf '%s\n' "${block//\{plugin-root\}/$PROJECT_ROOT}"
+}
+
+map_step_row() {
+  local label="$1" heading="$2" want_status="$3" fragment="$4" block
+  shift 4
+  block=$(map_step_block "$heading")
+  [ -n "$block" ] || record_case_failure "$label" "commands/map.md has no bash block under [$heading]"
+  run env "$@" bash -c "cd \"$MAP_PROJECT\" && $block"
+  expect_case "$label" "$want_status" "$fragment"
+}
+
+prefer_teams_never() {
+  bash "$SCRIPTS_DIR/lbwc-config.sh" init "$MAP_PROJECT/.lbwc-planning" >/dev/null
+  bash "$SCRIPTS_DIR/lbwc-config.sh" set "$MAP_PROJECT/.lbwc-planning" prefer_teams '"never"' >/dev/null
+}
+
+workflow_scout_row() {
+  local label="$1"
   run generate_map_scout_workflow "tech-and-architecture"
-  teardown_temp_dir
-  [ "$status" -eq 0 ]
-  [[ "$output" == *'WORKFLOW_READY'* ]]
-  [[ "$output" == *'scriptPath'* ]] || [[ "$output" == *'path:'* ]]
+  expect_case "$label" 0 "WORKFLOW_READY"
+  [[ "$output" == *'scriptPath'* ]] || [[ "$output" == *'path:'* ]] \
+    || record_case_failure "$label" "workflow output names no script path output=$output"
+}
+
+@test "map command steps run the shared tier helper and its read-only workflow Scout contract issues, generates, and registers end to end" {
+  workflow_scout_row read-only-workflow-scout
+
+  map_step_row step-1-forced-incremental '### Step 1. ' 0 "mode=incremental" FORCED_MODE=incremental
+  map_step_row step-1-unmapped-project-is-full '### Step 1. ' 0 "mode=full" FORCED_MODE=
+  map_step_row step-1-5-large-count-selects-quad '### Step 1.5. ' 0 "tier=quad" SOURCE_FILE_COUNT=1500 FORCED_TIER=
+  map_step_row step-1-5-forced-tier-wins '### Step 1.5. ' 0 "tier=duo" SOURCE_FILE_COUNT=50 FORCED_TIER=duo
+  map_step_row step-1-5-rejects-a-non-numeric-count '### Step 1.5. ' 1 "file count is not a whole number" SOURCE_FILE_COUNT=many FORCED_TIER=
+  prefer_teams_never
+  map_step_row step-1-5-prefer-teams-never-forces-solo-over-tier '### Step 1.5. ' 0 "tier=solo" SOURCE_FILE_COUNT=1500 FORCED_TIER=quad
+
+  assert_no_case_failures
 }

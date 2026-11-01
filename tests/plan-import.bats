@@ -146,7 +146,7 @@ digest_of() {
   assert_no_case_failures
 }
 
-@test "plan-import stage: builds a validated tree and leaves canonical files alone" {
+@test "plan-import stage builds a validated tree, leaves canonical files alone, and fails closed on an invalid adapter output" {
   local before
 
   fresh_project canonical-kept
@@ -187,10 +187,6 @@ digest_of() {
     (.conflicts[0].source_digest | test("^[0-9a-f]{64}$")) and
     (.conflicts[0].destination_digest | test("^[0-9a-f]{64}$"))'
 
-  assert_no_case_failures
-}
-
-@test "plan-import stage reject: fails closed on an invalid adapter output" {
   fresh_project bad-adapter
   mkdir -p "$TEST_TEMP_DIR/not-gsd"
   run bash "$SCRIPT" stage --adapter gsd --source "$TEST_TEMP_DIR/not-gsd" --project-root "$PROJECT" --import-id bad-import
@@ -220,8 +216,8 @@ digest_of() {
   assert_no_case_failures
 }
 
-@test "plan-import promote: writes template-valid artifacts, config and provenance" {
-  local promoted
+@test "plan-import promote writes template-valid artifacts, config and provenance, refuses unsafe artifacts and drifted sources, and restores every destination when promotion fails" {
+  local promoted before_project before_state
 
   fresh_project promote-full
   stage_gsd full-import
@@ -254,10 +250,6 @@ digest_of() {
   run bash -c 'cd "$1" && LBWC_PLANNING_DIR="$2" bash "$3"' _ "$PROJECT" "$promoted" "$SCRIPTS_DIR/verify-state-consistency.sh"
   expect_case state-consistency 0 "state_consistency=ok"
 
-  assert_no_case_failures
-}
-
-@test "plan-import promote reject: refuses unsafe artifacts and drifted sources" {
   fresh_project guard-artifacts
   stage_gsd guard-import
   run bash "$SCRIPT" promote --project-root "$PROJECT" --stage "$STAGE"
@@ -279,12 +271,6 @@ digest_of() {
   expect_case source-drift 1 "source changed after staging"
   expect_no_path source-drift "$PLANNING/PROJECT.md"
   expect_no_path source-drift "$PLANNING/imports/drift-import/manifest.json"
-
-  assert_no_case_failures
-}
-
-@test "plan-import promote rollback: restores every destination when promotion fails" {
-  local before_project before_state
 
   fresh_project fail-after-one
   mkdir -p "$PLANNING"
