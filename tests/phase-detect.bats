@@ -215,6 +215,11 @@ sc_source_uat() {
       pd_done 02-executed
       pd_uat "$PD_PHASES/02-executed/02-UAT.md" issues_found critical 02
       ;;
+    higher_numbered_beside_real)
+      pd_done 01-remediate-test
+      pd_uat "$PD_PHASES/01-remediate-test/01-UAT.md" passed - 01
+      pd_uat "$PD_PHASES/01-remediate-test/02-SOURCE-UAT.md" issues_found major 01
+      ;;
     unplanned_neighbour)
       mkdir -p "$PD_PHASES/01-remediate-unresolved"
       touch "$PD_PHASES/01-remediate-unresolved/01-CONTEXT.md"
@@ -264,6 +269,14 @@ sc_active_round_uat() {
       ;;
   esac
   [ -z "$later" ] || mkdir -p "$PD_PHASES/$later"
+}
+
+sc_active_round_over_issues() {
+  local dir="$PD_PHASES/01-test/remediation"
+  pd_done 01-test
+  pd_uat_issue "$dir/round-02/R02-UAT.md" 01 issues_found "stale legacy round" major
+  pd_md "$dir/.uat-remediation-stage" 'stage=verify' 'round=02'
+  pd_md "$dir/uat/round-02/R02-UAT.md" '---' 'phase: 01' 'status: in_progress' '---' 'UAT is still running.'
 }
 
 sc_shipped_with_uat() {
@@ -330,6 +343,14 @@ sc_milestone_extract() {
       pd_md "$dir/setup-api/03-UAT.md" '---' 'phase: 03' 'status: issues_found' 'issues: 1' '---' '' '## Tests' '' \
         '### P03-T1: recovered number' '' '- **Result:** issue' '- **Issue:**' \
         '  - Description: non-canonical dir still reports phase 03' '  - Severity: major'
+      ;;
+    source_uat_only_name)
+      mkdir -p "$dir/setup-api"
+      pd_md "$dir/setup-api/PLAN.md" '---' 'plan: legacy' 'title: Setup' '---'
+      pd_summary "$dir/setup-api/SUMMARY.md"
+      pd_md "$dir/setup-api/old-SOURCE-UAT.md" '---' 'phase: 03' 'status: issues_found' 'issues: 1' '---'
+      pd_md "$dir/setup-api/remediation/uat/.uat-remediation-stage" stage=verify round=01 layout=round-dir
+      pd_uat_issue "$dir/setup-api/remediation/uat/round-01/R01-UAT.md" "" issues_found "no phase header" major
       ;;
     noncanonical_rounds | noncanonical_round_one)
       mkdir -p "$dir/setup-api/remediation/uat/round-01"
@@ -431,6 +452,7 @@ single-phase-listed#sc_uat_phase_list single#uat_issues_phase=01~uat_issues_phas
 no-issues-listed-empty#sc_uat_phase_list none#uat_issues_phase=none~uat_issues_phases=~uat_issues_count=0
 source-uat-not-a-report#sc_source_uat active_scan#uat_issues_phase=none~next_phase_state=all_done
 source-uat-skipped-for-later-real-uat#sc_source_uat later_real_uat#uat_issues_phase=02~next_phase_state=needs_uat_remediation
+higher-numbered-source-uat-does-not-replace-real-uat#sc_source_uat higher_numbered_beside_real#uat_issues_phase=none~next_phase_state=all_done
 source-uat-does-not-block-unplanned#sc_source_uat unplanned_neighbour#uat_issues_phase=none~next_phase=01~next_phase_state=needs_plan_and_execute
 all-pass-status-counts-as-verified#sc_auto_uat all_pass#has_unverified_phases=false~next_phase_state=all_done~qa_status=none
 passed-status-counts-as-verified#sc_auto_uat passed#has_unverified_phases=false
@@ -444,6 +466,7 @@ progress-checkpoints#sc_active_round_uat 01-test progress#next_phase=01~next_pha
 missing-status#sc_active_round_uat 01-test nostatus#next_phase=01~next_phase_slug=01-test~next_phase_state=needs_verification~uat_blocking_phase=01~uat_blocking_status=active~uat_blocking_file=remediation/uat/round-06/R06-UAT.md~!next_phase_state=all_done
 boundary-phase-08#sc_active_round_uat 08-active-uat running 09-next#next_phase=08~next_phase_slug=08-active-uat~next_phase_state=needs_verification~uat_blocking_phase=08~uat_blocking_status=active~uat_blocking_file=remediation/uat/round-06/R06-UAT.md~!next_phase=09
 boundary-phase-09#sc_active_round_uat 09-active-uat running 10-next#next_phase=09~next_phase_slug=09-active-uat~next_phase_state=needs_verification~uat_blocking_phase=09~uat_blocking_status=active~uat_blocking_file=remediation/uat/round-06/R06-UAT.md~!next_phase=10
+active-round-over-issues-found-uat#sc_active_round_over_issues#next_phase=01~next_phase_state=needs_verification~!next_phase_state=needs_reverification~!next_phase_state=needs_uat_remediation
 CASES
 }
 
@@ -465,6 +488,7 @@ zero-issue-matches-standalone-extractor#sc_milestone_extract zero_issue#%.lbwc-p
 recurrence-matches-standalone-extractor#sc_milestone_extract recurrence#%.lbwc-planning/milestones/m01-test/phases/03-feature
 noncanonical-dir-uses-resolved-number#sc_milestone_extract noncanonical_dir#milestone_uat_issues=true~milestone_phase_dir=.lbwc-planning/milestones/m01-test/phases/setup-api~uat_phase=03 uat_issues_total=1 uat_round=1 uat_file=03-UAT.md
 noncanonical-round-dir-resolves-latest-round#sc_milestone_extract noncanonical_rounds#milestone_uat_issues=true~milestone_phase_dir=.lbwc-planning/milestones/m01-test/phases/setup-api~uat_phase=03 uat_issues_total=1 uat_round=2 uat_file=R02-UAT.md~P03-T2|major|broke again|1,2
+source-uat-name-cannot-supply-phase-number#sc_milestone_extract source_uat_only_name#milestone_uat_issues=false
 noncanonical-round-one-parity#sc_milestone_extract noncanonical_round_one#milestone_uat_issues=true~uat_phase=03 uat_issues_total=1 uat_round=1 uat_file=R01-UAT.md~P03-T2|major|broke first time|1
 CASES
 }
