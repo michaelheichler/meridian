@@ -99,64 +99,51 @@ date_val=$(date -u +%Y-%m-%d)
 
 verified_at_commit=$(git log -1 --format='%H' -- . ':!.lbwc-planning' ':!CLAUDE.md' 2>/dev/null || echo "")
 
-has_checks_detail="false"
-detail_type=$(echo "$payload" | jq -r '.checks_detail | type // "null"' 2>/dev/null)
-if [[ "$detail_type" == "array" ]]; then
-  detail_len=$(echo "$payload" | jq -r '.checks_detail | length')
-  if [[ "$detail_len" -gt 0 ]]; then
-    has_checks_detail="true"
-  fi
-elif [[ "$detail_type" != "null" && "$detail_type" != "" ]]; then
+detail_type=$(echo "$payload" | jq -r '.checks_detail | type')
+if [[ "$detail_type" != "array" && "$detail_type" != "null" ]]; then
   echo "Error: checks_detail must be an array, got $detail_type" >&2
   exit 1
 fi
 
-if [[ "$has_checks_detail" == "false" && ("$result" == "PASS" || "$result" == "PARTIAL") ]]; then
-  echo "Error: checks_detail is required when result is PASS or PARTIAL (cannot validate without detail)" >&2
+if [[ "$(echo "$payload" | jq -r '(.checks_detail // []) | length')" -eq 0 ]]; then
+  echo "Error: checks_detail is required and must be non-empty (cannot validate without detail)" >&2
   exit 1
 fi
 
-if [[ "$has_checks_detail" == "true" ]]; then
-  invalid_entries=$(echo "$payload" | jq '[.checks_detail[] | select(
-    (.id | type != "string") or
-    (.status | type != "string") or
-    ((.id | gsub("^\\s+|\\s+$"; "")) == "") or
-    ((.status | gsub("^\\s+|\\s+$"; "")) as $s | ($s == "" or (["PASS","FAIL","WARN"] | index($s) == null)))
-  )] | length')
-  if [[ "$invalid_entries" -gt 0 ]]; then
-    echo "Error: checks_detail entries must have id and status fields (status must be PASS|FAIL|WARN)" >&2
-    exit 1
-  fi
-  payload=$(echo "$payload" | jq '
-    .checks_detail |= [.[]
-      | (if (.id | type) == "string" then .id |= gsub("^\\s+|\\s+$"; "") else . end)
-      | (if (.status | type) == "string" then .status |= gsub("^\\s+|\\s+$"; "") else . end)
-      | with_entries(
-          if ((.value | type) == "string" and .value == "") then .value = null else . end
-        )
-    ]
-  ')
+invalid_entries=$(echo "$payload" | jq '[.checks_detail[] | select(
+  (.id | type != "string") or
+  (.status | type != "string") or
+  ((.id | gsub("^\\s+|\\s+$"; "")) == "") or
+  ((.status | gsub("^\\s+|\\s+$"; "")) as $s | ($s == "" or (["PASS","FAIL","WARN"] | index($s) == null)))
+)] | length')
+if [[ "$invalid_entries" -gt 0 ]]; then
+  echo "Error: checks_detail entries must have id and status fields (status must be PASS|FAIL|WARN)" >&2
+  exit 1
+fi
+payload=$(echo "$payload" | jq '
+  .checks_detail |= [.[]
+    | (if (.id | type) == "string" then .id |= gsub("^\\s+|\\s+$"; "") else . end)
+    | (if (.status | type) == "string" then .status |= gsub("^\\s+|\\s+$"; "") else . end)
+    | with_entries(
+        if ((.value | type) == "string" and .value == "") then .value = null else . end
+      )
+  ]
+')
 
-    detail_passed=$(echo "$payload" | jq -r '[.checks_detail[] | select(.status == "PASS")] | length')
-    detail_failed=$(echo "$payload" | jq -r '[.checks_detail[] | select(.status == "FAIL")] | length')
-    detail_total=$(echo "$payload" | jq -r '.checks_detail | length')
-    if [[ "$checks_passed" != "$detail_passed" || "$checks_failed" != "$detail_failed" || "$checks_total" != "$detail_total" ]]; then
-      echo "Error: checks counters must match checks_detail statuses/counts (checks.passed=${checks_passed}, checks.failed=${checks_failed}, checks.total=${checks_total}; detail PASS=${detail_passed}, FAIL=${detail_failed}, TOTAL=${detail_total})" >&2
-      exit 1
-    fi
+detail_passed=$(echo "$payload" | jq -r '[.checks_detail[] | select(.status == "PASS")] | length')
+detail_failed=$(echo "$payload" | jq -r '[.checks_detail[] | select(.status == "FAIL")] | length')
+detail_total=$(echo "$payload" | jq -r '.checks_detail | length')
+if [[ "$checks_passed" != "$detail_passed" || "$checks_failed" != "$detail_failed" || "$checks_total" != "$detail_total" ]]; then
+  echo "Error: checks counters must match checks_detail statuses/counts (checks.passed=${checks_passed}, checks.failed=${checks_failed}, checks.total=${checks_total}; detail PASS=${detail_passed}, FAIL=${detail_failed}, TOTAL=${detail_total})" >&2
+  exit 1
+fi
 
-    if [[ "$detail_failed" -gt 0 && "$result" == "PASS" ]]; then
-      echo "Warning: result auto-corrected from PASS to PARTIAL (${detail_failed} FAIL check(s) found in checks_detail)" >&2
-      result="PARTIAL"
-    fi
+if [[ "$detail_failed" -gt 0 && "$result" == "PASS" ]]; then
+  echo "Warning: result auto-corrected from PASS to PARTIAL (${detail_failed} FAIL check(s) found in checks_detail)" >&2
+  result="PARTIAL"
 fi
 
 if [[ "$result" == "FAIL" ]]; then
-  if [[ "$has_checks_detail" != "true" ]]; then
-    echo "Error: FAIL result requires non-empty checks_detail with at least one FAIL check." >&2
-    exit 1
-  fi
-
   if [[ "$detail_failed" -eq 0 ]]; then
     echo "Error: FAIL result requires at least one FAIL check in checks_detail." >&2
     exit 1
@@ -304,40 +291,38 @@ if [[ "$plan_count" -gt 0 ]]; then
     fi
   done
 
-  if [[ "$has_checks_detail" == "true" ]]; then
-    missing_plan_refs=$(echo "$payload" | jq '[.checks_detail[] | select((.plan_ref | type?) != "string" or .plan_ref == "")] | length')
-    if [[ "$missing_plan_refs" -gt 0 ]]; then
-      echo "Error: every checks_detail entry must include a non-empty plan_ref when PLAN.md files exist." >&2
+  missing_plan_refs=$(echo "$payload" | jq '[.checks_detail[] | select((.plan_ref | type?) != "string" or .plan_ref == "")] | length')
+  if [[ "$missing_plan_refs" -gt 0 ]]; then
+    echo "Error: every checks_detail entry must include a non-empty plan_ref when PLAN.md files exist." >&2
+    exit 1
+  fi
+
+  while IFS= read -r plan_ref; do
+    if ! is_canonical_identifier "$plan_ref"; then
+      echo "Error: plan_ref '$plan_ref' is not a canonical plan ID." >&2
       exit 1
     fi
-
-    while IFS= read -r plan_ref; do
-      if ! is_canonical_identifier "$plan_ref"; then
-        echo "Error: plan_ref '$plan_ref' is not a canonical plan ID." >&2
-        exit 1
-      fi
-      matched_plan="false"
-      for discovered_plan_id in "${plan_ids[@]}"; do
-        if [[ "$plan_ref" == "$discovered_plan_id" ]]; then
-          matched_plan="true"
-          break
-        fi
-      done
-      if [[ "$matched_plan" != "true" ]]; then
-        echo "Error: plan_ref '$plan_ref' does not match a discovered canonical plan ID." >&2
-        exit 1
-      fi
-    done < <(echo "$payload" | jq -r '.checks_detail[].plan_ref')
-
-    for plan_id in "${verified_plan_ids[@]}"; do
-      ref_count=$(echo "$payload" | jq --arg pid "$plan_id" \
-        '[.checks_detail[] | select(.plan_ref == $pid)] | length')
-      if [[ "$ref_count" -eq 0 ]]; then
-        echo "Error: plan '$plan_id' is in plans_verified but no check in checks_detail has plan_ref='${plan_id}'. Every verified plan must have at least one check referencing it." >&2
-        exit 1
+    matched_plan="false"
+    for discovered_plan_id in "${plan_ids[@]}"; do
+      if [[ "$plan_ref" == "$discovered_plan_id" ]]; then
+        matched_plan="true"
+        break
       fi
     done
-  fi
+    if [[ "$matched_plan" != "true" ]]; then
+      echo "Error: plan_ref '$plan_ref' does not match a discovered canonical plan ID." >&2
+      exit 1
+    fi
+  done < <(echo "$payload" | jq -r '.checks_detail[].plan_ref')
+
+  for plan_id in "${verified_plan_ids[@]}"; do
+    ref_count=$(echo "$payload" | jq --arg pid "$plan_id" \
+      '[.checks_detail[] | select(.plan_ref == $pid)] | length')
+    if [[ "$ref_count" -eq 0 ]]; then
+      echo "Error: plan '$plan_id' is in plans_verified but no check in checks_detail has plan_ref='${plan_id}'. Every verified plan must have at least one check referencing it." >&2
+      exit 1
+    fi
+  done
 elif [[ "$has_plans_verified" == "true" ]]; then
   echo "Error: plans_verified must be empty when no PLAN.md files are discovered." >&2
   exit 1
@@ -369,216 +354,182 @@ trap 'rm -f "$tmp_output"' EXIT
   echo ""
 } > "$tmp_output"
 
-if [[ "$has_checks_detail" == "true" ]]; then
+KNOWN_CATEGORIES="must_have artifact key_link anti_pattern convention requirement skill_augmented"
 
-  KNOWN_CATEGORIES="must_have artifact key_link anti_pattern convention requirement skill_augmented"
+category_heading() {
+  case "$1" in
+    must_have)    echo "Must-Have Checks" ;;
+    artifact)     echo "Artifact Checks" ;;
+    key_link)     echo "Key Link Checks" ;;
+    anti_pattern) echo "Anti-Pattern Scan" ;;
+    convention)   echo "Convention Compliance" ;;
+    requirement)  echo "Requirement Mapping" ;;
+    skill_augmented) echo "Skill-Augmented Checks" ;;
+  esac
+}
 
-  category_heading() {
-    case "$1" in
-      must_have)    echo "Must-Have Checks" ;;
-      artifact)     echo "Artifact Checks" ;;
-      key_link)     echo "Key Link Checks" ;;
-      anti_pattern) echo "Anti-Pattern Scan" ;;
-      convention)   echo "Convention Compliance" ;;
-      requirement)  echo "Requirement Mapping" ;;
-      skill_augmented) echo "Skill-Augmented Checks" ;;
-    esac
-  }
-  category_col() {
-    case "$1" in
-      must_have)    echo "Truth/Condition" ;;
-      artifact)     echo "Artifact" ;;
-      key_link)     echo "Link" ;;
-      anti_pattern) echo "Pattern" ;;
-      convention)   echo "Convention" ;;
-      requirement)  echo "Requirement" ;;
-      skill_augmented) echo "Skill Check" ;;
-    esac
-  }
+category_col() {
+  case "$1" in
+    must_have)    echo "Truth/Condition" ;;
+    artifact)     echo "Artifact" ;;
+    key_link)     echo "Link" ;;
+    anti_pattern) echo "Pattern" ;;
+    convention)   echo "Convention" ;;
+    requirement)  echo "Requirement" ;;
+    skill_augmented) echo "Skill Check" ;;
+  esac
+}
 
-  escape_pipes() {
-    printf '%s' "$1" | tr '\r\n' '  ' | sed 's/|/\&#124;/g'
-  }
+escape_pipes() {
+  printf '%s' "$1" | tr '\r\n' '  ' | sed 's/|/\&#124;/g'
+}
 
-  emit_section() {
-    local category="$1"
-    local heading="$2"
-    local col_name="$3"
+field_cell() {
+  escape_pipes "$(echo "$1" | jq -r "$2")"
+}
 
-    local items
-    items=$(echo "$payload" | jq -c --arg cat "$category" '[.checks_detail[] | select(.category == $cat)]')
-    local count
-    count=$(echo "$items" | jq 'length')
+uses_rich_columns() {
+  case "$1" in
+    artifact)    echo "$2" | jq -e 'any(.exists != null)' &>/dev/null ;;
+    key_link)    echo "$2" | jq -e 'any(.from != null)' &>/dev/null ;;
+    requirement) echo "$2" | jq -e 'any(.plan_ref != null)' &>/dev/null ;;
+    convention)  echo "$2" | jq -e 'any(.file != null)' &>/dev/null ;;
+    *)           return 1 ;;
+  esac
+}
 
-    if [[ "$count" -eq 0 ]]; then
-      return
-    fi
+emit_rich_header() {
+  case "$1" in
+    artifact)
+      echo "| # | ID | Artifact | Exists | Contains | Evidence | Status |"
+      echo "|---|-----|----------|--------|----------|----------|--------|" ;;
+    key_link)
+      echo "| # | ID | From | To | Via | Evidence | Status |"
+      echo "|---|-----|------|-----|-----|----------|--------|" ;;
+    requirement)
+      echo "| # | ID | Requirement | Plan Ref | Evidence | Status |"
+      echo "|---|-----|-------------|----------|----------|--------|" ;;
+    convention)
+      echo "| # | ID | Convention | File | Status | Detail |"
+      echo "|---|-----|------------|------|--------|--------|" ;;
+  esac
+}
 
-    echo "## $heading"
-    echo ""
+emit_rich_row() {
+  local category="$1" row_number="$2" row="$3"
+  local row_id row_status
+  row_id=$(echo "$row" | jq -r '.id // "-"')
+  row_status=$(echo "$row" | jq -r '.status // "-"')
+  case "$category" in
+    artifact)
+      local exists
+      exists=$(echo "$row" | jq -r 'if .exists == true then "Yes" elif .exists == false then "No" else "-" end')
+      echo "| $row_number | $row_id | $(field_cell "$row" '.description // "-"') | $exists | $(field_cell "$row" '.contains // "-"') | $(field_cell "$row" '.evidence // "-"') | $row_status |" ;;
+    key_link)
+      echo "| $row_number | $row_id | $(field_cell "$row" '.from // "-"') | $(field_cell "$row" '.to // "-"') | $(field_cell "$row" '.via // "-"') | $(field_cell "$row" '.evidence // "-"') | $row_status |" ;;
+    requirement)
+      echo "| $row_number | $row_id | $(field_cell "$row" '.description // "-"') | $(field_cell "$row" '.plan_ref // "-"') | $(field_cell "$row" '.evidence // "-"') | $row_status |" ;;
+    convention)
+      echo "| $row_number | $row_id | $(field_cell "$row" '.description // "-"') | $(field_cell "$row" '.file // "-"') | $row_status | $(field_cell "$row" '.detail // .evidence // "-"') |" ;;
+  esac
+}
 
-    local use_rich="false"
-    case "$category" in
-      artifact)
-        if echo "$items" | jq -e 'any(.exists != null)' &>/dev/null; then use_rich="true"; fi ;;
-      key_link)
-        if echo "$items" | jq -e 'any(.from != null)' &>/dev/null; then use_rich="true"; fi ;;
-      requirement)
-        if echo "$items" | jq -e 'any(.plan_ref != null)' &>/dev/null; then use_rich="true"; fi ;;
-      convention)
-        if echo "$items" | jq -e 'any(.file != null)' &>/dev/null; then use_rich="true"; fi ;;
-    esac
+emit_plain_rows() {
+  local items="$1"
+  local row_number=0 row row_id row_status
+  while IFS= read -r row; do
+    row_number=$((row_number + 1))
+    row_id=$(echo "$row" | jq -r '.id // "-"')
+    row_status=$(echo "$row" | jq -r '.status // "-"')
+    echo "| $row_number | $row_id | $(field_cell "$row" '.description // "-"') | $row_status | $(field_cell "$row" '.evidence // "-"') |"
+  done < <(echo "$items" | jq -c '.[]')
+}
 
-    if [[ "$use_rich" == "true" ]]; then
-      case "$category" in
-        artifact)
-          echo "| # | ID | Artifact | Exists | Contains | Evidence | Status |"
-          echo "|---|-----|----------|--------|----------|----------|--------|" ;;
-        key_link)
-          echo "| # | ID | From | To | Via | Evidence | Status |"
-          echo "|---|-----|------|-----|-----|----------|--------|" ;;
-        requirement)
-          echo "| # | ID | Requirement | Plan Ref | Evidence | Status |"
-          echo "|---|-----|-------------|----------|----------|--------|" ;;
-        convention)
-          echo "| # | ID | Convention | File | Status | Detail |"
-          echo "|---|-----|------------|------|--------|--------|" ;;
-      esac
-      local i=0
-      while IFS= read -r row; do
-        i=$((i + 1))
-        local rid rstatus
-        rid=$(echo "$row" | jq -r '.id // "-"')
-        rstatus=$(echo "$row" | jq -r '.status // "-"')
-        case "$category" in
-          artifact)
-            local rartifact rexists rcontains revidence
-            rartifact=$(escape_pipes "$(echo "$row" | jq -r '.description // "-"')")
-            rexists=$(echo "$row" | jq -r 'if .exists == true then "Yes" elif .exists == false then "No" else "-" end')
-            rcontains=$(escape_pipes "$(echo "$row" | jq -r '.contains // "-"')")
-            revidence=$(escape_pipes "$(echo "$row" | jq -r '.evidence // "-"')")
-            echo "| $i | $rid | $rartifact | $rexists | $rcontains | $revidence | $rstatus |" ;;
-          key_link)
-            local rfrom rto rvia revidence
-            rfrom=$(escape_pipes "$(echo "$row" | jq -r '.from // "-"')")
-            rto=$(escape_pipes "$(echo "$row" | jq -r '.to // "-"')")
-            rvia=$(escape_pipes "$(echo "$row" | jq -r '.via // "-"')")
-            revidence=$(escape_pipes "$(echo "$row" | jq -r '.evidence // "-"')")
-            echo "| $i | $rid | $rfrom | $rto | $rvia | $revidence | $rstatus |" ;;
-          requirement)
-            local rreq rplanref revidence
-            rreq=$(escape_pipes "$(echo "$row" | jq -r '.description // "-"')")
-            rplanref=$(escape_pipes "$(echo "$row" | jq -r '.plan_ref // "-"')")
-            revidence=$(escape_pipes "$(echo "$row" | jq -r '.evidence // "-"')")
-            echo "| $i | $rid | $rreq | $rplanref | $revidence | $rstatus |" ;;
-          convention)
-            local rconv rfile rdetail
-            rconv=$(escape_pipes "$(echo "$row" | jq -r '.description // "-"')")
-            rfile=$(escape_pipes "$(echo "$row" | jq -r '.file // "-"')")
-            rdetail=$(escape_pipes "$(echo "$row" | jq -r '.detail // .evidence // "-"')")
-            echo "| $i | $rid | $rconv | $rfile | $rstatus | $rdetail |" ;;
-        esac
-      done < <(echo "$items" | jq -c '.[]')
-    else
-      echo "| # | ID | $col_name | Status | Evidence |"
-      echo "|---|-----|$(printf '%0.s-' $(seq 1 ${#col_name}))--|--------|----------|"
-      local i=0
-      while IFS= read -r row; do
-        i=$((i + 1))
-        local rid rdesc rstatus revidence
-        rid=$(echo "$row" | jq -r '.id // "-"')
-        rdesc=$(escape_pipes "$(echo "$row" | jq -r '.description // "-"')")
-        rstatus=$(echo "$row" | jq -r '.status // "-"')
-        revidence=$(escape_pipes "$(echo "$row" | jq -r '.evidence // "-"')")
-        echo "| $i | $rid | $rdesc | $rstatus | $revidence |"
-      done < <(echo "$items" | jq -c '.[]')
-    fi
+emit_section() {
+  local category="$1"
+  local heading="$2"
+  local col_name="$3"
+  local items count
+  items=$(echo "$payload" | jq -c --arg cat "$category" '[.checks_detail[] | select(.category == $cat)]')
+  count=$(echo "$items" | jq 'length')
 
-    echo ""
-  }
-
-  for cat in $KNOWN_CATEGORIES; do
-    emit_section "$cat" "$(category_heading "$cat")" "$(category_col "$cat")" >> "$tmp_output"
-  done
-
-  unknown_items=$(echo "$payload" | jq -c --arg known "$KNOWN_CATEGORIES" \
-    '[.checks_detail[] | select(.category as $c | ($known | split(" ") | index($c)) == null)]')
-  unknown_count=$(echo "$unknown_items" | jq 'length')
-  if [[ "$unknown_count" -gt 0 ]]; then
-    {
-      echo "## Other Checks"
-      echo ""
-      echo "| # | ID | Check | Status | Evidence |"
-      echo "|---|-----|-------|--------|----------|"
-      ui=0
-      while IFS= read -r row; do
-        ui=$((ui + 1))
-        uid=$(echo "$row" | jq -r '.id // "-"')
-        udesc=$(escape_pipes "$(echo "$row" | jq -r '.description // "-"')")
-        ustatus=$(echo "$row" | jq -r '.status // "-"')
-        uevidence=$(escape_pipes "$(echo "$row" | jq -r '.evidence // "-"')")
-        echo "| $ui | $uid | $udesc | $ustatus | $uevidence |"
-      done < <(echo "$unknown_items" | jq -c '.[]')
-      echo ""
-    } >> "$tmp_output"
+  if [[ "$count" -eq 0 ]]; then
+    return
   fi
 
-  pre_existing=$(echo "$payload" | jq -c '.pre_existing_issues // []')
-  pre_count=$(echo "$pre_existing" | jq 'length')
-  if [[ "$pre_count" -gt 0 ]]; then
-    {
-      echo "## Pre-existing Issues"
-      echo ""
-      echo "| Test | File | Error |"
-      echo "|------|------|-------|"
-      while IFS= read -r pe_row; do
-        pe_test=$(escape_pipes "$(echo "$pe_row" | jq -r '.test // "-"')")
-        pe_file=$(escape_pipes "$(echo "$pe_row" | jq -r '.file // "-"')")
-        pe_error=$(escape_pipes "$(echo "$pe_row" | jq -r '.error // "-"')")
-        echo "| $pe_test | $pe_file | $pe_error |"
-      done < <(echo "$pre_existing" | jq -c '.[]')
-      echo ""
-    } >> "$tmp_output"
-  fi
+  echo "## $heading"
+  echo ""
 
-  {
-    echo "## Summary"
-    echo ""
-    echo "**Tier:** $tier"
-    echo "**Result:** $result"
-    echo "**Passed:** ${checks_passed}/${checks_total}"
-
-    failed_list=$(echo "$payload" | jq -r '[.checks_detail[] | select(.status == "FAIL") | .id] | join(", ")')
-    if [[ -n "$failed_list" ]]; then
-      echo "**Failed:** $failed_list"
-    else
-      echo "**Failed:** None"
-    fi
-  } >> "$tmp_output"
-
-  mv "$tmp_output" "$output_path"
-
-else
-  body=$(echo "$payload" | jq -r '.body // empty')
-
-  if [[ -n "$body" ]]; then
-    echo "$body" >> "$tmp_output"
+  if uses_rich_columns "$category" "$items"; then
+    emit_rich_header "$category"
+    local row_number=0 row
+    while IFS= read -r row; do
+      row_number=$((row_number + 1))
+      emit_rich_row "$category" "$row_number" "$row"
+    done < <(echo "$items" | jq -c '.[]')
   else
-    {
-      echo "## Summary"
-      echo ""
-      echo "**Tier:** $tier"
-      echo "**Result:** $result"
-      echo "**Passed:** ${checks_passed}/${checks_total}"
-
-      failures=$(echo "$payload" | jq -r '[.failures[]? | .check] | join(", ")')
-      if [[ -n "$failures" ]]; then
-        echo "**Failed:** $failures"
-      else
-        echo "**Failed:** None"
-      fi
-    } >> "$tmp_output"
+    echo "| # | ID | $col_name | Status | Evidence |"
+    echo "|---|-----|$(printf '%0.s-' $(seq 1 ${#col_name}))--|--------|----------|"
+    emit_plain_rows "$items"
   fi
 
-  mv "$tmp_output" "$output_path"
+  echo ""
+}
+
+emit_other_checks() {
+  local unknown_items="$1"
+  echo "## Other Checks"
+  echo ""
+  echo "| # | ID | Check | Status | Evidence |"
+  echo "|---|-----|-------|--------|----------|"
+  emit_plain_rows "$unknown_items"
+  echo ""
+}
+
+emit_pre_existing() {
+  local pre_existing="$1"
+  local pe_row
+  echo "## Pre-existing Issues"
+  echo ""
+  echo "| Test | File | Error |"
+  echo "|------|------|-------|"
+  while IFS= read -r pe_row; do
+    echo "| $(field_cell "$pe_row" '.test // "-"') | $(field_cell "$pe_row" '.file // "-"') | $(field_cell "$pe_row" '.error // "-"') |"
+  done < <(echo "$pre_existing" | jq -c '.[]')
+  echo ""
+}
+
+emit_summary() {
+  local failed_list
+  echo "## Summary"
+  echo ""
+  echo "**Tier:** $tier"
+  echo "**Result:** $result"
+  echo "**Passed:** ${checks_passed}/${checks_total}"
+
+  failed_list=$(echo "$payload" | jq -r '[.checks_detail[] | select(.status == "FAIL") | .id] | join(", ")')
+  if [[ -n "$failed_list" ]]; then
+    echo "**Failed:** $failed_list"
+  else
+    echo "**Failed:** None"
+  fi
+}
+
+for category in $KNOWN_CATEGORIES; do
+  emit_section "$category" "$(category_heading "$category")" "$(category_col "$category")" >> "$tmp_output"
+done
+
+unknown_items=$(echo "$payload" | jq -c --arg known "$KNOWN_CATEGORIES" \
+  '[.checks_detail[] | select(.category as $c | ($known | split(" ") | index($c)) == null)]')
+if [[ "$(echo "$unknown_items" | jq 'length')" -gt 0 ]]; then
+  emit_other_checks "$unknown_items" >> "$tmp_output"
 fi
+
+pre_existing=$(echo "$payload" | jq -c '.pre_existing_issues // []')
+if [[ "$(echo "$pre_existing" | jq 'length')" -gt 0 ]]; then
+  emit_pre_existing "$pre_existing" >> "$tmp_output"
+fi
+
+emit_summary >> "$tmp_output"
+
+mv "$tmp_output" "$output_path"
