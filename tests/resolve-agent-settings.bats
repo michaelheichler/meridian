@@ -1,6 +1,8 @@
 #!/usr/bin/env bats
 
 load test_helper
+load gate_case_helper
+load rejection_case_helper
 
 RESOLVER="${SCRIPTS_DIR}/resolve-agent-settings.sh"
 
@@ -12,11 +14,23 @@ setup() {
   export HOME="$TEST_TEMP_DIR"
   unset LBWC_PLANNING_DIR CLAUDE_SESSION_ID 2>/dev/null || true
   mkdir -p "$TEST_TEMP_DIR/.lbwc-planning"
-  ROUTE_BINARY="$TEST_TEMP_DIR/claude-resolver-fixture"
-  printf '%s\n' '#!/usr/bin/env bash' 'printf "%s\\n" "fixture"' > "$ROUTE_BINARY"
-  chmod +x "$ROUTE_BINARY"
-  ROUTE_SHA=$(shasum -a 256 "$ROUTE_BINARY" | awk '{print $1}')
-  jq -n --arg binary "$ROUTE_BINARY" --arg sha "$ROUTE_SHA" '
+  CONFIG_PATH="$TEST_TEMP_DIR/.lbwc-planning/config.json"
+  write_catalog
+  write_config
+  cp "$CONFIG_PATH" "$CONFIG_PATH.pristine"
+  reset_case_failures
+}
+
+teardown() {
+  teardown_temp_dir
+}
+
+write_catalog() {
+  local binary="$TEST_TEMP_DIR/claude-resolver-fixture" sha
+  printf '%s\n' '#!/usr/bin/env bash' 'printf "%s\\n" "fixture"' > "$binary"
+  chmod +x "$binary"
+  sha=$(shasum -a 256 "$binary" | awk '{print $1}')
+  jq -n --arg binary "$binary" --arg sha "$sha" '
     {
       schema_version: 1,
       source: {binary_path: $binary, version: "fixture", sha256: $sha, detected_at: "2035-01-02T03:04:05Z"},
@@ -31,6 +45,9 @@ setup() {
       }
     }
   ' > "$TEST_TEMP_DIR/.lbwc-planning/claude-capabilities.json"
+}
+
+write_config() {
   jq --slurpfile defaults "$PROJECT_ROOT/templates/agent-roles/defaults.json" '
     . + {
       schema_version: 1,
@@ -45,212 +62,123 @@ setup() {
         }
       }
     }
-  ' "$CONFIG_DIR/settings.json" > "$TEST_TEMP_DIR/.lbwc-planning/config.json"
+  ' "$CONFIG_DIR/settings.json" > "$CONFIG_PATH"
 }
 
-teardown() {
-  teardown_temp_dir
+reset_config() {
+  cp "$CONFIG_PATH.pristine" "$CONFIG_PATH"
+}
+
+update_config() {
+  jq "$1" "$CONFIG_PATH" > "$CONFIG_PATH.next"
+  mv "$CONFIG_PATH.next" "$CONFIG_PATH"
 }
 
 resolve() {
   run bash "$RESOLVER" "$@"
 }
 
-update_config() {
-  local filter="$1" path="$TEST_TEMP_DIR/.lbwc-planning/config.json"
-  jq "$filter" "$path" > "$path.next"
-  mv "$path.next" "$path"
-}
+@test "the resolver renders the saved or explicit route into renderer variables" {
+  resolve lead "$CONFIG_PATH" "$PROJECT_ROOT"
+  expect_case profile-value 0 "RESOLVED_AGENT_MODEL='nova-route'"
+  expect_fragment profile-value "RESOLVED_MODEL='nova-route'"
+  expect_fragment profile-value "RESOLVED_REASONING='deliberate'"
 
-@test "profile value resolves with no project override" {
-  resolve lead "$TEST_TEMP_DIR/.lbwc-planning/config.json" "$PROJECT_ROOT"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"RESOLVED_AGENT_MODEL='nova-route'"* ]]
-  [[ "$output" == *"RESOLVED_MODEL='nova-route'"* ]]
-  [[ "$output" == *"RESOLVED_REASONING='deliberate'"* ]]
-}
-
-@test "active profile selects its exact saved route" {
+  reset_config
   update_config '.routing.active_profile = "quality" | .routing.profiles.quality.roles.lead = {model: "ember-path", reasoning: "swift", status: "resolved"}'
-  resolve lead "$TEST_TEMP_DIR/.lbwc-planning/config.json" "$PROJECT_ROOT"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"RESOLVED_AGENT_MODEL='ember-path'"* ]]
-  [[ "$output" == *"RESOLVED_REASONING='swift'"* ]]
-}
+  resolve lead "$CONFIG_PATH" "$PROJECT_ROOT"
+  expect_case active-profile-route 0 "RESOLVED_AGENT_MODEL='ember-path'"
+  expect_fragment active-profile-route "RESOLVED_REASONING='swift'"
 
-@test "CLI route values remain exact after catalog validation" {
-  resolve lead "$TEST_TEMP_DIR/.lbwc-planning/config.json" "$PROJECT_ROOT" --model ember-path --reasoning swift
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"RESOLVED_AGENT_MODEL='ember-path'"* ]]
-  [[ "$output" == *"RESOLVED_MODEL='ember-path'"* ]]
-  [[ "$output" == *"RESOLVED_REASONING='swift'"* ]]
-}
+  reset_config
+  resolve lead "$CONFIG_PATH" "$PROJECT_ROOT" --model ember-path --reasoning swift
+  expect_case cli-route-values 0 "RESOLVED_AGENT_MODEL='ember-path'"
+  expect_fragment cli-route-values "RESOLVED_MODEL='ember-path'"
+  expect_fragment cli-route-values "RESOLVED_REASONING='swift'"
 
-@test "an unknown model exits 3" {
-  resolve lead "$TEST_TEMP_DIR/.lbwc-planning/config.json" "$PROJECT_ROOT" --model missing-route
-  [ "$status" -eq 3 ]
-  [[ "$output" == *"saved capability catalog"* ]]
-}
-
-@test "an absent active route fails closed" {
-  update_config 'del(.routing.profiles.balanced.roles.lead)'
-  resolve lead "$TEST_TEMP_DIR/.lbwc-planning/config.json" "$PROJECT_ROOT"
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"route is unresolved or absent"* ]]
-}
-
-@test "null reasoning emits an empty renderer effort" {
   update_config '.routing.profiles.balanced.roles.docs.reasoning = null'
-  resolve docs "$TEST_TEMP_DIR/.lbwc-planning/config.json" "$PROJECT_ROOT"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"RESOLVED_REASONING=''"* ]]
-  [[ "$output" == *"RESOLVED_EFFORT=''"* ]]
+  resolve docs "$CONFIG_PATH" "$PROJECT_ROOT"
+  expect_case null-reasoning 0 "RESOLVED_REASONING=''"
+  expect_fragment null-reasoning "RESOLVED_EFFORT=''"
+
+  reset_config
+  resolve lead "$CONFIG_PATH" "$PROJECT_ROOT" --model nova-route --reasoning swift
+  expect_case global-reasoning-ignores-associations 0 "RESOLVED_REASONING='swift'"
+
+  resolve lead "$CONFIG_PATH" "$PROJECT_ROOT" --model nova-route --reasoning default
+  expect_case reasoning-named-default 0 "RESOLVED_REASONING='default'"
+  expect_fragment reasoning-named-default "RESOLVED_REASONING_JSON='\"default\"'"
+
+  assert_no_case_failures
 }
 
-@test "global reasoning ignores model associations" {
-  resolve lead "$TEST_TEMP_DIR/.lbwc-planning/config.json" "$PROJECT_ROOT" --model nova-route --reasoning swift
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"RESOLVED_REASONING='swift'"* ]]
+@test "the resolver fails closed on an unknown model or an absent route" {
+  resolve lead "$CONFIG_PATH" "$PROJECT_ROOT" --model missing-route
+  expect_case unknown-model 3 "saved capability catalog"
+
+  update_config 'del(.routing.profiles.balanced.roles.lead)'
+  resolve lead "$CONFIG_PATH" "$PROJECT_ROOT"
+  expect_case absent-active-route 1 "route is unresolved or absent"
+
+  assert_no_case_failures
 }
 
-@test "detected reasoning named default remains an exact string" {
-  resolve lead "$TEST_TEMP_DIR/.lbwc-planning/config.json" "$PROJECT_ROOT" --model nova-route --reasoning default
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"RESOLVED_REASONING='default'"* ]]
-  [[ "$output" == *"RESOLVED_REASONING_JSON='\"default\"'"* ]]
+max_turns_row() {
+  local label="$1" role="$2" filter="$3" args="$4" want="$5"
+  local -a extra=()
+  reset_config
+  [ "$filter" = - ] || update_config "$filter"
+  [ "$args" = - ] || read -ra extra <<< "$args"
+  [ "$want" != none ] || want=""
+
+  resolve "$role" "$CONFIG_PATH" "$PROJECT_ROOT" ${extra[@]+"${extra[@]}"}
+
+  expect_case "$label" 0 "RESOLVED_MAX_TURNS='${want}'"
 }
 
-@test "docs renders through render-agent-template.sh" {
-  run bash "${SCRIPTS_DIR}/render-agent-template.sh" docs \
-    NAME=lbwc-docs-test JOB="write a README" MODEL=nova-route EFFORT=deliberate
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"lbwc-docs-test"* ]]
+@test "max_turns resolves from the pinned role table, project overrides and the CLI flag" {
+  while IFS='|' read -r label role filter args want; do
+    [ -n "$label" ] || continue
+    max_turns_row "$label" "$role" "$filter" "$args" "$want"
+  done <<'CASES'
+lead|lead|-|-|50
+lead-critic|lead-critic|-|-|20
+coding-dijkstra|coding-dijkstra|-|-|50
+coding-dijkstra-critic|coding-dijkstra-critic|-|-|20
+python-engineer|python-engineer|-|-|50
+python-critic|python-critic|-|-|20
+web-engineer|web-engineer|-|-|50
+web-code-critic|web-code-critic|-|-|20
+test-dev|test-dev|-|-|40
+architect|architect|-|-|50
+debugger|debugger|-|-|40
+qa|qa|-|-|20
+scout|scout|-|-|30
+ux-oracle|ux-oracle|-|-|20
+docs|docs|-|-|30
+qa-author|qa-author|-|-|30
+deviq|deviq|-|-|15
+cli-flag-wins|lead|-|--max-turns 7|7
+cli-zero-normalizes-to-empty|lead|-|--max-turns 0|none
+cli-negative-normalizes-to-empty|lead|-|--max-turns -3|none
+project-override-beats-defaults|python-engineer|.roles."python-engineer".max_turns = 99|-|99
+cli-flag-beats-project-override|lead|.roles.lead.max_turns = 33|--max-turns 99|99
+critic-project-override-beats-defaults|lead-critic|.roles."lead-critic".max_turns = 33|-|33
+CASES
+
+  assert_no_case_failures
 }
 
-@test "qa-author renders through render-agent-template.sh" {
-  run bash "${SCRIPTS_DIR}/render-agent-template.sh" qa-author \
-    NAME=lbwc-qa-author-test JOB="write failing tests" MODEL=ember-path EFFORT=swift
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"lbwc-qa-author-test"* ]]
+render_row() {
+  local label="$1" role="$2" name="$3" job="$4" model="$5" effort="$6"
+  run bash "${SCRIPTS_DIR}/render-agent-template.sh" "$role" \
+    NAME="$name" JOB="$job" MODEL="$model" EFFORT="$effort"
+  expect_case "$label" 0 "$name"
 }
 
-@test "max_turns: defaults.json value wins for python-engineer" {
-  resolve python-engineer "$TEST_TEMP_DIR/.lbwc-planning/config.json" "$PROJECT_ROOT"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"RESOLVED_MAX_TURNS='50'"* ]]
-}
+@test "render-agent-template renders the role templates with the supplied settings" {
+  render_row docs-template docs lbwc-docs-test "write a README" nova-route deliberate
+  render_row qa-author-template qa-author lbwc-qa-author-test "write failing tests" ember-path swift
 
-@test "max_turns: architect falls back to the hardcoded table" {
-  resolve architect "$TEST_TEMP_DIR/.lbwc-planning/config.json" "$PROJECT_ROOT"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"RESOLVED_MAX_TURNS='50'"* ]]
-}
-
-@test "max_turns: debugger falls back to the hardcoded table" {
-  resolve debugger "$TEST_TEMP_DIR/.lbwc-planning/config.json" "$PROJECT_ROOT"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"RESOLVED_MAX_TURNS='40'"* ]]
-}
-
-@test "max_turns: qa falls back to the hardcoded table" {
-  resolve qa "$TEST_TEMP_DIR/.lbwc-planning/config.json" "$PROJECT_ROOT"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"RESOLVED_MAX_TURNS='20'"* ]]
-}
-
-@test "max_turns: scout falls back to the hardcoded table" {
-  resolve scout "$TEST_TEMP_DIR/.lbwc-planning/config.json" "$PROJECT_ROOT"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"RESOLVED_MAX_TURNS='30'"* ]]
-}
-
-@test "max_turns: docs falls back to the hardcoded table" {
-  resolve docs "$TEST_TEMP_DIR/.lbwc-planning/config.json" "$PROJECT_ROOT"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"RESOLVED_MAX_TURNS='30'"* ]]
-}
-
-@test "max_turns: qa-author falls back to the hardcoded table" {
-  resolve qa-author "$TEST_TEMP_DIR/.lbwc-planning/config.json" "$PROJECT_ROOT"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"RESOLVED_MAX_TURNS='30'"* ]]
-}
-
-@test "max_turns: deviq resolves from defaults.json, not the catch-all" {
-  resolve deviq "$TEST_TEMP_DIR/.lbwc-planning/config.json" "$PROJECT_ROOT"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"RESOLVED_MAX_TURNS='15'"* ]]
-}
-
-@test "max_turns: CLI --max-turns wins outright regardless of role" {
-  resolve lead "$TEST_TEMP_DIR/.lbwc-planning/config.json" "$PROJECT_ROOT" --max-turns 7
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"RESOLVED_MAX_TURNS='7'"* ]]
-}
-
-@test "max_turns: CLI --max-turns 0 normalizes to empty" {
-  resolve lead "$TEST_TEMP_DIR/.lbwc-planning/config.json" "$PROJECT_ROOT" --max-turns 0
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"RESOLVED_MAX_TURNS=''"* ]]
-}
-
-@test "max_turns: CLI --max-turns with a negative value normalizes to empty" {
-  resolve lead "$TEST_TEMP_DIR/.lbwc-planning/config.json" "$PROJECT_ROOT" --max-turns -3
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"RESOLVED_MAX_TURNS=''"* ]]
-}
-
-@test "max_turns: project roles override beats the defaults.json value" {
-  update_config '.roles."python-engineer".max_turns = 99'
-  resolve python-engineer "$TEST_TEMP_DIR/.lbwc-planning/config.json" "$PROJECT_ROOT"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"RESOLVED_MAX_TURNS='99'"* ]]
-}
-
-@test "max_turns: every role resolves to its pinned base-turns value at balanced effort" {
-  local expected=(
-    "lead=50"
-    "lead-critic=20"
-    "coding-dijkstra=50"
-    "coding-dijkstra-critic=20"
-    "python-engineer=50"
-    "python-critic=20"
-    "web-engineer=50"
-    "web-code-critic=20"
-    "test-dev=40"
-    "architect=50"
-    "debugger=40"
-    "qa=20"
-    "scout=30"
-    "ux-oracle=20"
-    "docs=30"
-    "qa-author=30"
-    "deviq=15"
-  )
-  local entry role want
-  for entry in "${expected[@]}"; do
-    role="${entry%%=*}"
-    want="${entry##*=}"
-    resolve "$role" "$TEST_TEMP_DIR/.lbwc-planning/config.json" "$PROJECT_ROOT"
-    [ "$status" -eq 0 ]
-    [[ "$output" == *"RESOLVED_MAX_TURNS='${want}'"* ]] || {
-      echo "role $role: expected RESOLVED_MAX_TURNS='$want', got:" >&2
-      echo "$output" >&2
-      return 1
-    }
-  done
-}
-
-@test "max_turns: CLI --max-turns 99 wins over everything" {
-  update_config '.roles.lead.max_turns = 33'
-  resolve lead "$TEST_TEMP_DIR/.lbwc-planning/config.json" "$PROJECT_ROOT" --max-turns 99
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"RESOLVED_MAX_TURNS='99'"* ]]
-}
-
-@test "max_turns: project roles override for lead-critic wins over defaults.json" {
-  update_config '.roles."lead-critic".max_turns = 33'
-  resolve lead-critic "$TEST_TEMP_DIR/.lbwc-planning/config.json" "$PROJECT_ROOT"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"RESOLVED_MAX_TURNS='33'"* ]]
+  assert_no_case_failures
 }
