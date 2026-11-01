@@ -101,19 +101,14 @@ check_role() {
     $'### Requirements (\n### Recent Activity\n'"$retired"
 }
 
-@test "compile-context: lead reports hidden requirements and falls back to the codebase map without research" {
+@test "compile-context: lead reports hidden requirements and swaps research for the codebase map when research is missing" {
   seed_full_planning
-  rm "$TEST_TEMP_DIR/.lbwc-planning/phases/01-test-phase/01-RESEARCH.md"
+  check_role "lead with research" lead $'### Research Findings' $'### Codebase Map Available'
 
+  rm "$TEST_TEMP_DIR/.lbwc-planning/phases/01-test-phase/01-RESEARCH.md"
   check_role "lead no research" lead \
     $'(1 other requirements exist for other phases -- not shown)\n### Codebase Map Available\nRead ARCHITECTURE.md first' \
     $'### Research Findings'
-}
-
-@test "compile-context: lead omits the codebase map hint when research exists" {
-  seed_full_planning
-
-  check_role "lead with research" lead $'### Research Findings' $'### Codebase Map Available'
 }
 
 @test "compile-context: dev embeds the active plan only when a plan path is given" {
