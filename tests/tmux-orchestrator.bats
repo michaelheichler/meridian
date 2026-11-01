@@ -1,6 +1,7 @@
 #!/usr/bin/env bats
 
 setup() {
+  unset TMUX TMUX_PANE
   REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/.." && pwd -P)"
   ORCHESTRATOR="$REPO_ROOT/scripts/tmux-agent-orchestrator.sh"
   BUS="$REPO_ROOT/scripts/tmux-bus.sh"
@@ -220,31 +221,127 @@ bus_state_digest() {
   shasum -a 256 "$CONTROL_ROOT/.runtime/tmux-bus/registry.json" "$CONTROL_ROOT/.runtime/tmux-bus/routing-table.json"
 }
 
-split_group_with_jq_failing_at() {
-  local filter_fragment="$1" nth_call="$2" session="$3" definitions="$4" digest_before
-  rm -f "$TEST_ROOT/jq-count"
-  digest_before="$(bus_state_digest)"
-  export LBWC_TEST_JQ_FAIL_MATCH="$filter_fragment" LBWC_TEST_JQ_FAIL_NTH="$nth_call" LBWC_TEST_JQ_COUNTER="$TEST_ROOT/jq-count"
-  run_orchestrator split-group --project-root "$PROJECT_ROOT" --control-root "$CONTROL_ROOT" --session "$session" --agents "$definitions"
-  unset LBWC_TEST_JQ_FAIL_MATCH LBWC_TEST_JQ_FAIL_NTH LBWC_TEST_JQ_COUNTER
-  [ "$status" -eq 1 ] || return 1
-  [ "$(TMUX_TMPDIR="$TMUX_TMPDIR" tmux -L "$TMUX_SERVER" list-panes -t "$session" -F '#{pane_index}' | wc -l | tr -d ' ')" = 1 ] || return 1
-  [ ! -e "$CONTROL_ROOT/.runtime/tmux-bus/credentials/worker-a.json" ] || return 1
-  [ "$(bus_state_digest)" = "$digest_before" ]
+registry_file() {
+  printf '%s' "$CONTROL_ROOT/.runtime/tmux-bus/registry.json"
+}
+
+routing_file() {
+  printf '%s' "$CONTROL_ROOT/.runtime/tmux-bus/routing-table.json"
+}
+
+provisioned_session() {
+  jq -r '.tmux.session' "$(registry_file)"
+}
+
+tmux_on_test_server() {
+  TMUX_TMPDIR="$TMUX_TMPDIR" tmux -L "$TMUX_SERVER" "$@"
+}
+
+pane_count() {
+  tmux_on_test_server list-panes -t "$1" -F '#{pane_index}' | wc -l | tr -d ' '
+}
+
+pane_ids() {
+  tmux_on_test_server list-panes -t "$1" -F '#{pane_id}'
+}
+
+split_group() {
+  run_orchestrator split-group --project-root "$PROJECT_ROOT" --control-root "$CONTROL_ROOT" --session "$1" --agents "$2"
+}
+
+reset_world() {
+  tmux_on_test_server kill-server >/dev/null 2>&1 || true
+  rm -rf "$PROJECT_ROOT"
+  mkdir -p "$CONTROL_ROOT"
+  printf '%s\n' '{}' > "$CONTROL_ROOT/config.json"
+  MAIN_CAPABILITY=""
+}
+
+prepare_world() {
+  local agents="$1" config="$2"
+  reset_world
+  [ "$config" = - ] || printf '%s\n' "$config" > "$CONTROL_ROOT/config.json"
+  provision_main
+  SESSION="$(provisioned_session)"
+  DEFINITIONS='[]'
+  [ "$agents" = none ] || DEFINITIONS="$(prepare_tmux_agents $agents)"
+}
+
+mutate_none() { :; }
+
+mutate_extra_definition_key() {
+  DEFINITIONS=$(jq '.[0].messaging_socket = "/tmp/lbwc-worker-a.sock"' <<<"$DEFINITIONS")
+}
+
+mutate_generated_name() {
+  DEFINITIONS=$(jq '.[0].generated_name = "other-agent"' <<<"$DEFINITIONS")
+}
+
+mutate_contract_id() {
+  DEFINITIONS=$(jq '.[0].contract_id = "synthetic-contract"' <<<"$DEFINITIONS")
+}
+
+mutate_contract_digest() {
+  DEFINITIONS=$(jq '.[0].contract_digest = ("0" * 64)' <<<"$DEFINITIONS")
+}
+
+mutate_backend_drift() {
+  jq '.agents["worker-a"].execution.resolved_backend = "in_process"' "$CONTROL_ROOT/.agent-manifest.json" > "$TEST_ROOT/manifest.json"
+  mv "$TEST_ROOT/manifest.json" "$CONTROL_ROOT/.agent-manifest.json"
+}
+
+mutate_absent_manifest() {
+  DEFINITIONS='[{"agent_id":"worker-a","generated_name":"worker-a","contract_id":"contract-a","contract_digest":"0000000000000000000000000000000000000000000000000000000000000000"}]'
+}
+
+mutate_invalid_layout() {
+  printf '%s\n' '{"tmux":{"layout":"bogus-layout"}}' > "$CONTROL_ROOT/config.json"
+}
+
+inject_failure() {
+  local spec="$1" jq_spec
+  case "$spec" in
+    split-counter)
+      rm -f "$TEST_ROOT/split-count"
+      export LBWC_TEST_SPLIT_COUNTER="$TEST_ROOT/split-count" ;;
+    send-keys)
+      rm -f "$TEST_ROOT/send-keys-count"
+      export LBWC_TEST_SEND_KEYS_COUNTER="$TEST_ROOT/send-keys-count" LBWC_TEST_FAIL_SEND_KEYS_AFTER=1 ;;
+    routing-write) export LBWC_TEST_FAIL_WRITE=routing ;;
+    registry-write) export LBWC_TEST_FAIL_WRITE=registry ;;
+    layout-select) export LBWC_TEST_FAIL_LAYOUT=1 ;;
+    jq:*)
+      jq_spec="${spec#jq:}"
+      rm -f "$TEST_ROOT/jq-count"
+      export LBWC_TEST_JQ_FAIL_MATCH="${jq_spec%@*}" LBWC_TEST_JQ_FAIL_NTH="${jq_spec##*@}" LBWC_TEST_JQ_COUNTER="$TEST_ROOT/jq-count" ;;
+  esac
+}
+
+clear_failures() {
+  unset LBWC_TEST_SPLIT_COUNTER LBWC_TEST_SEND_KEYS_COUNTER LBWC_TEST_FAIL_SEND_KEYS_AFTER LBWC_TEST_FAIL_WRITE \
+    LBWC_TEST_FAIL_LAYOUT LBWC_TEST_JQ_FAIL_MATCH LBWC_TEST_JQ_FAIL_NTH LBWC_TEST_JQ_COUNTER
+}
+
+assert_exit_status() {
+  local expected="$1"
+  case "$expected" in
+    nonzero) [ "$status" -ne 0 ] ;;
+    *) [ "$status" -eq "$expected" ] ;;
+  esac
 }
 
 @test "unknown --cancel is usage error" {
   run_orchestrator provision --project-root "$PROJECT_ROOT" --control-root "$CONTROL_ROOT" --main-id main-session --cancel
 
   [ "$status" -ne 0 ]
-  [ ! -e "$CONTROL_ROOT/.runtime/tmux-bus/registry.json" ]
+  [ ! -e "$(registry_file)" ]
 }
 
 @test "orchestrator first then bus shares one schema and main route" {
   provision_main
   run env PATH="$BIN_DIR:$PATH" bash "$BUS" --control-root "$CONTROL_ROOT" init --main-id main-session --main-session-id main-session --orchestrator-capability "$MAIN_CAPABILITY"
   [ "$status" -eq 0 ]
-  run jq -e '.schema_version == 2 and .tmux.topology == "detached-new-session" and .routes["main-session"].inbox == "main-session"' "$CONTROL_ROOT/.runtime/tmux-bus/registry.json"
+  run jq -e '.schema_version == 2 and .tmux.topology == "detached-new-session" and .routes["main-session"].inbox == "main-session"' "$(registry_file)"
   [ "$status" -eq 0 ]
 }
 
@@ -252,175 +349,144 @@ split_group_with_jq_failing_at() {
   run env PATH="$BIN_DIR:$PATH" bash "$BUS" --control-root "$CONTROL_ROOT" init --main-id main-session --main-session-id main-session
   [ "$status" -ne 0 ]
   [[ "$output" == *"bus is not provisioned"* ]]
-  [ ! -e "$CONTROL_ROOT/.runtime/tmux-bus/registry.json" ]
-}
-
-@test "split-group rejects extra definition keys" {
-  provision_main
-  session="$(jq -r '.tmux.session' "$CONTROL_ROOT/.runtime/tmux-bus/registry.json")"
-  definitions="$(prepare_tmux_agents worker-a)"
-  definitions=$(jq '.[0].messaging_socket = "/tmp/lbwc-worker-a.sock"' <<<"$definitions")
-
-  run_orchestrator split-group --project-root "$PROJECT_ROOT" --control-root "$CONTROL_ROOT" --session "$session" --agents "$definitions"
-
-  [ "$status" -ne 0 ]
-  [ "$(jq '.agents | length' "$CONTROL_ROOT/.runtime/tmux-bus/registry.json")" = 0 ]
+  [ ! -e "$(registry_file)" ]
 }
 
 @test "provision configures titled pane borders" {
   provision_main
-  session="$(jq -r '.tmux.session' "$CONTROL_ROOT/.runtime/tmux-bus/registry.json")"
+  local session
+  session="$(provisioned_session)"
 
-  run env TMUX_TMPDIR="$TMUX_TMPDIR" tmux -L "$TMUX_SERVER" show-options -v -t "$session" pane-border-status
+  run tmux_on_test_server show-options -v -t "$session" pane-border-status
   [ "$status" -eq 0 ]
   [ "$output" = top ]
-  run env TMUX_TMPDIR="$TMUX_TMPDIR" tmux -L "$TMUX_SERVER" show-options -v -t "$session" pane-border-format
+  run tmux_on_test_server show-options -v -t "$session" pane-border-format
   [ "$status" -eq 0 ]
   [ "$output" = '#{pane_title}' ]
 }
 
 @test "split-group accepts a generated manifest entry and schema 3 task contract" {
   provision_main
-  session="$(jq -r '.tmux.session' "$CONTROL_ROOT/.runtime/tmux-bus/registry.json")"
+  local session definitions
+  session="$(provisioned_session)"
   definitions="$(prepare_tmux_agents worker-a)"
   jq -e '.agents["worker-a"] | type == "object"' "$CONTROL_ROOT/.agent-manifest.json" >/dev/null
 
-  run_orchestrator split-group --project-root "$PROJECT_ROOT" --control-root "$CONTROL_ROOT" --session "$session" --agents "$definitions"
+  split_group "$session" "$definitions"
 
   [ "$status" -eq 0 ]
-  jq -e '.agents | any(.[]; .agent_id == "worker-a" and .generated_name == "worker-a")' "$CONTROL_ROOT/.runtime/tmux-bus/registry.json" >/dev/null
+  jq -e '.agents | any(.[]; .agent_id == "worker-a" and .generated_name == "worker-a")' "$(registry_file)" >/dev/null
+  run jq -e '.routes["worker-a"] | has("messaging_socket") | not' "$(routing_file)"
+  [ "$status" -eq 0 ]
 }
 
 @test "split-agent resolves the exact manifest contract instead of fabricating one" {
   provision_main
-  session="$(jq -r '.tmux.session' "$CONTROL_ROOT/.runtime/tmux-bus/registry.json")"
+  local session
+  session="$(provisioned_session)"
   prepare_tmux_agents worker-a >/dev/null
 
   run_orchestrator split-agent --project-root "$PROJECT_ROOT" --control-root "$CONTROL_ROOT" --session "$session" --name worker-a --agent worker-a
 
   [ "$status" -eq 0 ]
-  jq -e '.agents | any(.[]; (.agent_id == "worker-a") and (.contract_id | startswith("cmd-team-worker-a-")))' "$CONTROL_ROOT/.runtime/tmux-bus/registry.json" >/dev/null
+  jq -e '.agents | any(.[]; (.agent_id == "worker-a") and (.contract_id | startswith("cmd-team-worker-a-")))' "$(registry_file)" >/dev/null
 }
 
 @test "split-agent rejects a generated identity that differs from its agent id" {
   provision_main
-  session="$(jq -r '.tmux.session' "$CONTROL_ROOT/.runtime/tmux-bus/registry.json")"
+  local session
+  session="$(provisioned_session)"
   prepare_tmux_agents worker-a >/dev/null
 
   run_orchestrator split-agent --project-root "$PROJECT_ROOT" --control-root "$CONTROL_ROOT" --session "$session" --name worker-a --agent other-agent
 
   [ "$status" -ne 0 ]
   [[ "$output" == *"agent and generated identities must match"* ]]
-  [ "$(jq '.agents | length' "$CONTROL_ROOT/.runtime/tmux-bus/registry.json")" = 0 ]
+  [ "$(jq '.agents | length' "$(registry_file)")" = 0 ]
 }
 
-@test "split-group rejects mismatched agent and generated identities before runtime mutation" {
+@test "split-group rejects invalid requests before any runtime mutation" {
+  local label agents config mutate expected_status fragment registry_before panes_before
+  while IFS=';' read -r label agents config mutate expected_status fragment; do
+    [ -n "$label" ] || continue
+    prepare_world "$agents" "$config"
+    "$mutate"
+    registry_before="$(cat "$(registry_file)")"
+    panes_before="$(pane_ids "$SESSION")"
+
+    split_group "$SESSION" "$DEFINITIONS"
+
+    assert_exit_status "$expected_status" || { echo "case=$label status=$status output=$output" >&2; return 1; }
+    [ "$fragment" = - ] || [[ "$output" == *"$fragment"* ]] \
+      || { echo "case=$label missing=[$fragment] output=$output" >&2; return 1; }
+    [ "$(cat "$(registry_file)")" = "$registry_before" ] || { echo "case=$label registry changed" >&2; return 1; }
+    [ "$(pane_ids "$SESSION")" = "$panes_before" ] || { echo "case=$label panes changed" >&2; return 1; }
+  done <<'CASES'
+extra-definition-key;worker-a;-;mutate_extra_definition_key;nonzero;-
+mismatched-generated-name;worker-a;-;mutate_generated_name;nonzero;agent and generated identities must match
+synthetic-contract-identity;worker-a;-;mutate_contract_id;nonzero;contract identity does not match generated manifest
+tampered-contract-digest;worker-a;-;mutate_contract_digest;nonzero;contract digest does not match generated manifest
+frozen-backend-drift;worker-a;-;mutate_backend_drift;nonzero;backend metadata does not match the contract
+missing-generated-manifest;none;-;mutate_absent_manifest;nonzero;generated agent manifest is missing
+agent-limit-exceeded;worker-a worker-b;{"tmux":{"max_agents":1}};mutate_none;nonzero;agent limit exceeded
+invalid-layout-in-config;worker-a;-;mutate_invalid_layout;1;tmux layout is invalid
+CASES
+}
+
+@test "kill-agent retries persisted teardown after a registry write failure" {
   provision_main
-  session="$(jq -r '.tmux.session' "$CONTROL_ROOT/.runtime/tmux-bus/registry.json")"
+  local session definitions target
+  session="$(provisioned_session)"
   definitions="$(prepare_tmux_agents worker-a)"
-  definitions=$(jq '.[0].generated_name = "other-agent"' <<<"$definitions")
-  before_registry="$(cat "$CONTROL_ROOT/.runtime/tmux-bus/registry.json")"
-  before_panes="$(TMUX_TMPDIR="$TMUX_TMPDIR" tmux -L "$TMUX_SERVER" list-panes -t "$session" -F '#{pane_id}')"
-
-  run_orchestrator split-group --project-root "$PROJECT_ROOT" --control-root "$CONTROL_ROOT" --session "$session" --agents "$definitions"
-
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"agent and generated identities must match"* ]]
-  [ "$(cat "$CONTROL_ROOT/.runtime/tmux-bus/registry.json")" = "$before_registry" ]
-  [ "$(TMUX_TMPDIR="$TMUX_TMPDIR" tmux -L "$TMUX_SERVER" list-panes -t "$session" -F '#{pane_id}')" = "$before_panes" ]
-}
-
-@test "split-group rejects a synthetic contract identity" {
-  provision_main
-  session="$(jq -r '.tmux.session' "$CONTROL_ROOT/.runtime/tmux-bus/registry.json")"
-  definitions="$(prepare_tmux_agents worker-a)"
-  definitions=$(jq '.[0].contract_id = "synthetic-contract"' <<<"$definitions")
-
-  run_orchestrator split-group --project-root "$PROJECT_ROOT" --control-root "$CONTROL_ROOT" --session "$session" --agents "$definitions"
-
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"contract identity does not match generated manifest"* ]]
-  [ "$(jq '.agents | length' "$CONTROL_ROOT/.runtime/tmux-bus/registry.json")" = 0 ]
-}
-
-@test "split-group rejects a tampered contract digest" {
-  provision_main
-  session="$(jq -r '.tmux.session' "$CONTROL_ROOT/.runtime/tmux-bus/registry.json")"
-  definitions="$(prepare_tmux_agents worker-a)"
-  definitions=$(jq '.[0].contract_digest = ("0" * 64)' <<<"$definitions")
-
-  run_orchestrator split-group --project-root "$PROJECT_ROOT" --control-root "$CONTROL_ROOT" --session "$session" --agents "$definitions"
-
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"contract digest does not match generated manifest"* ]]
-  [ "$(jq '.agents | length' "$CONTROL_ROOT/.runtime/tmux-bus/registry.json")" = 0 ]
-}
-
-@test "split-group rejects frozen backend drift" {
-  provision_main
-  session="$(jq -r '.tmux.session' "$CONTROL_ROOT/.runtime/tmux-bus/registry.json")"
-  definitions="$(prepare_tmux_agents worker-a)"
-  jq '.agents["worker-a"].execution.resolved_backend = "in_process"' "$CONTROL_ROOT/.agent-manifest.json" > "$TEST_ROOT/manifest.json"
-  mv "$TEST_ROOT/manifest.json" "$CONTROL_ROOT/.agent-manifest.json"
-
-  run_orchestrator split-group --project-root "$PROJECT_ROOT" --control-root "$CONTROL_ROOT" --session "$session" --agents "$definitions"
-
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"backend metadata does not match the contract"* ]]
-  [ "$(jq '.agents | length' "$CONTROL_ROOT/.runtime/tmux-bus/registry.json")" = 0 ]
-}
-
-@test "split-group rejects a missing generated manifest" {
-  provision_main
-  session="$(jq -r '.tmux.session' "$CONTROL_ROOT/.runtime/tmux-bus/registry.json")"
-  definitions='[{"agent_id":"worker-a","generated_name":"worker-a","contract_id":"contract-a","contract_digest":"0000000000000000000000000000000000000000000000000000000000000000"}]'
-
-  run_orchestrator split-group --project-root "$PROJECT_ROOT" --control-root "$CONTROL_ROOT" --session "$session" --agents "$definitions"
-
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"generated agent manifest is missing"* ]]
-  [ "$(jq '.agents | length' "$CONTROL_ROOT/.runtime/tmux-bus/registry.json")" = 0 ]
-}
-
-@test "split-group and kill-agent verify pane shutdown without socket routes" {
-  provision_main
-  session="$(jq -r '.tmux.session' "$CONTROL_ROOT/.runtime/tmux-bus/registry.json")"
-  definitions="$(prepare_tmux_agents worker-a)"
-  run_orchestrator split-group --project-root "$PROJECT_ROOT" --control-root "$CONTROL_ROOT" --session "$session" --agents "$definitions"
+  split_group "$session" "$definitions"
   [ "$status" -eq 0 ]
-  target="$(jq -r '.agents[] | select(.agent_id == "worker-a") | .tmux_target' "$CONTROL_ROOT/.runtime/tmux-bus/registry.json")"
-  run jq -e '.routes["worker-a"] | has("messaging_socket") | not' "$CONTROL_ROOT/.runtime/tmux-bus/routing-table.json"
+  target="$(jq -r '.agents[] | select(.agent_id == "worker-a") | .tmux_target' "$(registry_file)")"
+
+  export LBWC_TEST_FAIL_WRITE=registry
+  run_orchestrator kill-agent --project-root "$PROJECT_ROOT" --control-root "$CONTROL_ROOT" --target "$target"
+  unset LBWC_TEST_FAIL_WRITE
+  [ "$status" -ne 0 ]
+  [ -f "$CONTROL_ROOT/.runtime/tmux-bus/transactions/teardown-worker-a.json" ]
+  run jq -e '.agents[] | select(.agent_id == "worker-a") | .state != "shutdown"' "$(registry_file)"
   [ "$status" -eq 0 ]
 
   run_orchestrator kill-agent --project-root "$PROJECT_ROOT" --control-root "$CONTROL_ROOT" --target "$target"
   [ "$status" -eq 0 ]
-  run jq -e '.agents[] | select(.agent_id == "worker-a") | .state == "shutdown"' "$CONTROL_ROOT/.runtime/tmux-bus/registry.json"
+  [ ! -e "$CONTROL_ROOT/.runtime/tmux-bus/transactions/teardown-worker-a.json" ]
+  run jq -e '.agents[] | select(.agent_id == "worker-a") | .state == "shutdown"' "$(registry_file)"
   [ "$status" -eq 0 ]
 }
 
-@test "split-group refuses more than the configured maximum agents" {
-  printf '%s\n' '{"tmux":{"max_agents":1}}' > "$CONTROL_ROOT/config.json"
-  provision_main
-  session="$(jq -r '.tmux.session' "$CONTROL_ROOT/.runtime/tmux-bus/registry.json")"
-  definitions="$(prepare_tmux_agents worker-a worker-b)"
+@test "split-group rolls back panes, identities, and bus state after any mid-split failure" {
+  local label agents inject expected_status digest_before
+  while IFS=';' read -r label agents inject expected_status; do
+    [ -n "$label" ] || continue
+    prepare_world "$agents" -
+    digest_before="$(bus_state_digest)"
+    inject_failure "$inject"
 
-  run_orchestrator split-group --project-root "$PROJECT_ROOT" --control-root "$CONTROL_ROOT" --session "$session" --agents "$definitions"
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"agent limit exceeded"* ]]
-  [ "$(jq '.agents | length' "$CONTROL_ROOT/.runtime/tmux-bus/registry.json")" = 0 ]
-}
+    split_group "$SESSION" "$DEFINITIONS"
+    clear_failures
 
-@test "split-group rolls back panes when a later member cannot be started" {
-  provision_main
-  session="$(jq -r '.tmux.session' "$CONTROL_ROOT/.runtime/tmux-bus/registry.json")"
-  definitions="$(prepare_tmux_agents worker-a worker-b)"
-  export LBWC_TEST_SPLIT_COUNTER="$TEST_ROOT/split-count"
-  run_orchestrator split-group --project-root "$PROJECT_ROOT" --control-root "$CONTROL_ROOT" --session "$session" --agents "$definitions"
-  [ "$status" -ne 0 ]
-  [ "$(TMUX_TMPDIR="$TMUX_TMPDIR" tmux -L "$TMUX_SERVER" list-panes -t "$session" -F '#{pane_index}' | wc -l | tr -d ' ')" = "1" ]
-  [ "$(jq '.agents | length' "$CONTROL_ROOT/.runtime/tmux-bus/registry.json")" = "0" ]
-  [ ! -e "$CONTROL_ROOT/.runtime/tmux-bus/credentials/worker-a.json" ]
-  [ ! -e "$CONTROL_ROOT/.runtime/tmux-bus/credentials/worker-b.json" ]
+    assert_exit_status "$expected_status" || { echo "case=$label status=$status output=$output" >&2; return 1; }
+    [ "$(pane_count "$SESSION")" = 1 ] || { echo "case=$label panes=$(pane_count "$SESSION")" >&2; return 1; }
+    [ "$(jq '.agents | length' "$(registry_file)")" = 0 ] || { echo "case=$label agents left in registry" >&2; return 1; }
+    [ "$(jq '.routes | keys | length' "$(routing_file)")" = 1 ] || { echo "case=$label routes left behind" >&2; return 1; }
+    [ ! -e "$CONTROL_ROOT/.runtime/tmux-bus/credentials/worker-a.json" ] || { echo "case=$label credential left behind" >&2; return 1; }
+    [ ! -e "$CONTROL_ROOT/.runtime/tmux-bus/inboxes/worker-a" ] || { echo "case=$label inbox left behind" >&2; return 1; }
+    [ "$(bus_state_digest)" = "$digest_before" ] || { echo "case=$label bus state changed" >&2; return 1; }
+  done <<'CASES'
+later-member-split-fails;worker-a worker-b;split-counter;nonzero
+later-member-launch-fails;worker-a worker-b;send-keys;nonzero
+routing-table-write-fails;worker-a;routing-write;nonzero
+layout-select-fails;worker-a;layout-select;nonzero
+registry-write-fails;worker-a;registry-write;nonzero
+jq-fails-clearing-panes;worker-a;jq:panes:[]@1;1
+jq-fails-first-append;worker-a;jq:+= [$value]@1;1
+jq-fails-second-append;worker-a;jq:+= [$value]@2;1
+jq-fails-capability-write;worker-a;jq:capability: $capability@1;1
+jq-fails-transpose;worker-a;jq:transpose@1;1
+CASES
 }
 
 @test "child SessionStart binds once and records a heartbeat" {
@@ -434,39 +500,22 @@ split_group_with_jq_failing_at() {
   export LBWC_TEST_FAST_CHILD_EXIT="$TEST_ROOT/fast-child.exit"
   export LBWC_TEST_SESSION_START="$REPO_ROOT/scripts/session-start.sh"
   provision_main
-  session="$(jq -r '.tmux.session' "$CONTROL_ROOT/.runtime/tmux-bus/registry.json")"
+  local session definitions
+  session="$(provisioned_session)"
   definitions="$(prepare_tmux_agents worker-a)"
 
-  run_orchestrator split-group --project-root "$PROJECT_ROOT" --control-root "$CONTROL_ROOT" --session "$session" --agents "$definitions"
+  split_group "$session" "$definitions"
 
   [ "$status" -eq 0 ]
   wait_for_result "$LBWC_TEST_FAST_CHILD_STATUS"
   [ "$(cat "$LBWC_TEST_FAST_CHILD_STATUS")" = 0 ] || { cat "$LBWC_TEST_FAST_CHILD_OUTPUT" >&3; false; }
   wait_for_binding worker-a || { cat "$LBWC_TEST_FAST_CHILD_OUTPUT" >&3; false; }
-  run jq -e '.agents[] | select(.agent_id == "worker-a") | .state == "running" and (.heartbeat_at_ms | type == "number")' "$CONTROL_ROOT/.runtime/tmux-bus/registry.json"
+  run jq -e '.agents[] | select(.agent_id == "worker-a") | .state == "running" and (.heartbeat_at_ms | type == "number")' "$(registry_file)"
   [ "$status" -eq 0 ]
   [ ! -e "$CONTROL_ROOT/.runtime/tmux-bus/credentials/worker-a.json" ]
   : > "$LBWC_TEST_FAST_CHILD_RELEASE"
   wait_for_result "$LBWC_TEST_FAST_CHILD_EXIT"
   unset LBWC_TEST_FAST_CHILD_ENV LBWC_TEST_FAST_CHILD_STATUS LBWC_TEST_FAST_CHILD_OUTPUT LBWC_TEST_FAST_CHILD_READY LBWC_TEST_FAST_CHILD_RELEASE LBWC_TEST_FAST_CHILD_PANE LBWC_TEST_FAST_CHILD_STARTED LBWC_TEST_FAST_CHILD_EXIT LBWC_TEST_SESSION_START
-}
-
-@test "split-group rolls back prepared identity and pane state when a later launch fails" {
-  provision_main
-  session="$(jq -r '.tmux.session' "$CONTROL_ROOT/.runtime/tmux-bus/registry.json")"
-  definitions="$(prepare_tmux_agents worker-a worker-b)"
-  export LBWC_TEST_SEND_KEYS_COUNTER="$TEST_ROOT/send-keys-count"
-  export LBWC_TEST_FAIL_SEND_KEYS_AFTER=1
-
-  run_orchestrator split-group --project-root "$PROJECT_ROOT" --control-root "$CONTROL_ROOT" --session "$session" --agents "$definitions"
-  unset LBWC_TEST_SEND_KEYS_COUNTER LBWC_TEST_FAIL_SEND_KEYS_AFTER
-
-  [ "$status" -ne 0 ]
-  [ "$(TMUX_TMPDIR="$TMUX_TMPDIR" tmux -L "$TMUX_SERVER" list-panes -t "$session" -F '#{pane_index}' | wc -l | tr -d ' ')" = "1" ]
-  [ "$(jq '.agents | length' "$CONTROL_ROOT/.runtime/tmux-bus/registry.json")" = "0" ]
-  [ "$(jq '.routes | keys | length' "$CONTROL_ROOT/.runtime/tmux-bus/routing-table.json")" = "1" ]
-  [ ! -e "$CONTROL_ROOT/.runtime/tmux-bus/inboxes/worker-a" ]
-  [ ! -e "$CONTROL_ROOT/.runtime/tmux-bus/inboxes/worker-b" ]
 }
 
 @test "provision registry failure removes runtime state created by the attempt" {
@@ -478,131 +527,58 @@ split_group_with_jq_failing_at() {
   [ ! -e "$CONTROL_ROOT/.runtime" ]
 }
 
-@test "provision rollback preserves an existing bus registry" {
-  provision_main
-  session="$(jq -r '.tmux.session' "$CONTROL_ROOT/.runtime/tmux-bus/registry.json")"
-  cp "$CONTROL_ROOT/.runtime/tmux-bus/registry.json" "$TEST_ROOT/registry-before.json"
-  export LBWC_TEST_FAIL_WRITE=registry
-  run_orchestrator split-group --project-root "$PROJECT_ROOT" --control-root "$CONTROL_ROOT" --session "$session" --agents "$(prepare_tmux_agents worker-a)"
-  unset LBWC_TEST_FAIL_WRITE
-
-  [ "$status" -ne 0 ]
-  cmp "$TEST_ROOT/registry-before.json" "$CONTROL_ROOT/.runtime/tmux-bus/registry.json"
-}
-
 @test "orchestration commands reject a child without the main capability" {
   provision_main
-  session="$(jq -r '.tmux.session' "$CONTROL_ROOT/.runtime/tmux-bus/registry.json")"
+  local session label command fragment
+  session="$(provisioned_session)"
+  while IFS=';' read -r label command fragment; do
+    [ -n "$label" ] || continue
+    case "$command" in
+      split-group)
+        run_orchestrator_unauthenticated split-group --project-root "$PROJECT_ROOT" --control-root "$CONTROL_ROOT" --session "$session" \
+          --agents '[{"agent_id":"worker-a","generated_name":"worker-a","contract_id":"contract-a"}]' ;;
+      *)
+        run_orchestrator_unauthenticated "$command" --project-root "$PROJECT_ROOT" --control-root "$CONTROL_ROOT" ;;
+    esac
 
-  run_orchestrator_unauthenticated status --project-root "$PROJECT_ROOT" --control-root "$CONTROL_ROOT"
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"main orchestrator session and capability"* ]]
-  run_orchestrator_unauthenticated focus-orchestrator --project-root "$PROJECT_ROOT" --control-root "$CONTROL_ROOT"
-  [ "$status" -ne 0 ]
-  run_orchestrator_unauthenticated split-group --project-root "$PROJECT_ROOT" --control-root "$CONTROL_ROOT" --session "$session" --agents '[{"agent_id":"worker-a","generated_name":"worker-a","contract_id":"contract-a"}]'
-  [ "$status" -ne 0 ]
-}
-
-@test "split-group restores registry and routes after routing or layout failure" {
-  provision_main
-  session="$(jq -r '.tmux.session' "$CONTROL_ROOT/.runtime/tmux-bus/registry.json")"
-  definitions="$(prepare_tmux_agents worker-a)"
-  export LBWC_TEST_FAIL_WRITE=routing
-  run_orchestrator split-group --project-root "$PROJECT_ROOT" --control-root "$CONTROL_ROOT" --session "$session" --agents "$definitions"
-  unset LBWC_TEST_FAIL_WRITE
-  [ "$status" -ne 0 ]
-  [ "$(jq '.agents | length' "$CONTROL_ROOT/.runtime/tmux-bus/registry.json")" = 0 ]
-  [ "$(jq '.routes | keys | length' "$CONTROL_ROOT/.runtime/tmux-bus/routing-table.json")" = 1 ]
-  [ ! -e "$CONTROL_ROOT/.runtime/tmux-bus/credentials/worker-a.json" ]
-
-  export LBWC_TEST_FAIL_LAYOUT=1
-  run_orchestrator split-group --project-root "$PROJECT_ROOT" --control-root "$CONTROL_ROOT" --session "$session" --agents "$definitions"
-  unset LBWC_TEST_FAIL_LAYOUT
-  [ "$status" -ne 0 ]
-  [ "$(jq '.agents | length' "$CONTROL_ROOT/.runtime/tmux-bus/registry.json")" = 0 ]
-  [ "$(jq '.routes | keys | length' "$CONTROL_ROOT/.runtime/tmux-bus/routing-table.json")" = 1 ]
-}
-
-@test "split-group rolls back and leaves registry.json and routing-table.json intact when jq fails mid-split" {
-  provision_main
-  session="$(jq -r '.tmux.session' "$CONTROL_ROOT/.runtime/tmux-bus/registry.json")"
-  definitions="$(prepare_tmux_agents worker-a)"
-  local -a failure_points=(
-    'panes:[]|1'
-    '+= [$value]|1'
-    '+= [$value]|2'
-    'capability: $capability|1'
-    'transpose|1'
-  )
-  local failure_point
-  for failure_point in "${failure_points[@]}"; do
-    split_group_with_jq_failing_at "${failure_point%|*}" "${failure_point##*|}" "$session" "$definitions" \
-      || { printf 'no clean rollback when jq fails at %s\n' "$failure_point" >&3; false; }
-  done
+    [ "$status" -ne 0 ] || { echo "case=$label status=$status output=$output" >&2; return 1; }
+    [ "$fragment" = - ] || [[ "$output" == *"$fragment"* ]] \
+      || { echo "case=$label missing=[$fragment] output=$output" >&2; return 1; }
+  done <<'CASES'
+status;status;main orchestrator session and capability
+focus-orchestrator;focus-orchestrator;-
+split-group;split-group;-
+CASES
 }
 
 @test "split-group reads the layout only before panes exist" {
   printf '%s\n' '{"tmux":{"layout":"even-vertical"}}' > "$CONTROL_ROOT/config.json"
   provision_main
-  session="$(jq -r '.tmux.session' "$CONTROL_ROOT/.runtime/tmux-bus/registry.json")"
+  local session definitions
+  session="$(provisioned_session)"
   definitions="$(prepare_tmux_agents worker-a)"
   export LBWC_TEST_CONFIG_PATH="$CONTROL_ROOT/config.json" LBWC_TEST_LAYOUT_AFTER_SPLIT=bogus-layout LBWC_TEST_SELECT_LAYOUT_LOG="$TEST_ROOT/select-layout.log"
 
-  run_orchestrator split-group --project-root "$PROJECT_ROOT" --control-root "$CONTROL_ROOT" --session "$session" --agents "$definitions"
+  split_group "$session" "$definitions"
   unset LBWC_TEST_CONFIG_PATH LBWC_TEST_LAYOUT_AFTER_SPLIT LBWC_TEST_SELECT_LAYOUT_LOG
 
   [ "$status" -eq 0 ]
   [ "$(cat "$TEST_ROOT/select-layout.log")" = "select-layout -t $session even-vertical" ]
 }
 
-@test "split-group rejects an invalid layout in config before any pane exists" {
-  provision_main
-  session="$(jq -r '.tmux.session' "$CONTROL_ROOT/.runtime/tmux-bus/registry.json")"
-  definitions="$(prepare_tmux_agents worker-a)"
-  printf '%s\n' '{"tmux":{"layout":"bogus-layout"}}' > "$CONTROL_ROOT/config.json"
-
-  run_orchestrator split-group --project-root "$PROJECT_ROOT" --control-root "$CONTROL_ROOT" --session "$session" --agents "$definitions"
-
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"tmux layout is invalid"* ]]
-  [ "$(TMUX_TMPDIR="$TMUX_TMPDIR" tmux -L "$TMUX_SERVER" list-panes -t "$session" -F '#{pane_index}' | wc -l | tr -d ' ')" = 1 ]
-}
-
-@test "kill-agent retries persisted teardown after a registry write failure" {
-  provision_main
-  session="$(jq -r '.tmux.session' "$CONTROL_ROOT/.runtime/tmux-bus/registry.json")"
-  definitions="$(prepare_tmux_agents worker-a)"
-  run_orchestrator split-group --project-root "$PROJECT_ROOT" --control-root "$CONTROL_ROOT" --session "$session" --agents "$definitions"
-  [ "$status" -eq 0 ]
-  target="$(jq -r '.agents[] | select(.agent_id == "worker-a") | .tmux_target' "$CONTROL_ROOT/.runtime/tmux-bus/registry.json")"
-
-  export LBWC_TEST_FAIL_WRITE=registry
-  run_orchestrator kill-agent --project-root "$PROJECT_ROOT" --control-root "$CONTROL_ROOT" --target "$target"
-  unset LBWC_TEST_FAIL_WRITE
-  [ "$status" -ne 0 ]
-  [ -f "$CONTROL_ROOT/.runtime/tmux-bus/transactions/teardown-worker-a.json" ]
-  run jq -e '.agents[] | select(.agent_id == "worker-a") | .state != "shutdown"' "$CONTROL_ROOT/.runtime/tmux-bus/registry.json"
-  [ "$status" -eq 0 ]
-
-  run_orchestrator kill-agent --project-root "$PROJECT_ROOT" --control-root "$CONTROL_ROOT" --target "$target"
-  [ "$status" -eq 0 ]
-  [ ! -e "$CONTROL_ROOT/.runtime/tmux-bus/transactions/teardown-worker-a.json" ]
-  run jq -e '.agents[] | select(.agent_id == "worker-a") | .state == "shutdown"' "$CONTROL_ROOT/.runtime/tmux-bus/registry.json"
-  [ "$status" -eq 0 ]
-}
-
 @test "rollback shuts down a managed session and persists terminal agent state" {
   provision_main
-  session="$(jq -r '.tmux.session' "$CONTROL_ROOT/.runtime/tmux-bus/registry.json")"
+  local session definitions
+  session="$(provisioned_session)"
   definitions="$(prepare_tmux_agents worker-a)"
-  run_orchestrator split-group --project-root "$PROJECT_ROOT" --control-root "$CONTROL_ROOT" --session "$session" --agents "$definitions"
+  split_group "$session" "$definitions"
   [ "$status" -eq 0 ]
 
   run_orchestrator rollback --project-root "$PROJECT_ROOT" --control-root "$CONTROL_ROOT" --run-id rollback-run
 
   [ "$status" -eq 0 ]
-  ! TMUX_TMPDIR="$TMUX_TMPDIR" tmux -L "$TMUX_SERVER" has-session -t "$session"
-  run jq -e 'all(.agents[]; .state == "shutdown")' "$CONTROL_ROOT/.runtime/tmux-bus/registry.json"
+  ! tmux_on_test_server has-session -t "$session"
+  run jq -e 'all(.agents[]; .state == "shutdown")' "$(registry_file)"
   [ "$status" -eq 0 ]
 }
 
