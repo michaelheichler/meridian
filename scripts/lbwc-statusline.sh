@@ -60,7 +60,7 @@ printf '%bLBWC%b %b%s%b  %b%s%b  %s@%s  %b%s%b  %s\n' "$BOLD$CYAN" "$RESET" "$MA
 printf '%bContext%b [' "$BOLD" "$RESET"
 progress_bar "$CONTEXT_PERCENT"
 printf '] %s%%  in %s  out %s  cache %s/%s  cost $%.2f  lines %b+%s%b/%b-%s%b\n' "$CONTEXT_PERCENT" "$(format_tokens "$INPUT_TOKENS")" "$(format_tokens "$OUTPUT_TOKENS")" "$(format_tokens "$CACHE_READ")" "$(format_tokens "$CACHE_CREATE")" "$COST" "$GREEN" "$LINES_ADDED" "$RESET" "$RED" "$LINES_REMOVED" "$RESET"
-if [ -n "$FIVE_PERCENT" ] || [ -n "$SEVEN_PERCENT" ]; then
+if { [ -n "$FIVE_PERCENT" ] || [ -n "$SEVEN_PERCENT" ]; } && ! limits_line_hidden; then
   printf '%bQuota%b ' "$BOLD" "$RESET"
   if [ -n "$FIVE_PERCENT" ]; then
     FIVE_PERCENT=${FIVE_PERCENT%.*}
