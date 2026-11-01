@@ -97,6 +97,14 @@ file_inode() {
   printf '%s\n' "$inode"
 }
 
+descriptor_inode() {
+  local inode attempt
+  for attempt in 1 2 3 4 5; do
+    inode=$(file_inode "/dev/fd/$1") && { printf '%s\n' "$inode"; return 0; }
+  done
+  return 1
+}
+
 lock_directory_has_identity() {
   local current_identity
   [ -n "$LOCK_DIR_IDENTITY" ] && [ -d "$LOCK_DIR" ] && [ ! -L "$LOCK_DIR" ] || return 1
