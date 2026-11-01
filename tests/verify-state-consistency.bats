@@ -64,7 +64,7 @@ run_verify() {
   LBWC_PLANNING_DIR="$PLANNING_DIR" bash "$SCRIPT"
 }
 
-@test "verify-state-consistency clean: reports ok when disk and state agree" {
+@test "verify-state-consistency reports ok when disk and state agree and exits 1 naming each kind of drift" {
   fresh_planning no-planning
   rm -rf "$PLANNING_DIR"
   run run_verify
@@ -96,10 +96,6 @@ run_verify() {
   run run_verify
   expect_case empty-manifest 0 "state_consistency=ok"
 
-  assert_no_case_failures
-}
-
-@test "verify-state-consistency drift: reports each kind of disagreement and exits 1" {
   fresh_planning state-plans
   make_minimal_project
   : > "$PLANNING_DIR/phases/01-test/PLAN.md"
@@ -214,7 +210,7 @@ run_verify() {
   assert_no_case_failures
 }
 
-@test "reconcile-state-md: rewrites the current phase block from the phase directories" {
+@test "reconcile-state-md rewrites the phase block, status lines, sections and roadmap checklist, and reports json, skip and changed-file modes" {
   fresh_planning planned
   skip_qa
   make_phase 01-alpha 2
@@ -282,10 +278,6 @@ run_verify() {
   expect_status qa-gate-open 0
   expect_file_line qa-gate-open "$STATE_FILE" '^Status: needs_verification$'
 
-  assert_no_case_failures
-}
-
-@test "reconcile-state-md projections: rewrites phase status lines, sections and the roadmap checklist" {
   fresh_planning status-lines
   skip_qa
   make_phase 01-alpha 1 complete
@@ -344,10 +336,6 @@ run_verify() {
   expect_case roadmap-unresolvable 0 "ROADMAP checklist numbering scheme is mixed or unresolvable"
   expect_file_line roadmap-unresolvable "$STATE_FILE" '^Phase: 7 of 7 (untouched)$'
 
-  assert_no_case_failures
-}
-
-@test "reconcile-state-md modes: reports json status, skips quietly and resolves changed files" {
   fresh_planning json-reconciled
   skip_qa
   make_phase 01-alpha 1 complete

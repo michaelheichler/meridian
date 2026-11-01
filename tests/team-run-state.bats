@@ -1,6 +1,9 @@
 #!/usr/bin/env bats
 
 load test_helper
+load gate_case_helper
+load gate_case_files
+load rejection_case_helper
 
 setup() {
   setup_temp_dir
@@ -8,100 +11,80 @@ setup() {
   mkdir -p "$ROOT"
   SCRIPT="$SCRIPTS_DIR/team-run-state.sh"
   CLEANUP="$SCRIPTS_DIR/cleanup-temporary-agent-runfiles.sh"
+  reset_case_failures
 }
 
 teardown() {
   teardown_temp_dir
 }
 
-@test "team run state resolves scope arguments to canonical repository-relative scopes" {
-  local label scope_args expected
-  local -a scope_array
-  mkdir -p "$ROOT/src/web" "$ROOT/tests/web"
-  while IFS='|' read -r label scope_args expected; do
-    [ -n "$label" ] || continue
-    scope_array=()
-    [ -z "$scope_args" ] || read -r -a scope_array <<< "$scope_args"
-    run bash "$SCRIPT" resolve-scopes --project-root "$ROOT" ${scope_array[@]+"${scope_array[@]}"}
-    [ "$status" -eq 0 ] || { echo "case=$label status=$status output=$output" >&2; return 1; }
-    [ "$(jq -c '.scopes' <<< "$output")" = "$expected" ] \
-      || { echo "case=$label expected=$expected output=$output" >&2; return 1; }
-  done <<CASES
-default-is-repository-root||["."]
-repeatable-relative-scopes|--scope src/web --scope tests/web|["src/web","tests/web"]
-absolute-scope-becomes-relative|--scope $ROOT/tests/web|["tests/web"]
-CASES
+expect_scopes() {
+  local label=$1 want=$2
+  shift 2
+  run bash "$SCRIPT" resolve-scopes --project-root "$ROOT" "$@"
+  expect_status "$label" 0
+  [ "$(jq -c '.scopes' <<< "$output")" = "$want" ] || record_case_failure "$label" "want=$want output=$output"
 }
 
-@test "team run state creates diagnosis files without active planning state" {
+@test "team run state resolves scope arguments to canonical repository-relative scopes and rejects an escaping scope" {
+  mkdir -p "$ROOT/src/web" "$ROOT/tests/web" "$TEST_TEMP_DIR/outside"
+
+  expect_scopes default-is-repository-root '["."]'
+  expect_scopes repeatable-relative-scopes '["src/web","tests/web"]' --scope src/web --scope tests/web
+  expect_scopes absolute-scope-becomes-relative '["tests/web"]' --scope "$ROOT/tests/web"
+
+  run bash "$SCRIPT" resolve-scopes --project-root "$ROOT" --scope "$TEST_TEMP_DIR/outside"
+  expect_rejected scope-outside-project "scope must remain inside the project root"
+
+  assert_no_case_failures
+}
+
+@test "team run state creates diagnosis files without planning state, records terminal status and prints a summary" {
+  local run_one="$ROOT/.temporary-agent-runfiles/runs/run-one" run_root="$ROOT/.temporary-agent-runfiles/runs/run-summary"
+
   run bash "$SCRIPT" create --project-root "$ROOT" --run-id run-one
+  expect_status create 0
+  expect_path create-run-json "$run_one/run.json"
+  [ -d "$run_one/contracts" ] || record_case_failure create-contracts-dir "contracts directory missing"
+  [ -d "$run_one/generated-agents" ] || record_case_failure create-agents-dir "generated-agents directory missing"
+  expect_jq create-planned-root-scope "$run_one/run.json" '.status == "planned" and .scopes == ["."]'
+  expect_no_path create-no-planning-config "$ROOT/.lbwc-planning/config.json"
 
-  [ "$status" -eq 0 ]
-  [ -f "$ROOT/.temporary-agent-runfiles/runs/run-one/run.json" ]
-  [ -d "$ROOT/.temporary-agent-runfiles/runs/run-one/contracts" ]
-  [ -d "$ROOT/.temporary-agent-runfiles/runs/run-one/generated-agents" ]
-  jq -e '.status == "planned" and .scopes == ["."]' \
-    "$ROOT/.temporary-agent-runfiles/runs/run-one/run.json" >/dev/null
-  [ ! -e "$ROOT/.lbwc-planning/config.json" ]
-}
-
-@test "team run state rejects a scope that leaves the repository" {
-  outside="$TEST_TEMP_DIR/outside"
-  mkdir -p "$outside"
-
-  run bash "$SCRIPT" resolve-scopes --project-root "$ROOT" --scope "$outside"
-
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"scope must remain inside the project root"* ]]
-}
-
-@test "team run state records terminal status and prints a summary" {
-  run_root="$ROOT/.temporary-agent-runfiles/runs/run-summary"
   run bash "$SCRIPT" create --project-root "$ROOT" --run-id run-summary
-  [ "$status" -eq 0 ]
-
-  run bash "$SCRIPT" record --run-root "$run_root" --kind task \
-    --id task-1 --status running
-  [ "$status" -eq 0 ]
-  run bash "$SCRIPT" update --run-root "$run_root" --status completed \
-    --event "native team completed"
-  [ "$status" -eq 0 ]
-
+  expect_status summary-create 0
+  run bash "$SCRIPT" record --run-root "$run_root" --kind task --id task-1 --status running
+  expect_status record-task 0
+  run bash "$SCRIPT" update --run-root "$run_root" --status completed --event "native team completed"
+  expect_status update-completed 0
   run bash "$SCRIPT" summary --run-root "$run_root"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"status: completed"* ]]
-  [[ "$output" == *"task-1"* ]]
+  expect_case summary-status 0 "status: completed"
+  expect_output_has summary-task "task-1"
+
+  assert_no_case_failures
 }
 
-@test "temporary cleanup removes only readable old terminal runs" {
-  runs="$ROOT/.temporary-agent-runfiles/runs"
+@test "temporary cleanup removes only readable old terminal runs and its scan exposes preserved runs" {
+  local runs="$ROOT/.temporary-agent-runfiles/runs"
   mkdir -p "$runs/old-completed" "$runs/old-running" "$runs/old-unreadable"
-  printf '%s\n' '{"status":"completed","updated_at":"2000-01-01T00:00:00Z"}' \
-    > "$runs/old-completed/run.json"
-  printf '%s\n' '{"status":"running","updated_at":"2000-01-01T00:00:00Z"}' \
-    > "$runs/old-running/run.json"
+  printf '%s\n' '{"status":"completed","updated_at":"2000-01-01T00:00:00Z"}' > "$runs/old-completed/run.json"
+  printf '%s\n' '{"status":"running","updated_at":"2000-01-01T00:00:00Z"}' > "$runs/old-running/run.json"
   printf '%s\n' '{not-json' > "$runs/old-unreadable/run.json"
 
   run bash "$CLEANUP" cleanup --project-root "$ROOT"
+  expect_case cleanup 0 "old-completed"
+  expect_no_path cleanup-removes-old-terminal "$runs/old-completed"
+  [ -d "$runs/old-running" ] || record_case_failure cleanup-keeps-running "old-running removed"
+  [ -d "$runs/old-unreadable" ] || record_case_failure cleanup-keeps-unreadable "old-unreadable removed"
 
-  [ "$status" -eq 0 ]
-  [ ! -e "$runs/old-completed" ]
-  [ -d "$runs/old-running" ]
-  [ -d "$runs/old-unreadable" ]
-  [[ "$output" == *"old-completed"* ]]
-}
-
-@test "temporary cleanup scan exposes preserved active and unreadable runs" {
-  runs="$ROOT/.temporary-agent-runfiles/runs"
+  rm -rf "$runs"
   mkdir -p "$runs/active" "$runs/unreadable"
   printf '%s\n' '{"status":"awaiting-review"}' > "$runs/active/run.json"
   printf '%s\n' '{not-json' > "$runs/unreadable/run.json"
-
   run bash "$CLEANUP" scan --project-root "$ROOT"
+  expect_case scan-active 0 "temporary_run_active|active"
+  expect_output_has scan-unreadable "temporary_run_unreadable|unreadable"
 
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"temporary_run_active|active"* ]]
-  [[ "$output" == *"temporary_run_unreadable|unreadable"* ]]
+  assert_no_case_failures
 }
 
 @test "doctor cleanup scan reports temporary runs through the cleanup helper" {

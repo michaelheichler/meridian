@@ -80,7 +80,13 @@ clear_tmux_runtime() {
   rm -rf "$PROJECT/.lbwc-planning/.runtime"
 }
 
-@test "statusline: renders every line from native input, orchestration state and an absent quota without writes" {
+reset_project() {
+  rm -rf "$PROJECT" "$BIN/tmux"
+  mkdir -p "$PROJECT/.lbwc-planning/.contracts/tasks"
+}
+
+@test "statusline: renders every line without writes and hides the Quota line only for true hide-limits switches" {
+  local config="$PROJECT/.lbwc-planning/config.json"
   mkdir -p "$PROJECT/.lbwc-planning/phases/10-status"
   cat > "$PROJECT/.lbwc-planning/.contracts/tasks/task.json" <<EOF
 {"phase":"10"}
@@ -109,12 +115,7 @@ EOF
   expect_output_lacks no-rate-limits "Quota"
   expect_output_has no-rate-limits "off"
 
-  assert_no_case_failures
-}
-
-@test "statusline: hides the Quota line for the hide-limits switches and keeps it for unset, false or non-boolean values" {
-  local config="$PROJECT/.lbwc-planning/config.json"
-
+  reset_project
   printf '%s' '{"statusline_hide_limits":true}' > "$config"
   run_statusline "$(status_input)"
   expect_output_lacks hide-limits "Quota"
@@ -144,7 +145,7 @@ EOF
   assert_no_case_failures
 }
 
-@test "statusline: summarizes healthy and failed agent runtime with diagnostics" {
+@test "statusline: summarizes agent runtime with diagnostics and applies the hide, collapse, malformed and workflow switches" {
   local runtime="$PROJECT/.lbwc-planning/.runtime/tmux-bus"
   mkdir -p "$runtime" "$runtime/locks" "$runtime/claims" "$runtime/transactions"
   printf '%s\n' '{"agent_execution_mode":"tmux","tmux_execution":{"enabled":true,"heartbeat_stale_seconds":120}}' > "$PROJECT/.lbwc-planning/config.json"
@@ -194,10 +195,7 @@ EOF
   [[ "$output" == *"stale 1"*"failed 1"* ]] || record_case_failure runtime-summary "stale and failed totals missing output=$output"
   [[ "$output" == *"Diagnostics"*"stale lock"* ]] || record_case_failure runtime-summary "stale lock diagnostic missing output=$output"
 
-  assert_no_case_failures
-}
-
-@test "statusline: applies the hide, collapse and malformed tmux switches and the workflow backend" {
+  reset_project
   write_tmux_config true false
   write_tmux_registry running 2000000000000
   run_statusline "$(minimal_input)" TMUX=1
@@ -250,8 +248,8 @@ EOF
   assert_no_case_failures
 }
 
-@test "statusline-install: refuses without confirmation, replacement approval, valid arguments or valid settings" {
-  local settings="$TEST_ROOT/settings.json"
+@test "statusline-install: refuses without confirmation, approval or valid input, and writes a fifteen second refresh with a backup" {
+  local settings="$TEST_ROOT/settings.json" fresh="$TEST_ROOT/nested/fresh.json" own="$TEST_ROOT/own.json"
   printf '%s\n' '{"statusLine":{"type":"command","command":"other-status"}}' > "$settings"
 
   run bash "$INSTALLER" --settings "$settings"
@@ -274,12 +272,7 @@ EOF
   run bash "$INSTALLER" --settings "$settings" --yes
   expect_case settings-not-an-object 2 "statusline_install=settings_malformed"
 
-  assert_no_case_failures
-}
-
-@test "statusline-install: writes the command object with a fifteen second refresh and a backup" {
-  local settings="$TEST_ROOT/settings.json" fresh="$TEST_ROOT/nested/fresh.json" own="$TEST_ROOT/own.json"
-
+  rm -f "${settings}.lbwc-statusline.bak"
   printf '{}\n' > "$settings"
   run bash "$INSTALLER" --settings "$settings" --yes
   expect_case empty-settings 0 "statusline_install=installed refresh_interval=15"

@@ -302,7 +302,7 @@ sc_golden() {
   bash "$PD_FIXTURE_BUILDER" "$1"
 }
 
-@test "QA status classifies verification artifacts and remediation stage files" {
+@test "QA status classifies verification artifacts, stage files, later product changes and finished remediation rounds" {
   pd_table <<'CASES'
 missing-artifact-is-pending#sc_qa missing_artifact#qa_status=pending~qa_reason=missing_verification_artifact
 pass-result#sc_qa pass#qa_status=passed~qa_reason=none
@@ -327,21 +327,11 @@ done-stage-round-fail#sc_qa_stage done_round_fails#qa_status=failed
 done-stage-round-verification-missing#sc_qa_stage done_round_missing#qa_status=pending
 done-stage-missing-round-fails-closed#sc_qa_stage done_round_missing_phase_pass#qa_status=pending
 done-stage-corrupt-round-degrades#sc_qa_stage done_corrupt_round#phase_detect_complete=true
-CASES
-}
-
-@test "QA status goes pending when product code changed after verification" {
-  pd_table <<'CASES'
 verified-commit-mismatch#sc_qa_git stale_commit#qa_status=pending~qa_reason=verified_at_commit_mismatch
 brownfield-pass-after-later-commit#sc_qa_git brownfield_after_commit#qa_status=pending~qa_reason=product_changed_after_verification
 uncommitted-product-change#sc_qa_git uncommitted_change#qa_status=pending~qa_reason=working_tree_changed
 unrelated-dirt-ignored#sc_qa_git unrelated_dirt#qa_status=passed~qa_reason=none
 brownfield-remediated-after-later-commit#sc_qa_git remediated_after_commit#qa_status=pending~qa_reason=product_changed_after_verification
-CASES
-}
-
-@test "QA status resolves finished remediation rounds from the round verification" {
-  pd_table <<'CASES'
 first-round-pass-is-remediated#sc_qa_round remediated#qa_status=remediated
 second-round-pass-is-remediated#sc_qa_round second_round#qa_status=remediated
 unresolved-known-issues-keep-failed#sc_qa_round known_issues_keep_failed#qa_status=failed
@@ -349,7 +339,7 @@ cleared-round-ignores-stale-phase-issues#sc_qa_round resume_with_stale_phase_iss
 CASES
 }
 
-@test "QA attention and remediation outrank other unfinished work in phase order" {
+@test "QA attention and remediation outrank other unfinished work, and golden fixtures route to the right phase state" {
   pd_table <<'CASES'
 qa-remediation-blocks-verification#sc_qa_priority qa_blocks_verification#next_phase_state=needs_qa_remediation
 later-qa-beats-unverified#sc_qa_priority qa_beats_unverified#next_phase_state=needs_qa_remediation~next_phase=02~next_phase_slug=02-remediating~qa_status=remediating
@@ -361,11 +351,6 @@ backlog-attention-while-unfinished#sc_qa_priority backlog#next_phase=01~next_pha
 backlog-attention-when-status-probe-fails#sc_qa_priority backlog_probe_fails#next_phase=01~next_phase_state=needs_plan_and_execute~first_qa_attention_phase=02~first_qa_attention_slug=02-known-issues~qa_attention_status=failed~+.lbwc-planning/phases/02-known-issues/known-issues.json
 backlog-attention-with-partial-status-payload#sc_qa_priority backlog_partial_payload#next_phase=01~next_phase_state=needs_plan_and_execute~first_qa_attention_phase=02~first_qa_attention_slug=02-known-issues~qa_attention_status=failed~+.lbwc-planning/phases/02-known-issues/known-issues.json
 all-done-routes-to-qa-when-known-issues-failed#sc_qa_priority all_done_known_issues_failed#next_phase=01~next_phase_slug=01-test~next_phase_state=needs_qa_remediation~first_qa_attention_phase=01~qa_attention_status=failed~qa_status=failed
-CASES
-}
-
-@test "golden fixtures for remediated and masked QA states route to the right phase state" {
-  pd_table <<'CASES'
 terminal-partial-summary-satisfied-by-current-round-pass#sc_golden phase-05-remediated#^next_phase_state=all_done~^next_phase_summaries=0
 terminal-failed-summary-not-masked-by-pass#sc_golden failed-summary-passing-remediation#^next_phase_state=needs_execute~!next_phase_state=all_done
 earlier-round-pass-does-not-mask-later-fail#sc_golden stale-pass-later-fail#^next_phase_state=needs_execute~!next_phase_state=all_done

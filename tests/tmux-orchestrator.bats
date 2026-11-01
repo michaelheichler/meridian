@@ -1,5 +1,9 @@
 #!/usr/bin/env bats
 
+load gate_case_helper
+load gate_case_files
+load rejection_case_helper
+
 setup() {
   unset TMUX TMUX_PANE
   REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/.." && pwd -P)"
@@ -330,79 +334,76 @@ assert_exit_status() {
   esac
 }
 
-@test "unknown --cancel is usage error" {
-  run_orchestrator provision --project-root "$PROJECT_ROOT" --control-root "$CONTROL_ROOT" --main-id main-session --cancel
-
-  [ "$status" -ne 0 ]
-  [ ! -e "$(registry_file)" ]
+expect_output_is() {
+  [ "$output" = "$2" ] || record_case_failure "$1" "output=[$output] want=[$2]"
 }
 
-@test "orchestrator first then bus shares one schema and main route" {
+expect_registry_jq() {
+  jq -e "$2" "$(registry_file)" >/dev/null 2>&1 || record_case_failure "$1" "registry filter failed=[$2] registry=$(cat "$(registry_file)" 2>&1)"
+}
+
+provision_attempt() {
+  run_orchestrator provision --project-root "$PROJECT_ROOT" --control-root "$CONTROL_ROOT" --main-id main-session "$@"
+}
+
+split_agent() {
+  run_orchestrator split-agent --project-root "$PROJECT_ROOT" --control-root "$CONTROL_ROOT" --session "$SESSION" --name worker-a --agent "$1"
+}
+
+@test "provision rejects an unknown flag, removes its runtime after a registry failure, and titles pane borders" {
+  reset_case_failures
+
+  provision_attempt --cancel
+  expect_rejected unknown-cancel-flag ""
+  expect_no_path unknown-cancel-flag-mints-no-registry "$(registry_file)"
+
+  reset_world
+  export LBWC_TEST_FAIL_WRITE=registry
+  provision_attempt
+  unset LBWC_TEST_FAIL_WRITE
+  expect_rejected registry-write-fails ""
+  expect_no_path registry-write-fails-removes-runtime "$CONTROL_ROOT/.runtime"
+
+  prepare_world none -
+  run tmux_on_test_server show-options -v -t "$SESSION" pane-border-status
+  expect_status pane-border-status 0
+  expect_output_is pane-border-status-value top
+  run tmux_on_test_server show-options -v -t "$SESSION" pane-border-format
+  expect_status pane-border-format 0
+  expect_output_is pane-border-format-value '#{pane_title}'
+
+  assert_no_case_failures
+}
+
+@test "bus init refuses an unprovisioned bus and shares one schema and main route after provision" {
+  reset_case_failures
+
+  run env PATH="$BIN_DIR:$PATH" bash "$BUS" --control-root "$CONTROL_ROOT" init --main-id main-session --main-session-id main-session
+  expect_rejected init-without-provision "bus is not provisioned"
+  expect_no_path init-without-provision-mints-no-registry "$(registry_file)"
+
   provision_main
   run env PATH="$BIN_DIR:$PATH" bash "$BUS" --control-root "$CONTROL_ROOT" init --main-id main-session --main-session-id main-session --orchestrator-capability "$MAIN_CAPABILITY"
-  [ "$status" -eq 0 ]
-  run jq -e '.schema_version == 2 and .tmux.topology == "detached-new-session" and .routes["main-session"].inbox == "main-session"' "$(registry_file)"
-  [ "$status" -eq 0 ]
+  expect_status init-after-provision 0
+  expect_registry_jq init-after-provision-schema '.schema_version == 2 and .tmux.topology == "detached-new-session" and .routes["main-session"].inbox == "main-session"'
+
+  assert_no_case_failures
 }
 
-@test "init without provision does not mint a registry" {
-  run env PATH="$BIN_DIR:$PATH" bash "$BUS" --control-root "$CONTROL_ROOT" init --main-id main-session --main-session-id main-session
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"bus is not provisioned"* ]]
-  [ ! -e "$(registry_file)" ]
-}
+@test "split-agent resolves the exact manifest contract and rejects a generated identity that differs from its agent id" {
+  reset_case_failures
 
-@test "provision configures titled pane borders" {
-  provision_main
-  local session
-  session="$(provisioned_session)"
+  prepare_world worker-a -
+  split_agent worker-a
+  expect_status matching-identity 0
+  expect_registry_jq matching-identity-uses-manifest-contract '.agents | any(.[]; (.agent_id == "worker-a") and (.contract_id | startswith("cmd-team-worker-a-")))'
 
-  run tmux_on_test_server show-options -v -t "$session" pane-border-status
-  [ "$status" -eq 0 ]
-  [ "$output" = top ]
-  run tmux_on_test_server show-options -v -t "$session" pane-border-format
-  [ "$status" -eq 0 ]
-  [ "$output" = '#{pane_title}' ]
-}
+  prepare_world worker-a -
+  split_agent other-agent
+  expect_rejected mismatched-identity "agent and generated identities must match"
+  expect_registry_jq mismatched-identity-registers-nothing '.agents | length == 0'
 
-@test "split-group accepts a generated manifest entry and schema 3 task contract" {
-  provision_main
-  local session definitions
-  session="$(provisioned_session)"
-  definitions="$(prepare_tmux_agents worker-a)"
-  jq -e '.agents["worker-a"] | type == "object"' "$CONTROL_ROOT/.agent-manifest.json" >/dev/null
-
-  split_group "$session" "$definitions"
-
-  [ "$status" -eq 0 ]
-  jq -e '.agents | any(.[]; .agent_id == "worker-a" and .generated_name == "worker-a")' "$(registry_file)" >/dev/null
-  run jq -e '.routes["worker-a"] | has("messaging_socket") | not' "$(routing_file)"
-  [ "$status" -eq 0 ]
-}
-
-@test "split-agent resolves the exact manifest contract instead of fabricating one" {
-  provision_main
-  local session
-  session="$(provisioned_session)"
-  prepare_tmux_agents worker-a >/dev/null
-
-  run_orchestrator split-agent --project-root "$PROJECT_ROOT" --control-root "$CONTROL_ROOT" --session "$session" --name worker-a --agent worker-a
-
-  [ "$status" -eq 0 ]
-  jq -e '.agents | any(.[]; (.agent_id == "worker-a") and (.contract_id | startswith("cmd-team-worker-a-")))' "$(registry_file)" >/dev/null
-}
-
-@test "split-agent rejects a generated identity that differs from its agent id" {
-  provision_main
-  local session
-  session="$(provisioned_session)"
-  prepare_tmux_agents worker-a >/dev/null
-
-  run_orchestrator split-agent --project-root "$PROJECT_ROOT" --control-root "$CONTROL_ROOT" --session "$session" --name worker-a --agent other-agent
-
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"agent and generated identities must match"* ]]
-  [ "$(jq '.agents | length' "$(registry_file)")" = 0 ]
+  assert_no_case_failures
 }
 
 @test "split-group rejects invalid requests before any runtime mutation" {
@@ -518,15 +519,6 @@ CASES
   unset LBWC_TEST_FAST_CHILD_ENV LBWC_TEST_FAST_CHILD_STATUS LBWC_TEST_FAST_CHILD_OUTPUT LBWC_TEST_FAST_CHILD_READY LBWC_TEST_FAST_CHILD_RELEASE LBWC_TEST_FAST_CHILD_PANE LBWC_TEST_FAST_CHILD_STARTED LBWC_TEST_FAST_CHILD_EXIT LBWC_TEST_SESSION_START
 }
 
-@test "provision registry failure removes runtime state created by the attempt" {
-  export LBWC_TEST_FAIL_WRITE=registry
-  run_orchestrator provision --project-root "$PROJECT_ROOT" --control-root "$CONTROL_ROOT" --main-id main-session
-  unset LBWC_TEST_FAIL_WRITE
-
-  [ "$status" -ne 0 ]
-  [ ! -e "$CONTROL_ROOT/.runtime" ]
-}
-
 @test "orchestration commands reject a child without the main capability" {
   provision_main
   local session label command fragment
@@ -551,19 +543,25 @@ split-group;split-group;-
 CASES
 }
 
-@test "split-group reads the layout only before panes exist" {
-  printf '%s\n' '{"tmux":{"layout":"even-vertical"}}' > "$CONTROL_ROOT/config.json"
-  provision_main
-  local session definitions
-  session="$(provisioned_session)"
-  definitions="$(prepare_tmux_agents worker-a)"
+@test "split-group accepts a generated manifest entry with a schema 3 contract and reads the layout only before panes exist" {
+  reset_case_failures
+
+  prepare_world worker-a -
+  expect_jq manifest-entry-is-object "$CONTROL_ROOT/.agent-manifest.json" '.agents["worker-a"] | type == "object"'
+  split_group "$SESSION" "$DEFINITIONS"
+  expect_status generated-entry-accepted 0
+  expect_registry_jq generated-entry-registered '.agents | any(.[]; .agent_id == "worker-a" and .generated_name == "worker-a")'
+  expect_jq generated-route-has-no-socket "$(routing_file)" '.routes["worker-a"] | has("messaging_socket") | not'
+
+  prepare_world worker-a '{"tmux":{"layout":"even-vertical"}}'
   export LBWC_TEST_CONFIG_PATH="$CONTROL_ROOT/config.json" LBWC_TEST_LAYOUT_AFTER_SPLIT=bogus-layout LBWC_TEST_SELECT_LAYOUT_LOG="$TEST_ROOT/select-layout.log"
-
-  split_group "$session" "$definitions"
+  split_group "$SESSION" "$DEFINITIONS"
   unset LBWC_TEST_CONFIG_PATH LBWC_TEST_LAYOUT_AFTER_SPLIT LBWC_TEST_SELECT_LAYOUT_LOG
+  expect_status layout-read-once 0
+  [ "$(cat "$TEST_ROOT/select-layout.log")" = "select-layout -t $SESSION even-vertical" ] \
+    || record_case_failure layout-read-once-uses-initial-layout "log=$(cat "$TEST_ROOT/select-layout.log" 2>&1)"
 
-  [ "$status" -eq 0 ]
-  [ "$(cat "$TEST_ROOT/select-layout.log")" = "select-layout -t $session even-vertical" ]
+  assert_no_case_failures
 }
 
 @test "rollback shuts down a managed session and persists terminal agent state" {
@@ -577,7 +575,8 @@ CASES
   run_orchestrator rollback --project-root "$PROJECT_ROOT" --control-root "$CONTROL_ROOT" --run-id rollback-run
 
   [ "$status" -eq 0 ]
-  ! tmux_on_test_server has-session -t "$session"
+  run tmux_on_test_server has-session -t "$session"
+  [ "$status" -ne 0 ]
   run jq -e 'all(.agents[]; .state == "shutdown")' "$(registry_file)"
   [ "$status" -eq 0 ]
 }

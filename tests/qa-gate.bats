@@ -9,6 +9,7 @@ setup() {
   GATE_DIR="$TEST_TEMP_DIR/gate-scripts"
   FAKE_BIN="$TEST_TEMP_DIR/fake-bin"
   cd "$TEST_TEMP_DIR"
+  reset_case_failures
 }
 
 teardown() {
@@ -134,167 +135,119 @@ run_gate_adapter() {
   run env PATH="$FAKE_BIN:$PATH" LBWC_PLANNING_DIR="$PLANNING_ROOT" bash "$GATE_DIR/qa-gate.sh" </dev/null
 }
 
-expect_decision_allowed() {
+reset_gate_world() {
+  rm -rf "$PLANNING_ROOT" "$GATE_DIR" "$FAKE_BIN"
+}
+
+decision_allowed() {
+  run_summary_gap_decision "$2" "$3" "$4"
   expect_case_silent "$1" 0
 }
 
-expect_decision_denied() {
+decision_denied() {
+  run_summary_gap_decision "$2" "$3" "$4"
   expect_case_silent "$1" 1
 }
 
-expect_gap_allowed() {
+stage_gap_fixture() {
+  reset_gate_world
+  make_gap_phase complete
+  write_commit_window "$2"
+  make_support_copy
+  make_git_log_fixture "$1"
+}
+
+run_gap_adapter() {
+  stage_gap_fixture "$1" "$2"
+  run_gate_adapter
+}
+
+gap_allowed() {
+  run_gap_adapter "$2" "$3"
   expect_case_silent "$1" 0
 }
 
-expect_gap_denied() {
+gap_denied() {
+  run_gap_adapter "$2" "$3"
   expect_case "$1" 2 "1 summaries for 2 plans"
 }
 
-run_decision_table() {
-  local expectation=$1 label plans summaries evidence
-  reset_case_failures
-  while IFS='|' read -r label plans summaries evidence; do
-    [ -n "$label" ] || continue
-    run_summary_gap_decision "$plans" "$summaries" "$evidence"
-    "$expectation" "$label"
-  done
-}
-
-run_gap_adapter_table() {
-  local expectation=$1 label log_line window
-  reset_case_failures
-  while IFS='|' read -r label log_line window; do
-    [ -n "$label" ] || continue
-    rm -rf "$PLANNING_ROOT" "$GATE_DIR" "$FAKE_BIN"
-    make_gap_phase complete
-    write_commit_window "$window"
-    make_support_copy
-    make_git_log_fixture "$log_line"
-    run_gate_adapter
-    "$expectation" "$label"
-  done
-}
-
-run_dependency_table() {
-  local label missing_file
-  reset_case_failures
-  while IFS='|' read -r label missing_file; do
-    [ -n "$label" ] || continue
-    rm -rf "$PLANNING_ROOT" "$GATE_DIR"
-    make_gap_phase partial
-    make_support_copy
-    rm -f "$GATE_DIR/$missing_file"
-    run_gate_adapter
-    expect_case "$label" 2 "dependency load failed"
-  done
-}
-
-@test "summary-gap decision allows when no summary is missing or one is missing with fresh conforming evidence" {
-  run_decision_table expect_decision_allowed <<'CASES'
-no-plans-without-git|0|0|unavailable
-every-plan-summarized-without-git|2|2|unavailable
-more-summaries-than-plans|1|2|unavailable
-one-missing-summary-with-fresh-conforming-commit|2|1|fresh-conforming
-CASES
-
-  assert_no_case_failures
-}
-
-@test "summary-gap decision denies a gap without fresh conforming evidence or beyond one summary" {
-  run_decision_table expect_decision_denied <<'CASES'
-git-unavailable|2|1|unavailable
-nonconforming-git-observation|2|1|nonconforming
-stale-git-observation|2|1|stale
-two-missing-summaries-even-with-fresh-evidence|3|1|fresh-conforming
-non-numeric-plan-count|abc|1|fresh-conforming
-non-numeric-summary-count|2|x1|fresh-conforming
-empty-plan-count||1|fresh-conforming
-empty-summary-count|2||fresh-conforming
-CASES
-
-  assert_no_case_failures
-}
-
-@test "no planning dir exits clean" {
-  rm -rf "$PLANNING_ROOT"
-
-  run env LBWC_PLANNING_DIR="$PLANNING_ROOT" bash "$PROJECT_ROOT/scripts/qa-gate.sh"
-
-  [ "$status" -eq 0 ]
-  [ -z "$output" ]
-}
-
-@test "dependency load failure fails closed instead of silently passing" {
-  run_dependency_table <<'CASES'
-verification-freshness-unreadable|verification-freshness.sh
-summary-utils-absent|summary-utils.sh
-CASES
-
-  assert_no_case_failures
-}
-
-@test "fully complete phase counts as satisfied" {
-  make_phase 01-complete 01-01 complete
-  make_support_copy
-
-  run_gate_adapter
-
-  [ "$status" -eq 0 ]
-  [ -z "$output" ]
-}
-
-@test "unresolved partial phase does not count" {
+dependency_missing() {
+  reset_gate_world
   make_gap_phase partial
   make_support_copy
-
+  rm -f "$GATE_DIR/$2"
   run_gate_adapter
-
-  [ "$status" -eq 2 ]
-  [[ "$output" == *"0 summaries for 2 plans"* ]]
+  expect_case "$1" 2 "dependency load failed"
 }
 
-@test "unavailable Git denies incomplete plan summaries with the shipped dependencies" {
-  make_gap_phase partial
+@test "summary-gap decision allows only a fully summarized phase or one gap with fresh conforming evidence" {
+  decision_allowed no-plans-without-git 0 0 unavailable
+  decision_allowed every-plan-summarized-without-git 2 2 unavailable
+  decision_allowed more-summaries-than-plans 1 2 unavailable
+  decision_allowed one-missing-summary-with-fresh-conforming-commit 2 1 fresh-conforming
 
-  run env LBWC_PLANNING_DIR="$PLANNING_ROOT" bash "$PROJECT_ROOT/scripts/qa-gate.sh" </dev/null
-
-  [ "$status" -eq 2 ]
-  [[ "$output" != *"dependency load failed"* ]]
-  [[ "$output" == *"SUMMARY.md gap detected"* ]]
-}
-
-@test "adapter permits one missing summary while a conforming commit sits inside the window" {
-  run_gap_adapter_table expect_gap_allowed <<'CASES'
-fresh-conforming-commit|1699999999 feat(01-01): active work|
-commit-exactly-at-the-default-window-edge|1699992800 feat(01-01): edge work|
-commit-older-than-default-but-inside-configured-window|1699992799 feat(01-01): old work|10000
-zero-window-falls-back-to-default|1699999999 feat(01-01): active work|0
-non-numeric-window-falls-back-to-default|1699999999 feat(01-01): active work|"abc"
-CASES
+  decision_denied git-unavailable 2 1 unavailable
+  decision_denied nonconforming-git-observation 2 1 nonconforming
+  decision_denied stale-git-observation 2 1 stale
+  decision_denied two-missing-summaries-even-with-fresh-evidence 3 1 fresh-conforming
+  decision_denied non-numeric-plan-count abc 1 fresh-conforming
+  decision_denied non-numeric-summary-count 2 x1 fresh-conforming
+  decision_denied empty-plan-count '' 1 fresh-conforming
+  decision_denied empty-summary-count 2 '' fresh-conforming
 
   assert_no_case_failures
 }
 
-@test "adapter denies one missing summary without a conforming commit inside the window" {
-  run_gap_adapter_table expect_gap_denied <<'CASES'
-stale-conforming-commit|1699992799 feat(01-01): old work|
-future-dated-conforming-commit|1700000001 feat(01-01): active work|
-nonconforming-commit-message|1699999999 wip: unrelated change|
-commit-outside-shortened-window|1699999900 feat(01-01): active work|50
-CASES
+@test "qa-gate adapter permits one missing summary only while a conforming commit sits inside the window" {
+  gap_allowed fresh-conforming-commit '1699999999 feat(01-01): active work' ''
+  gap_allowed commit-exactly-at-the-default-window-edge '1699992800 feat(01-01): edge work' ''
+  gap_allowed commit-older-than-default-but-inside-configured-window '1699992799 feat(01-01): old work' 10000
+  gap_allowed zero-window-falls-back-to-default '1699999999 feat(01-01): active work' 0
+  gap_allowed non-numeric-window-falls-back-to-default '1699999999 feat(01-01): active work' '"abc"'
 
-  assert_no_case_failures
-}
+  gap_denied stale-conforming-commit '1699992799 feat(01-01): old work' ''
+  gap_denied future-dated-conforming-commit '1700000001 feat(01-01): active work' ''
+  gap_denied nonconforming-commit-message '1699999999 wip: unrelated change' ''
+  gap_denied commit-outside-shortened-window '1699999900 feat(01-01): active work' 50
 
-@test "adapter denies a summary gap when the current time cannot be read" {
-  make_gap_phase complete
-  make_support_copy
-  make_git_log_fixture '1699999999 feat(01-01): active work'
+  stage_gap_fixture '1699999999 feat(01-01): active work' ''
   printf '#!/bin/bash\nexit 1\n' > "$FAKE_BIN/date"
   chmod +x "$FAKE_BIN/date"
-
   run_gate_adapter
+  expect_case current-time-unavailable 2 ""
+  [ "$output" = "qa-gate: current time unavailable, cannot verify SUMMARY.md gate" ] \
+    || record_case_failure current-time-unavailable-message "output=$output"
 
-  [ "$status" -eq 2 ]
-  [ "$output" = "qa-gate: current time unavailable, cannot verify SUMMARY.md gate" ]
+  assert_no_case_failures
+}
+
+@test "qa-gate passes clean or complete phases and fails closed on partial phases and missing dependencies" {
+  rm -rf "$PLANNING_ROOT"
+  run env LBWC_PLANNING_DIR="$PLANNING_ROOT" bash "$PROJECT_ROOT/scripts/qa-gate.sh"
+  expect_case_silent no-planning-dir 0
+
+  reset_gate_world
+  make_phase 01-complete 01-01 complete
+  make_support_copy
+  run_gate_adapter
+  expect_case_silent fully-complete-phase 0
+
+  reset_gate_world
+  make_gap_phase partial
+  make_support_copy
+  run_gate_adapter
+  expect_case unresolved-partial-phase 2 "0 summaries for 2 plans"
+
+  reset_gate_world
+  make_gap_phase partial
+  run env LBWC_PLANNING_DIR="$PLANNING_ROOT" bash "$PROJECT_ROOT/scripts/qa-gate.sh" </dev/null
+  expect_case shipped-dependencies-without-git 2 "SUMMARY.md gap detected"
+  [[ "$output" != *"dependency load failed"* ]] \
+    || record_case_failure shipped-dependencies-load "output=$output"
+
+  dependency_missing verification-freshness-unreadable verification-freshness.sh
+  dependency_missing summary-utils-absent summary-utils.sh
+
+  assert_no_case_failures
 }

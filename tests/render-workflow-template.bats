@@ -1,9 +1,12 @@
 #!/usr/bin/env bats
 
+load gate_case_helper
+
 setup() {
   SCRIPT="$BATS_TEST_DIRNAME/../scripts/render-workflow-template.sh"
   OUT_DIR=$(mktemp -d)
   ADVERSARIAL_JOB=$'evil "job" with \\ backslash\nnewline `backtick` ${evil} and */ close-comment @@JOB@@'
+  reset_case_failures
 }
 
 teardown() {
@@ -96,210 +99,180 @@ render_solo() {
     "JOB=$1" TASK_ID=task-1 ROLE=scout AGENT_TYPE=lbwc-scout-a MODEL=sonnet EFFORT=balanced
 }
 
-@test "solo template renders an adversarial job as valid JavaScript that round-trips and runs" {
+expect_eq() {
+  [ "$2" = "$3" ] || record_case_failure "$1" "got=[$2] want=[$3]"
+}
+
+expect_fragment_in_output() {
+  [[ "$output" == *"$2"* ]] || record_case_failure "$1" "missing fragment=[$2] output=$output"
+}
+
+expect_call_field() {
+  expect_eq "$1" "$(jq -r "$2" <<< "$output")" "$3"
+}
+
+expect_file_fragment() {
+  [[ "$(cat "$2")" == *"$3"* ]] || record_case_failure "$1" "file $2 lacks fragment=[$3]"
+}
+
+expect_valid_js() {
+  assert_rendered_js_valid "$2" >/dev/null || record_case_failure "$1" "rendered file $2 is not valid JavaScript"
+}
+
+save_render() {
+  expect_case "$1-render" 0 ""
+  printf '%s' "$output" > "$OUT_DIR/$1.mjs"
+}
+
+render_fixture_template() {
+  make_script_fixture
+  printf '%b' "$1" > "$fixture_dir/templates/workflows/solo.js.tpl"
+  run bash "$fixture_dir/scripts/render-workflow-template.sh" solo NAME=probe DESCRIPTION=desc \
+    JOB=job TASK_ID=task-1 ROLE=scout AGENT_TYPE=lbwc-scout-a MODEL=sonnet EFFORT=balanced
+  rm -rf "$fixture_dir"
+}
+
+@test "solo template renders valid JavaScript, attaches the qa schema only for qa, and omits unresolved effort" {
   command -v node >/dev/null 2>&1 || skip "node is unavailable"
+
   render_solo "$ADVERSARIAL_JOB"
-  [ "$status" -eq 0 ]
-  printf '%s' "$output" > "$OUT_DIR/solo.mjs"
-  case "$output" in
-    *$'\x1f'*) unit_separator_found=1 ;;
-    *) unit_separator_found=0 ;;
-  esac
-  [ "$unit_separator_found" -eq 0 ]
+  save_render adversarial
+  [[ "$output" != *$'\x1f'* ]] || record_case_failure adversarial-no-unit-separator "output carries a unit separator"
+  [[ "$(head -n1 "$OUT_DIR/adversarial.mjs")" == "export const meta = "*";" ]] || record_case_failure adversarial-meta-line "first line is not the meta export"
+  expect_eq adversarial-phases "$(meta_phases "$OUT_DIR/adversarial.mjs")" Execute
+  expect_valid_js adversarial-valid-js "$OUT_DIR/adversarial.mjs"
+  expect_eq adversarial-job-round-trips "$(decode_const "$OUT_DIR/adversarial.mjs" JOB)" "$ADVERSARIAL_JOB"
+  run_workflow "$OUT_DIR/adversarial.mjs" '["ok"]'
+  expect_case adversarial-runs 0 ""
+  expect_eq adversarial-labels "$(agent_labels)" scout
+  expect_call_field adversarial-no-schema '.agentCalls[0].hasSchema' false
+  expect_call_field adversarial-complete '.result.status' complete
 
-  [[ "$(head -n1 "$OUT_DIR/solo.mjs")" == "export const meta = "*";" ]]
-  [ "$(meta_phases "$OUT_DIR/solo.mjs")" = Execute ]
-  assert_rendered_js_valid "$OUT_DIR/solo.mjs"
-  decoded=$(decode_const "$OUT_DIR/solo.mjs" JOB)
-  [ "$decoded" = "$ADVERSARIAL_JOB" ]
-
-  run_workflow "$OUT_DIR/solo.mjs" '["ok"]'
-  [ "$status" -eq 0 ]
-  [ "$(agent_labels)" = scout ]
-  [ "$(jq -r '.agentCalls[0].hasSchema' <<< "$output")" = false ]
-  [ "$(jq -r '.result.status' <<< "$output")" = complete ]
-}
-
-@test "the syntax check rejects a rendered file whose body is corrupted" {
-  command -v node >/dev/null 2>&1 || skip "node is unavailable"
   render_solo "simple job"
-  [ "$status" -eq 0 ]
-  printf '%s\n' "$output" > "$OUT_DIR/solo-corrupt.js"
-  printf 'function (((;\n' >> "$OUT_DIR/solo-corrupt.js"
+  save_render scout
+  run_workflow "$OUT_DIR/scout.mjs" '["ok"]'
+  expect_case scout-runs 0 ""
+  expect_call_field scout-no-schema '.agentCalls[0].hasSchema' false
+  expect_call_field scout-passes-effort '.agentCalls[0].hasEffort' true
 
-  run assert_rendered_js_valid "$OUT_DIR/solo-corrupt.js"
-  [ "$status" -ne 0 ]
-  [[ "$output" == *SyntaxError* ]]
-}
-
-@test "a literal marker inside job text does not trip the leftover-token scan" {
-  render_solo 'plain text containing @@TASK_ID@@ literally'
-  [ "$status" -eq 0 ]
-  [[ "$output" == *'@@TASK_ID@@ literally'* ]]
-}
-
-@test "solo template passes the qa schema when ROLE is qa" {
-  command -v node >/dev/null 2>&1 || skip "node is unavailable"
   run bash "$SCRIPT" solo NAME=probe DESCRIPTION=desc \
     JOB=job TASK_ID=task-1 ROLE=qa AGENT_TYPE=lbwc-qa-a MODEL=sonnet EFFORT=balanced
-  [ "$status" -eq 0 ]
-  printf '%s' "$output" > "$OUT_DIR/solo-qa.mjs"
+  save_render qa
+  run_workflow "$OUT_DIR/qa.mjs" '[{"result":"PASS"}]'
+  expect_case qa-runs 0 ""
+  expect_call_field qa-has-schema '.agentCalls[0].hasSchema' true
 
-  run_workflow "$OUT_DIR/solo-qa.mjs" '[{"result":"PASS"}]'
-  [ "$status" -eq 0 ]
-  [ "$(jq -r '.agentCalls[0].hasSchema' <<< "$output")" = true ]
-}
-
-@test "solo template omits the schema for a non-qa role and passes the resolved effort" {
-  command -v node >/dev/null 2>&1 || skip "node is unavailable"
-  render_solo "simple job"
-  [ "$status" -eq 0 ]
-  printf '%s' "$output" > "$OUT_DIR/solo-scout.mjs"
-
-  run_workflow "$OUT_DIR/solo-scout.mjs" '["ok"]'
-  [ "$status" -eq 0 ]
-  [ "$(jq -r '.agentCalls[0].hasSchema' <<< "$output")" = false ]
-  [ "$(jq -r '.agentCalls[0].hasEffort' <<< "$output")" = true ]
-}
-
-@test "solo template omits agent effort when EFFORT is unresolved" {
   run bash "$SCRIPT" solo NAME=probe DESCRIPTION=desc \
     JOB=job TASK_ID=task-1 ROLE=scout AGENT_TYPE=lbwc-scout-a MODEL=sonnet EFFORT=
-  [ "$status" -eq 0 ]
-  printf '%s' "$output" > "$OUT_DIR/solo-no-effort.mjs"
+  save_render no-effort
+  expect_file_fragment no-effort-null-const "$OUT_DIR/no-effort.mjs" "const EFFORT = null;"
+  expect_valid_js no-effort-valid-js "$OUT_DIR/no-effort.mjs"
+  run_workflow "$OUT_DIR/no-effort.mjs" '["ok"]'
+  expect_case no-effort-runs 0 ""
+  expect_call_field no-effort-omitted '.agentCalls[0].hasEffort' false
 
-  [[ "$(cat "$OUT_DIR/solo-no-effort.mjs")" == *"const EFFORT = null;"* ]]
-  assert_rendered_js_valid "$OUT_DIR/solo-no-effort.mjs"
+  render_solo "simple job"
+  printf '%s\n' "$output" > "$OUT_DIR/corrupt.js"
+  printf 'function (((;\n' >> "$OUT_DIR/corrupt.js"
+  run assert_rendered_js_valid "$OUT_DIR/corrupt.js"
+  [ "$status" -ne 0 ] || record_case_failure corrupt-body-rejected "syntax check accepted a corrupted body"
+  expect_fragment_in_output corrupt-body-reports-syntax-error SyntaxError
 
-  run_workflow "$OUT_DIR/solo-no-effort.mjs" '["ok"]'
-  [ "$status" -eq 0 ]
-  [ "$(jq -r '.agentCalls[0].hasEffort' <<< "$output")" = false ]
+  assert_no_case_failures
 }
 
-@test "a missing required token fails the render naming the field" {
+@test "pair template renders valid JavaScript with both phases and omits both efforts when unresolved" {
+  command -v node >/dev/null 2>&1 || skip "node is unavailable"
+
+  render_pair standard "$ADVERSARIAL_JOB"
+  save_render pair
+  expect_eq pair-phases "$(meta_phases "$OUT_DIR/pair.mjs")" "Implement,Review"
+  expect_valid_js pair-valid-js "$OUT_DIR/pair.mjs"
+  run_workflow "$OUT_DIR/pair.mjs" '[{"n":1},{"verdict":"PASS"}]'
+  expect_case pair-runs 0 ""
+  expect_eq pair-labels "$(agent_labels)" "engineer,critic"
+  expect_call_field pair-critic-schema '.agentCalls[1].hasSchema' true
+  expect_call_field pair-complete '.result.status' complete
+  expect_call_field pair-round '.result.round' 1
+
+  run bash "$SCRIPT" pair NAME=probe-pair DESCRIPTION=desc \
+    JOB=job TASK_ID=task-2 AUTONOMY=standard \
+    ENGINEER_AGENT_TYPE=lbwc-eng-a ENGINEER_MODEL=sonnet ENGINEER_EFFORT= \
+    CRITIC_AGENT_TYPE=lbwc-crit-a CRITIC_MODEL=sonnet CRITIC_EFFORT=
+  save_render pair-no-effort
+  expect_file_fragment pair-engineer-null-const "$OUT_DIR/pair-no-effort.mjs" "const ENGINEER_EFFORT = null;"
+  expect_file_fragment pair-critic-null-const "$OUT_DIR/pair-no-effort.mjs" "const CRITIC_EFFORT = null;"
+  expect_valid_js pair-no-effort-valid-js "$OUT_DIR/pair-no-effort.mjs"
+  run_workflow "$OUT_DIR/pair-no-effort.mjs" '[{"n":1},{"verdict":"PASS"}]'
+  expect_case pair-no-effort-runs 0 ""
+  expect_call_field pair-engineer-effort-omitted '.agentCalls[0].hasEffort' false
+  expect_call_field pair-critic-effort-omitted '.agentCalls[1].hasEffort' false
+
+  assert_no_case_failures
+}
+
+@test "trio template renders valid JavaScript with all phase titles and runs the adversarial job" {
+  command -v node >/dev/null 2>&1 || skip "node is unavailable"
+
+  render_trio pure-vibe "$ADVERSARIAL_JOB"
+  save_render trio
+  expect_eq trio-phases "$(meta_phases "$OUT_DIR/trio.mjs")" "Implement,Build Tests,Verify"
+  expect_valid_js trio-valid-js "$OUT_DIR/trio.mjs"
+  expect_eq trio-job-round-trips "$(decode_const "$OUT_DIR/trio.mjs" JOB)" "$ADVERSARIAL_JOB"
+  run_workflow "$OUT_DIR/trio.mjs" '[{"n":1},{"t":1},{"verdict":"PASS"}]'
+  expect_case trio-runs 0 ""
+  expect_eq trio-labels "$(agent_labels)" "engineer,test-dev,critic"
+  expect_call_field trio-critic-schema '.agentCalls[2].hasSchema' true
+  expect_call_field trio-complete '.result.status' complete
+
+  assert_no_case_failures
+}
+
+@test "the renderer rejects bad shapes, fields and templates, and renders literal markers deterministically" {
+  local first
+
   run bash "$SCRIPT" solo NAME=probe DESCRIPTION=desc \
     JOB=job TASK_ID=task-1 ROLE=scout AGENT_TYPE=lbwc-scout-a MODEL=sonnet
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"missing required field EFFORT"* ]]
+  expect_case solo-missing-effort 1 "missing required field EFFORT"
 
   run bash "$SCRIPT" pair NAME=probe-pair DESCRIPTION=desc \
     JOB=job TASK_ID=task-2 AUTONOMY=standard \
     ENGINEER_AGENT_TYPE=lbwc-eng-a ENGINEER_MODEL=sonnet ENGINEER_EFFORT=balanced \
     CRITIC_AGENT_TYPE=lbwc-crit-a CRITIC_MODEL=sonnet
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"missing required field CRITIC_EFFORT"* ]]
-}
+  expect_case pair-missing-critic-effort 1 "missing required field CRITIC_EFFORT"
 
-@test "an unknown shape is rejected" {
   run bash "$SCRIPT" quad NAME=probe DESCRIPTION=desc
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"unknown shape"* ]]
-}
+  expect_case unknown-shape 1 "unknown shape"
 
-@test "an unknown field is rejected rather than silently discarded" {
   run bash "$SCRIPT" solo NAME=probe DESCRIPTION=desc \
     JOB=job TASK_ID=task-1 ROLE=scout AGENT_TYPE=lbwc-scout-a MODEL=sonnet EFFORT=balanced \
     TASKID=task-1
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"unknown field 'TASKID'"* ]]
-}
+  expect_case unknown-field 1 "unknown field 'TASKID'"
 
-@test "a template with no phase calls fails with a clear message instead of a bare pipefail exit" {
-  make_script_fixture
-  printf 'const JOB = @@JOB@@;\nconst TASK_ID = @@TASK_ID@@;\nconst ROLE = @@ROLE@@;\nconst AGENT_TYPE = @@AGENT_TYPE@@;\nconst MODEL = @@MODEL@@;\nconst EFFORT = @@EFFORT@@;\n' \
-    > "$fixture_dir/templates/workflows/solo.js.tpl"
+  render_fixture_template 'const JOB = @@JOB@@;\nconst TASK_ID = @@TASK_ID@@;\nconst ROLE = @@ROLE@@;\nconst AGENT_TYPE = @@AGENT_TYPE@@;\nconst MODEL = @@MODEL@@;\nconst EFFORT = @@EFFORT@@;\n'
+  expect_case no-phase-calls 1 ""
+  expect_eq no-phase-calls-message "$output" "render-workflow-template: template 'solo' declares no phase(\"...\") calls"
 
-  run bash "$fixture_dir/scripts/render-workflow-template.sh" solo NAME=probe DESCRIPTION=desc \
-    JOB=job TASK_ID=task-1 ROLE=scout AGENT_TYPE=lbwc-scout-a MODEL=sonnet EFFORT=balanced
-  rm -rf "$fixture_dir"
+  render_fixture_template 'const JOB = @@JOB@@;\nconst TASK_ID = @@TASK_ID@@;\nconst ROLE = @@ROLE@@;\nconst AGENT_TYPE = @@AGENT_TYPE@@;\nconst MODEL = @@MODEL@@;\nconst EFFORT = @@EFFORT@@;\nconst STRAY = @@UNDECLARED_MARKER@@;\n\nawait phase("Execute");\n\nreturn { status: "complete" };\n'
+  expect_case undeclared-marker 1 ""
+  expect_eq undeclared-marker-message "$output" "render-workflow-template: unresolved template token"
 
-  [ "$status" -eq 1 ]
-  [[ "$output" == "render-workflow-template: template 'solo' declares no phase(\"...\") calls" ]]
-}
+  render_solo 'plain text containing @@TASK_ID@@ literally'
+  expect_case literal-marker-in-job 0 '@@TASK_ID@@ literally'
 
-@test "a template carrying an undeclared marker fails the unresolved-token scan" {
-  make_script_fixture
-  printf 'const JOB = @@JOB@@;\nconst TASK_ID = @@TASK_ID@@;\nconst ROLE = @@ROLE@@;\nconst AGENT_TYPE = @@AGENT_TYPE@@;\nconst MODEL = @@MODEL@@;\nconst EFFORT = @@EFFORT@@;\nconst STRAY = @@UNDECLARED_MARKER@@;\n\nawait phase("Execute");\n\nreturn { status: "complete" };\n' \
-    > "$fixture_dir/templates/workflows/solo.js.tpl"
-
-  run bash "$fixture_dir/scripts/render-workflow-template.sh" solo NAME=probe DESCRIPTION=desc \
-    JOB=job TASK_ID=task-1 ROLE=scout AGENT_TYPE=lbwc-scout-a MODEL=sonnet EFFORT=balanced
-  rm -rf "$fixture_dir"
-
-  [ "$status" -eq 1 ]
-  [[ "$output" == "render-workflow-template: unresolved template token" ]]
-}
-
-@test "pair template renders valid JavaScript with both phase titles and runs the adversarial job" {
-  command -v node >/dev/null 2>&1 || skip "node is unavailable"
-  render_pair standard "$ADVERSARIAL_JOB"
-  [ "$status" -eq 0 ]
-  printf '%s' "$output" > "$OUT_DIR/pair.mjs"
-
-  [ "$(meta_phases "$OUT_DIR/pair.mjs")" = "Implement,Review" ]
-  assert_rendered_js_valid "$OUT_DIR/pair.mjs"
-
-  run_workflow "$OUT_DIR/pair.mjs" '[{"n":1},{"verdict":"PASS"}]'
-  [ "$status" -eq 0 ]
-  [ "$(agent_labels)" = "engineer,critic" ]
-  [ "$(jq -r '.agentCalls[1].hasSchema' <<< "$output")" = true ]
-  [ "$(jq -r '.result.status' <<< "$output")" = complete ]
-  [ "$(jq -r '.result.round' <<< "$output")" = 1 ]
-}
-
-@test "trio template renders valid JavaScript with all phase titles and runs the adversarial job" {
-  command -v node >/dev/null 2>&1 || skip "node is unavailable"
-  render_trio pure-vibe "$ADVERSARIAL_JOB"
-  [ "$status" -eq 0 ]
-  printf '%s' "$output" > "$OUT_DIR/trio.mjs"
-
-  [ "$(meta_phases "$OUT_DIR/trio.mjs")" = "Implement,Build Tests,Verify" ]
-  assert_rendered_js_valid "$OUT_DIR/trio.mjs"
-  decoded=$(decode_const "$OUT_DIR/trio.mjs" JOB)
-  [ "$decoded" = "$ADVERSARIAL_JOB" ]
-
-  run_workflow "$OUT_DIR/trio.mjs" '[{"n":1},{"t":1},{"verdict":"PASS"}]'
-  [ "$status" -eq 0 ]
-  [ "$(agent_labels)" = "engineer,test-dev,critic" ]
-  [ "$(jq -r '.agentCalls[2].hasSchema' <<< "$output")" = true ]
-  [ "$(jq -r '.result.status' <<< "$output")" = complete ]
-}
-
-@test "two identical invocations produce byte-identical output" {
   render_trio confident
-  [ "$status" -eq 0 ]
+  expect_case first-render 0 ""
   first="$output"
-
   render_trio confident
-  [ "$status" -eq 0 ]
-  [ "$output" = "$first" ]
-}
+  expect_case second-render 0 ""
+  expect_eq identical-invocations-identical-bytes "$output" "$first"
 
-@test "pair template omits engineer and critic effort when both are unresolved" {
-  command -v node >/dev/null 2>&1 || skip "node is unavailable"
-  run bash "$SCRIPT" pair NAME=probe-pair DESCRIPTION=desc \
-    JOB=job TASK_ID=task-2 AUTONOMY=standard \
-    ENGINEER_AGENT_TYPE=lbwc-eng-a ENGINEER_MODEL=sonnet ENGINEER_EFFORT= \
-    CRITIC_AGENT_TYPE=lbwc-crit-a CRITIC_MODEL=sonnet CRITIC_EFFORT=
-  [ "$status" -eq 0 ]
-  printf '%s' "$output" > "$OUT_DIR/pair-no-effort.mjs"
-
-  [[ "$(cat "$OUT_DIR/pair-no-effort.mjs")" == *"const ENGINEER_EFFORT = null;"* ]]
-  [[ "$(cat "$OUT_DIR/pair-no-effort.mjs")" == *"const CRITIC_EFFORT = null;"* ]]
-  assert_rendered_js_valid "$OUT_DIR/pair-no-effort.mjs"
-
-  run_workflow "$OUT_DIR/pair-no-effort.mjs" '[{"n":1},{"verdict":"PASS"}]'
-  [ "$status" -eq 0 ]
-  [ "$(jq -r '.agentCalls[0].hasEffort' <<< "$output")" = false ]
-  [ "$(jq -r '.agentCalls[1].hasEffort' <<< "$output")" = false ]
+  assert_no_case_failures
 }
 
 @test "committed workflow templates carry no single-quoted strings" {
-  local single_quote
+  local single_quote template_dir="$BATS_TEST_DIRNAME/../templates/workflows"
   single_quote=$(printf '\047')
-  local template
-  while IFS= read -r template; do
-    run grep -nF "$single_quote" "$template"
-    [ "$status" -ne 0 ]
-  done < <(find "$BATS_TEST_DIRNAME/../templates/workflows" -name '*.js.tpl')
+  run find "$template_dir" -name '*.js.tpl' -exec grep -lF "$single_quote" {} +
+  [ "$status" -eq 1 ] || { printf 'single quotes in %s\n' "$output" >&2; return 1; }
 }

@@ -21,7 +21,7 @@ record_event() {
   python3 "$TELEMETRY" record --event "$1" --outcome "$2" --duration-ms "$3" >/dev/null
 }
 
-@test "telemetry-report: computes deterministic counts and percentiles, and an empty journal reports zero" {
+@test "telemetry-report: reports counts and percentiles, and detects a rewritten value, a deleted record and a malformed line" {
   run bash "$PROJECT_ROOT/scripts/telemetry-report.sh"
   expect_case empty-journal 0 '"total":0'
   expect_output_has empty-journal '"p50_ms":null'
@@ -37,10 +37,7 @@ record_event() {
   expect_output_has counts-and-percentiles '"events":{"command":2,"tool_call":1}'
   expect_output_has counts-and-percentiles '"outcomes":{"failure":1,"success":2}'
 
-  assert_no_case_failures
-}
-
-@test "telemetry-report: detects a rewritten value, a deleted record and a malformed line" {
+  rm -f "$JOURNAL"
   record_event command success 10
   record_event command success 20
   record_event command failure 30
