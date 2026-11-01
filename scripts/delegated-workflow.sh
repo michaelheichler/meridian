@@ -53,9 +53,13 @@ marker_age_seconds() {
   printf '%s\n' $((now - mtime))
 }
 
+is_age_number() {
+  printf '%s' "$1" | grep -Eq '^-?[0-9]+$'
+}
+
 is_stale_age() {
   local age="$1"
-  [ -n "$age" ] && printf '%s' "$age" | grep -Eq '^[0-9]+$' \
+  [ -n "$age" ] && is_age_number "$age" \
     && { [ "$age" -lt 0 ] || [ "$age" -ge "$STALE_SECS" ]; }
 }
 
@@ -116,7 +120,7 @@ print_status_json() {
           exec_status=$(json_field "$EXEC_STATE_FILE" '.status')
           exec_correlation_id=$(json_field "$EXEC_STATE_FILE" '.correlation_id')
 
-          if [ -z "$execution_age_seconds_value" ] || ! printf '%s' "$execution_age_seconds_value" | grep -Eq '^[0-9]+$'; then
+          if [ -z "$execution_age_seconds_value" ] || ! is_age_number "$execution_age_seconds_value"; then
             reason="unknown_execution_age"
           elif is_stale_age "$execution_age_seconds_value"; then
             reason="stale_execution_state"
@@ -142,7 +146,7 @@ print_status_json() {
             reason="ok"
           fi
         fi
-      elif [ -z "$marker_age_seconds_value" ] || ! printf '%s' "$marker_age_seconds_value" | grep -Eq '^[0-9]+$'; then
+      elif [ -z "$marker_age_seconds_value" ] || ! is_age_number "$marker_age_seconds_value"; then
         reason="unknown_marker_age"
       elif is_stale_age "$marker_age_seconds_value"; then
         reason="stale_marker"
