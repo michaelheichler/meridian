@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(CDPATH='' cd -- "$SCRIPT_DIR/../.." && pwd)"
-IMAGE="lbwc-coverage:4"
+IMAGE="lbwc-coverage:5"
 LOSS_LIMIT="0.5"
 
 usage() {
