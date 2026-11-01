@@ -2,6 +2,7 @@
 
 load test_helper
 load todo_helper
+load gate_case_helper
 
 snapshot_path_for_session_id() {
   local raw_session_id="${1:-${CLAUDE_SESSION_ID:-default}}"
@@ -535,4 +536,59 @@ CASES
   run_piped 'not json' "$SCRIPT" validate-item
   expect_status invalid-json 0
   expect_json invalid-json '.code' invalid_item
+}
+
+suppression_rows() {
+  local label issue expected_status item
+  cd "$TEST_TEMP_DIR" || return 1
+  git init -q
+  reset_case_failures
+  while IFS='|' read -r label issue expected_status; do
+    printf '# State\n## Todos\n- [KNOWN-ISSUE] %s\n\n## Activity Log\nOld activity\n\n## Decisions\nKeep the API.\n' "$issue" > "$STATE_FILE"
+    item=$(bash "$LIST_SCRIPT" | jq -c '.items[0]')
+    run_piped "$item" "$SCRIPT" remove none keep
+    expect_case "$label" 0
+    printf '%s\n' "$output" | jq -e --arg expected "$expected_status" '.status == $expected and .action == "remove" and (.warning | length) > 0' >/dev/null \
+      || record_case_failure "$label" "unexpected removal result=$output"
+    grep -q '^None\.$' "$STATE_FILE" || record_case_failure "$label" 'removed item lacks empty-section placeholder'
+    grep -q '^Keep the API\.$' "$STATE_FILE" || record_case_failure "$label" 'neighboring decisions changed'
+    if grep -q '^- \[KNOWN-ISSUE\]' "$STATE_FILE"; then
+      record_case_failure "$label" 'known issue remains in backlog'
+    fi
+  done
+  assert_no_case_failures
+}
+
+@test "removing legacy known issues completes backlog removal even when suppression metadata cannot resolve" {
+  suppression_rows <<'CASES'
+unparseable|Unstructured legacy issue|partial
+missing-phase|Checkout (cart.test): timeout (phase 99, seen 1x)|partial
+missing-signature|Checkout (cart.test): timeout (phase 03, seen 1x)|partial
+CASES
+}
+
+warning_rows() {
+  local label heading tail expected_count
+  cd "$TEST_TEMP_DIR" || return 1
+  git init -q
+  reset_case_failures
+  while IFS='|' read -r label heading tail expected_count; do
+    printf '# State\n%s\nPrevious activity\n%s\n' "$heading" "$tail" > "$STATE_FILE"
+    run bash "$SCRIPT" detail-warning abc12345 "$STATE_FILE"
+    expect_case "$label" 0
+    printf '%s\n' "$output" | jq -e '.status == "ok" and .action == "logged"' >/dev/null \
+      || record_case_failure "$label" "unexpected warning result=$output"
+    grep -q 'abc12345' "$STATE_FILE" || record_case_failure "$label" 'detail reference missing from activity'
+    grep -q 'Previous activity' "$STATE_FILE" || record_case_failure "$label" 'prior content changed'
+    [ "$(grep -c '^## ' "$STATE_FILE")" -eq "$expected_count" ] || record_case_failure "$label" 'activity heading duplicated'
+  done
+  assert_no_case_failures
+}
+
+@test "todo detail warnings append activity without erasing the next section or duplicating an existing activity heading" {
+  warning_rows <<'CASES'
+existing-last|## Recent Activity||1
+existing-before-section|## Activity|## Decisions|2
+missing-activity|## Decisions||2
+CASES
 }

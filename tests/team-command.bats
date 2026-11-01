@@ -453,3 +453,41 @@ CASES
 
   assert_no_case_failures
 }
+
+roster_rows() {
+  local label roles expected_status expected_count team role args HOME
+  export HOME="$TEST_ROOT/home"
+  mkdir -p "$HOME"
+  cd "$PROJECT" || return 1
+  while IFS='|' read -r label roles expected_status expected_count team; do
+    args=()
+    for role in $roles; do args+=(--role "$role"); done
+    run bash "$TRANSACTION" propose --project-root "$PROJECT" "${args[@]}"
+    expect_case "$label" "$expected_status"
+    if [ "$expected_status" -eq 0 ]; then
+      expect_jq_output "$label" ".team_mode == \"$team\" and (.roles | length) == $expected_count and (.roles | unique | length) == $expected_count"
+    fi
+  done
+  assert_no_case_failures
+}
+
+@test "team rosters infer the paired critic and distinguish pairs from test-enabled trios" {
+  roster_rows <<'CASES'
+inferred-critic|python-engineer|0|2|pair
+explicit-critic|python-critic python-engineer|0|2|pair
+trio|test-dev python-critic python-engineer|0|3|trio
+CASES
+}
+
+@test "team rosters reject duplicate, mismatched and incomplete roles before producing a proposal" {
+  roster_rows <<'CASES'
+unknown|not-a-role|1|0|
+duplicate-test|python-engineer test-dev test-dev|1|0|
+two-critics|python-engineer python-critic web-code-critic|1|0|
+two-engineers|python-engineer web-engineer|1|0|
+missing-engineer|python-critic test-dev|1|0|
+wrong-critic|python-engineer web-code-critic|1|0|
+unpaired-role|scout|1|0|
+unpaired-explicit|scout python-critic|1|0|
+CASES
+}
