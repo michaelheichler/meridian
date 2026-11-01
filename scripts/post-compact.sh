@@ -10,28 +10,7 @@ INPUT=$(cat)
 NATIVE_AGENT_TYPE=$(echo "$INPUT" | jq -r '.agent_type // ""' 2>/dev/null)
 NAME_SOURCE=$(echo "$INPUT" | jq -r '.name // .agent_name // .agentName // .agent_type // ""' 2>/dev/null)
 
-normalize_agent_role() {
-  local lower
-  lower=$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')
-  case "$lower" in
-    *coding-dijkstra-critic*) echo coding-dijkstra-critic ;;
-    *coding-dijkstra*)        echo coding-dijkstra ;;
-    *python-critic*)          echo python-critic ;;
-    *python-engineer*)        echo python-engineer ;;
-    *web-code-critic*)        echo web-code-critic ;;
-    *web-engineer*)           echo web-engineer ;;
-    *test-dev*)                echo test-dev ;;
-    *qa-author*)               echo qa-author ;;
-    *ux-oracle*)               echo ux-oracle ;;
-    *architect*)               echo architect ;;
-    *debugger*)                echo debugger ;;
-    *scout*)                   echo scout ;;
-    *lead*)                    echo lead ;;
-    *docs*)                    echo docs ;;
-    *qa*)                      echo qa ;;
-    *) return 1 ;;
-  esac
-}
+. "$SCRIPT_DIR/lib/agent-role-context.sh"
 
 ROLE=$(normalize_agent_role "${NATIVE_AGENT_TYPE:-$NAME_SOURCE}") || ROLE=""
 
@@ -54,12 +33,10 @@ if [ -f "$PLANNING_DIR/codebase/META.md" ]; then
 fi
 
 WORKTREE_CONTEXT=""
-case "$ROLE" in
-  coding-dijkstra|python-engineer|web-engineer|test-dev|debugger)
-    WT=$(bash "$SCRIPT_DIR/worktree-agent-map.sh" get "$NAME_SOURCE" 2>/dev/null) || WT=""
-    [ -n "$WT" ] && WORKTREE_CONTEXT=" Worktree working directory: ${WT}. All file operations must use this path."
-    ;;
-esac
+if role_uses_worktree "$ROLE"; then
+  WT=$(bash "$SCRIPT_DIR/worktree-agent-map.sh" get "$NAME_SOURCE" 2>/dev/null) || WT=""
+  [ -n "$WT" ] && WORKTREE_CONTEXT=" Worktree working directory: ${WT}. All file operations must use this path."
+fi
 
 ORCH_RESUME=""
 if [ -z "$ROLE" ]; then

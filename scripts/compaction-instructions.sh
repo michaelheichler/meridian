@@ -9,28 +9,7 @@ NATIVE_AGENT_TYPE=$(echo "$INPUT" | jq -r '.agent_type // ""' 2>/dev/null)
 NAME_SOURCE=$(echo "$INPUT" | jq -r '.name // .agent_name // .agentName // .agent_type // ""' 2>/dev/null)
 TRIGGER=$(echo "$INPUT" | jq -r '.trigger // .matcher // "auto"' 2>/dev/null)
 
-normalize_agent_role() {
-  local lower
-  lower=$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')
-  case "$lower" in
-    *coding-dijkstra-critic*) echo coding-dijkstra-critic ;;
-    *coding-dijkstra*)        echo coding-dijkstra ;;
-    *python-critic*)          echo python-critic ;;
-    *python-engineer*)        echo python-engineer ;;
-    *web-code-critic*)        echo web-code-critic ;;
-    *web-engineer*)           echo web-engineer ;;
-    *test-dev*)                echo test-dev ;;
-    *qa-author*)               echo qa-author ;;
-    *ux-oracle*)               echo ux-oracle ;;
-    *architect*)               echo architect ;;
-    *debugger*)                echo debugger ;;
-    *scout*)                   echo scout ;;
-    *lead*)                    echo lead ;;
-    *docs*)                    echo docs ;;
-    *qa*)                      echo qa ;;
-    *) return 1 ;;
-  esac
-}
+. "$SCRIPT_DIR/lib/agent-role-context.sh"
 
 AGENT_ROLE=$(normalize_agent_role "${NATIVE_AGENT_TYPE:-$NAME_SOURCE}") || AGENT_ROLE=""
 
@@ -40,8 +19,6 @@ case "$AGENT_ROLE" in
     ;;
   coding-dijkstra|python-engineer|web-engineer|test-dev|docs)
     PRIORITIES="Preserve commit hashes, file paths modified, deviation decisions, and the current task."
-    WT=$(bash "$SCRIPT_DIR/worktree-agent-map.sh" get "$NAME_SOURCE" 2>/dev/null) || WT=""
-    [ -n "$WT" ] && PRIORITIES="$PRIORITIES CRITICAL: your working directory is ${WT}. All file operations must use this path."
     ;;
   coding-dijkstra-critic|python-critic|web-code-critic|qa)
     PRIORITIES="Preserve the pass/fail/partial verdict, findings, and any blocking issues found so far."
@@ -65,6 +42,11 @@ case "$AGENT_ROLE" in
     PRIORITIES="Preserve the active command, the user's original request, current phase/plan context, file modification paths, and any pending user decisions. Discard tool output details and reference file contents, re-read those from disk."
     ;;
 esac
+
+if role_uses_worktree "$AGENT_ROLE"; then
+  WT=$(bash "$SCRIPT_DIR/worktree-agent-map.sh" get "$NAME_SOURCE" 2>/dev/null) || WT=""
+  [ -n "$WT" ] && PRIORITIES="$PRIORITIES CRITICAL: your working directory is ${WT}. All file operations must use this path."
+fi
 
 if [ "$TRIGGER" = "manual" ]; then
   PRIORITIES="$PRIORITIES User requested this compaction."
