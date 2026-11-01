@@ -1,7 +1,8 @@
 build_overrides_json() {
-  local json='{}' token
-  for token in "${!OVERRIDES[@]}"; do
-    json=$(jq -c --arg key "$token" --arg value "${OVERRIDES[$token]}" '.[$key] = $value' <<< "$json")
+  local json='{}' token override_value
+  for token in ${OVERRIDE_KEYS[@]+"${OVERRIDE_KEYS[@]}"}; do
+    keyed_get_into override_value OVERRIDES "$token"
+    json=$(jq -c --arg key "$token" --arg value "$override_value" '.[$key] = $value' <<< "$json")
   done
   printf '%s\n' "$json"
 }
@@ -21,7 +22,7 @@ build_write_allowances_json() {
     return
   fi
   if [ "$role" = "$ROLE" ]; then
-    for path in "${WRITE_ALLOWANCES[@]}"; do
+    for path in ${WRITE_ALLOWANCES[@]+"${WRITE_ALLOWANCES[@]}"}; do
       json=$(append_json_path "$json" "$path")
     done
   fi
@@ -33,10 +34,13 @@ build_write_allowances_json() {
 }
 
 execution_metadata_json() {
-  local name="$1" role="$2"
+  local name="$1" role="$2" role_model role_reasoning role_max_turns
+  keyed_get_into role_model ROLE_MODEL "$role"
+  keyed_get_into role_reasoning ROLE_REASONING_JSON "$role"
+  keyed_get_into role_max_turns ROLE_MAXTURNS "$role"
   jq -cn \
-    --arg role "$role" --arg model "${ROLE_MODEL[$role]}" --argjson effort "${ROLE_REASONING_JSON[$role]:-null}" \
-    --arg max_turns "${ROLE_MAXTURNS[$role]}" --arg contract_id "$CONTRACT_ID" \
+    --arg role "$role" --arg model "$role_model" --argjson effort "${role_reasoning:-null}" \
+    --arg max_turns "$role_max_turns" --arg contract_id "$CONTRACT_ID" \
     --arg contract_digest "$CONTRACT_DIGEST" --arg task_identity "$TASK_ID" \
     --arg requested_backend "$CONTRACT_REQUESTED_BACKEND" --arg resolved_backend "$CONTRACT_RESOLVED_BACKEND" \
     --arg name "$name" --arg control_root "$CONTROL_ROOT" \
@@ -59,6 +63,10 @@ json_string_or_null() {
 entry_base_json() {
   local name="$1" role="$2" target="$3" pair_id="$4" pair_role="$5" overrides="$6" allowances="$7"
   local tools disallowed_tools permission_mode initial_prompt definition_sha256 pid_json role_json
+  local role_model role_reasoning role_max_turns
+  keyed_get_into role_model ROLE_MODEL "$role"
+  keyed_get_into role_reasoning ROLE_REASONING_JSON "$role"
+  keyed_get_into role_max_turns ROLE_MAXTURNS "$role"
   tools=$(definition_header_value tools "$target")
   disallowed_tools=$(definition_header_value disallowedTools "$target")
   permission_mode=$(definition_header_value permissionMode "$target")
@@ -69,7 +77,7 @@ entry_base_json() {
   jq -cn \
     --arg name "$name" --arg role "$role" --arg project_root "$PROJECT_ROOT" \
     --arg definition_path "$target" --arg created_at "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
-    --arg model "${ROLE_MODEL[$role]}" --argjson effort "${ROLE_REASONING_JSON[$role]:-null}" --arg max_turns "${ROLE_MAXTURNS[$role]}" \
+    --arg model "$role_model" --argjson effort "${role_reasoning:-null}" --arg max_turns "$role_max_turns" \
     --argjson overrides "$overrides" --argjson allowances "$allowances" --argjson pair_id "$pid_json" --argjson pair_role "$role_json" \
     --arg control_root "$CONTROL_ROOT" --arg schema_version "$CONTRACT_SCHEMA_VERSION" --argjson capabilities "$(build_capabilities_json "$role")" \
     --arg tools "$tools" --arg disallowed_tools "$disallowed_tools" --arg permission_mode "$permission_mode" \

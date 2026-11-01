@@ -2,12 +2,13 @@
 set -euo pipefail
 
 SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname "$0")" && pwd)
-. "$SCRIPT_DIR/lib/require-bash.sh"
-require_bash_43
+# Because bash 3.2 substitution crawls in UTF-8, so use bytes.
+LC_ALL=C
 TEMPLATE_DIR="$SCRIPT_DIR/../templates/agent-roles"
 ROLE="${1:-}"
 shift || true
 . "$SCRIPT_DIR/lib/agent-fields.sh"
+. "$SCRIPT_DIR/lib/agent-keyed-vars.sh"
 
 fail() {
   printf 'render-agent-template: %s\n' "$1" >&2
@@ -22,15 +23,13 @@ DEFAULTS="$TEMPLATE_DIR/defaults.json"
 [ -f "$DEFAULTS" ] || fail "defaults not found"
 jq -e --arg role "$ROLE" 'has($role)' "$DEFAULTS" >/dev/null 2>&1 || fail "invalid role '$ROLE'"
 
-declare -A VALUES=()
-declare -A EMPTY_TOKENS=()
 for field in name description tools disallowedTools model permissionMode maxTurns skills mcpServers memory background effort isolation color initialPrompt; do
   token=$(token_for_key "$field")
   value=$(jq -r --arg role "$ROLE" --arg field "$field" '.[$role][$field] // empty' "$DEFAULTS")
   if [ -n "$value" ]; then
-    VALUES["$token"]="$value"
+    keyed_set VALUES "$token" "$value"
   else
-    EMPTY_TOKENS["$token"]=1
+    keyed_set EMPTY_TOKENS "$token" 1
   fi
 done
 
@@ -40,38 +39,39 @@ for assignment in "$@"; do
   value=${assignment#*=}
   token=$(token_for_key "$key") || fail "unknown field '$key'"
   if [ -n "$value" ]; then
-    VALUES["$token"]="$value"
-    unset "EMPTY_TOKENS[$token]"
+    keyed_set VALUES "$token" "$value"
+    keyed_unset EMPTY_TOKENS "$token"
   else
-    unset "VALUES[$token]"
-    EMPTY_TOKENS["$token"]=1
+    keyed_unset VALUES "$token"
+    keyed_set EMPTY_TOKENS "$token" 1
   fi
 done
 
 question_handoff='Never call AskUserQuestion. If a human decision is required, return {"type":"user_decision_required","question":"clear user question","response_shape":"bounded choices or freeform"} to the main session.'
-disallowed_tools=${VALUES[DISALLOWED_TOOLS]:-}
+keyed_get_into disallowed_tools VALUES DISALLOWED_TOOLS
 compact_disallowed_tools=$(tr -d '[:space:]' <<< "$disallowed_tools")
 if [[ ",$compact_disallowed_tools," != *,AskUserQuestion,* ]]; then
   if [ -n "$disallowed_tools" ]; then
-    VALUES[DISALLOWED_TOOLS]="$disallowed_tools, AskUserQuestion"
+    keyed_set VALUES DISALLOWED_TOOLS "$disallowed_tools, AskUserQuestion"
   else
-    VALUES[DISALLOWED_TOOLS]="AskUserQuestion"
+    keyed_set VALUES DISALLOWED_TOOLS "AskUserQuestion"
   fi
 fi
-unset 'EMPTY_TOKENS[DISALLOWED_TOOLS]'
+keyed_unset EMPTY_TOKENS DISALLOWED_TOOLS
 
-initial_prompt=${VALUES[INITIAL_PROMPT]:-}
+keyed_get_into initial_prompt VALUES INITIAL_PROMPT
 if [[ "$initial_prompt" != *'"type":"user_decision_required","question":"clear user question","response_shape":"bounded choices or freeform"'* ]]; then
   if [ -n "$initial_prompt" ]; then
-    VALUES[INITIAL_PROMPT]="$initial_prompt"$'\n\n'"$question_handoff"
+    keyed_set VALUES INITIAL_PROMPT "$initial_prompt"$'\n\n'"$question_handoff"
   else
-    VALUES[INITIAL_PROMPT]="$question_handoff"
+    keyed_set VALUES INITIAL_PROMPT "$question_handoff"
   fi
 fi
-unset 'EMPTY_TOKENS[INITIAL_PROMPT]'
+keyed_unset EMPTY_TOKENS INITIAL_PROMPT
 
 for required in NAME MODEL DESCRIPTION JOB; do
-  [ "${VALUES[$required]+set}" = set ] && [ -n "${VALUES[$required]}" ] || fail "missing required field $required"
+  keyed_get_into required_value VALUES "$required"
+  [ -n "$required_value" ] || fail "missing required field $required"
 done
 
 rendered=$(cat "$TEMPLATE")
@@ -84,8 +84,9 @@ for token in "${all_tokens[@]}"; do
   check_rendered=${check_rendered//"$marker"/"$sentinel"}
 done
 
-for token in "${!VALUES[@]}"; do
-  value=${VALUES[$token]}
+for token in "${all_tokens[@]}"; do
+  keyed_has VALUES "$token" || continue
+  keyed_get_into value VALUES "$token"
   if [ "$token" = "JOB" ]; then
     escaped="$value"
   else
@@ -97,7 +98,8 @@ for token in "${!VALUES[@]}"; do
   check_rendered=${check_rendered//"$sentinel"/__LBWC_USER_CONTENT__}
 done
 
-for token in "${!EMPTY_TOKENS[@]}"; do
+for token in "${all_tokens[@]}"; do
+  keyed_has EMPTY_TOKENS "$token" || continue
   marker="{{$token}}"
   sentinel="__LBWC_TEMPLATE_SLOT_${token}__"
   rendered=${rendered//"$sentinel"/"$marker"}
@@ -126,7 +128,7 @@ filter_optional_frontmatter() {
     if [ "$in_front" -eq 1 ] && [[ "$line" == *:* ]]; then
       field_name=${line%%:*}
       field_token=$(token_for_key "$field_name" 2>/dev/null || true)
-      if [ -n "$field_token" ] && [ "${EMPTY_TOKENS[$field_token]+set}" = set ] && [ "$line" = "$field_name: \"{{$field_token}}\"" ]; then
+      if [ -n "$field_token" ] && keyed_has EMPTY_TOKENS "$field_token" && [ "$line" = "$field_name: \"{{$field_token}}\"" ]; then
         continue
       fi
     fi

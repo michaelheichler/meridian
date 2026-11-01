@@ -1,7 +1,3 @@
-declare -A ROLE_MODEL=()
-declare -A ROLE_EFFORT=()
-declare -A ROLE_REASONING_JSON=()
-declare -A ROLE_MAXTURNS=()
 PAIR_ROLE=""
 TRIO_ROLES=()
 TEAM_ROLES=()
@@ -44,7 +40,7 @@ parse_resolved_settings() {
 }
 
 build_resolver_args() {
-  local role="$1" pair token
+  local role="$1" pair token override_value
   RESOLVER_ARGS=("$role")
   if [ "$TEMPORARY_CONTROL_ROOT" = true ]; then
     RESOLVER_ARGS+=(--routing "$CONFIG_PATH")
@@ -54,8 +50,9 @@ build_resolver_args() {
   RESOLVER_ARGS+=("$PLUGIN_ROOT")
   for pair in MODEL:--model EFFORT:--effort REASONING:--reasoning MAX_TURNS:--max-turns; do
     token="${pair%%:*}"
-    if [ "${OVERRIDES[$token]+set}" = set ]; then
-      RESOLVER_ARGS+=("${pair#*:}" "${OVERRIDES[$token]}")
+    if keyed_has OVERRIDES "$token"; then
+      keyed_get_into override_value OVERRIDES "$token"
+      RESOLVER_ARGS+=("${pair#*:}" "$override_value")
     fi
   done
 }
@@ -87,10 +84,10 @@ resolve_role_settings() {
   [ -n "$RESOLVED_MAX_TURNS" ] || fail "resolver omitted the max turns value for '$role'"
   jq -e 'type == "string" or . == null' <<< "$RESOLVED_REASONING_JSON" >/dev/null 2>&1 \
     || fail "resolver emitted invalid reasoning JSON for '$role'"
-  ROLE_MODEL["$role"]="$RESOLVED_AGENT_MODEL"
-  ROLE_EFFORT["$role"]="$RESOLVED_EFFORT"
-  ROLE_REASONING_JSON["$role"]="$RESOLVED_REASONING_JSON"
-  ROLE_MAXTURNS["$role"]="$RESOLVED_MAX_TURNS"
+  keyed_set ROLE_MODEL "$role" "$RESOLVED_AGENT_MODEL"
+  keyed_set ROLE_EFFORT "$role" "$RESOLVED_EFFORT"
+  keyed_set ROLE_REASONING_JSON "$role" "$RESOLVED_REASONING_JSON"
+  keyed_set ROLE_MAXTURNS "$role" "$RESOLVED_MAX_TURNS"
 }
 
 resolve_pair_role() {
@@ -106,7 +103,10 @@ resolve_pair_role() {
 
 resolve_trio_roles() {
   local trio_role
-  mapfile -t TRIO_ROLES < <(jq -r --arg r "$ROLE" '.trios[$r] // [] | .[]' "$TEMPLATE_DEFAULTS")
+  TRIO_ROLES=()
+  while IFS= read -r trio_role; do
+    TRIO_ROLES+=("$trio_role")
+  done < <(jq -r --arg r "$ROLE" '.trios[$r] // [] | .[]' "$TEMPLATE_DEFAULTS")
   [ "${#TRIO_ROLES[@]}" -ge 2 ] || fail "--trio requires defaults.json's 'trios.$ROLE' to list at least 2 roles"
   for trio_role in "${TRIO_ROLES[@]}"; do
     is_valid_role "$trio_role" || fail "invalid trio role '$trio_role'"

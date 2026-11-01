@@ -1,4 +1,4 @@
-declare -A OVERRIDES=()
+OVERRIDE_KEYS=()
 WRITE_ALLOWANCES=()
 WRITE_CAPABILITIES=()
 ROLE_WRITE_ALLOWANCE_ROLES=()
@@ -42,7 +42,8 @@ add_role_write_capability() {
 set_override_option() {
   local key="$1" value="$2" token
   token=$(option_token "$key") || fail "unknown option '$key'"
-  OVERRIDES["$token"]="$value"
+  keyed_has OVERRIDES "$token" || OVERRIDE_KEYS+=("$token")
+  keyed_set OVERRIDES "$token" "$value"
 }
 
 apply_option() {
@@ -105,7 +106,7 @@ check_native_team_overrides() {
   local native_token
   [ -n "$NATIVE_TEAM_MODE" ] || return 0
   for native_token in MODEL EFFORT MAX_TURNS TOOLS DISALLOWED_TOOLS DESCRIPTION PERMISSION_MODE SKILLS MCP_SERVERS MEMORY BACKGROUND ISOLATION COLOR INITIAL_PROMPT; do
-    [ "${OVERRIDES[$native_token]+set}" = set ] || continue
+    keyed_has OVERRIDES "$native_token" || continue
     fail "native-team definition overrides are not allowed: $native_token"
   done
 }
@@ -132,7 +133,7 @@ test_write_path_is_exact() {
 
 check_write_allowance_paths() {
   local write_allowance
-  for write_allowance in "${WRITE_ALLOWANCES[@]}"; do
+  for write_allowance in ${WRITE_ALLOWANCES[@]+"${WRITE_ALLOWANCES[@]}"}; do
     task_write_path_is_safe "$write_allowance" || fail "invalid --write-allowance '$write_allowance'"
   done
   if [ "$CONTRACT_SCHEMA_VERSION" = "3" ] && [ "${#WRITE_ALLOWANCES[@]}" -gt 0 ]; then
