@@ -80,7 +80,10 @@ if qa_gate_summary_gap_is_allowed "$PLANS_TOTAL" "$SUMMARIES_TOTAL" unavailable;
   exit 0
 fi
 
-NOW=$(date +%s 2>/dev/null) || exit 2
+NOW=$(date +%s 2>/dev/null) || {
+  echo "qa-gate: current time unavailable, cannot verify SUMMARY.md gate" >&2
+  exit 2
+}
 TWO_HOURS=7200
 if command -v jq &>/dev/null && [ -f "$PLANNING_DIR/config.json" ]; then
   _window=$(jq -r '.qa_commit_window_seconds // 7200' "$PLANNING_DIR/config.json" 2>/dev/null)
