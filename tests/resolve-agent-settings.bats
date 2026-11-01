@@ -124,16 +124,25 @@ resolve() {
 }
 
 max_turns_row() {
-  local label="$1" role="$2" filter="$3" args="$4" want="$5"
+  local label="$1" role="$2" filter="$3" args="$4" want="$5" mode
   local -a extra=()
   reset_config
   [ "$filter" = - ] || update_config "$filter"
   [ "$args" = - ] || read -ra extra <<< "$args"
-  [ "$want" != none ] || want=""
 
-  resolve "$role" "$CONFIG_PATH" "$PROJECT_ROOT" ${extra[@]+"${extra[@]}"}
-
-  expect_case "$label" 0 "RESOLVED_MAX_TURNS='${want}'"
+  for mode in project routing; do
+    if [ "$mode" = routing ]; then
+      resolve "$role" --routing "$CONFIG_PATH" "$PROJECT_ROOT" ${extra[@]+"${extra[@]}"}
+    else
+      resolve "$role" "$CONFIG_PATH" "$PROJECT_ROOT" ${extra[@]+"${extra[@]}"}
+    fi
+    if [ "${want:0:1}" = '!' ]; then
+      expect_case "$label-$mode" 1 "${want:1}"
+    else
+      expect_case "$label-$mode" 0 "RESOLVED_MAX_TURNS='${want/none/}'"
+      expect_fragment "$label-$mode" "RESOLVED_MAX_TURNS_SET='1'"
+    fi
+  done
 }
 
 @test "max_turns resolves from the pinned role table, project overrides and the CLI flag" {
@@ -160,10 +169,38 @@ qa-author|qa-author|-|-|30
 deviq|deviq|-|-|15
 cli-flag-wins|lead|-|--max-turns 7|7
 cli-zero-normalizes-to-empty|lead|-|--max-turns 0|none
-cli-negative-normalizes-to-empty|lead|-|--max-turns -3|none
+cli-negative-is-rejected|lead|-|--max-turns -3|!invalid --max-turns value '-3'
 project-override-beats-defaults|python-engineer|.roles."python-engineer".max_turns = 99|-|99
 cli-flag-beats-project-override|lead|.roles.lead.max_turns = 33|--max-turns 99|99
 critic-project-override-beats-defaults|lead-critic|.roles."lead-critic".max_turns = 33|-|33
+cli-non-numeric-is-rejected|lead|-|--max-turns abc|!invalid --max-turns value 'abc'
+cli-leading-zeros-stripped|lead|-|--max-turns 007|7
+cli-beats-agent-max-turns|lead|. * {agent_max_turns:{lead:10}}|--max-turns 7|7
+agent-max-turns-not-effort-scaled|lead|. * {agent_max_turns:{lead:10}}|--effort thorough|10
+agent-max-turns-beats-roles|lead|. * {agent_max_turns:{lead:10},roles:{lead:{max_turns:33}}}|-|10
+roles-max-turns-is-effort-scaled|lead|. * {roles:{lead:{max_turns:40}}}|--effort thorough|60
+defaults-are-effort-scaled|lead|-|--effort fast|40
+per-effort-object-picks-active-effort|lead|. * {agent_max_turns:{lead:{thorough:120,turbo:7}}}|--effort thorough|120
+per-effort-object-false-is-unlimited|lead|. * {agent_max_turns:{lead:{thorough:120,turbo:false}}}|--effort turbo|none
+per-effort-object-missing-effort-falls-through|lead|. * {agent_max_turns:{lead:{thorough:120}}}|-|50
+per-effort-missing-effort-falls-to-roles|lead|. * {agent_max_turns:{lead:{thorough:120}},roles:{lead:{max_turns:40}}}|--effort fast|32
+agent-max-turns-zero-is-unlimited|lead|. * {agent_max_turns:{lead:0}}|-|none
+agent-max-turns-false-is-unlimited|lead|. * {agent_max_turns:{lead:false}}|-|none
+agent-max-turns-leading-zeros-stripped|lead|. * {agent_max_turns:{lead:"007"}}|-|7
+agent-max-turns-non-numeric-is-rejected|lead|. * {agent_max_turns:{lead:"abc"}}|-|!invalid agent_max_turns.lead value 'abc'
+roles-zero-skips-effort-multiplier|lead|. * {roles:{lead:{max_turns:0}}}|--effort thorough|none
+roles-false-is-unlimited|lead|. * {roles:{lead:{max_turns:false}}}|-|none
+roles-negative-is-rejected|lead|. * {roles:{lead:{max_turns:-2}}}|-|!invalid roles.lead.max_turns value '-2'
+roles-leading-zeros-stripped|lead|. * {roles:{lead:{max_turns:"007"}}}|-|7
+dev-alias-python-engineer|python-engineer|. * {agent_max_turns:{dev:12}}|-|12
+dev-alias-web-engineer|web-engineer|. * {agent_max_turns:{dev:12}}|-|12
+dev-alias-coding-dijkstra|coding-dijkstra|. * {agent_max_turns:{dev:12}}|-|12
+dev-alias-test-dev|test-dev|. * {agent_max_turns:{dev:12}}|-|12
+dev-alias-unlimited|test-dev|. * {agent_max_turns:{dev:0}}|--effort thorough|none
+dev-alias-rejection-names-the-dev-key|test-dev|. * {agent_max_turns:{dev:"abc"}}|-|!invalid agent_max_turns.dev value 'abc'
+exact-role-beats-dev-alias|python-engineer|. * {agent_max_turns:{dev:12,"python-engineer":8}}|-|8
+dev-alias-skips-critics|python-critic|. * {agent_max_turns:{dev:12}}|-|20
+dev-alias-skips-non-dev-roles|lead|. * {agent_max_turns:{dev:12}}|-|50
 CASES
 
   assert_no_case_failures
