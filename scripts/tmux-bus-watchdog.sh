@@ -216,7 +216,7 @@ if [ "$(jq 'length' <<<"$newly_failed")" -gt 0 ]; then
   fi
 fi
 
-for watchdog_failure in "${watchdog_failures[@]}"; do
+for watchdog_failure in ${watchdog_failures[@]+"${watchdog_failures[@]}"}; do
   printf 'tmux-watchdog: %s\n' "$watchdog_failure" >&2
 done
 jq -n --argjson stale "$stale" '{state: "stale_agents_shutdown", stale_agents: ($stale | map(.agent_id))}'
