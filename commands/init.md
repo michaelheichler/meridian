@@ -199,6 +199,7 @@ This applies any mode-specific root `.gitignore` behavior and keeps `.lbwc-plann
 2. Run `bash "{plugin-root}/scripts/install-hooks.sh"`, display based on output:
    - Contains "Installed": `✓ Git hooks installed (pre-push)`
    - Contains "already installed": `✓ Git hooks (already installed)`
+   - Contains "Updated" or "Upgraded": `✓ Git hooks updated (pre-push)`
 
 ### Step 1.8: Detect and initialize routing profiles
 
