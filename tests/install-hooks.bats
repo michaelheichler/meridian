@@ -26,6 +26,10 @@ repo() {
   printf '%s\n' "$dir"
 }
 
+hook_mtime() {
+  python3 -I -c 'import os, sys; print(os.stat(sys.argv[1]).st_mtime_ns)' "$1"
+}
+
 install_in() {
   run bash -c 'CDPATH="" cd -- "$1" && bash "$2"' _ "$1" "$INSTALL"
 }
@@ -47,15 +51,19 @@ install_in() {
   expect_file_line "fresh-delegates-to-plugin" "$hook" "scripts/pre-push-hook.sh"
   fresh=$(file_digest "$hook")
 
+  touch -t 202001010000 "$hook"
+  before=$(hook_mtime "$hook")
   install_in "$dir"
-  expect_status "rerun" 0
+  expect_case "rerun" 0 "already installed"
+  [ "$(hook_mtime "$hook")" = "$before" ] \
+    || record_case_failure "rerun-keeps-mtime" "unchanged hook was rewritten"
   expect_same_digest "rerun-keeps-same-hook" "$hook" "$fresh"
 
   dir=$(repo legacy)
   hook="$dir/.git/hooks/pre-push"
   write_text "$hook" '#!/usr/bin/env bash' '_lbwc_find_script() { :; }'
   install_in "$dir"
-  expect_status "legacy" 0
+  expect_case "legacy" 0 "Updated"
   expect_same_digest "legacy-upgraded-to-current" "$hook" "$fresh"
   [ -x "$hook" ] || record_case_failure "legacy-executable" "hook is not executable"
 
@@ -64,7 +72,7 @@ install_in() {
   write_text "$hook" '#!/bin/sh' 'echo mine'
   before=$(file_digest "$hook")
   install_in "$dir"
-  expect_status "foreign" 0
+  expect_case "foreign" 0 "not managed by LBWC -- skipping"
   expect_same_digest "foreign-untouched" "$hook" "$before"
 
   dir=$(repo foreign-link)
