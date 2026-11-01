@@ -79,3 +79,47 @@ task_event() {
   [ "$status" -eq 0 ]
   [ ! -e "$TEST_ROOT/.claude/teams" ]
 }
+
+fire_hook() {
+  local script="$1" event="$2" task_id="$3" subject="${4:-}"
+  task_event "$event" "$task_id" "$subject" | LBWC_CONTROL_ROOT="$CONTROL_ROOT" bash "$script" 2>&1
+}
+
+expect_denied() {
+  local label="$1" script="$2" event="$3" task_id="$4" subject="$5" reason="$6" before after code
+  before=$(cat "$CONTROL_ROOT/agent-manifest.json")
+  output=$(fire_hook "$script" "$event" "$task_id" "$subject") && code=0 || code=$?
+  after=$(cat "$CONTROL_ROOT/agent-manifest.json")
+  [ "$code" -eq 2 ] || { echo "[$label] exit $code, output: $output"; return 1; }
+  [[ "$output" == *"$reason"* ]] || { echo "[$label] reason missing, output: $output"; return 1; }
+  [ "$before" = "$after" ] || { echo "[$label] manifest changed on deny"; return 1; }
+}
+
+@test "TaskCreated denies a bound or unusable contract and leaves the manifest untouched" {
+  fire_hook "$ADMISSION" TaskCreated native-5 "$CONTRACT_ID" >/dev/null
+  expect_denied "task id already bound" "$ADMISSION" TaskCreated native-5 "$CONTRACT_ID" "is already bound"
+  bash "$REPO_ROOT/scripts/task-contract.sh" state "$TEST_ROOT" "$CONTRACT_ID" dispatched >/dev/null
+  bash "$REPO_ROOT/scripts/task-contract.sh" state "$TEST_ROOT" "$CONTRACT_ID" running >/dev/null
+  expect_denied "contract past dispatched" "$ADMISSION" TaskCreated native-6 "$CONTRACT_ID" "missing, stale, or invalid"
+  rm "$CONTRACT"
+  expect_denied "contract file missing" "$ADMISSION" TaskCreated native-7 "$CONTRACT_ID" "missing, stale, or invalid"
+}
+
+@test "TaskCreated binds a contract that is already dispatched" {
+  bash "$REPO_ROOT/scripts/task-contract.sh" state "$TEST_ROOT" "$CONTRACT_ID" dispatched >/dev/null
+  run fire_hook "$ADMISSION" TaskCreated native-8 "$CONTRACT_ID"
+  [ "$status" -eq 0 ]
+  jq -e '.tasks | keys == ["native-8"]' "$CONTROL_ROOT/agent-manifest.json" >/dev/null
+}
+
+@test "TaskCompleted denies an unbound or unusable binding and leaves the manifest untouched" {
+  expect_denied "task never bound" "$COMPLETION" TaskCompleted native-9 "" "has no LBWC contract binding"
+  fire_hook "$ADMISSION" TaskCreated native-10 "$CONTRACT_ID" >/dev/null
+  jq '.tasks["native-10"].state = "completed"' "$CONTROL_ROOT/agent-manifest.json" > "$CONTROL_ROOT/m.tmp"
+  mv "$CONTROL_ROOT/m.tmp" "$CONTROL_ROOT/agent-manifest.json"
+  expect_denied "binding already completed" "$COMPLETION" TaskCompleted native-10 "" "binding is invalid"
+  jq '.tasks["native-10"].state = "created"' "$CONTROL_ROOT/agent-manifest.json" > "$CONTROL_ROOT/m.tmp"
+  mv "$CONTROL_ROOT/m.tmp" "$CONTROL_ROOT/agent-manifest.json"
+  rm "$CONTRACT"
+  expect_denied "bound contract file missing" "$COMPLETION" TaskCompleted native-10 "" "binding is invalid"
+}
