@@ -94,6 +94,15 @@ write_checkpoint_uat() {
   run bash "$SCRIPTS/extract-uat-resume.sh" "$PHASE_DIR"
   expect_case no-state-skips-source 0 "uat_path=$PHASE_DIR/01-UAT.md"
 
+  fresh_phase standalone-copy
+  write_issues_uat "$PHASE_DIR/01-UAT.md"
+  write_issues_uat "$PHASE_DIR/02-UAT.md"
+  write_issues_uat "$PHASE_DIR/02-SOURCE-UAT.md"
+  mkdir -p "$TEST_ROOT/bin"
+  cp "$SCRIPTS/extract-uat-resume.sh" "$TEST_ROOT/bin/extract-uat-resume.sh"
+  run bash "$TEST_ROOT/bin/extract-uat-resume.sh" "$PHASE_DIR"
+  expect_case standalone-copy 0 "uat_path=$PHASE_DIR/02-UAT.md"
+
   fresh_phase no-uat-file
   run bash "$SCRIPTS/extract-uat-resume.sh" "$PHASE_DIR"
   expect_case no-uat-file 0 "uat_resume=none"
