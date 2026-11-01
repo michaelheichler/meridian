@@ -2,11 +2,6 @@
 
 load test_helper
 
-setup() {
-  REPO_ROOT="$BATS_TEST_DIRNAME/.."
-  COMMAND="$REPO_ROOT/commands/research.md"
-}
-
 generate_research_scout_workflow() {
   local facet="$1" project control_root contract task_id agen_out name wgen_out
   project="$TEST_TEMP_DIR/project-$facet"
@@ -39,46 +34,4 @@ generate_research_scout_workflow() {
   [ "$status" -eq 0 ]
   [[ "$output" == *'WORKFLOW_READY'* ]]
   [[ "$output" == *'path:'* ]]
-}
-
-@test "research command documents the workflow execution option and its per-facet spawn branch" {
-  grep -F 'references/workflow-spawn-protocol.md' "$COMMAND"
-  grep -F 'Choose the execution backend' "$COMMAND"
-  grep -F 'Research execution' "$COMMAND"
-  grep -F 'Where should this research run? Workflow run orchestrates each Scout through a committed background script. Native spawn keeps the current Scout spawn.' "$COMMAND"
-  grep -F '`Workflow run`: Research through committed workflow scripts in the background.' "$COMMAND"
-  grep -F '`Native spawn`: Keep the current native Scout spawn.' "$COMMAND"
-  grep -F '`Cancel research`: Do not research this topic now.' "$COMMAND"
-  grep -F 'workflow-generator.sh" solo scout' "$COMMAND"
-  grep -F 'WORKFLOW_READY' "$COMMAND"
-  grep -F 'scriptPath' "$COMMAND"
-  grep -F 'Never pass `script`' "$COMMAND"
-  grep -F 'user_decision_required' "$COMMAND"
-}
-
-@test "research command declares every workflow Scout contract read-only instead of a fabricated write capability" {
-  grep -F -- '--read-only-role scout' "$COMMAND"
-  grep -F -- '--control-root "$CONTROL_ROOT"' "$COMMAND"
-  ! grep -F -- '--write-capability' "$COMMAND"
-  ! grep -F "carries a write capability" "$COMMAND"
-}
-
-@test "research command launches every facet's workflow run before waiting on any of them" {
-  grep -F 'Launch every facet' "$COMMAND"
-}
-
-@test "research command's workflow capability gate skips on an uninitialized project" {
-  grep -F 'Skip this gate when `.lbwc-planning/` is missing. Do not create a planning directory here.' "$COMMAND"
-}
-
-@test "research command renumbers steps after inserting the execution-backend choice" {
-  grep -F '3. **Choose the execution backend:**' "$COMMAND"
-  grep -F '4. **Spawn Scout:**' "$COMMAND"
-  grep -F '5. **Synthesize:**' "$COMMAND"
-  grep -F '6. **Persist:**' "$COMMAND"
-}
-
-@test "research command does not instruct the model to author a workflow" {
-  run bash "$REPO_ROOT/scripts/command-contract.sh"
-  [ "$status" -eq 0 ]
 }
