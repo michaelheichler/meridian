@@ -432,45 +432,19 @@ Each passes when bats runs it without kcov in the same container. Under kcov the
 
 These 42 scripts produce no kcov data. Either no test starts them under a traced `bash`, or a test runs them with a clean environment that drops the kcov hooks. Their coverage is unknown and counts as 0 for the 90 percent target.
 
-- `scripts/agent-routing-evidence.sh`
-- `scripts/archive-uat-guard.sh`
-- `scripts/bootstrap/bootstrap-claude.sh`
-- `scripts/bootstrap/bootstrap-requirements.sh`
-- `scripts/bootstrap/bootstrap-roadmap.sh`
-- `scripts/bootstrap/lib/bootstrap-claude-migration.sh`
-- `scripts/cache-nuke.sh`
-- `scripts/check-claude-md-staleness.sh`
-- `scripts/compile-debug-session-context.sh`
-- `scripts/compile-rolling-summary.sh`
-- `scripts/debug-skill-enrichment.sh`
-- `scripts/delegated-workflow.sh`
-- `scripts/extract-verified-items.sh`
-- `scripts/indexer-sync.sh`
-- `scripts/infer-gsd-summary.sh`
-- `scripts/install-hooks.sh`
-- `scripts/lbwc-skills.sh`
-- `scripts/lib/claude-md-lbwc-sections.sh`
-- `scripts/lib/hook-output-guard.sh`
-- `scripts/lib/lbwc-cache-key.sh`
-- `scripts/lib/lbwc-config-root.sh`
-- `scripts/lib/phase-state-qa.sh`
-- `scripts/lib/team-command-transaction-run.sh`
-- `scripts/lib/uat-deviation-todo.sh`
-- `scripts/lib/uat-remediation-needs-round.sh`
-- `scripts/mark-milestone-remediated.sh`
-- `scripts/migrate-orphaned-state.sh`
-- `scripts/persist-state-after-ship.sh`
-- `scripts/planning-git.sh`
-- `scripts/post-archive-hook.sh`
-- `scripts/pre-push-hook.sh`
-- `scripts/prepare-reverification.sh`
-- `scripts/refresh-claude-md-lbwc-sections.sh`
-- `scripts/release-verify.sh`
-- `scripts/rename-default-milestone.sh`
-- `scripts/resolve-phase-state.sh`
-- `scripts/rtk-manager.sh`
-- `scripts/suggest-compact.sh`
-- `scripts/validate-frontmatter.sh`
-- `scripts/validate-summary.sh`
-- `scripts/version-bump.sh`
-- `scripts/write-fix-marker.sh`
+| Directory | Scripts, without the `.sh` suffix |
+| --- | --- |
+| `scripts/` | agent-routing-evidence, archive-uat-guard, cache-nuke, check-claude-md-staleness, compile-debug-session-context, compile-rolling-summary, debug-skill-enrichment, delegated-workflow, extract-verified-items, indexer-sync, infer-gsd-summary, install-hooks, lbwc-skills, mark-milestone-remediated, migrate-orphaned-state, persist-state-after-ship, planning-git, post-archive-hook, pre-push-hook, prepare-reverification, refresh-claude-md-lbwc-sections, release-verify, rename-default-milestone, resolve-phase-state, rtk-manager, suggest-compact, validate-frontmatter, validate-summary, version-bump, write-fix-marker |
+| `scripts/bootstrap/` | bootstrap-claude, bootstrap-requirements, bootstrap-roadmap |
+| `scripts/bootstrap/lib/` | bootstrap-claude-migration |
+| `scripts/lib/` | claude-md-lbwc-sections, hook-output-guard, lbwc-cache-key, lbwc-config-root, phase-state-qa, team-command-transaction-run, uat-deviation-todo, uat-remediation-needs-round |
+
+## Accepted gaps
+
+The owner accepted these uncovered lines on 2026-11-01. No test can reach them, or kcov does not count them when a test does.
+
+| Location | Reason |
+| --- | --- |
+| Each `done < <(...)` loop end in `scripts/` | kcov marks the `done` line only when a loop body runs `continue`, so a loop that finishes normally leaves it uncovered. |
+| `scripts/lib/agent-generator-render.sh:30` | The `*)` branch of the word pool switch is a guard. Every caller passes pool `A` or `B`, so no input reaches it. |
+| `scripts/lib/lbwc-routing-validate.sh:52-53` | These two lines continue a multi-line `jq` filter. kcov counts the call on line 51 and never on its continuation lines. |
