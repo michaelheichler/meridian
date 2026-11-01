@@ -84,7 +84,8 @@ Count source files. Leave out `.lbwc-planning/`, `node_modules/`, `.git/`, `vend
 
 ```bash
 . "{plugin-root}/scripts/lib/map-tiers.sh"
-PREFER_TEAMS=$(bash "{plugin-root}/scripts/lbwc-config.sh" get .lbwc-planning prefer_teams 2>/dev/null || echo auto)
+PREFER_TEAMS=$(bash "{plugin-root}/scripts/lbwc-config.sh" get .lbwc-planning prefer_teams 2>/dev/null | jq -r . 2>/dev/null)
+[ -n "$PREFER_TEAMS" ] || PREFER_TEAMS=auto
 resolve_map_tier "$SOURCE_FILE_COUNT" "$PREFER_TEAMS" "$FORCED_TIER"
 ```
 
