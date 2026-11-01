@@ -87,3 +87,21 @@ version_bump() {
   [ "$status" -eq 0 ]
   [[ "$output" == *'separate publish decision'* ]]
 }
+
+non_executable_gated_scripts() {
+  local repo_root="$BATS_TEST_DIRNAME/.." gated mode name found=0
+  gated=$(grep -hoE '\[ -x "\$(SCRIPT_DIR|ROOT/scripts)/[A-Za-z0-9._-]+"' "$repo_root"/scripts/*.sh | sed -E 's|.*/([^/"]+)"$|\1|' | sort -u)
+  while IFS= read -r name; do
+    [ -n "$name" ] || continue
+    found=1
+    mode=$(git -C "$repo_root" ls-files -s -- "scripts/$name" | cut -d' ' -f1)
+    [ "$mode" = 100755 ] || printf '%s has git mode %s\n' "$name" "${mode:-missing}"
+  done <<< "$gated"
+  [ "$found" = 1 ] || printf 'no executable-gated scripts found\n'
+}
+
+@test "every script that another script runs behind an executable check is executable in git" {
+  run non_executable_gated_scripts
+
+  [ -z "$output" ] || { printf '%s\n' "$output" >&2; return 1; }
+}
