@@ -15,10 +15,7 @@ teardown() {
 }
 
 run_writer() {
-  local payload="$1"
-  local output_path="$2"
-
-  printf '%s\n' "$payload" | bash "$SCRIPT" "$output_path"
+  printf '%s\n' "$1" | bash "$SCRIPT" "$2"
 }
 
 passing_payload() {
@@ -35,274 +32,129 @@ passing_payload() {
 JSON
 }
 
-@test "writes a canonical verification artifact for a valid payload" {
-  printf '%s\n' "old artifact" > "$TARGET"
-
-  run run_writer "$(passing_payload)" "$TARGET"
-
-  [ "$status" -eq 0 ]
-  ! grep -Fqx 'old artifact' "$TARGET"
-  grep -Fx 'writer: write-verification.sh' "$TARGET"
-  grep -Fx 'result: PASS' "$TARGET"
-  grep -Fx '## Must-Have Checks' "$TARGET"
+fail_case() {
+  printf 'case=%s %s\nactual=[%s]\n' "$1" "$2" "$3" >&2
+  return 1
 }
 
-@test "rejects an invalid payload without creating an artifact" {
-  run run_writer '{"tier":"standard","result":"UNKNOWN","checks":{"passed":1,"total":1}}' "$TARGET"
-
-  [ "$status" -ne 0 ]
-  [ ! -e "$TARGET" ]
+expect_has() {
+  case "$3" in
+    *"$2"*) ;;
+    *) fail_case "$1" "expected to contain=[$2]" "$3" ;;
+  esac
 }
 
-@test "rejects a non-object payload without replacing an existing artifact" {
-  printf '%s\n' "old artifact" > "$TARGET"
-
-  run run_writer '{"payload":[]}' "$TARGET"
-
-  [ "$status" -ne 0 ]
-  grep -Fqx "old artifact" "$TARGET"
+reset_phase_dir() {
+  find "$PHASE_DIR" -type f -delete
 }
 
-@test "rejects a tier outside the verification enum" {
-  payload=$(passing_payload | jq '.tier = "thorough"')
-
-  run run_writer "$payload" "$TARGET"
-
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"tier"* ]]
-  [ ! -e "$TARGET" ]
-}
-
-@test "rejects negative fractional and inconsistent check counters" {
-  for checks in \
-    '{"passed":-1,"failed":0,"total":0}' \
-    '{"passed":0.5,"failed":0,"total":1}' \
-    '{"passed":1,"failed":1,"total":1}'; do
-    payload=$(passing_payload | jq --argjson checks "$checks" '.checks = $checks | del(.checks_detail) | .result = "FAIL"')
-
-    run run_writer "$payload" "$TARGET"
-
-    [ "$status" -ne 0 ]
-    [[ "$output" == *"checks"* ]]
-    [ ! -e "$TARGET" ]
+plan_fixture() {
+  local entry
+  [ "$1" != "-" ] || return 0
+  for entry in $(printf '%s' "$1" | tr ',' ' '); do
+    case "$entry" in
+      PLAN.md=*) printf -- '---\nplan: %s\n---\n' "${entry#PLAN.md=}" > "$PHASE_DIR/PLAN.md" ;;
+      *) touch "$PHASE_DIR/$entry" ;;
+    esac
   done
 }
 
-@test "downgrades PASS to PARTIAL when detail includes a FAIL" {
-  payload=$(passing_payload | jq '.result = "PASS" | .checks = {passed: 0, failed: 1, total: 1} | .checks_detail[0].status = "FAIL"')
-
-  run run_writer "$payload" "$TARGET"
-
-  [ "$status" -eq 0 ]
-  grep -Fx 'result: PARTIAL' "$TARGET"
+build_payload() {
+  case "$1" in
+    raw:*) printf '%s' "${1#raw:}" ;;
+    *) passing_payload | jq "$1" ;;
+  esac
 }
 
-@test "rejects a FAIL result without structured failed-check detail before replacement" {
-  printf '%s\n' "old artifact" > "$TARGET"
-  payload=$(passing_payload | jq '.result = "FAIL" | .checks = {passed: 0, failed: 0, total: 0} | del(.checks_detail)')
-
-  run run_writer "$payload" "$TARGET"
-
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"checks_detail"* ]]
-  grep -Fqx "old artifact" "$TARGET"
+leftover_temp_files() {
+  find "$PHASE_DIR" -name '*.tmp.*'
 }
 
-@test "rejects a FAIL result whose detail has no failed check before replacement" {
-  printf '%s\n' "old artifact" > "$TARGET"
-  payload=$(passing_payload | jq '.result = "FAIL"')
-
-  run run_writer "$payload" "$TARGET"
-
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"FAIL check"* ]]
-  grep -Fqx "old artifact" "$TARGET"
-}
-
-@test "rejects a FAIL result with an unstable failed-check ID before replacement" {
-  printf '%s\n' "old artifact" > "$TARGET"
-  payload=$(passing_payload | jq '.result = "FAIL" | .checks = {passed: 0, failed: 1, total: 1} | .checks_detail[0].status = "FAIL" | .checks_detail[0].id = "test failure"')
-
-  run run_writer "$payload" "$TARGET"
-
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"stable ID"* ]]
-  grep -Fqx "old artifact" "$TARGET"
-}
-
-@test "rejects a FAIL result without actionable description and evidence before replacement" {
-  for field in description evidence; do
+@test "valid payloads replace the old artifact atomically with the rendered content" {
+  local label filter plans expected_lines line count expanded
+  while IFS='~' read -r label filter plans expected_lines; do
+    [ -n "$label" ] || continue
+    reset_phase_dir
     printf '%s\n' "old artifact" > "$TARGET"
-    payload=$(passing_payload | jq --arg field "$field" '.result = "FAIL" | .checks = {passed: 0, failed: 1, total: 1} | .checks_detail[0].status = "FAIL" | .checks_detail[0][$field] = " "')
+    plan_fixture "$plans"
 
-    run run_writer "$payload" "$TARGET"
+    run run_writer "$(build_payload "$filter")" "$TARGET"
 
-    [ "$status" -ne 0 ]
-    [[ "$output" == *"actionable"* ]]
-    grep -Fqx "old artifact" "$TARGET"
-  done
+    [ "$status" -eq 0 ] || fail_case "$label" "status=0" "status=$status output=$output"
+    [ -z "$(leftover_temp_files)" ] || fail_case "$label" "no temp files" "$(leftover_temp_files)"
+    count=$(grep -Fxc "old artifact" "$TARGET" || true)
+    [ "$count" = "0" ] || fail_case "$label" "old artifact gone" "$(cat "$TARGET")"
+    expanded="${expected_lines//;;/$'\n'}"
+    expanded="${expanded//NUM/#}"
+    while IFS= read -r line; do
+      count=$(grep -Fxc -- "$line" "$TARGET" || true)
+      [ "$count" = "1" ] || fail_case "$label" "line appears once=[$line]" "$(cat "$TARGET")"
+    done <<EXPECTED
+$expanded
+EXPECTED
+  done <<'CASES'
+canonical-pass~.~-~writer: write-verification.sh;;result: PASS;;## Must-Have Checks
+pass-downgraded-by-failed-detail~.result = "PASS" | .checks = {passed: 0, failed: 1, total: 1} | .checks_detail[0].status = "FAIL"~-~result: PARTIAL
+rich-failed-artifact-check~.result = "FAIL" | .checks = {passed: 0, failed: 1, total: 1} | .checks_detail[0] = {id: "artifact-docs", status: "FAIL", category: "artifact", description: "docs/api.md", exists: false, contains: "retry guidance", evidence: "docs/api.md is missing, so add the retry guidance."}~-~| NUM | ID | Artifact | Exists | Contains | Evidence | Status |;;| 1 | artifact-docs | docs/api.md | No | retry guidance | docs/api.md is missing, so add the retry guidance. | FAIL |
+rich-failed-key-link-check~.result = "FAIL" | .checks = {passed: 0, failed: 1, total: 1} | .checks_detail[0] = {id: "qa-route", status: "FAIL", category: "key_link", description: "QA command invokes the writer", from: "commands/qa.md", to: "scripts/write-verification.sh", via: "subprocess call", evidence: "commands/qa.md bypasses the writer, so route QA through it."}~-~| NUM | ID | From | To | Via | Evidence | Status |;;| 1 | qa-route | commands/qa.md | scripts/write-verification.sh | subprocess call | commands/qa.md bypasses the writer, so route QA through it. | FAIL |
+each-canonical-plan-id-once~.checks = {passed: 2, failed: 0, total: 2} | .plans_verified = ["01-01", "01-02"] | .checks_detail[0].plan_ref = "01-01" | .checks_detail += [{"id":"artifact","status":"PASS","plan_ref":"01-02"}]~01-01-PLAN.md,01-02-PLAN.md~  - 01-01;;  - 01-02
+CASES
 }
 
-@test "retains remediation evidence in a rich failed Artifact check" {
-  payload=$(passing_payload | jq '
-    .result = "FAIL" |
-    .checks = {passed: 0, failed: 1, total: 1} |
-    .checks_detail[0] = {
-      id: "artifact-docs",
-      status: "FAIL",
-      category: "artifact",
-      description: "docs/api.md",
-      exists: false,
-      contains: "retry guidance",
-      evidence: "docs/api.md is missing, so add the retry guidance."
-    }
-  ')
+@test "invalid payloads are rejected with a reason and leave the target untouched" {
+  local label existing plans payload fragment leftovers
+  while IFS='~' read -r label existing plans payload fragment; do
+    [ -n "$label" ] || continue
+    reset_phase_dir
+    [ "$existing" != "yes" ] || printf '%s\n' "old artifact" > "$TARGET"
+    plan_fixture "$plans"
 
-  run run_writer "$payload" "$TARGET"
+    run run_writer "$(build_payload "$payload")" "$TARGET"
 
-  [ "$status" -eq 0 ]
-  grep -Fx '| # | ID | Artifact | Exists | Contains | Evidence | Status |' "$TARGET"
-  grep -Fx '| 1 | artifact-docs | docs/api.md | No | retry guidance | docs/api.md is missing, so add the retry guidance. | FAIL |' "$TARGET"
+    [ "$status" -ne 0 ] || fail_case "$label" "non-zero status" "status=$status output=$output"
+    expect_has "$label" "$fragment" "$output"
+    if [ "$existing" = "yes" ]; then
+      [ "$(cat "$TARGET")" = "old artifact" ] || fail_case "$label" "old artifact kept" "$(cat "$TARGET")"
+    else
+      [ ! -e "$TARGET" ] || fail_case "$label" "no artifact created" "$(cat "$TARGET")"
+    fi
+    leftovers=$(leftover_temp_files)
+    [ -z "$leftovers" ] || fail_case "$label" "no temp files" "$leftovers"
+  done <<'CASES'
+invalid-json~no~-~raw:not json~invalid JSON
+unknown-result~no~-~raw:{"tier":"standard","result":"UNKNOWN","checks":{"passed":1,"total":1}}~result must be
+non-object-payload~yes~-~raw:{"payload":[]}~must be a JSON object
+tier-outside-enum~no~-~.tier = "thorough"~tier
+negative-counter~no~-~.checks = {"passed":-1,"failed":0,"total":0} | del(.checks_detail) | .result = "FAIL"~checks
+fractional-counter~no~-~.checks = {"passed":0.5,"failed":0,"total":1} | del(.checks_detail) | .result = "FAIL"~checks
+passed-plus-failed-above-total~no~-~.checks = {"passed":1,"failed":1,"total":1} | del(.checks_detail) | .result = "FAIL"~checks
+counters-differ-from-detail~no~-~.checks = {passed: 2, failed: 0, total: 2}~must match checks_detail
+pass-without-detail~no~-~del(.checks_detail)~checks_detail is required
+detail-status-outside-enum~no~-~.checks_detail[0].status = "MAYBE"~status must be
+fail-without-detail~yes~-~.result = "FAIL" | .checks = {passed: 0, failed: 0, total: 0} | del(.checks_detail)~checks_detail
+fail-detail-has-no-failed-check~yes~-~.result = "FAIL"~FAIL check
+fail-with-unstable-id~yes~-~.result = "FAIL" | .checks = {passed: 0, failed: 1, total: 1} | .checks_detail[0].status = "FAIL" | .checks_detail[0].id = "test failure"~stable ID
+fail-with-blank-description~yes~-~.result = "FAIL" | .checks = {passed: 0, failed: 1, total: 1} | .checks_detail[0].status = "FAIL" | .checks_detail[0].description = " "~actionable
+fail-with-blank-evidence~yes~-~.result = "FAIL" | .checks = {passed: 0, failed: 1, total: 1} | .checks_detail[0].status = "FAIL" | .checks_detail[0].evidence = " "~actionable
+plans-exist-without-plans-verified~no~01-01-PLAN.md~.~plans_verified is required
+check-without-plan-ref~no~01-01-PLAN.md~.plans_verified = ["01-01"]~plan_ref
+duplicate-plan-ids~no~01-01-PLAN.md~.plans_verified = ["01-01", "01-01"] | .checks_detail[0].plan_ref = "01-01"~plans_verified
+plan-filename-alias~no~01-01-PLAN.md~.plans_verified = ["01-01-PLAN.md"] | .checks_detail[0].plan_ref = "01-01"~plans_verified
+empty-plan-id~no~01-01-PLAN.md~.plans_verified = ["", "01-01"] | .checks_detail[0].plan_ref = "01-01"~plans_verified
+legacy-plan-alias-beside-canonical-id~no~PLAN.md=01~.plans_verified = ["PLAN"] | .checks_detail[0].plan_ref = "PLAN"~plans_verified
+unknown-plan-ref~no~01-01-PLAN.md~.plans_verified = ["01-01"] | .checks_detail[0].plan_ref = "PLAN.md"~plan_ref
+unknown-plan-ref-beside-verified-one~no~01-01-PLAN.md~.checks = {passed: 2, failed: 0, total: 2} | .plans_verified = ["01-01"] | .checks_detail[0].plan_ref = "01-01" | .checks_detail += [{"id":"artifact","status":"PASS","plan_ref":"PLAN.md"}]~plan_ref
+plans-verified-without-plan-files~no~-~.plans_verified = ["01-01"]~must be empty
+plan-file-missing-from-plans-verified~no~01-01-PLAN.md,01-02-PLAN.md~.plans_verified = ["01-01"] | .checks_detail[0].plan_ref = "01-01"~plans_verified has
+phase-frontmatter-injection~yes~-~.phase = "01\\nwriter: forged"~phase
+CASES
 }
 
-@test "retains remediation evidence in a rich failed Key Link check" {
-  payload=$(passing_payload | jq '
-    .result = "FAIL" |
-    .checks = {passed: 0, failed: 1, total: 1} |
-    .checks_detail[0] = {
-      id: "qa-route",
-      status: "FAIL",
-      category: "key_link",
-      description: "QA command invokes the writer",
-      from: "commands/qa.md",
-      to: "scripts/write-verification.sh",
-      via: "subprocess call",
-      evidence: "commands/qa.md bypasses the writer, so route QA through it."
-    }
-  ')
-
-  run run_writer "$payload" "$TARGET"
-
-  [ "$status" -eq 0 ]
-  grep -Fx '| # | ID | From | To | Via | Evidence | Status |' "$TARGET"
-  grep -Fx '| 1 | qa-route | commands/qa.md | scripts/write-verification.sh | subprocess call | commands/qa.md bypasses the writer, so route QA through it. | FAIL |' "$TARGET"
-}
-
-@test "requires every check to reference each plan when plans exist" {
-  touch "$PHASE_DIR/01-01-PLAN.md"
-  payload=$(passing_payload | jq '.plans_verified = ["01-01"]')
-
-  run run_writer "$payload" "$TARGET"
-
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"plan_ref"* ]]
-  [ ! -e "$TARGET" ]
-}
-
-@test "rejects duplicate plan IDs instead of silently de-duplicating them" {
-  touch "$PHASE_DIR/01-01-PLAN.md"
-  payload=$(passing_payload | jq '.plans_verified = ["01-01", "01-01"] | .checks_detail[0].plan_ref = "01-01"')
-
-  run run_writer "$payload" "$TARGET"
-
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"plans_verified"* ]]
-  [ ! -e "$TARGET" ]
-}
-
-@test "rejects a plan filename alias in plans_verified" {
-  touch "$PHASE_DIR/01-01-PLAN.md"
-  payload=$(passing_payload | jq '.plans_verified = ["01-01-PLAN.md"] | .checks_detail[0].plan_ref = "01-01"')
-
-  run run_writer "$payload" "$TARGET"
-
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"plans_verified"* ]]
-  [ ! -e "$TARGET" ]
-}
-
-@test "rejects an empty plan ID even when a valid plan ID is also supplied" {
-  touch "$PHASE_DIR/01-01-PLAN.md"
-  payload=$(passing_payload | jq '.plans_verified = ["", "01-01"] | .checks_detail[0].plan_ref = "01-01"')
-
-  run run_writer "$payload" "$TARGET"
-
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"plans_verified"* ]]
-  [ ! -e "$TARGET" ]
-}
-
-@test "rejects the legacy PLAN alias when frontmatter declares the canonical ID" {
-  printf '%s\n' '---' 'plan: 01' '---' > "$PHASE_DIR/PLAN.md"
-  payload=$(passing_payload | jq '.plans_verified = ["PLAN"] | .checks_detail[0].plan_ref = "PLAN"')
-
-  run run_writer "$payload" "$TARGET"
-
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"plans_verified"* ]]
-  [ ! -e "$TARGET" ]
-}
-
-@test "rejects an unknown plan reference" {
-  touch "$PHASE_DIR/01-01-PLAN.md"
-  payload=$(passing_payload | jq '.plans_verified = ["01-01"] | .checks_detail[0].plan_ref = "PLAN.md"')
-
-  run run_writer "$payload" "$TARGET"
-
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"plan_ref"* ]]
-  [ ! -e "$TARGET" ]
-}
-
-@test "rejects an unknown plan reference even when another check names the verified plan" {
-  touch "$PHASE_DIR/01-01-PLAN.md"
-  payload=$(passing_payload | jq '
-    .checks = {passed: 2, failed: 0, total: 2} |
-    .plans_verified = ["01-01"] |
-    .checks_detail[0].plan_ref = "01-01" |
-    .checks_detail += [{"id":"artifact","status":"PASS","plan_ref":"PLAN.md"}]
-  ')
-
-  run run_writer "$payload" "$TARGET"
-
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"plan_ref"* ]]
-  [ ! -e "$TARGET" ]
-}
-
-@test "writes each discovered canonical plan ID exactly once" {
-  touch "$PHASE_DIR/01-01-PLAN.md" "$PHASE_DIR/01-02-PLAN.md"
-  payload=$(passing_payload | jq '
-    .checks = {passed: 2, failed: 0, total: 2} |
-    .plans_verified = ["01-01", "01-02"] |
-    .checks_detail[0].plan_ref = "01-01" |
-    .checks_detail += [{"id":"artifact","status":"PASS","plan_ref":"01-02"}]
-  ')
-
-  run run_writer "$payload" "$TARGET"
-
-  [ "$status" -eq 0 ]
-  grep -Fx '  - 01-01' "$TARGET"
-  grep -Fx '  - 01-02' "$TARGET"
-}
-
-@test "rejects phase frontmatter injection without replacing an artifact" {
-  printf '%s\n' "old artifact" > "$TARGET"
-  payload=$(passing_payload | jq '.phase = "01\\nwriter: forged"')
-
-  run run_writer "$payload" "$TARGET"
-
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"phase"* ]]
-  grep -Fqx "old artifact" "$TARGET"
-}
-
-@test "writes a valid payload outside a Git repository" {
-  payload=$(passing_payload)
-
-  run bash -c 'cd "$1" && printf "%s\\n" "$2" | bash "$3" "$4"' bash "$TEST_TEMP_DIR" "$payload" "$SCRIPT" "$TARGET"
+@test "valid payload outside a Git repository omits the commit stamp" {
+  run bash -c 'cd "$1" && printf "%s\\n" "$2" | bash "$3" "$4"' bash "$TEST_TEMP_DIR" "$(passing_payload)" "$SCRIPT" "$TARGET"
 
   [ "$status" -eq 0 ]
   grep -Fx 'result: PASS' "$TARGET"
-  ! grep -Fq 'verified_at_commit:' "$TARGET"
+  run grep -Fc 'verified_at_commit:' "$TARGET"
+  [ "$output" = "0" ]
 }
