@@ -20,6 +20,10 @@ expect_output_empty() {
   [ -z "$output" ] || fail_case "$1" "expected no output"
 }
 
+expect_file_has() {
+  grep -qF -- "$3" "$2" || fail_case "$1" "expected '$3' in $2"
+}
+
 expect_exists() {
   [ -e "$2" ] || fail_case "$1" "expected $2 to exist"
 }
@@ -28,11 +32,23 @@ expect_missing() {
   [ ! -e "$2" ] || fail_case "$1" "expected $2 to be absent"
 }
 
+expect_output_equals() {
+  [ "$output" = "$2" ] || fail_case "$1" "expected output '$2'"
+}
+
+expect_no_match_under() {
+  local label="$1" directory="$2" pattern="$3"
+  [ -d "$directory" ] || return 0
+  if grep -rq -- "$pattern" "$directory"; then
+    fail_case "$label" "unexpected '$pattern' under $directory"
+  fi
+}
+
 tree_digest() {
   (
     cd "$1" || exit 1
-    find . -type f -print0 | sort -z | xargs -0 cksum
-    find . -type l -print0 | sort -z | xargs -0 -n1 readlink
+    find . -name .git -type d -prune -o -type f -print0 | sort -z | xargs -0 cksum
+    find . -name .git -type d -prune -o -type l -print0 | sort -z | xargs -0 -n1 readlink
   ) | cksum
 }
 
