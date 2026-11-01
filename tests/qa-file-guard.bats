@@ -1,10 +1,14 @@
 #!/usr/bin/env bats
 
 load test_helper
+load guard_helper
 
 setup() {
   setup_temp_dir
   EXTERNAL_TEST_DIR=""
+  GUARD_ID="dev-1"
+  GUARD_CONTROL_ROOT=""
+  mkdir -p "$TEST_TEMP_DIR/secondary"
   cd "$TEST_TEMP_DIR"
 }
 
@@ -15,170 +19,304 @@ teardown() {
 }
 
 run_guard() {
-  local file_path="$1" agent_id="${2:-}" tool_name="${3:-Write}"
-  payload "tool_name=$tool_name" "tool_input.file_path=$file_path" "agent_id=$agent_id" | bash "$SCRIPTS_DIR/file-guard.sh"
+  local path="$1" agent_id="${2:-}" tool="${3:--}" cwd_mode="${4:--}"
+  local key=file_path json_cwd="" planning=""
+  [ "$tool" != "-" ] || tool=Write
+  [ "$tool" != "NotebookEdit" ] || key=notebook_path
+  case "$cwd_mode" in
+    root) json_cwd="$TEST_TEMP_DIR" ;;
+    secondary) json_cwd="$TEST_TEMP_DIR/secondary"; planning="$TEST_TEMP_DIR/.lbwc-planning" ;;
+    secondary-noenv) json_cwd="$TEST_TEMP_DIR/secondary" ;;
+  esac
+  payload "tool_name=$tool" "tool_input.$key=$path" "agent_id=$agent_id" ${json_cwd:+"cwd=$json_cwd"} \
+    | LBWC_PLANNING_DIR="$planning" LBWC_CONTROL_ROOT="$GUARD_CONTROL_ROOT" bash "$SCRIPTS_DIR/file-guard.sh"
 }
 
-run_notebook_guard() {
-  local notebook_path="$1" agent_id="$2"
-  payload "tool_name=NotebookEdit" "tool_input.notebook_path=$notebook_path" "agent_id=$agent_id" | bash "$SCRIPTS_DIR/file-guard.sh"
+run_raw_guard() {
+  printf '%s' "$1" | bash "$SCRIPTS_DIR/file-guard.sh"
 }
 
-make_guard_contract() {
-  local task="${1:-task-1}" path id
-  path=$(bash "$SCRIPTS_DIR/task-contract.sh" issue "$TEST_TEMP_DIR" "$task" \
-    --command test --role python-engineer --team solo --job "guard write" \
-    --write-allowance src/allowed.py)
-  id=$(basename "$path" .json)
-  bash "$SCRIPTS_DIR/task-contract.sh" state "$TEST_TEMP_DIR" "$id" dispatched >/dev/null
+write_worker_manifest() {
+  write_manifest "$TEST_TEMP_DIR/.lbwc-planning" "$(jq -cn --arg id "$1" --argjson entry "$2" '{agents:{($id):$entry}}')"
+}
+
+capability_entry() {
+  local role="$1" kind="$2" path="$3"
+  jq -cn --arg root "$TEST_TEMP_DIR" --arg role "$role" --arg kind "$kind" --arg path "$path" \
+    '{role:$role,project_root:$root,capabilities:[{access:"write",kind:$kind,path:$path}]}'
+}
+
+issue_contract() {
+  local dispatch="$1" task="$2" path
+  path=$(bash "$SCRIPTS_DIR/task-contract.sh" issue "$TEST_TEMP_DIR" "$task" "${@:3}")
+  [ "$dispatch" = "undispatched" ] || bash "$SCRIPTS_DIR/task-contract.sh" state "$TEST_TEMP_DIR" "$(basename "$path" .json)" dispatched >/dev/null
   printf '%s' "$path"
 }
 
-@test "unscoped role writes anywhere" {
-  run run_guard "src/main.py"
-  [ "$status" -eq 0 ]
+build_contract_worker() {
+  local mutation="$1" contract id digest contract_id task_identity allowance=src/allowed.py contract_path
+  contract=$(issue_contract "$mutation" task-1 --command test --role python-engineer --team solo --job "guard write" --write-allowance "$allowance")
+  id=$(basename "$contract" .json)
+  digest=$(jq -r .contract_digest "$contract")
+  contract_id=$id
+  task_identity=$id
+  contract_path=$contract
+  case "$mutation" in
+    missing) contract_path="$TEST_TEMP_DIR/missing.json"; digest=deadbeef ;;
+    tampered) jq '.write_allowances = ["src/other.py"]' "$contract" > "$contract.tmp" && mv "$contract.tmp" "$contract" ;;
+    wrong-id) contract_id=wrong-id ;;
+    stale-task) task_identity=old-task ;;
+    wrong-digest) digest=deadbeef ;;
+    allowance-drift) allowance=src/other.py ;;
+  esac
+  if [ "$mutation" = "no-contract-path" ]; then
+    GUARD_ID=lbwc-dev-a
+    write_worker_manifest "$GUARD_ID" "$(jq -cn --arg root "$TEST_TEMP_DIR" --arg allowance "$allowance" '{role:"python-engineer",project_root:$root,write_allowances:[$allowance]}')"
+    return 0
+  fi
+  write_worker_manifest dev-1 "$(jq -cn --arg root "$TEST_TEMP_DIR" --arg allowance "$allowance" --arg path "$contract_path" --arg cid "$contract_id" --arg digest "$digest" --arg task "$task_identity" \
+    '{role:"python-engineer",project_root:$root,write_allowances:[$allowance],contract_path:$path,contract_id:$cid,contract_digest:$digest,task_identity:$task}')"
 }
 
-@test "scout may write its assigned planning file" {
-  write_manifest "$TEST_TEMP_DIR/.lbwc-planning" "{\"agents\":{\"scout-1\":{\"role\":\"scout\",\"project_root\":\"$TEST_TEMP_DIR\",\"write_allowances\":[\".lbwc-planning/phases/01-x/RESEARCH.md\"]}}}"
-  run run_guard ".lbwc-planning/phases/01-x/RESEARCH.md" "scout-1"
-  [ "$status" -eq 0 ]
+build_root_capability_worker() {
+  local contract id
+  GUARD_CONTROL_ROOT="$TEST_TEMP_DIR/.temporary-agent-runfiles/runs/root-secrets"
+  mkdir -p "$GUARD_CONTROL_ROOT"
+  contract=$(issue_contract dispatched root-secrets --command team --role python-engineer --team solo --job "root scope" \
+    --control-root "$GUARD_CONTROL_ROOT" --write-capability directory:.)
+  id=$(basename "$contract" .json)
+  jq -cn --arg root "$TEST_TEMP_DIR" --arg path "$contract" --arg id "$id" --arg digest "$(jq -r .contract_digest "$contract")" \
+    '{agents:{"dev-1":{role:"python-engineer",project_root:$root,schema_version:3,capabilities:[{access:"write",kind:"directory",path:"."}],write_allowances:["."],contract_path:$path,contract_id:$id,contract_digest:$digest,task_identity:$id}}}' \
+    > "$GUARD_CONTROL_ROOT/agent-manifest.json"
 }
 
-@test "scout is blocked from writing product source" {
-  write_manifest "$TEST_TEMP_DIR/.lbwc-planning" '{"agents":{"scout-1":{"role":"scout"}}}'
-  run run_guard "src/main.py" "scout-1"
-  [ "$status" -eq 2 ]
-  [[ "$output" == *"scout"* ]]
+build_link_layout() {
+  rm -rf "$TEST_TEMP_DIR/hooks"
+  [ -z "$EXTERNAL_TEST_DIR" ] || rm -rf "$EXTERNAL_TEST_DIR"
+  EXTERNAL_TEST_DIR=""
+  write_worker_manifest dev-1 "$(jq -cn --arg root "$TEST_TEMP_DIR" '{role:"python-engineer",project_root:$root,write_allowances:["hooks/skill_gate.py"]}')"
+  case "$1" in
+    target-outside)
+      EXTERNAL_TEST_DIR=$(mktemp -d)
+      mkdir -p "$TEST_TEMP_DIR/hooks"
+      touch "$EXTERNAL_TEST_DIR/skill_gate.py"
+      ln -s "$EXTERNAL_TEST_DIR/skill_gate.py" "$TEST_TEMP_DIR/hooks/skill_gate.py"
+      ;;
+    parent-outside)
+      EXTERNAL_TEST_DIR=$(mktemp -d)
+      ln -s "$EXTERNAL_TEST_DIR" "$TEST_TEMP_DIR/hooks"
+      ;;
+    self-referential)
+      mkdir -p "$TEST_TEMP_DIR/hooks"
+      ln -s "skill_gate.py" "$TEST_TEMP_DIR/hooks/skill_gate.py"
+      ;;
+  esac
 }
 
-@test "generated identity without a project root fails closed" {
-  write_manifest "$TEST_TEMP_DIR/.lbwc-planning" '{"agents":{"dev-1":{"role":"python-engineer","write_allowances":["src/main.py"]}}}'
-
-  run run_guard "src/main.py" "dev-1"
-
-  [ "$status" -eq 2 ]
+build_scenario() {
+  local role="$1" grant="$2"
+  GUARD_ID=dev-1
+  GUARD_CONTROL_ROOT=""
+  rm -f "$TEST_TEMP_DIR/.lbwc-planning/.agent-manifest.json"
+  case "$grant" in
+    unscoped) GUARD_ID="" ;;
+    unregistered-lbwc) GUARD_ID=lbwc-ghost ;;
+    lbwc-allow:*)
+      GUARD_ID=lbwc-dev-a
+      write_worker_manifest lbwc-dev-a "$(jq -cn --arg root "$TEST_TEMP_DIR" --arg role "$role" --arg path "${grant#lbwc-allow:}" '{role:$role,project_root:$root,write_allowances:[$path]}')"
+      ;;
+    main-pair-*)
+      GUARD_ID=""
+      write_worker_manifest lbwc-dev-a "$(jq -cn --arg state "${grant#main-pair-}" '{role:"python-engineer",state:$state}')"
+      ;;
+    allow:*)
+      write_worker_manifest dev-1 "$(jq -cn --arg root "$TEST_TEMP_DIR" --arg role "$role" --arg path "${grant#allow:}" '{role:$role,project_root:$root,write_allowances:[$path]}')"
+      ;;
+    dir:*) write_worker_manifest dev-1 "$(capability_entry "$role" directory "${grant#dir:}")" ;;
+    file:*) write_worker_manifest dev-1 "$(capability_entry "$role" file "${grant#file:}")" ;;
+    none) write_worker_manifest dev-1 "$(jq -cn --arg root "$TEST_TEMP_DIR" --arg role "$role" '{role:$role,project_root:$root}')" ;;
+    no-root) write_worker_manifest dev-1 "$(jq -cn --arg role "$role" '{role:$role,write_allowances:["src/main.py"]}')" ;;
+    contract:*) build_contract_worker "${grant#contract:}" ;;
+    root-capability) build_root_capability_worker ;;
+    link:*) build_link_layout "${grant#link:}" ;;
+  esac
 }
 
-@test "architect may write its assigned roadmap but not product source" {
-  write_manifest "$TEST_TEMP_DIR/.lbwc-planning" "{\"agents\":{\"architect-1\":{\"role\":\"architect\",\"project_root\":\"$TEST_TEMP_DIR\",\"write_allowances\":[\".lbwc-planning/ROADMAP.md\"]}}}"
-  run run_guard ".lbwc-planning/ROADMAP.md" "architect-1"
-  [ "$status" -eq 0 ]
-  run run_guard "src/main.py" "architect-1"
-  [ "$status" -eq 2 ]
+guard_case() {
+  build_scenario "$2" "$3" </dev/null
+  run run_guard "$4" "$GUARD_ID" "${5:--}" "${6:--}"
 }
 
-@test "docs may write its assigned markdown but not product source" {
-  write_manifest "$TEST_TEMP_DIR/.lbwc-planning" "{\"agents\":{\"docs-1\":{\"role\":\"docs\",\"project_root\":\"$TEST_TEMP_DIR\",\"write_allowances\":[\"README.md\"]}}}"
-  run run_guard "README.md" "docs-1"
-  [ "$status" -eq 0 ]
-  run run_guard "src/main.py" "docs-1"
-  [ "$status" -eq 2 ]
+@test "file-guard allows every in-scope write and leaves the tree untouched" {
+  local before after
+  while IFS='|' read -r label role grant path tool cwd_mode; do
+    [ -n "$label" ] || continue
+    build_scenario "$role" "$grant" </dev/null
+    before=$(tree_digest "$TEST_TEMP_DIR")
+    run run_guard "$path" "$GUARD_ID" "${tool:--}" "${cwd_mode:--}"
+    after=$(tree_digest "$TEST_TEMP_DIR")
+    expect_status "$label" 0
+    expect_output_empty "$label"
+    expect_same_digest "$label" "$before" "$after"
+  done <<'CASES'
+no-agent-identity|-|unscoped|src/main.py|-|-
+exact-hook-allowance|python-engineer|allow:hooks/skill_gate.py|hooks/skill_gate.py|-|-
+notebook-exact-allowance|python-engineer|allow:notebooks/a.ipynb|notebooks/a.ipynb|NotebookEdit|-
+scout-planning-file|scout|allow:.lbwc-planning/phases/01-x/RESEARCH.md|.lbwc-planning/phases/01-x/RESEARCH.md|-|-
+architect-planning-file|architect|allow:.lbwc-planning/ROADMAP.md|.lbwc-planning/ROADMAP.md|-|-
+lead-planning-file|lead|allow:.lbwc-planning/STATE.md|.lbwc-planning/STATE.md|-|-
+docs-markdown-file|docs|allow:README.md|README.md|-|-
+docs-planning-file|docs|allow:.lbwc-planning/notes.json|.lbwc-planning/notes.json|-|-
+qa-author-tests-dir|qa-author|allow:tests/test_thing.py|tests/test_thing.py|-|-
+qa-author-explicit-hook-cwd|qa-author|allow:tests/helpers.py|tests/helpers.py|-|root
+test-dev-dot-test-name|test-dev|allow:src/thing.test.ts|src/thing.test.ts|-|-
+test-dev-underscore-test-name|test-dev|allow:pkg/util_test.go|pkg/util_test.go|-|-
+test-dev-dot-spec-name|test-dev|allow:src/thing.spec.ts|src/thing.spec.ts|-|-
+test-dev-test-directory|test-dev|allow:src/test/fixture.json|src/test/fixture.json|-|-
+schema3-directory-descendant|web-engineer|dir:src/web|src/web/page.ts|-|-
+schema3-directory-itself|web-engineer|dir:src/web|src/web|-|-
+schema3-repository-root|web-engineer|dir:.|src/main.py|-|-
+schema3-exact-file|web-engineer|file:src/one.py|src/one.py|-|-
+contract-exact-allowance|python-engineer|contract:ok|src/allowed.py|-|-
+main-session-docs-while-pair-open|-|main-pair-running|docs/notes.md|-|-
+main-session-agent-definition-while-pair-open|-|main-pair-registered|.claude/agents/forged.md|-|-
+main-session-product-after-pair-used|-|main-pair-used|src/main.py|-|-
+CASES
 }
 
-@test "qa-author may write an assigned test file but not product source" {
-  write_manifest "$TEST_TEMP_DIR/.lbwc-planning" "{\"agents\":{\"qaa-1\":{\"role\":\"qa-author\",\"project_root\":\"$TEST_TEMP_DIR\",\"write_allowances\":[\"tests/test_thing.py\"]}}}"
-  run run_guard "tests/test_thing.py" "qaa-1"
-  [ "$status" -eq 0 ]
-  run run_guard "src/main.py" "qaa-1"
-  [ "$status" -eq 2 ]
+@test "file-guard role scope denies a granted path outside the role domain" {
+  while IFS='|' read -r label role grant path reason; do
+    [ -n "$label" ] || continue
+    guard_case "$label" "$role" "$grant" "$path"
+    expect_status "$label" 2
+    expect_output_has "$label" "$reason"
+  done <<'CASES'
+scout-product-source|scout|allow:src/main.py|src/main.py|role 'scout' can only write under the control root
+architect-product-source|architect|allow:src/main.py|src/main.py|role 'architect' can only write under the control root
+lead-product-source|lead|allow:src/main.py|src/main.py|role 'lead' can only write under the control root
+docs-product-source|docs|allow:src/main.py|src/main.py|role 'docs' can only write documentation files
+qa-author-product-source|qa-author|allow:src/main.py|src/main.py|role 'qa-author' can only write test files
+test-dev-product-source|test-dev|allow:src/main.py|src/main.py|role 'test-dev' can only write test files
+CASES
 }
 
-@test "test-dev may write an assigned test file but not product source" {
-  write_manifest "$TEST_TEMP_DIR/.lbwc-planning" "{\"agents\":{\"td-1\":{\"role\":\"test-dev\",\"project_root\":\"$TEST_TEMP_DIR\",\"write_allowances\":[\"src/thing.test.ts\"]}}}"
-  run run_guard "src/thing.test.ts" "td-1"
-  [ "$status" -eq 0 ]
-  run run_guard "src/main.py" "td-1"
-  [ "$status" -eq 2 ]
+@test "file-guard capability check denies writes outside the assigned allowance" {
+  while IFS='|' read -r label role grant path tool cwd_mode reason; do
+    [ -n "$label" ] || continue
+    guard_case "$label" "$role" "$grant" "$path" "$tool" "$cwd_mode"
+    expect_status "$label" 2
+    expect_output_has "$label" "$reason"
+  done <<'CASES'
+manifest-entry-without-project-root|python-engineer|no-root|src/main.py|-|-|outside worker 'dev-1' assigned write allowance
+different-hook-path|python-engineer|allow:hooks/skill_gate.py|hooks/context_usage.py|-|-|outside worker 'dev-1' assigned write allowance
+notebook-outside-allowance|python-engineer|allow:notebooks/allowed.ipynb|notebooks/unassigned.ipynb|NotebookEdit|-|outside worker 'dev-1' assigned write allowance
+schema3-sibling-directory|web-engineer|dir:src/web|src/api/page.ts|-|-|outside worker 'dev-1' assigned write allowance
+schema3-prefix-lookalike-directory|web-engineer|dir:src/web|src/webapp/page.ts|-|-|outside worker 'dev-1' assigned write allowance
+schema3-exact-file-other-path|web-engineer|file:src/one.py|src/two.py|-|-|outside worker 'dev-1' assigned write allowance
+worker-without-allowance|python-engineer|none|src/main.py|-|-|has no assigned write allowance
+cwd-outside-primary-workspace|python-engineer|allow:hooks/skill_gate.py|hooks/skill_gate.py|-|secondary|primary workspace
+generated-worker-outside-primary-without-override|python-engineer|lbwc-allow:hooks/skill_gate.py|hooks/skill_gate.py|-|secondary-noenv|primary workspace
+generated-identity-without-manifest-entry|python-engineer|unregistered-lbwc|src/main.py|-|-|manifest capability could not be resolved
+protected-critical-policy|python-engineer|allow:config/subagent-critical-execution.txt|config/subagent-critical-execution.txt|-|-|cannot write LBWC policy
+protected-destructive-list|python-engineer|allow:config/destructive-commands.txt|config/destructive-commands.txt|-|-|cannot write LBWC policy
+protected-guard-script|python-engineer|allow:scripts/file-guard.sh|scripts/file-guard.sh|-|-|cannot write LBWC policy
+protected-task-contract-script|python-engineer|allow:scripts/task-contract.sh|scripts/task-contract.sh|-|-|cannot write LBWC policy
+protected-lifecycle-script|python-engineer|allow:scripts/agent-lifecycle.sh|scripts/agent-lifecycle.sh|-|-|cannot write LBWC policy
+protected-manifest|python-engineer|allow:.lbwc-planning/.agent-manifest.json|.lbwc-planning/.agent-manifest.json|-|-|cannot write LBWC policy
+protected-contract-store|python-engineer|allow:.lbwc-planning/.contracts/tasks/forged.json|.lbwc-planning/.contracts/tasks/forged.json|-|-|cannot write LBWC policy
+protected-agent-definition|python-engineer|allow:.claude/agents/forged.md|.claude/agents/forged.md|-|-|cannot write LBWC policy
+root-capability-planning-config|python-engineer|root-capability|.lbwc-planning/config.json|-|-|cannot write LBWC policy
+root-capability-runfiles|python-engineer|root-capability|.temporary-agent-runfiles/runs/one/run.json|-|-|cannot write LBWC policy
+root-capability-dotenv|python-engineer|root-capability|.env|-|-|cannot write LBWC policy
+root-capability-private-key|python-engineer|root-capability|config/private.key|-|-|cannot write LBWC policy
+root-capability-credentials|python-engineer|root-capability|credentials.json|-|-|cannot write LBWC policy
+CASES
 }
 
-@test "worker may write only its exact assigned hook path" {
-  write_manifest "$TEST_TEMP_DIR/.lbwc-planning" "{\"agents\":{\"dev-1\":{\"role\":\"python-engineer\",\"project_root\":\"$TEST_TEMP_DIR\",\"write_allowances\":[\"hooks/skill_gate.py\"]}}}"
-  run run_guard "hooks/skill_gate.py" "dev-1"
-  [ "$status" -eq 0 ]
+@test "file-guard rejects a contract worker whose contract no longer matches the manifest" {
+  while IFS='|' read -r label mutation path; do
+    [ -n "$label" ] || continue
+    guard_case "$label" python-engineer "contract:$mutation" "$path"
+    expect_status "$label" 2
+    expect_output_has "$label" "contract is missing, mismatched, stale, or outside allowance"
+  done <<'CASES'
+contract-file-missing|missing|src/allowed.py
+contract-tampered|tampered|src/allowed.py
+manifest-contract-id-mismatch|wrong-id|src/allowed.py
+manifest-task-identity-stale|stale-task|src/allowed.py
+manifest-digest-mismatch|wrong-digest|src/allowed.py
+manifest-allowance-drifted|allowance-drift|src/other.py
+contract-never-dispatched|undispatched|src/allowed.py
+generated-identity-without-contract-path|no-contract-path|src/allowed.py
+CASES
 }
 
-@test "worker cannot write protected framework paths even when the manifest grants them" {
-  local protected
-  for protected in \
-    config/subagent-critical-execution.txt \
-    config/destructive-commands.txt \
-    scripts/file-guard.sh \
-    scripts/task-contract.sh \
-    scripts/agent-lifecycle.sh \
-    .lbwc-planning/.agent-manifest.json \
-    .lbwc-planning/.contracts/tasks/forged.json \
-    .claude/agents/forged.md
-  do
-    write_manifest "$TEST_TEMP_DIR/.lbwc-planning" "{\"agents\":{\"dev-1\":{\"role\":\"python-engineer\",\"project_root\":\"$TEST_TEMP_DIR\",\"write_allowances\":[\"$protected\"]}}}"
-    run run_guard "$protected" "dev-1"
-    [ "$status" -eq 2 ]
-    [[ "$output" == *"cannot write LBWC policy"* ]]
-  done
+@test "file-guard keeps exact allowances inside the canonical primary root" {
+  while IFS='|' read -r label layout path; do
+    [ -n "$label" ] || continue
+    build_scenario python-engineer "link:$layout" </dev/null
+    run timeout 2s bash "$SCRIPTS_DIR/file-guard.sh" <<< "$(payload "tool_name=Write" "tool_input.file_path=$path" "agent_id=dev-1")"
+    expect_status "$label" 2
+    expect_output_has "$label" "canonical primary root"
+  done <<'CASES'
+symlinked-target-outside-root|target-outside|hooks/skill_gate.py
+symlinked-parent-outside-root|parent-outside|hooks/skill_gate.py
+self-referential-symlink-ends-promptly|self-referential|hooks/skill_gate.py
+absolute-path-outside-root|absolute|/elsewhere/hooks/skill_gate.py
+CASES
 }
 
-@test "contract worker may write its exact allowance" {
-  local contract
-  contract=$(make_guard_contract)
-  local id="$(basename "$contract" .json)"
-  write_manifest "$TEST_TEMP_DIR/.lbwc-planning" "{\"agents\":{\"dev-1\":{\"role\":\"python-engineer\",\"project_root\":\"$TEST_TEMP_DIR\",\"write_allowances\":[\"src/allowed.py\"],\"contract_path\":\"$contract\",\"contract_id\":\"$id\",\"contract_digest\":\"$(jq -r .contract_digest "$contract")\",\"task_identity\":\"$id\"}}}"
-  run run_guard "src/allowed.py" "dev-1"
-  [ "$status" -eq 0 ]
+@test "file-guard makes the main session delegate product writes while a pair is open" {
+  while IFS='|' read -r label grant path; do
+    [ -n "$label" ] || continue
+    guard_case "$label" - "$grant" "$path"
+    expect_status "$label" 2
+    expect_output_has "$label" "delegate product writes"
+  done <<'CASES'
+pair-running|main-pair-running|src/main.py
+pair-registered|main-pair-registered|src/main.py
+CASES
 }
 
-@test "contract worker is blocked when contract is missing" {
-  write_manifest "$TEST_TEMP_DIR/.lbwc-planning" "{\"agents\":{\"dev-1\":{\"role\":\"python-engineer\",\"project_root\":\"$TEST_TEMP_DIR\",\"write_allowances\":[\"src/allowed.py\"],\"contract_path\":\"$TEST_TEMP_DIR/missing.json\",\"contract_id\":\"guard-contract\",\"contract_digest\":\"deadbeef\",\"task_identity\":\"task-1\"}}}"
-  run run_guard "src/allowed.py" "dev-1"
-  [ "$status" -eq 2 ]
-  [[ "$output" == *"contract is missing"* ]]
+@test "file-guard blocks unsafe path shapes before consulting any manifest" {
+  while IFS='|' read -r label path reason; do
+    [ -n "$label" ] || continue
+    guard_case "$label" - unscoped "$(printf '%b' "$path")"
+    expect_status "$label" 2
+    expect_output_has "$label" "$reason"
+  done <<'CASES'
+leading-parent-traversal|../outside/secret.py|path traversal in file path
+bare-parent-reference|..|path traversal in file path
+embedded-parent-traversal|src/../../secret.py|path traversal in file path
+trailing-parent-reference|src/..|path traversal in file path
+newline-in-path|src/a\nb.py|newline in file path
+CASES
 }
 
-@test "contract worker is blocked when contract is tampered" {
-  local contract
-  contract=$(make_guard_contract)
-  jq '.write_allowances = ["src/other.py"]' "$contract" > "$contract.tmp" && mv "$contract.tmp" "$contract"
-  local id="$(basename "$contract" .json)"
-  write_manifest "$TEST_TEMP_DIR/.lbwc-planning" "{\"agents\":{\"dev-1\":{\"role\":\"python-engineer\",\"project_root\":\"$TEST_TEMP_DIR\",\"write_allowances\":[\"src/allowed.py\"],\"contract_path\":\"$contract\",\"contract_id\":\"$id\",\"contract_digest\":\"$(jq -r .contract_digest "$contract")\",\"task_identity\":\"$id\"}}}"
-  run run_guard "src/allowed.py" "dev-1"
-  [ "$status" -eq 2 ]
-  [[ "$output" == *"contract is missing"* ]]
+@test "file-guard fails closed when jq is missing" {
+  local no_jq_path="$TEST_TEMP_DIR/no-jq-bin"
+  mkdir -p "$no_jq_path"
+  ln -s "$(command -v bash)" "$no_jq_path/bash"
+
+  run env PATH="$no_jq_path" bash -c "printf '%s' '{}' | bash '$SCRIPTS_DIR/file-guard.sh'"
+
+  expect_status jq-missing 2
+  expect_output_has jq-missing "jq not available"
 }
 
-@test "contract worker is blocked when manifest contract id mismatches" {
-  local contract
-  contract=$(make_guard_contract)
-  local id="$(basename "$contract" .json)"
-  write_manifest "$TEST_TEMP_DIR/.lbwc-planning" "{\"agents\":{\"dev-1\":{\"role\":\"python-engineer\",\"project_root\":\"$TEST_TEMP_DIR\",\"write_allowances\":[\"src/allowed.py\"],\"contract_path\":\"$contract\",\"contract_id\":\"wrong-id\",\"contract_digest\":\"$(jq -r .contract_digest "$contract")\",\"task_identity\":\"$id\"}}}"
-  run run_guard "src/allowed.py" "dev-1"
-  [ "$status" -eq 2 ]
-  [[ "$output" == *"contract is missing"* ]]
+@test "file-guard ignores calls that carry no file path" {
+  while IFS='|' read -r label stdin; do
+    [ -n "$label" ] || continue
+    run run_raw_guard "$stdin"
+    expect_status "$label" 0
+    expect_output_empty "$label"
+  done <<'CASES'
+empty-stdin|
+tool-input-without-path|{"tool_name":"Write","tool_input":{}}
+CASES
 }
 
-@test "contract worker is blocked when manifest task is stale" {
-  local contract
-  contract=$(make_guard_contract)
-  local id="$(basename "$contract" .json)"
-  write_manifest "$TEST_TEMP_DIR/.lbwc-planning" "{\"agents\":{\"dev-1\":{\"role\":\"python-engineer\",\"project_root\":\"$TEST_TEMP_DIR\",\"write_allowances\":[\"src/allowed.py\"],\"contract_path\":\"$contract\",\"contract_id\":\"$id\",\"contract_digest\":\"$(jq -r .contract_digest "$contract")\",\"task_identity\":\"old-task\"}}}"
-  run run_guard "src/allowed.py" "dev-1"
-  [ "$status" -eq 2 ]
-  [[ "$output" == *"contract is missing"* ]]
-}
-
-@test "worker cannot write a different hook path" {
-  write_manifest "$TEST_TEMP_DIR/.lbwc-planning" "{\"agents\":{\"dev-1\":{\"role\":\"python-engineer\",\"project_root\":\"$TEST_TEMP_DIR\",\"write_allowances\":[\"hooks/skill_gate.py\"]}}}"
-  run run_guard "hooks/context_usage.py" "dev-1"
-  [ "$status" -eq 2 ]
-  [[ "$output" == *"assigned write allowance"* ]]
-}
-
-@test "NotebookEdit is blocked outside the worker exact allowance" {
-  write_manifest "$TEST_TEMP_DIR/.lbwc-planning" "{\"agents\":{\"dev-1\":{\"role\":\"python-engineer\",\"project_root\":\"$TEST_TEMP_DIR\",\"write_allowances\":[\"notebooks/allowed.ipynb\"]}}}"
-  run run_notebook_guard "notebooks/unassigned.ipynb" "dev-1"
-  [ "$status" -eq 2 ]
-  [[ "$output" == *"assigned write allowance"* ]]
-}
-
-@test "NotebookEdit is registered with the manifest file guard" {
+@test "file-guard stays registered for Write, Edit, and NotebookEdit" {
   run jq -e '
     .hooks.PreToolUse[]
     | select(.matcher == "Write|Edit|NotebookEdit")
@@ -186,143 +324,4 @@ make_guard_contract() {
     | select(.command | contains("file-guard.sh"))
   ' "$PROJECT_ROOT/hooks/hooks.json"
   [ "$status" -eq 0 ]
-}
-
-@test "worker without an assigned write allowance is blocked" {
-  write_manifest "$TEST_TEMP_DIR/.lbwc-planning" "{\"agents\":{\"dev-1\":{\"role\":\"python-engineer\",\"project_root\":\"$TEST_TEMP_DIR\"}}}"
-  run run_guard "src/main.py" "dev-1"
-  [ "$status" -eq 2 ]
-  [[ "$output" == *"no assigned write allowance"* ]]
-}
-
-@test "hook allowance requires no worker file report" {
-  write_manifest "$TEST_TEMP_DIR/.lbwc-planning" "{\"agents\":{\"dev-1\":{\"role\":\"python-engineer\",\"project_root\":\"$TEST_TEMP_DIR\",\"write_allowances\":[\"hooks/skill_gate.py\"]}}}"
-  run run_guard "hooks/skill_gate.py" "dev-1"
-  [ "$status" -eq 0 ]
-}
-
-@test "worker cannot use its allowance outside the primary workspace" {
-  mkdir -p "$TEST_TEMP_DIR/secondary"
-  write_manifest "$TEST_TEMP_DIR/.lbwc-planning" "{\"agents\":{\"dev-1\":{\"role\":\"python-engineer\",\"project_root\":\"$TEST_TEMP_DIR\",\"write_allowances\":[\"hooks/skill_gate.py\"]}}}"
-  local json
-  json=$(payload "tool_name=Write" "tool_input.file_path=hooks/skill_gate.py" "agent_id=dev-1" "cwd=$TEST_TEMP_DIR/secondary")
-  run bash -c "printf '%s' '$json' | LBWC_PLANNING_DIR='$TEST_TEMP_DIR/.lbwc-planning' bash '$SCRIPTS_DIR/file-guard.sh'"
-  [ "$status" -eq 2 ]
-  [[ "$output" == *"primary workspace"* ]]
-}
-
-@test "schema 3 directory capability permits descendants but not siblings" {
-  mkdir -p "$TEST_TEMP_DIR/src/web"
-  write_manifest "$TEST_TEMP_DIR/.lbwc-planning" "$(jq -cn --arg root "$TEST_TEMP_DIR" '{agents:{"dev-1":{role:"web-engineer",project_root:$root,capabilities:[{access:"write",kind:"directory",path:"src/web"}]}}}')"
-  run run_guard "src/web/page.ts" "dev-1"
-  [ "$status" -eq 0 ]
-  run run_guard "src/api/page.ts" "dev-1"
-  [ "$status" -eq 2 ]
-}
-
-@test "schema 3 repository root capability cannot write temporary control files" {
-  write_manifest "$TEST_TEMP_DIR/.lbwc-planning" "$(jq -cn --arg root "$TEST_TEMP_DIR" '{agents:{"dev-1":{role:"web-engineer",project_root:$root,capabilities:[{access:"write",kind:"directory",path:"."}]}}}')"
-  run run_guard ".lbwc-planning/config.json" "dev-1"
-  [ "$status" -eq 2 ]
-  run run_guard ".temporary-agent-runfiles/runs/one/run.json" "dev-1"
-  [ "$status" -eq 2 ]
-}
-
-@test "schema 3 repository root capability cannot write secrets" {
-  local control_root="$TEST_TEMP_DIR/.temporary-agent-runfiles/runs/root-secrets" contract id
-  mkdir -p "$control_root"
-  contract=$(bash "$SCRIPTS_DIR/task-contract.sh" issue "$TEST_TEMP_DIR" "root-secrets" \
-    --command team --role python-engineer --team solo --job "root scope" \
-    --control-root "$control_root" --write-capability directory:.)
-  id=$(basename "$contract" .json)
-  bash "$SCRIPTS_DIR/task-contract.sh" state "$TEST_TEMP_DIR" "$id" dispatched >/dev/null
-  printf '%s' "{\"agents\":{\"dev-1\":{\"role\":\"python-engineer\",\"project_root\":\"$TEST_TEMP_DIR\",\"schema_version\":3,\"capabilities\":[{\"access\":\"write\",\"kind\":\"directory\",\"path\":\".\"}],\"write_allowances\":[\".\"],\"contract_path\":\"$contract\",\"contract_id\":\"$id\",\"contract_digest\":\"$(jq -r .contract_digest "$contract")\",\"task_identity\":\"$id\"}}}" > "$control_root/agent-manifest.json"
-
-  for secret in .env config/private.key credentials.json; do
-    run bash -c 'jq -cn --arg path "$1" --arg cwd "$2" "{tool_name:\"Write\",tool_input:{file_path:\$path},agent_id:\"dev-1\",cwd:\$cwd}" | LBWC_CONTROL_ROOT="$3" bash "$4"' _ "$secret" "$TEST_TEMP_DIR" "$control_root" "$SCRIPTS_DIR/file-guard.sh"
-    [ "$status" -eq 2 ]
-  done
-}
-
-@test "registered lbwc worker outside primary workspace is blocked without planning override" {
-  mkdir -p "$TEST_TEMP_DIR/secondary"
-  write_manifest "$TEST_TEMP_DIR/.lbwc-planning" "{\"agents\":{\"lbwc-dev-a\":{\"role\":\"python-engineer\",\"project_root\":\"$TEST_TEMP_DIR\",\"write_allowances\":[\"hooks/skill_gate.py\"]}}}"
-  local json
-  json=$(payload "tool_name=Write" "tool_input.file_path=hooks/skill_gate.py" "agent_id=lbwc-dev-a" "cwd=$TEST_TEMP_DIR/secondary")
-  run bash -c "printf '%s' '$json' | bash '$SCRIPTS_DIR/file-guard.sh'"
-  [ "$status" -eq 2 ]
-  [[ "$output" == *"manifest"* ]]
-}
-
-@test "worker cannot write exact allowance through symlinked target outside primary root" {
-  EXTERNAL_TEST_DIR=$(mktemp -d)
-  mkdir -p "$TEST_TEMP_DIR/hooks"
-  touch "$EXTERNAL_TEST_DIR/skill_gate.py"
-  ln -s "$EXTERNAL_TEST_DIR/skill_gate.py" "$TEST_TEMP_DIR/hooks/skill_gate.py"
-  write_manifest "$TEST_TEMP_DIR/.lbwc-planning" "{\"agents\":{\"dev-1\":{\"role\":\"python-engineer\",\"project_root\":\"$TEST_TEMP_DIR\",\"write_allowances\":[\"hooks/skill_gate.py\"]}}}"
-  run run_guard "hooks/skill_gate.py" "dev-1"
-  [ "$status" -eq 2 ]
-  [[ "$output" == *"canonical primary root"* ]]
-}
-
-@test "worker is blocked promptly when an exact allowance is a self-referential symlink" {
-  mkdir -p "$TEST_TEMP_DIR/hooks"
-  ln -s "skill_gate.py" "$TEST_TEMP_DIR/hooks/skill_gate.py"
-  write_manifest "$TEST_TEMP_DIR/.lbwc-planning" "{\"agents\":{\"dev-1\":{\"role\":\"python-engineer\",\"project_root\":\"$TEST_TEMP_DIR\",\"write_allowances\":[\"hooks/skill_gate.py\"]}}}"
-  local json
-  json=$(payload "tool_name=Write" "tool_input.file_path=hooks/skill_gate.py" "agent_id=dev-1")
-  run timeout 2s bash "$SCRIPTS_DIR/file-guard.sh" <<< "$json"
-  [ "$status" -eq 2 ]
-  [[ "$output" == *"canonical primary root"* ]]
-}
-
-@test "worker cannot write exact allowance through symlinked parent outside primary root" {
-  EXTERNAL_TEST_DIR=$(mktemp -d)
-  ln -s "$EXTERNAL_TEST_DIR" "$TEST_TEMP_DIR/hooks"
-  write_manifest "$TEST_TEMP_DIR/.lbwc-planning" "{\"agents\":{\"dev-1\":{\"role\":\"python-engineer\",\"project_root\":\"$TEST_TEMP_DIR\",\"write_allowances\":[\"hooks/skill_gate.py\"]}}}"
-  run run_guard "hooks/skill_gate.py" "dev-1"
-  [ "$status" -eq 2 ]
-  [[ "$output" == *"canonical primary root"* ]]
-}
-
-@test "main session must delegate product writes while a pair is open" {
-  write_manifest "$TEST_TEMP_DIR/.lbwc-planning" '{"agents":{"lbwc-dev-a":{"role":"python-engineer","state":"running"}}}'
-  run run_guard "src/main.py"
-  [ "$status" -eq 2 ]
-  [[ "$output" == *"delegate"* ]]
-}
-
-@test "main session may still write docs while a pair is open" {
-  write_manifest "$TEST_TEMP_DIR/.lbwc-planning" '{"agents":{"lbwc-dev-a":{"role":"python-engineer","state":"running"}}}'
-  run run_guard "docs/notes.md"
-  [ "$status" -eq 0 ]
-}
-
-@test "main session writes freely once every pair member is used" {
-  write_manifest "$TEST_TEMP_DIR/.lbwc-planning" '{"agents":{"lbwc-dev-a":{"role":"python-engineer","state":"used"}}}'
-  run run_guard "src/main.py"
-  [ "$status" -eq 0 ]
-}
-
-@test "path traversal in file path is blocked" {
-  run run_guard "../outside/secret.py"
-  [ "$status" -eq 2 ]
-}
-
-@test "qa-author may write a relative test helper resolved against the hook cwd" {
-  write_manifest "$TEST_TEMP_DIR/.lbwc-planning" "{\"agents\":{\"qaa-1\":{\"role\":\"qa-author\",\"project_root\":\"$TEST_TEMP_DIR\",\"write_allowances\":[\"tests/helpers.py\"]}}}"
-  local json
-  json=$(payload "tool_name=Write" "tool_input.file_path=tests/helpers.py" "agent_id=qaa-1" "cwd=$TEST_TEMP_DIR")
-  run bash -c "printf '%s' '$json' | bash '$SCRIPTS_DIR/file-guard.sh'"
-  [ "$status" -eq 0 ]
-}
-
-@test "missing jq blocks file writes before input handling" {
-  local no_jq_path="$TEST_TEMP_DIR/no-jq-bin"
-  mkdir -p "$no_jq_path"
-  ln -s "$(command -v bash)" "$no_jq_path/bash"
-
-  run env PATH="$no_jq_path" bash -c "printf '%s' '{}' | bash '$SCRIPTS_DIR/file-guard.sh'"
-  [ "$status" -eq 2 ]
-  [[ "$output" == *"jq not available"* ]]
 }

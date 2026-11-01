@@ -1,6 +1,7 @@
 #!/usr/bin/env bats
 
 load test_helper
+load guard_helper
 
 setup() {
   setup_temp_dir
@@ -13,78 +14,176 @@ teardown() {
 }
 
 run_guard() {
-  local command="$1" agent_id="${2:-}"
-  payload "tool_input.command=$command" "agent_id=$agent_id" | bash "$SCRIPTS_DIR/bash-guard.sh"
+  local command="$1" agent_id="${2:-}" override="${3:-}"
+  payload "tool_input.command=$command" "agent_id=$agent_id" \
+    | LBWC_ALLOW_DESTRUCTIVE="$override" bash "$SCRIPTS_DIR/bash-guard.sh"
 }
 
-@test "allows an innocuous command" {
-  run run_guard "ls -la"
-  [ "$status" -eq 0 ]
+register_agent() {
+  local id="$1" role="$2" state="$3"
+  rm -f "$TEST_TEMP_DIR/.lbwc-planning/.agent-manifest.json"
+  [ "$role" != "-" ] || return 0
+  write_manifest "$TEST_TEMP_DIR/.lbwc-planning" "$(jq -cn --arg id "$id" --arg role "$role" --arg state "$state" --arg root "$TEST_TEMP_DIR" \
+    '{agents:{($id):({role:$role,project_root:$root,write_allowances:[]} + (if $state == "-" then {} else {state:$state} end))}}')"
 }
 
-@test "blocks a destructive command from the config list" {
-  run run_guard "rm -rf /var/lib/mysql"
-  [ "$status" -eq 2 ]
-  [[ "$output" == *"destructive command detected"* ]]
+apply_setup() {
+  case "$1" in
+    local-list) printf '%s\n' 'frobnicate[[:space:]]+--all' > "$TEST_TEMP_DIR/.lbwc-planning/destructive-commands.local.txt" ;;
+  esac
 }
 
-@test "blocks git push --force" {
-  run run_guard "git push --force origin main"
-  [ "$status" -eq 2 ]
-  [[ "$output" == *"destructive command detected"* ]]
+override_for() {
+  [ "$1" != "override" ] || printf '1'
 }
 
-@test "allows git push without force" {
-  run run_guard "git push origin main"
-  [ "$status" -eq 0 ]
+@test "bash-guard allows ordinary commands without side effects" {
+  local before after
+  while IFS='|' read -r label id role state setup command; do
+    [ -n "$label" ] || continue
+    register_agent "$id" "$role" "$state"
+    apply_setup "$setup"
+    before=$(tree_digest "$TEST_TEMP_DIR")
+    run run_guard "$command" "$id" "$(override_for "$setup")"
+    after=$(tree_digest "$TEST_TEMP_DIR")
+    expect_status "$label" 0
+    expect_output_empty "$label"
+    expect_same_digest "$label" "$before" "$after"
+  done <<'CASES'
+innocuous-main-session|-|-|-|-|ls -la
+git-push-without-force|-|-|-|-|git push origin main
+destructive-command-with-override|-|-|-|override|rm -rf /var/lib/mysql
+local-destructive-list-miss|-|-|-|local-list|frobnicate --one
+empty-command|-|-|-|-|
+unlisted-agent-without-manifest|dev-9|-|-|-|echo hi > out.txt
+scout-read-only-git|scout-1|scout|-|-|git status
+scout-quoted-redirect-character|scout-1|scout|-|-|grep ">" file.txt
+qa-read-only-listing|qa-1|qa|-|-|ls -la
+python-engineer-redirect|dev-1|python-engineer|-|-|echo hi > out.txt
+registered-worker-template-bash|lbwc-python-engineer-a|python-engineer|registered|-|printf x
+running-worker-ordinary-bash|lbwc-docs-a|docs|running|-|printf '%s\n' ready
+forged-identity-ordinary-command|lbwc-forged-agent|-|-|-|printf x
+CASES
 }
 
-@test "LBWC_ALLOW_DESTRUCTIVE overrides the blocklist" {
-  run env LBWC_ALLOW_DESTRUCTIVE=1 bash -c "echo '{\"tool_input\":{\"command\":\"rm -rf /var/lib/mysql\"}}' | bash '$SCRIPTS_DIR/bash-guard.sh'"
-  [ "$status" -eq 0 ]
+@test "bash-guard allows an empty stdin payload" {
+  run bash -c "printf '' | bash '$SCRIPTS_DIR/bash-guard.sh'"
+
+  expect_status empty-stdin 0
+  expect_output_empty empty-stdin
 }
 
-@test "scout role is blocked from writing via redirection" {
-  write_manifest "$TEST_TEMP_DIR/.lbwc-planning" '{"agents":{"scout-1":{"role":"scout"}}}'
-  run run_guard "echo hi > out.txt" "scout-1"
-  [ "$status" -eq 2 ]
-  [[ "$output" == *"read-only"* ]]
+@test "bash-guard blocks commands on the destructive list unless overridden" {
+  while IFS='|' read -r label setup reason command; do
+    [ -n "$label" ] || continue
+    apply_setup "$setup"
+    run run_guard "$command" "" "$(override_for "$setup")"
+    expect_status "$label" 2
+    expect_output_has "$label" "$reason"
+    expect_output_has "$label" "Hint: Use LBWC_ALLOW_DESTRUCTIVE=1 to override."
+  done <<'CASES'
+recursive-delete|-|destructive command detected|rm -rf /var/lib/mysql
+force-push|-|destructive command detected|git push --force origin main
+local-list-entry|local-list|destructive command detected (frobnicate --all|frobnicate --all
+CASES
 }
 
-@test "scout role may run read-only git status" {
-  write_manifest "$TEST_TEMP_DIR/.lbwc-planning" '{"agents":{"scout-1":{"role":"scout"}}}'
-  run run_guard "git status" "scout-1"
-  [ "$status" -eq 0 ]
+@test "bash-guard keeps scout and qa read-only even with the destructive override" {
+  while IFS='|' read -r label id role setup reason command; do
+    [ -n "$label" ] || continue
+    register_agent "$id" "$role" "-"
+    run run_guard "$command" "$id" "$(override_for "$setup")"
+    expect_status "$label" 2
+    expect_output_has "$label" "$reason"
+  done <<'CASES'
+scout-write-redirect|scout-1|scout|-|write redirection, substitution, or eval|echo hi > out.txt
+scout-append-redirect|scout-1|scout|-|write redirection, substitution, or eval|echo hi >> out.txt
+scout-command-substitution|scout-1|scout|-|write redirection, substitution, or eval|echo $(whoami)
+scout-backtick-substitution|scout-1|scout|-|write redirection, substitution, or eval|echo `whoami`
+scout-eval|scout-1|scout|-|write redirection, substitution, or eval|eval ls
+scout-nested-shell|scout-1|scout|-|nested shell execution|bash -c ls
+scout-filesystem-mutation-in-pipe|scout-1|scout|-|filesystem mutation command|echo hi | tee out.txt
+qa-filesystem-mutation|qa-1|qa|-|filesystem mutation command|mkdir newdir
+scout-redirect-with-destructive-override|scout-1|scout|override|write redirection, substitution, or eval|echo hi > out.txt
+CASES
 }
 
-@test "scout role is blocked from command substitution" {
-  write_manifest "$TEST_TEMP_DIR/.lbwc-planning" '{"agents":{"scout-1":{"role":"scout"}}}'
-  run run_guard 'echo $(whoami)' "scout-1"
-  [ "$status" -eq 2 ]
+@test "bash-guard confines generated agents to the main-session command policy" {
+  while IFS='|' read -r label id role state setup reason command; do
+    [ -n "$label" ] || continue
+    register_agent "$id" "$role" "$state"
+    run run_guard "$command" "$id" "$(override_for "$setup")"
+    expect_status "$label" 2
+    expect_output_has "$label" "$reason"
+  done <<'CASES'
+protected-policy-read|lbwc-docs-a|docs|running|-|protected control path|cat config/subagent-critical-execution.txt
+protected-policy-redirect|lbwc-docs-a|docs|running|-|protected control path|printf x > config/subagent-critical-execution.txt
+protected-python-policy|lbwc-docs-a|docs|running|-|protected control path|python3 -c "open('config/subagent-critical-execution.txt', 'w')"
+protected-python-planning-config|lbwc-docs-a|docs|running|-|protected control path|python3 -c "open('.lbwc-planning/config.json', 'w')"
+protected-python-guard-script|lbwc-docs-a|docs|running|-|protected control path|python3 -c "open('scripts/bash-guard.sh', 'w')"
+protected-python-contract-script|lbwc-docs-a|docs|running|-|protected control path|python3 -c "open('scripts/task-contract.sh', 'w')"
+protected-python-lifecycle-script|lbwc-docs-a|docs|running|-|protected control path|python3 -c "open('scripts/agent-lifecycle.sh', 'w')"
+protected-python-manifest|lbwc-docs-a|docs|running|-|protected control path|python3 -c "open('.lbwc-planning/.agent-manifest.json', 'w')"
+protected-python-contract-store|lbwc-docs-a|docs|running|-|protected control path|python3 -c "open('.lbwc-planning/.contracts/tasks/forged.json', 'w')"
+protected-python-agent-definition|lbwc-docs-a|docs|running|-|protected control path|python3 -c "open('.claude/agents/forged.md', 'w')"
+protected-python-split-path|lbwc-docs-a|docs|running|-|protected control path|python3 -c "from pathlib import Path; Path('config') / 'subagent-critical-execution.txt'"
+shell-source-keyword|lbwc-docs-a|docs|running|-|shell execution route|source payload.sh
+shell-source-dot|lbwc-docs-a|docs|running|-|shell execution route|. payload.sh
+shell-stdin-redirect|lbwc-docs-a|docs|running|-|shell execution route|echo sh < payload.sh
+shell-code-flag-after-word|lbwc-docs-a|docs|running|-|shell execution route|echo bash -c payload
+shell-interpreter-script|lbwc-docs-a|docs|running|-|shell execution route|bash scripts/wrapper-that-runs-git.sh
+shell-interpreter-sh-script|lbwc-docs-a|docs|running|-|shell execution route|sh scripts/wrapper-that-runs-git.sh
+shell-interpreter-via-rtk-proxy|lbwc-docs-a|docs|running|-|shell execution route|rtk proxy bash scripts/wrapper-that-runs-git.sh
+shell-interpreter-via-env|lbwc-docs-a|docs|running|-|shell execution route|env CI=1 zsh -c 'git status'
+shell-interpreter-via-command|lbwc-docs-a|docs|running|-|shell execution route|command bash payload.sh
+shell-interpreter-via-exec|lbwc-docs-a|docs|running|-|shell execution route|exec sh payload.sh
+shell-ifs-expansion-braced|lbwc-docs-a|docs|running|-|shell execution route|bash${IFS}-c${IFS}'printf ready'
+shell-ifs-expansion-bare|lbwc-docs-a|docs|running|-|shell execution route|bash $IFS-c 'printf ready'
+shell-heredoc-string|lbwc-docs-a|docs|running|-|shell execution route|bash <<< 'git status'
+shell-pipe-into-interpreter|lbwc-docs-a|docs|running|-|shell execution route|printf x | sh
+git-plain|lbwc-docs-a|docs|running|-|Git is reserved for the main session|git status
+git-backslash-escaped|lbwc-docs-a|docs|running|-|Git is reserved for the main session|\git status
+git-quoted|lbwc-docs-a|docs|running|-|Git is reserved for the main session|"git" status
+git-split-by-backslash|lbwc-docs-a|docs|running|-|Git is reserved for the main session|g\it status
+git-via-rtk|lbwc-docs-a|docs|running|-|Git is reserved for the main session|rtk git status
+git-via-rtk-proxy|lbwc-docs-a|docs|running|-|Git is reserved for the main session|rtk proxy git status
+git-via-rtk-proxy-quoted|lbwc-docs-a|docs|running|-|Git is reserved for the main session|rtk proxy "git" status
+git-via-command|lbwc-docs-a|docs|running|-|Git is reserved for the main session|command git status
+git-via-env|lbwc-docs-a|docs|running|-|Git is reserved for the main session|env GIT_DIR=. git status
+git-by-absolute-path|lbwc-docs-a|docs|running|-|Git is reserved for the main session|/usr/bin/git status
+git-with-destructive-override|lbwc-docs-a|docs|running|override|Git is reserved for the main session|git status
+git-from-forged-identity|lbwc-forged-agent|-|-|-|Git is reserved for the main session|git status
+git-from-spent-worker|lbwc-docs-a|docs|used|-|Git is reserved for the main session|git status
+critical-nested-runtime|lbwc-docs-a|docs|running|-|critical execution command|claude --version
+critical-package-mutation|lbwc-docs-a|docs|running|-|critical execution command|npm install example
+critical-remote-transfer|lbwc-docs-a|docs|running|-|critical execution command|curl https://example.com
+critical-remote-transfer-escaped|lbwc-docs-a|docs|running|-|critical execution command|c\url https://example.com
+critical-privilege|lbwc-docs-a|docs|running|-|critical execution command|sudo true
+critical-termination|lbwc-docs-a|docs|running|-|critical execution command|kill 123
+CASES
 }
 
-@test "scout role does not trip on a quoted > inside an argument" {
-  write_manifest "$TEST_TEMP_DIR/.lbwc-planning" '{"agents":{"scout-1":{"role":"scout"}}}'
-  run run_guard 'grep ">" file.txt' "scout-1"
-  [ "$status" -eq 0 ]
+@test "bash-guard blocks generated agents when the critical execution policy file is missing" {
+  local isolated_plugin="$TEST_TEMP_DIR/isolated-plugin"
+  mkdir -p "$isolated_plugin/scripts"
+  cp "$SCRIPTS_DIR/bash-guard.sh" "$isolated_plugin/scripts/bash-guard.sh"
+  register_agent lbwc-docs-a docs running
+
+  run bash -c 'jq -cn "{tool_input:{command:\"printf x\"},agent_id:\"lbwc-docs-a\"}" | bash "$1"' _ "$isolated_plugin/scripts/bash-guard.sh"
+
+  expect_status policy-file-missing 2
+  expect_output_has policy-file-missing "critical execution policy is unavailable"
 }
 
-@test "qa role is blocked from filesystem mutation commands" {
-  write_manifest "$TEST_TEMP_DIR/.lbwc-planning" '{"agents":{"qa-1":{"role":"qa"}}}'
-  run run_guard "mkdir newdir" "qa-1"
-  [ "$status" -eq 2 ]
-}
+@test "bash-guard fails closed when jq is missing" {
+  local no_jq_path="$TEST_TEMP_DIR/no-jq-bin"
+  mkdir -p "$no_jq_path"
+  ln -s "$(command -v bash)" "$no_jq_path/bash"
 
-@test "python-engineer role is not subject to the read-only restriction" {
-  write_manifest "$TEST_TEMP_DIR/.lbwc-planning" '{"agents":{"dev-1":{"role":"python-engineer"}}}'
-  run run_guard "echo hi > out.txt" "dev-1"
-  [ "$status" -eq 0 ]
-}
+  run env PATH="$no_jq_path" bash -c "printf '%s' '{}' | bash '$SCRIPTS_DIR/bash-guard.sh'"
 
-@test "registered worker retains template-granted Bash" {
-  write_manifest "$TEST_TEMP_DIR/.lbwc-planning" "{\"agents\":{\"lbwc-python-engineer-a\":{\"role\":\"python-engineer\",\"state\":\"registered\",\"project_root\":\"$TEST_TEMP_DIR\",\"write_allowances\":[\"src/allowed.py\"]}}}"
-  run run_guard "printf x" "lbwc-python-engineer-a"
-  [ "$status" -eq 0 ]
+  expect_status jq-missing 2
+  expect_output_has jq-missing "jq not available"
 }
 
 @test "generated implementation roles deny Bash by default" {
@@ -94,116 +193,4 @@ run_guard() {
     | all(.[]; ($defaults[.].disallowedTools | split(", ") | index("Bash")) != null)
   ' "$PROJECT_ROOT/templates/agent-roles/defaults.json"
   [ "$status" -eq 0 ]
-}
-
-@test "LBWC_ALLOW_DESTRUCTIVE does not bypass the scout read-only check" {
-  write_manifest "$TEST_TEMP_DIR/.lbwc-planning" '{"agents":{"scout-1":{"role":"scout"}}}'
-  local json
-  json=$(payload "tool_input.command=echo hi > out.txt" "agent_id=scout-1")
-  run env LBWC_ALLOW_DESTRUCTIVE=1 bash -c "printf '%s' '$json' | bash '$SCRIPTS_DIR/bash-guard.sh'"
-  [ "$status" -eq 2 ]
-  [[ "$output" == *"read-only"* ]]
-}
-
-@test "active generated agent cannot invoke Git through command wrappers" {
-  write_manifest "$TEST_TEMP_DIR/.lbwc-planning" "{\"agents\":{\"lbwc-docs-a\":{\"role\":\"docs\",\"state\":\"running\",\"project_root\":\"$TEST_TEMP_DIR\",\"write_allowances\":[]}}}"
-
-  for command in "git status" "\\git status" "\"git\" status" "g\\it status" "rtk git status" "rtk proxy git status" "rtk proxy \"git\" status" "command git status" "env GIT_DIR=. git status" "/usr/bin/git status"; do
-    run run_guard "$command" "lbwc-docs-a"
-    [ "$status" -eq 2 ]
-    [[ "$output" == *"Git is reserved for the main session"* ]]
-  done
-}
-
-@test "active generated agent cannot hide Git in shell expansion" {
-  write_manifest "$TEST_TEMP_DIR/.lbwc-planning" "{\"agents\":{\"lbwc-docs-a\":{\"role\":\"docs\",\"state\":\"running\",\"project_root\":\"$TEST_TEMP_DIR\",\"write_allowances\":[]}}}"
-  for command in "bash -c 'git status'" "sh -c \"rtk git status\"" "env CI=1 zsh -c 'git status'" "bash\${IFS}-c\${IFS}'git status'"; do
-    run run_guard "$command" "lbwc-docs-a"
-    [ "$status" -eq 2 ]
-    [[ "$output" == *"shell execution route"* ]]
-  done
-}
-
-@test "active generated agent cannot invoke nested shell interpreters" {
-  write_manifest "$TEST_TEMP_DIR/.lbwc-planning" "{\"agents\":{\"lbwc-docs-a\":{\"role\":\"docs\",\"state\":\"running\",\"project_root\":\"$TEST_TEMP_DIR\",\"write_allowances\":[]}}}"
-
-  for command in "bash\${IFS}-c\${IFS}'printf ready'" "bash \$IFS-c 'printf ready'" "bash scripts/wrapper-that-runs-git.sh" "sh scripts/wrapper-that-runs-git.sh" "rtk proxy bash scripts/wrapper-that-runs-git.sh" "rtk proxy sh scripts/wrapper-that-runs-git.sh"; do
-    run run_guard "$command" "lbwc-docs-a"
-    [ "$status" -eq 2 ]
-    [[ "$output" == *"shell execution route"* ]]
-  done
-}
-
-@test "active generated agent cannot use source or shell stdin execution" {
-  write_manifest "$TEST_TEMP_DIR/.lbwc-planning" "{\"agents\":{\"lbwc-docs-a\":{\"role\":\"docs\",\"state\":\"running\",\"project_root\":\"$TEST_TEMP_DIR\",\"write_allowances\":[]}}}"
-
-  for command in "source payload.sh" ". payload.sh" "bash < payload.sh" "printf x | sh" "bash <<< 'git status'"; do
-    run run_guard "$command" "lbwc-docs-a"
-    [ "$status" -eq 2 ]
-    [[ "$output" == *"shell execution route"* ]]
-  done
-}
-
-@test "active generated agent cannot target the critical execution policy" {
-  write_manifest "$TEST_TEMP_DIR/.lbwc-planning" "{\"agents\":{\"lbwc-docs-a\":{\"role\":\"docs\",\"state\":\"running\",\"project_root\":\"$TEST_TEMP_DIR\",\"write_allowances\":[]}}}"
-
-  for command in "cat config/subagent-critical-execution.txt" "printf x > config/subagent-critical-execution.txt"; do
-    run run_guard "$command" "lbwc-docs-a"
-    [ "$status" -eq 2 ]
-    [[ "$output" == *"protected control path"* ]]
-  done
-}
-
-@test "active generated agent cannot target protected control paths from Python" {
-  write_manifest "$TEST_TEMP_DIR/.lbwc-planning" "{\"agents\":{\"lbwc-docs-a\":{\"role\":\"docs\",\"state\":\"running\",\"project_root\":\"$TEST_TEMP_DIR\",\"write_allowances\":[]}}}"
-
-  for path in "config/subagent-critical-execution.txt" ".lbwc-planning/config.json" "scripts/bash-guard.sh" "scripts/task-contract.sh" "scripts/agent-lifecycle.sh" ".lbwc-planning/.agent-manifest.json" ".lbwc-planning/.contracts/tasks/forged.json" ".claude/agents/forged.md"; do
-    run run_guard "python3 -c \"open('$path', 'w')\"" "lbwc-docs-a"
-    [ "$status" -eq 2 ]
-    [[ "$output" == *"protected control path"* ]]
-  done
-
-  run run_guard "python3 -c \"from pathlib import Path; Path('config') / 'subagent-critical-execution.txt'\"" "lbwc-docs-a"
-  [ "$status" -eq 2 ]
-  [[ "$output" == *"protected control path"* ]]
-}
-
-@test "active generated agent cannot bypass Git policy with destructive override" {
-  write_manifest "$TEST_TEMP_DIR/.lbwc-planning" "{\"agents\":{\"lbwc-docs-a\":{\"role\":\"docs\",\"state\":\"running\",\"project_root\":\"$TEST_TEMP_DIR\",\"write_allowances\":[]}}}"
-  local json
-  json=$(payload "tool_input.command=git status" "agent_id=lbwc-docs-a")
-
-  run env LBWC_ALLOW_DESTRUCTIVE=1 bash -c "printf '%s' '$json' | bash '$SCRIPTS_DIR/bash-guard.sh'"
-  [ "$status" -eq 2 ]
-  [[ "$output" == *"Git is reserved for the main session"* ]]
-}
-
-@test "forged generated agent identity fails closed for Git" {
-  run run_guard "git status" "lbwc-forged-agent"
-  [ "$status" -eq 2 ]
-  [[ "$output" == *"Git is reserved for the main session"* ]]
-}
-
-@test "active generated agent cannot invoke configured critical execution" {
-  write_manifest "$TEST_TEMP_DIR/.lbwc-planning" "{\"agents\":{\"lbwc-docs-a\":{\"role\":\"docs\",\"state\":\"running\",\"project_root\":\"$TEST_TEMP_DIR\",\"write_allowances\":[]}}}"
-
-  for command in "claude --version" "npm install example" "curl https://example.com" "c\\url https://example.com" "sudo true" "kill 123"; do
-    run run_guard "$command" "lbwc-docs-a"
-    [ "$status" -eq 2 ]
-    [[ "$output" == *"critical execution command"* ]]
-  done
-}
-
-@test "active generated agent can run ordinary template-granted Bash" {
-  write_manifest "$TEST_TEMP_DIR/.lbwc-planning" "{\"agents\":{\"lbwc-docs-a\":{\"role\":\"docs\",\"state\":\"running\",\"project_root\":\"$TEST_TEMP_DIR\",\"write_allowances\":[]}}}"
-  run run_guard "printf '%s\\n' ready" "lbwc-docs-a"
-  [ "$status" -eq 0 ]
-}
-
-@test "missing jq fails closed" {
-  run env PATH="/usr/bin:/bin" bash -c "command -v jq >/dev/null 2>&1 && exit 77; echo '{}' | bash '$SCRIPTS_DIR/bash-guard.sh'"
-  if [ "$status" -eq 77 ]; then
-    skip "jq present on minimal PATH, cannot exercise the missing-jq path"
-  fi
-  [ "$status" -eq 2 ]
 }
