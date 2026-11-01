@@ -168,8 +168,8 @@ sc_dormant() {
       pd_uat "$PD_PHASES/01-test/01-UAT.md" complete - 01
       export PD_SCRIPTS_DIR="$TEST_TEMP_DIR/scripts-uat-reread-degraded"
       cp -R "$SCRIPTS_DIR" "$PD_SCRIPTS_DIR"
-      printf '%s\n' '' 'extract_status_value() {' '  case "${1:-}" in' "    *-UAT.md) printf '%s\n' in_progress ;;" \
-        "    *) printf '%s\n' '' ;;" '  esac' '}' >> "$PD_SCRIPTS_DIR/uat-utils.sh"
+      printf '%s\n' '' 'uat_file_status_value() {' '  case "${1:-}" in' "    *-UAT.md) printf '%s\n' in_progress ;;" \
+        "    *) printf '%s\n' '' ;;" '  esac' '}' >> "$PD_SCRIPTS_DIR/lib/uat-utils.sh"
       ;;
     registry_not_rebuilt)
       pd_md "$PD_PHASES/01-test/01-VERIFICATION.md" '---' 'result: PASS' 'writer: write-verification.sh' 'plans_verified:' '  - 01' \
@@ -245,7 +245,7 @@ CASES
 stale-pass-after-later-commit#sc_dormant stale_pass#$dormant~qa_attention_reason=none~qa_reason=none
 failed-authoritative-qa#sc_dormant failed_authoritative#$dormant~qa_status=none
 phase-sorting-helper-fails#sc_dormant sort_helper_fails#$dormant~phase_detect_complete=true~phase_count=2
-uat-reread-degraded#sc_dormant uat_reread_degraded#$dormant
+uat-reread-degraded#sc_dormant uat_reread_degraded#next_phase=01~next_phase_state=needs_verification~qa_status=none~qa_reason=uat_cutover~qa_after_uat_dormant=true~!next_phase_state=needs_qa_remediation
 registry-not-rebuilt-after-cutover#sc_dormant registry_not_rebuilt#$dormant~qa_status=none~-.lbwc-planning/phases/01-test/known-issues.json
 round-scoped-gate-failure#sc_dormant round_scoped_gate_failure#$dormant~qa_status=none
 git-freshness-probe-fails#sc_dormant git_probe_fails#$dormant~phase_detect_complete=true~qa_status=none
