@@ -3,7 +3,6 @@ SUPPRESS_ERROR=''
 
 suppress_fail() {
   printf -v SUPPRESS_ERROR '%s' "$(jq -cn --arg code "$1" --arg message "$2" '{status:"error", code:$code, message:$message}')"
-  return 1
 }
 
 suppress_payload_signature() {
