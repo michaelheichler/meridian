@@ -23,11 +23,11 @@ load_words() {
 }
 
 pick_word() {
-  local pool="$1" out_var="$2"
-  case "$pool" in
-    A) printf -v "$out_var" '%s' "${WORDS_A[RANDOM % ${#WORDS_A[@]}]}" ;;
-    B) printf -v "$out_var" '%s' "${WORDS_B[RANDOM % ${#WORDS_B[@]}]}" ;;
-    *) fail "unknown word pool '$pool'" ;;
+  local _pw_pool="$1" _pw_out="$2"
+  case "$_pw_pool" in
+    A) printf -v "$_pw_out" '%s' "${WORDS_A[RANDOM % ${#WORDS_A[@]}]}" ;;
+    B) printf -v "$_pw_out" '%s' "${WORDS_B[RANDOM % ${#WORDS_B[@]}]}" ;;
+    *) fail "unknown word pool '$_pw_pool'" ;;
   esac
 }
 
