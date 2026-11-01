@@ -1,3800 +1,505 @@
 #!/usr/bin/env bats
 
-load test_helper
+load phase-detect-helpers
 
-setup() {
-  setup_temp_dir
-  create_test_config
-  export CLAUDE_SESSION_ID="phase-detect-${BATS_TEST_NUMBER:-0}-$$-$RANDOM"
-  cd "$TEST_TEMP_DIR"
-  git init --quiet
-  git config user.email "test@test.com"
-  git config user.name "Test"
-  touch dummy && git add dummy && git commit -m "init" --quiet
-}
-
-teardown() {
-  rm -f "/tmp/.lbwc-phase-detect-${CLAUDE_SESSION_ID:-default}.txt" 2>/dev/null || true
-  rm -rf "/tmp/.lbwc-phase-detect-live-${CLAUDE_SESSION_ID:-default}.lock" 2>/dev/null || true
-  rm -rf "/tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID:-default}" 2>/dev/null || true
-  unset CLAUDE_SESSION_ID
-  cd "$PROJECT_ROOT"
-  teardown_temp_dir
-}
-
-@test "detects no planning directory" {
-  rm -rf .lbwc-planning
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "planning_dir_exists=false"
-}
-
-@test "detects planning directory exists" {
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "planning_dir_exists=true"
-}
-
-@test "detects no project when PROJECT.md missing" {
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "project_exists=false"
-}
-
-@test "detects project exists" {
-  echo "# My Project" > .lbwc-planning/PROJECT.md
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "project_exists=true"
-}
-
-@test "detects zero phases" {
-  mkdir -p .lbwc-planning/phases
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "phase_count=0"
-}
-
-@test "detects phases needing plan" {
-  mkdir -p .lbwc-planning/phases/01-test/
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "next_phase_state=needs_plan_and_execute"
-}
-
-@test "detects phases needing execution" {
-  mkdir -p .lbwc-planning/phases/01-test/
-  touch .lbwc-planning/phases/01-test/01-01-PLAN.md
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "next_phase_state=needs_execute"
-}
-
-@test "detects all phases done" {
-  mkdir -p .lbwc-planning/phases/01-test/
-  touch .lbwc-planning/phases/01-test/01-01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .lbwc-planning/phases/01-test/01-01-SUMMARY.md
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "next_phase_state=all_done"
-}
-
-@test "reads config values" {
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "config_effort=balanced"
-  echo "$output" | grep -q "config_autonomy=standard"
-}
-
-@test "detects unresolved UAT issues as next-phase remediation" {
-  mkdir -p .lbwc-planning/phases/01-test/
-  touch .lbwc-planning/phases/01-test/01-01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .lbwc-planning/phases/01-test/01-01-SUMMARY.md
-  cat > .lbwc-planning/phases/01-test/01-UAT.md <<'EOF'
----
-phase: 01
-status: issues_found
----
-
-## Tests
-
-### P01-T1: sample
-
-- **Result:** issue
-- **Issue:** sample
-  - Severity: major
-EOF
-
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "next_phase_state=needs_uat_remediation"
-  echo "$output" | grep -q "next_phase=01"
-  echo "$output" | grep -q "next_phase_slug=01-test"
-  echo "$output" | grep -q "uat_issues_phase=01"
-  echo "$output" | grep -q "uat_issues_major_or_higher=true"
-  echo "$output" | grep -q "uat_file=01-UAT.md"
-}
-
-@test "active UAT routing metadata emitted for needs_uat_remediation" {
-  mkdir -p .lbwc-planning/phases/01-test/
-  touch .lbwc-planning/phases/01-test/01-01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .lbwc-planning/phases/01-test/01-01-SUMMARY.md
-  cat > .lbwc-planning/phases/01-test/01-UAT.md <<'EOF'
----
-phase: 01
-status: issues_found
-issues: 1
----
-
-## Tests
-
-### P01-T1: sample test
-
-- **Result:** issue
-- **Issue:** sample issue description
-  - Description: something is broken
-  - Severity: major
-EOF
-
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "uat_issues_count=1"
-  echo "$output" | grep -q "uat_file=01-UAT.md"
-  ! echo "$output" | grep -q "^---UAT_EXTRACT_START---$"
-}
-
-@test "no active UAT marker block when state is not needs_uat_remediation" {
-  mkdir -p .lbwc-planning/phases/01-test/
-  touch .lbwc-planning/phases/01-test/01-01-PLAN.md
-
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  ! echo "$output" | grep -q "^---UAT_EXTRACT_START---$"
-  echo "$output" | grep -q "uat_file=none"
-}
-
-@test "active UAT routing metadata uses round-dir relative path" {
-  mkdir -p .lbwc-planning/phases/01-test/remediation/uat/round-01/
-  touch .lbwc-planning/phases/01-test/01-01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .lbwc-planning/phases/01-test/01-01-SUMMARY.md
-  printf '%s\n' 'round=01' 'layout=round-dir' > .lbwc-planning/phases/01-test/remediation/uat/.uat-remediation-stage
-  cat > .lbwc-planning/phases/01-test/remediation/uat/round-01/R01-UAT.md <<'EOF'
----
-phase: 01
-status: issues_found
-issues: 1
----
-
-## Tests
-
-### P01-T1: round-dir test
-
-- **Result:** issue
-- **Issue:** round-dir issue
-  - Description: round-dir broken
-  - Severity: critical
-EOF
-
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "uat_file=remediation/uat/round-01/R01-UAT.md"
-  echo "$output" | grep -q "uat_issues_count=1"
-  ! echo "$output" | grep -q "^---UAT_EXTRACT_START---$"
-}
-
-@test "active UAT routing metadata does not depend on parseable issue bodies" {
-  mkdir -p .lbwc-planning/phases/01-test/
-  touch .lbwc-planning/phases/01-test/01-01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .lbwc-planning/phases/01-test/01-01-SUMMARY.md
-  # UAT file with issues_found but no ### P/D test sections
-  cat > .lbwc-planning/phases/01-test/01-UAT.md <<'EOF'
----
-phase: 01
-status: issues_found
-issues: 1
----
-
-## Tests
-
-Some text without parseable test headers.
-EOF
-
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "next_phase_state=needs_uat_remediation"
-  echo "$output" | grep -q "uat_file=01-UAT.md"
-  ! echo "$output" | grep -q "^---UAT_EXTRACT_START---$"
-}
-
-@test "milestone extraction preserves zero-issue parity with standalone extractor" {
-  mkdir -p .lbwc-planning/milestones/m01-test/phases/01-alpha/
-  mkdir -p .lbwc-planning/phases/
-  echo '# Shipped' > .lbwc-planning/milestones/m01-test/SHIPPED.md
-  touch .lbwc-planning/milestones/m01-test/phases/01-alpha/01-01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .lbwc-planning/milestones/m01-test/phases/01-alpha/01-01-SUMMARY.md
-  cat > .lbwc-planning/milestones/m01-test/phases/01-alpha/01-UAT.md <<'EOF'
----
-phase: 01
-status: issues_found
-issues: 0
----
-
-## Tests
-
-### P01-T1: all good
-
-- **Result:** pass
-EOF
-
-  run bash "$SCRIPTS_DIR/extract-uat-issues.sh" .lbwc-planning/milestones/m01-test/phases/01-alpha
-  [ "$status" -eq 0 ]
-  expected="$output"
-
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  marker=$(printf '%s\n' "$output" | awk '/^---MILESTONE_UAT_EXTRACT_START---$/{f=1; next} /^---MILESTONE_UAT_EXTRACT_END---$/{exit} f{print}' | awk '/^milestone_phase_dir=/{next} /^---$/{exit} {print}')
-  [ "$marker" = "$expected" ]
-  echo "$marker" | grep -q 'uat_issues_total=0'
-  ! echo "$marker" | grep -q 'uat_extract_error=true'
-}
-
-@test "milestone UAT extraction emitted for milestone_uat_issues" {
-  # Create a shipped milestone with UAT issues
-  mkdir -p .lbwc-planning/milestones/m01-test/phases/01-alpha/
-  touch .lbwc-planning/milestones/m01-test/phases/01-alpha/01-01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .lbwc-planning/milestones/m01-test/phases/01-alpha/01-01-SUMMARY.md
-  cat > .lbwc-planning/milestones/m01-test/phases/01-alpha/01-UAT.md <<'EOF'
----
-phase: 01
-status: issues_found
-issues: 1
----
-
-## Tests
-
-### P01-T1: milestone test
-
-- **Result:** issue
-- **Issue:** milestone issue
-  - Description: milestone broken
-  - Severity: major
-EOF
-  # Create an active phases dir that is empty (forces all_done → milestone recovery)
-  mkdir -p .lbwc-planning/phases/
-
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "^---MILESTONE_UAT_EXTRACT_START---$"
-  echo "$output" | grep -q "^---MILESTONE_UAT_EXTRACT_END---$"
-  echo "$output" | grep -q "P01-T1|major|milestone broken"
-}
-
-@test "inline UAT extraction preserves FAILED_IN_ROUNDS recurrence parity" {
-  mkdir -p .lbwc-planning/phases/03-feature/
-  touch .lbwc-planning/phases/03-feature/03-01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .lbwc-planning/phases/03-feature/03-01-SUMMARY.md
-  cat > .lbwc-planning/phases/03-feature/03-UAT-round-01.md <<'EOF'
----
-phase: 03
-status: issues_found
----
-
-## Tests
-
-### P03-T2: recurring issue
-
-- **Result:** issue
-- **Issue:**
-  - Description: still broken
-  - Severity: major
-EOF
-  cat > .lbwc-planning/phases/03-feature/03-UAT-round-02.md <<'EOF'
----
-phase: 03
-status: issues_found
----
-
-## Tests
-
-### P03-T2: recurring issue
-
-- **Result:** issue
-- **Issue:**
-  - Description: still broken
-  - Severity: major
-EOF
-  cat > .lbwc-planning/phases/03-feature/03-UAT.md <<'EOF'
----
-phase: 03
-status: issues_found
-issues: 1
----
-
-## Tests
-
-### P03-T2: recurring issue
-
-- **Result:** issue
-- **Issue:**
-  - Description: still broken
-  - Severity: major
-EOF
-
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "next_phase_state=needs_uat_remediation"
-  echo "$output" | grep -q "uat_issues_count=1"
-  echo "$output" | grep -q "uat_file=03-UAT.md"
-  echo "$output" | grep -q "uat_round_count=2"
-  ! echo "$output" | grep -q "^---UAT_EXTRACT_START---$"
-}
-
-@test "milestone UAT extraction preserves FAILED_IN_ROUNDS recurrence parity" {
-  mkdir -p .lbwc-planning/milestones/m01-test/phases/03-feature/
-  mkdir -p .lbwc-planning/phases/
-  echo "# Shipped" > .lbwc-planning/milestones/m01-test/SHIPPED.md
-  touch .lbwc-planning/milestones/m01-test/phases/03-feature/03-01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .lbwc-planning/milestones/m01-test/phases/03-feature/03-01-SUMMARY.md
-  cat > .lbwc-planning/milestones/m01-test/phases/03-feature/03-UAT-round-01.md <<'EOF'
----
-phase: 03
-status: issues_found
----
-
-## Tests
-
-### P03-T2: recurring issue
-
-- **Result:** issue
-- **Issue:**
-  - Description: milestone still broken
-  - Severity: major
-EOF
-  cat > .lbwc-planning/milestones/m01-test/phases/03-feature/03-UAT-round-02.md <<'EOF'
----
-phase: 03
-status: issues_found
----
-
-## Tests
-
-### P03-T2: recurring issue
-
-- **Result:** issue
-- **Issue:**
-  - Description: milestone still broken
-  - Severity: major
-EOF
-  cat > .lbwc-planning/milestones/m01-test/phases/03-feature/03-UAT.md <<'EOF'
----
-phase: 03
-status: issues_found
-issues: 1
----
-
-## Tests
-
-### P03-T2: recurring issue
-
-- **Result:** issue
-- **Issue:**
-  - Description: milestone still broken
-  - Severity: major
-EOF
-
-  run bash "$SCRIPTS_DIR/extract-uat-issues.sh" .lbwc-planning/milestones/m01-test/phases/03-feature
-  [ "$status" -eq 0 ]
-  expected="$output"
-
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  marker=$(printf '%s\n' "$output" | awk '/^---MILESTONE_UAT_EXTRACT_START---$/{f=1; next} /^---MILESTONE_UAT_EXTRACT_END---$/{exit} f{print}' | awk '/^milestone_phase_dir=/{next} /^---$/{exit} {print}')
-  [ "$marker" = "$expected" ]
-}
-
-@test "milestone extraction uses resolved phase number for non-canonical phase dir" {
-  mkdir -p .lbwc-planning/milestones/m01-test/phases/setup-api/
-  mkdir -p .lbwc-planning/phases/
-  echo "# Shipped" > .lbwc-planning/milestones/m01-test/SHIPPED.md
-  touch .lbwc-planning/milestones/m01-test/phases/setup-api/03-01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .lbwc-planning/milestones/m01-test/phases/setup-api/03-01-SUMMARY.md
-  cat > .lbwc-planning/milestones/m01-test/phases/setup-api/03-UAT.md <<'EOF'
----
-phase: 03
-status: issues_found
-issues: 1
----
-
-## Tests
-
-### P03-T1: recovered number
-
-- **Result:** issue
-- **Issue:**
-  - Description: non-canonical dir still reports phase 03
-  - Severity: major
-EOF
-
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "milestone_uat_issues=true"
-  echo "$output" | grep -q "milestone_phase_dir=.lbwc-planning/milestones/m01-test/phases/setup-api"
-  echo "$output" | grep -q "uat_phase=03 uat_issues_total=1 uat_round=1 uat_file=03-UAT.md"
-}
-
-@test "milestone extraction resolves phase number from round-dir UAT in non-canonical phase dir" {
-  mkdir -p .lbwc-planning/milestones/m01-test/phases/setup-api/remediation/uat/round-01/
-  mkdir -p .lbwc-planning/milestones/m01-test/phases/setup-api/remediation/uat/round-02/
-  mkdir -p .lbwc-planning/phases/
-  echo "# Shipped" > .lbwc-planning/milestones/m01-test/SHIPPED.md
-  # Legacy brownfield root artifacts without numeric prefixes
-  printf '%s\n' '---' 'phase: 03' 'plan: legacy' 'title: Setup' '---' > .lbwc-planning/milestones/m01-test/phases/setup-api/PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .lbwc-planning/milestones/m01-test/phases/setup-api/SUMMARY.md
-  printf 'stage=verify\nround=02\nlayout=round-dir\n' > .lbwc-planning/milestones/m01-test/phases/setup-api/remediation/uat/.uat-remediation-stage
-  cat > .lbwc-planning/milestones/m01-test/phases/setup-api/remediation/uat/round-01/R01-UAT.md <<'EOF'
----
-phase: 03
-status: issues_found
----
-
-## Tests
-
-### P03-T2: recurring issue
-
-- **Result:** issue
-- **Issue:**
-  - Description: broke before
-  - Severity: major
-EOF
-  cat > .lbwc-planning/milestones/m01-test/phases/setup-api/remediation/uat/round-02/R02-UAT.md <<'EOF'
----
-phase: 03
-status: issues_found
-issues: 1
----
-
-## Tests
-
-### P03-T2: recurring issue
-
-- **Result:** issue
-- **Issue:**
-  - Description: broke again
-  - Severity: major
-EOF
-
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "milestone_uat_issues=true"
-  echo "$output" | grep -q "milestone_phase_dir=.lbwc-planning/milestones/m01-test/phases/setup-api"
-  echo "$output" | grep -q "uat_phase=03 uat_issues_total=1 uat_round=2 uat_file=R02-UAT.md"
-  echo "$output" | grep -q "P03-T2|major|broke again|1,2"
-}
-
-@test "milestone extraction preserves round-01 parity for non-canonical round-dir current UAT" {
-  mkdir -p .lbwc-planning/milestones/m01-test/phases/setup-api/remediation/uat/round-01/
-  mkdir -p .lbwc-planning/phases/
-  echo "# Shipped" > .lbwc-planning/milestones/m01-test/SHIPPED.md
-  printf '%s\n' '---' 'phase: 03' 'plan: legacy' 'title: Setup' '---' > .lbwc-planning/milestones/m01-test/phases/setup-api/PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .lbwc-planning/milestones/m01-test/phases/setup-api/SUMMARY.md
-  printf 'stage=verify\nround=01\nlayout=round-dir\n' > .lbwc-planning/milestones/m01-test/phases/setup-api/remediation/uat/.uat-remediation-stage
-  cat > .lbwc-planning/milestones/m01-test/phases/setup-api/remediation/uat/round-01/R01-UAT.md <<'EOF'
----
-phase: 03
-status: issues_found
-issues: 1
----
-
-## Tests
-
-### P03-T2: recurring issue
-
-- **Result:** issue
-- **Issue:**
-  - Description: broke first time
-  - Severity: major
-EOF
-
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "milestone_uat_issues=true"
-  echo "$output" | grep -q "uat_phase=03 uat_issues_total=1 uat_round=1 uat_file=R01-UAT.md"
-  echo "$output" | grep -q "P03-T2|major|broke first time|1"
-}
-
-@test "minor-only UAT issues set major-or-higher flag false" {
-  mkdir -p .lbwc-planning/phases/01-test/
-  touch .lbwc-planning/phases/01-test/01-01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .lbwc-planning/phases/01-test/01-01-SUMMARY.md
-  cat > .lbwc-planning/phases/01-test/01-UAT.md <<'EOF'
----
-phase: 01
-status: issues_found
----
-
-## Tests
-
-### P01-T1: sample
-
-- **Result:** issue
-- **Issue:** sample
-  - Severity: minor
-EOF
-
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "next_phase_state=needs_uat_remediation"
-  echo "$output" | grep -q "uat_issues_major_or_higher=false"
-}
-
-@test "detects bold-markdown severity format as major" {
-  mkdir -p .lbwc-planning/phases/01-test/
-  touch .lbwc-planning/phases/01-test/01-01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .lbwc-planning/phases/01-test/01-01-SUMMARY.md
-  cat > .lbwc-planning/phases/01-test/01-UAT.md <<'EOF'
----
-phase: 01
-status: issues_found
----
-
-## Tests
-
-### P01-T1: sample
-
-- **Result:** issue
-- **Issue:** sample
-  - **Severity:** major
-EOF
-
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "next_phase_state=needs_uat_remediation"
-  echo "$output" | grep -q "uat_issues_major_or_higher=true"
-}
-
-@test "terminal UAT with missing QA verification stays all_done after UAT cutover" {
-  mkdir -p .lbwc-planning/phases/01-test/
-  touch .lbwc-planning/phases/01-test/01-01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .lbwc-planning/phases/01-test/01-01-SUMMARY.md
-
-  # UAT was re-run after fixes; now passes
-  cat > .lbwc-planning/phases/01-test/01-UAT.md <<'EOF'
----
-phase: 01
-status: complete
----
-
-All tests passed.
-EOF
-
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "uat_issues_phase=none"
-  echo "$output" | grep -q "next_phase=none"
-  echo "$output" | grep -q "next_phase_state=all_done"
-  echo "$output" | grep -q "qa_status=none"
-}
-
-@test "active round-dir UAT in progress blocks all_done archive routing" {
-  mkdir -p .lbwc-planning/phases/01-test/remediation/uat/round-06
-  touch .lbwc-planning/phases/01-test/01-01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .lbwc-planning/phases/01-test/01-01-SUMMARY.md
-  printf '%s\n' 'stage=verify' 'round=06' 'layout=round-dir' > .lbwc-planning/phases/01-test/remediation/uat/.uat-remediation-stage
-  cat > .lbwc-planning/phases/01-test/remediation/uat/round-06/R06-UAT.md <<'EOF'
----
-phase: 01
-status: in_progress
----
-## Tests
-
-### PR06-T01: Completed checkpoint
-
-- **Result:** pass
-
-### PR06-T02: Next incomplete checkpoint
-
-- **Result:**
-EOF
-
-  run_phase_detect
-
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "next_phase=01"
-  echo "$output" | grep -q "next_phase_slug=01-test"
-  echo "$output" | grep -q "next_phase_state=needs_verification"
-  echo "$output" | grep -q "uat_blocking_phase=01"
-  echo "$output" | grep -q "uat_blocking_status=active"
-  echo "$output" | grep -q "uat_blocking_file=remediation/uat/round-06/R06-UAT.md"
-  ! echo "$output" | grep -q "next_phase_state=all_done"
-}
-
-@test "active round-dir UAT with missing status blocks all_done archive routing" {
-  mkdir -p .lbwc-planning/phases/01-test/remediation/uat/round-06
-  touch .lbwc-planning/phases/01-test/01-01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .lbwc-planning/phases/01-test/01-01-SUMMARY.md
-  printf '%s\n' 'stage=verify' 'round=06' 'layout=round-dir' > .lbwc-planning/phases/01-test/remediation/uat/.uat-remediation-stage
-  cat > .lbwc-planning/phases/01-test/remediation/uat/round-06/R06-UAT.md <<'EOF'
----
-phase: 01
----
-UAT exists but has no authoritative status yet.
-EOF
-
-  run_phase_detect
-
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "next_phase=01"
-  echo "$output" | grep -q "next_phase_slug=01-test"
-  echo "$output" | grep -q "next_phase_state=needs_verification"
-  echo "$output" | grep -q "uat_blocking_phase=01"
-  echo "$output" | grep -q "uat_blocking_status=active"
-  echo "$output" | grep -q "uat_blocking_file=remediation/uat/round-06/R06-UAT.md"
-  ! echo "$output" | grep -q "next_phase_state=all_done"
-}
-
-@test "active round-dir UAT boundary 08 does not route to later unplanned phase" {
-  mkdir -p .lbwc-planning/phases/08-active-uat/remediation/uat/round-06
-  touch .lbwc-planning/phases/08-active-uat/08-01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .lbwc-planning/phases/08-active-uat/08-01-SUMMARY.md
-  printf '%s\n' 'stage=verify' 'round=06' 'layout=round-dir' > .lbwc-planning/phases/08-active-uat/remediation/uat/.uat-remediation-stage
-  cat > .lbwc-planning/phases/08-active-uat/remediation/uat/round-06/R06-UAT.md <<'EOF'
----
-phase: 08
-status: in_progress
----
-UAT is still running.
-EOF
-  mkdir -p .lbwc-planning/phases/09-next
-
-  run_phase_detect
-
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "next_phase=08"
-  echo "$output" | grep -q "next_phase_slug=08-active-uat"
-  echo "$output" | grep -q "next_phase_state=needs_verification"
-  echo "$output" | grep -q "uat_blocking_phase=08"
-  echo "$output" | grep -q "uat_blocking_status=active"
-  echo "$output" | grep -q "uat_blocking_file=remediation/uat/round-06/R06-UAT.md"
-  ! echo "$output" | grep -q "next_phase=09"
-}
-
-@test "active round-dir UAT boundary 09 does not route to later unplanned phase" {
-  mkdir -p .lbwc-planning/phases/09-active-uat/remediation/uat/round-06
-  touch .lbwc-planning/phases/09-active-uat/09-01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .lbwc-planning/phases/09-active-uat/09-01-SUMMARY.md
-  printf '%s\n' 'stage=verify' 'round=06' 'layout=round-dir' > .lbwc-planning/phases/09-active-uat/remediation/uat/.uat-remediation-stage
-  cat > .lbwc-planning/phases/09-active-uat/remediation/uat/round-06/R06-UAT.md <<'EOF'
----
-phase: 09
-status: in_progress
----
-UAT is still running.
-EOF
-  mkdir -p .lbwc-planning/phases/10-next
-
-  run_phase_detect
-
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "next_phase=09"
-  echo "$output" | grep -q "next_phase_slug=09-active-uat"
-  echo "$output" | grep -q "next_phase_state=needs_verification"
-  echo "$output" | grep -q "uat_blocking_phase=09"
-  echo "$output" | grep -q "uat_blocking_status=active"
-  echo "$output" | grep -q "uat_blocking_file=remediation/uat/round-06/R06-UAT.md"
-  ! echo "$output" | grep -q "next_phase=10"
-}
-
-@test "orphan UAT without PLAN or SUMMARY is ignored" {
-  mkdir -p .lbwc-planning/phases/01-test/
-  # No PLAN or SUMMARY — just an orphan UAT file
-  cat > .lbwc-planning/phases/01-test/01-UAT.md <<'EOF'
----
-phase: 01
-status: issues_found
----
-  - Severity: major
-EOF
-
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "uat_issues_phase=none"
-  # Should route to needs_plan_and_execute, not needs_uat_remediation
-  echo "$output" | grep -q "next_phase_state=needs_plan_and_execute"
-}
-
-@test "mid-execution phase with UAT is not routed to remediation" {
-  mkdir -p .lbwc-planning/phases/01-partial/
-  # 2 plans, only 1 summary — still mid-execution
-  touch .lbwc-planning/phases/01-partial/01-01-PLAN.md
-  touch .lbwc-planning/phases/01-partial/01-02-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .lbwc-planning/phases/01-partial/01-01-SUMMARY.md
-  cat > .lbwc-planning/phases/01-partial/01-UAT.md <<'EOF'
----
-phase: 01
-status: issues_found
----
-- Severity: major
-EOF
-
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "uat_issues_phase=none"
-  echo "$output" | grep -q "next_phase_state=needs_execute"
-  echo "$output" | grep -q "next_phase_plans=2"
-  echo "$output" | grep -q "next_phase_summaries=1"
-}
-
-@test "non-canonical PLAN files are not counted as plan artifacts" {
-  mkdir -p .lbwc-planning/phases/01-test/
-  # Canonical PLAN file
-  touch .lbwc-planning/phases/01-test/01-01-PLAN.md
-  # Non-canonical — should NOT count
-  touch .lbwc-planning/phases/01-test/not-a-PLAN.md
-
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  # Only 1 canonical plan, 0 summaries → needs_execute (not needs_plan_and_execute)
-  echo "$output" | grep -q "next_phase_state=needs_execute"
-  echo "$output" | grep -q "next_phase_plans=1"
-}
-
-@test "legacy PLAN.md and SUMMARY.md support UAT remediation detection" {
-  mkdir -p .lbwc-planning/phases/01-legacy/
-  touch .lbwc-planning/phases/01-legacy/PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .lbwc-planning/phases/01-legacy/SUMMARY.md
-  cat > .lbwc-planning/phases/01-legacy/01-UAT.md <<'EOF'
-phase: 01
-status: issues_found
-EOF
-
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "next_phase_state=needs_uat_remediation"
-  echo "$output" | grep -q "next_phase=01"
-  echo "$output" | grep -q "uat_issues_phase=01"
-}
-
-@test "phase-detect: legacy key-value remediation state routes to needs_reverification" {
-  mkdir -p .lbwc-planning/phases/01-legacy/remediation
-  touch .lbwc-planning/phases/01-legacy/01-01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .lbwc-planning/phases/01-legacy/01-01-SUMMARY.md
-  cat > .lbwc-planning/phases/01-legacy/01-UAT.md <<'EOF'
----
-phase: 01
-status: issues_found
----
-EOF
-  printf 'stage=done\nround=01\nlayout=legacy\n' > .lbwc-planning/phases/01-legacy/.uat-remediation-stage
-
-  run_phase_detect
-
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"next_phase_state=needs_reverification"* ]]
-}
-
-@test "phase-detect: stale execute routing does not write legacy remediation state" {
-  mkdir -p .lbwc-planning/phases/01-legacy/remediation
-  touch .lbwc-planning/phases/01-legacy/01-01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .lbwc-planning/phases/01-legacy/01-01-SUMMARY.md
-  cat > .lbwc-planning/phases/01-legacy/01-UAT.md <<'EOF'
----
-phase: 01
-status: issues_found
----
-EOF
-  printf 'stage=execute\nround=01\nlayout=legacy\n' > .lbwc-planning/phases/01-legacy/remediation/.uat-remediation-stage
-
-  run_phase_detect
-
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"next_phase_state=needs_reverification"* ]]
-  grep -q '^stage=execute$' .lbwc-planning/phases/01-legacy/remediation/.uat-remediation-stage
-}
-
-@test "phase-detect does not auto-advance UAT remediation past finite cap on rerun" {
-  cat > .lbwc-planning/config.json <<'EOF'
-{
-  "effort": "balanced",
-  "max_uat_remediation_rounds": 1
-}
-EOF
-  mkdir -p .lbwc-planning/phases/01-feature/remediation/uat/round-01
-  touch .lbwc-planning/phases/01-feature/01-01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .lbwc-planning/phases/01-feature/01-01-SUMMARY.md
-  printf 'stage=done\nround=01\nlayout=round-dir\n' > .lbwc-planning/phases/01-feature/remediation/uat/.uat-remediation-stage
-  cat > .lbwc-planning/phases/01-feature/remediation/uat/round-01/R01-UAT.md <<'EOF'
----
-phase: 01
-status: issues_found
----
-- Severity: major
-EOF
-
-  run_phase_detect
-
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "next_phase_state=needs_reverification"
-  grep -q '^stage=done$' .lbwc-planning/phases/01-feature/remediation/uat/.uat-remediation-stage
-  grep -q '^round=01$' .lbwc-planning/phases/01-feature/remediation/uat/.uat-remediation-stage
-  [ ! -d .lbwc-planning/phases/01-feature/remediation/uat/round-02 ]
-}
-
-@test "phase-detect routes an unlimited next UAT round without writing state" {
-  cat > .lbwc-planning/config.json <<'EOF'
-{
-  "effort": "balanced",
-  "max_uat_remediation_rounds": false
-}
-EOF
-  mkdir -p .lbwc-planning/phases/01-feature/remediation/uat/round-01
-  touch .lbwc-planning/phases/01-feature/01-01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .lbwc-planning/phases/01-feature/01-01-SUMMARY.md
-  printf 'stage=done\nround=01\nlayout=round-dir\n' > .lbwc-planning/phases/01-feature/remediation/uat/.uat-remediation-stage
-  cat > .lbwc-planning/phases/01-feature/remediation/uat/round-01/R01-UAT.md <<'EOF'
----
-phase: 01
-status: issues_found
----
-- Severity: major
-EOF
-
-  run_phase_detect
-
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "next_phase_state=needs_uat_remediation"
-  grep -q '^stage=done$' .lbwc-planning/phases/01-feature/remediation/uat/.uat-remediation-stage
-  grep -q '^round=01$' .lbwc-planning/phases/01-feature/remediation/uat/.uat-remediation-stage
-  [ ! -d .lbwc-planning/phases/01-feature/remediation/uat/round-02 ]
-}
-
-@test "phase-detect routes a zero-configured next UAT round without writing state" {
-  cat > .lbwc-planning/config.json <<'EOF'
-{
-  "effort": "balanced",
-  "max_uat_remediation_rounds": 0
-}
-EOF
-  mkdir -p .lbwc-planning/phases/01-feature/remediation/uat/round-01
-  touch .lbwc-planning/phases/01-feature/01-01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .lbwc-planning/phases/01-feature/01-01-SUMMARY.md
-  printf 'stage=done\nround=01\nlayout=round-dir\n' > .lbwc-planning/phases/01-feature/remediation/uat/.uat-remediation-stage
-  cat > .lbwc-planning/phases/01-feature/remediation/uat/round-01/R01-UAT.md <<'EOF'
----
-phase: 01
-status: issues_found
----
-- Severity: major
-EOF
-
-  run_phase_detect
-
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "next_phase_state=needs_uat_remediation"
-  grep -q '^stage=done$' .lbwc-planning/phases/01-feature/remediation/uat/.uat-remediation-stage
-  grep -q '^round=01$' .lbwc-planning/phases/01-feature/remediation/uat/.uat-remediation-stage
-  [ ! -d .lbwc-planning/phases/01-feature/remediation/uat/round-02 ]
-}
-
-@test "phase-detect does not auto-advance UAT remediation when cap helper exits nonzero" {
-  mkdir -p .lbwc-planning/phases/01-feature/remediation/uat/round-01
-  touch .lbwc-planning/phases/01-feature/01-01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .lbwc-planning/phases/01-feature/01-01-SUMMARY.md
-  printf 'stage=done\nround=01\nlayout=round-dir\n' > .lbwc-planning/phases/01-feature/remediation/uat/.uat-remediation-stage
-  cat > .lbwc-planning/phases/01-feature/remediation/uat/round-01/R01-UAT.md <<'EOF'
----
-phase: 01
-status: issues_found
----
-- Severity: major
-EOF
-
-  local shim_dir="$TEST_TEMP_DIR/scripts-phase-detect-helper-fail"
-  cp -R "$SCRIPTS_DIR" "$shim_dir"
-  cat > "$shim_dir/resolve-uat-remediation-round-limit.sh" <<'EOF'
-#!/usr/bin/env bash
-exit 23
-EOF
-  chmod +x "$shim_dir/resolve-uat-remediation-round-limit.sh"
-
-  run_phase_detect "$shim_dir"
-
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "next_phase_state=needs_reverification"
-  grep -q '^stage=done$' .lbwc-planning/phases/01-feature/remediation/uat/.uat-remediation-stage
-  grep -q '^round=01$' .lbwc-planning/phases/01-feature/remediation/uat/.uat-remediation-stage
-  [ ! -d .lbwc-planning/phases/01-feature/remediation/uat/round-02 ]
-}
-
-@test "phase-detect does not auto-advance UAT remediation when cap helper output is malformed" {
-  mkdir -p .lbwc-planning/phases/01-feature/remediation/uat/round-01
-  touch .lbwc-planning/phases/01-feature/01-01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .lbwc-planning/phases/01-feature/01-01-SUMMARY.md
-  printf 'stage=done\nround=01\nlayout=round-dir\n' > .lbwc-planning/phases/01-feature/remediation/uat/.uat-remediation-stage
-  cat > .lbwc-planning/phases/01-feature/remediation/uat/round-01/R01-UAT.md <<'EOF'
----
-phase: 01
-status: issues_found
----
-- Severity: major
-EOF
-
-  local shim_dir="$TEST_TEMP_DIR/scripts-phase-detect-helper-malformed"
-  cp -R "$SCRIPTS_DIR" "$shim_dir"
-  cat > "$shim_dir/resolve-uat-remediation-round-limit.sh" <<'EOF'
-#!/usr/bin/env bash
-printf 'current_round=01\nnext_round=02\n'
-EOF
-  chmod +x "$shim_dir/resolve-uat-remediation-round-limit.sh"
-
-  run_phase_detect "$shim_dir"
-
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "next_phase_state=needs_reverification"
-  grep -q '^stage=done$' .lbwc-planning/phases/01-feature/remediation/uat/.uat-remediation-stage
-  grep -q '^round=01$' .lbwc-planning/phases/01-feature/remediation/uat/.uat-remediation-stage
-  [ ! -d .lbwc-planning/phases/01-feature/remediation/uat/round-02 ]
-}
-
-setup_capped_uat_with_unrelated_active_qa() {
-  cat > .lbwc-planning/config.json <<'EOF'
-{
-  "effort": "balanced",
-  "max_uat_remediation_rounds": 1
-}
-EOF
-  echo "# My Project" > .lbwc-planning/PROJECT.md
-
-  mkdir -p .lbwc-planning/phases/01-uat/remediation/uat/round-01
-  touch .lbwc-planning/phases/01-uat/01-01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .lbwc-planning/phases/01-uat/01-01-SUMMARY.md
-  printf 'stage=verify\nround=01\nlayout=round-dir\n' > .lbwc-planning/phases/01-uat/remediation/uat/.uat-remediation-stage
-  cat > .lbwc-planning/phases/01-uat/remediation/uat/round-01/R01-UAT.md <<'EOF'
----
-phase: 01
-round: 01
-status: issues_found
-issues: 1
----
-## Tests
-### P01-T1: capped UAT issue
-- **Result:** issue
-- **Issue:** Still failing at the cap
-  - Severity: major
-EOF
-
-  mkdir -p .lbwc-planning/phases/02-qa/remediation/qa
-  touch .lbwc-planning/phases/02-qa/02-01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .lbwc-planning/phases/02-qa/02-01-SUMMARY.md
-  printf '%s\n' '---' 'result: FAIL' '---' '# Verification' 'Unrelated pre-UAT QA failure.' > .lbwc-planning/phases/02-qa/02-VERIFICATION.md
-  printf '%s\n%s\n' 'stage=execute' 'round=01' > .lbwc-planning/phases/02-qa/remediation/qa/.qa-remediation-stage
-}
-
-assert_uat_cap_stop_blocks_unrelated_qa() {
-  echo "$output" | grep -q "next_phase=01"
-  echo "$output" | grep -q "next_phase_slug=01-uat"
-  echo "$output" | grep -q "next_phase_state=needs_reverification"
-  echo "$output" | grep -q "uat_issues_phase=01"
-  echo "$output" | grep -q "uat_file=remediation/uat/round-01/R01-UAT.md"
-  ! echo "$output" | grep -q "next_phase_state=needs_qa_remediation"
-  grep -q '^stage=verify$' .lbwc-planning/phases/01-uat/remediation/uat/.uat-remediation-stage
-  grep -q '^round=01$' .lbwc-planning/phases/01-uat/remediation/uat/.uat-remediation-stage
-  grep -q '^layout=round-dir$' .lbwc-planning/phases/01-uat/remediation/uat/.uat-remediation-stage
-  [ ! -d .lbwc-planning/phases/01-uat/remediation/uat/round-02 ]
-  grep -q '^stage=execute$' .lbwc-planning/phases/02-qa/remediation/qa/.qa-remediation-stage
-  grep -q '^round=01$' .lbwc-planning/phases/02-qa/remediation/qa/.qa-remediation-stage
-}
+setup() { pd_setup; }
+teardown() { pd_teardown; }
 
-@test "phase-detect: capped UAT lane blocks unrelated active QA remediation" {
-  setup_capped_uat_with_unrelated_active_qa
+sc_no_planning() { rm -rf "$PD_PLAN_DIR"; }
 
-  run_phase_detect
-
-  [ "$status" -eq 0 ]
-  assert_uat_cap_stop_blocks_unrelated_qa
-}
-
-@test "phase-detect: UAT cap helper failure blocks unrelated active QA remediation" {
-  setup_capped_uat_with_unrelated_active_qa
-
-  local shim_dir="$TEST_TEMP_DIR/scripts-phase-detect-cap-helper-fail-with-qa"
-  cp -R "$SCRIPTS_DIR" "$shim_dir"
-  cat > "$shim_dir/resolve-uat-remediation-round-limit.sh" <<'EOF'
-#!/usr/bin/env bash
-exit 23
-EOF
-  chmod +x "$shim_dir/resolve-uat-remediation-round-limit.sh"
-
-  run_phase_detect "$shim_dir"
-
-  [ "$status" -eq 0 ]
-  assert_uat_cap_stop_blocks_unrelated_qa
-}
-
-@test "phase-detect: malformed UAT cap helper output blocks unrelated active QA remediation" {
-  setup_capped_uat_with_unrelated_active_qa
-
-  local shim_dir="$TEST_TEMP_DIR/scripts-phase-detect-cap-helper-malformed-with-qa"
-  cp -R "$SCRIPTS_DIR" "$shim_dir"
-  cat > "$shim_dir/resolve-uat-remediation-round-limit.sh" <<'EOF'
-#!/usr/bin/env bash
-printf 'current_round=01\nnext_round=02\n'
-EOF
-  chmod +x "$shim_dir/resolve-uat-remediation-round-limit.sh"
-
-  run_phase_detect "$shim_dir"
-
-  [ "$status" -eq 0 ]
-  assert_uat_cap_stop_blocks_unrelated_qa
-}
-
-@test "run_phase_detect rejects partial output without completion marker" {
-  local shim_dir="$TEST_TEMP_DIR/scripts-phase-detect-incomplete"
-  mkdir -p "$shim_dir"
-  cat > "$shim_dir/phase-detect.sh" <<'EOF'
-#!/usr/bin/env bash
-echo "planning_dir_exists=true"
-echo "next_phase_state=needs_execute"
-echo "qa_status=pending"
-echo "execution_state=none"
-exit 0
-EOF
-  chmod +x "$shim_dir/phase-detect.sh"
-
-  run_phase_detect "$shim_dir" || true
-
-  [ "$status" -eq 1 ]
-  echo "$output" | grep -q "run_phase_detect: all 5 retries returned empty or incomplete output"
-}
-
-@test "phase-detect emits completion marker on normal output" {
-  run_phase_detect
-
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "phase_detect_complete=true"
-}
-
-@test "phase-detect emits only phase_detect_error=true on late failure" {
-  local shim_dir="$TEST_TEMP_DIR/scripts-phase-detect-late-failure"
-  mkdir -p .lbwc-planning/phases
-  printf '%s\n' '# Fixture Project' > .lbwc-planning/PROJECT.md
-  cp -R "$SCRIPTS_DIR" "$shim_dir"
-  awk '
-    /echo "milestone_uat_issues=\$MILESTONE_UAT_ISSUES"/ && !injected {
-      print "exit 23"
-      injected=1
-    }
-    { print }
-  ' "$SCRIPTS_DIR/lib/phase-detect-milestone-recovery.sh" > "$shim_dir/lib/phase-detect-milestone-recovery.sh"
-  chmod +x "$shim_dir/lib/phase-detect-milestone-recovery.sh"
-
-  run bash "$shim_dir/phase-detect.sh"
-
-  [ "$status" -eq 0 ]
-  [ "$output" = "phase_detect_error=true" ]
-}
-
-@test "phase-detect emits only phase_detect_error=true when a library fails to source" {
-  local shim_dir="$TEST_TEMP_DIR/scripts-phase-detect-source-failure"
-  cp -R "$SCRIPTS_DIR" "$shim_dir"
-  printf 'return 23\n' > "$shim_dir/lib/phase-detect-support.sh"
-
-  run bash "$shim_dir/phase-detect.sh"
-
-  [ "$status" -eq 0 ]
-  [ "$output" = "phase_detect_error=true" ]
-}
-
-@test "phase-detect emits a stable setup error when its output file cannot be created" {
-  local shim_dir="$TEST_TEMP_DIR/scripts-phase-detect-setup-failure"
-  local fake_bin="$TEST_TEMP_DIR/phase-detect-no-mktemp"
-  mkdir -p "$fake_bin"
-  cp -R "$SCRIPTS_DIR" "$shim_dir"
-  cat > "$fake_bin/mktemp" <<'EOF'
-#!/usr/bin/env bash
-exit 1
-EOF
-  chmod +x "$fake_bin/mktemp"
-
-  run env PATH="$fake_bin:$PATH" bash "$shim_dir/phase-detect.sh"
-
-  [ "$status" -ne 0 ]
-  [ "$output" = $'phase_detect_error=true\nphase_detect_reason=setup_failed' ]
-}
-
-@test "current-round QA PASS satisfies a phase with a terminal partial summary" {
-
-  bash "$BATS_TEST_DIRNAME/fixtures/phase-detect-output/setup-case.bash" phase-05-remediated
-
-  run_phase_detect
-
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q '^next_phase_state=all_done$'
-  echo "$output" | grep -q '^next_phase_summaries=0$'
-}
-
-@test "current-round QA PASS cannot mask a terminal failed summary" {
-  bash "$BATS_TEST_DIRNAME/fixtures/phase-detect-output/setup-case.bash" failed-summary-passing-remediation
-
-  run_phase_detect
-
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q '^next_phase_state=needs_execute$'
-  ! echo "$output" | grep -q '^next_phase_state=all_done$'
-}
-
-@test "earlier-round QA PASS cannot mask a current-round failure" {
-  bash "$BATS_TEST_DIRNAME/fixtures/phase-detect-output/setup-case.bash" stale-pass-later-fail
-
-  run_phase_detect
-
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q '^next_phase_state=needs_execute$'
-  ! echo "$output" | grep -q '^next_phase_state=all_done$'
-}
-
-@test "phase-detect treats git freshness probe failure as dormant when terminal UAT exists" {
-  mkdir -p .lbwc-planning/phases/01-test
-  echo "# Plan" > .lbwc-planning/phases/01-test/01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' '# Summary' 'Done.' > .lbwc-planning/phases/01-test/01-SUMMARY.md
-  echo "# My Project" > .lbwc-planning/PROJECT.md
-  current_commit="$(git rev-parse HEAD)"
-  printf '%s\n' '---' 'result: PASS' 'writer: write-verification.sh' 'plans_verified:' '  - 01' "verified_at_commit: ${current_commit}" '---' '# Verification' 'All passed.' > .lbwc-planning/phases/01-test/01-VERIFICATION.md
-  cat > .lbwc-planning/phases/01-test/01-UAT.md <<'EOF'
----
-phase: 01
-status: complete
----
-All tests passed.
-EOF
-
-  local real_git fake_git_dir
-  real_git="$(command -v git)"
-  fake_git_dir="$TEST_TEMP_DIR/fake-git"
-  mkdir -p "$fake_git_dir"
-  cat > "$fake_git_dir/git" <<EOF
-#!/usr/bin/env bash
-case "\$1" in
-  status|log)
-    exit 77
-    ;;
-esac
-exec "$real_git" "\$@"
-EOF
-  chmod +x "$fake_git_dir/git"
-
-  run env PATH="$fake_git_dir:$PATH" bash "$SCRIPTS_DIR/phase-detect.sh"
-
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "phase_detect_complete=true"
-  echo "$output" | grep -q "next_phase=none"
-  echo "$output" | grep -q "next_phase_slug=none"
-  echo "$output" | grep -q "next_phase_state=all_done"
-  echo "$output" | grep -q "first_qa_attention_phase=$"
-  echo "$output" | grep -q "qa_attention_status=none"
-  echo "$output" | grep -q "qa_status=none"
-}
-
-@test "corrupt QA remediation stage does not route as active remediation" {
-  mkdir -p .lbwc-planning/phases/01-test/remediation/qa
-  touch .lbwc-planning/phases/01-test/01-01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .lbwc-planning/phases/01-test/01-01-SUMMARY.md
-  printf 'stage=garbage\nround=01\n' > .lbwc-planning/phases/01-test/remediation/qa/.qa-remediation-stage
-
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  ! echo "$output" | grep -q "next_phase_state=needs_qa_remediation"
-  echo "$output" | grep -q "qa_status=pending"
-}
-
-@test "dotfile PLAN files are not counted as plan artifacts" {
-  mkdir -p .lbwc-planning/phases/01-test/
-  touch .lbwc-planning/phases/01-test/01-01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .lbwc-planning/phases/01-test/01-01-SUMMARY.md
-  # Dotfile — should NOT count (ls glob ignores dotfiles)
-  touch ".lbwc-planning/phases/01-test/.01-02-PLAN.md"
-
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  # 1 plan, 1 summary → all_done (dotfile plan not counted)
-  echo "$output" | grep -q "next_phase_state=all_done"
-}
-
-@test "outputs has_shipped_milestones=true when shipped milestone exists" {
-  mkdir -p .lbwc-planning/phases
-  mkdir -p .lbwc-planning/milestones/foundation
-  echo "# Shipped" > .lbwc-planning/milestones/foundation/SHIPPED.md
-
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "has_shipped_milestones=true"
+sc_project_no_phases() {
+  pd_project
+  mkdir -p "$PD_PHASES"
 }
 
-@test "outputs has_shipped_milestones=false when no shipped milestones" {
-  mkdir -p .lbwc-planning/phases
-
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "has_shipped_milestones=false"
-}
-
-@test "reports legacy default milestone without renaming it" {
-  mkdir -p .lbwc-planning/milestones/default
-  mkdir -p .lbwc-planning/milestones/default/phases/01-legacy-phase
-
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "needs_milestone_rename=true"
-  [ -d .lbwc-planning/milestones/default ]
-  [ -d .lbwc-planning/milestones/default/phases/01-legacy-phase ]
+sc_golden() {
+  bash "$PD_FIXTURE_BUILDER" "$1"
 }
 
-@test "outputs needs_milestone_rename=false when no milestones/default/" {
-  mkdir -p .lbwc-planning/phases
-
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "needs_milestone_rename=false"
-}
-
-@test "vibe assigns the legacy milestone rename to the main session" {
-  run grep -F 'main session itself must run' "$PROJECT_ROOT/commands/vibe.md"
-  [ "$status" -eq 0 ]
-  run grep -F 'rename-default-milestone.sh' "$PROJECT_ROOT/commands/vibe.md"
-  [ "$status" -eq 0 ]
-  run grep -Fi 're-run phase detection' "$PROJECT_ROOT/commands/vibe.md"
-  [ "$status" -eq 0 ]
+sc_noncanonical_plan() {
+  pd_plan 01-test 1
+  touch "$PD_PHASES/01-test/not-a-PLAN.md"
 }
 
-@test "does not output active_milestone (removed)" {
-  mkdir -p .lbwc-planning/phases
-
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  ! echo "$output" | grep -q "active_milestone="
+sc_dotfile_plan() {
+  pd_done 01-test
+  touch "$PD_PHASES/01-test/.01-02-PLAN.md"
 }
-
-@test "ignores ACTIVE file (always uses root phases)" {
-  mkdir -p .lbwc-planning/phases/01-root-phase/
-  mkdir -p .lbwc-planning/milestones/old/phases/01-milestone-phase/
-  echo "old" > .lbwc-planning/ACTIVE
 
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "phase_count=1"
-  echo "$output" | grep -q "phases_dir=.lbwc-planning/phases"
+sc_noncanonical_dir() {
+  mkdir -p "$PD_PHASES/misc-notes" "$PD_PHASES/01-real"
 }
 
-@test "phase directories sort numerically not lexicographically" {
-  mkdir -p .lbwc-planning/phases/11-eleven/
-  mkdir -p .lbwc-planning/phases/100-hundred/
-  for p in 11 100; do
-    case "$p" in
-      11) dir=".lbwc-planning/phases/11-eleven/" ;;
-      100) dir=".lbwc-planning/phases/100-hundred/" ;;
-    esac
-    touch "${dir}${p}-01-PLAN.md"
-    printf '%s\n' '---' 'status: complete' '---' 'Done.' > "${dir}${p}-01-SUMMARY.md"
-    cat > "${dir}${p}-UAT.md" <<EOF
----
-phase: $p
-status: issues_found
----
-- Severity: major
-EOF
+sc_numeric_sort() {
+  local slug
+  for slug in 11-eleven 100-hundred; do
+    pd_done "$slug"
+    pd_uat "$PD_PHASES/$slug/$(pd_phase_number "$slug")-UAT.md" issues_found major "$(pd_phase_number "$slug")"
   done
-
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  # Phase 11 should be selected first (numeric), not 100 (lexicographic)
-  echo "$output" | grep -q "uat_issues_phase=11"
-  echo "$output" | grep -q "next_phase=11"
-}
-
-# --- require_phase_discussion tests ---
-
-@test "outputs config_require_phase_discussion=false by default" {
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "config_require_phase_discussion=false"
-}
-
-@test "outputs config_require_phase_discussion=true when set in config" {
-  local tmp
-  tmp=$(mktemp)
-  jq '.require_phase_discussion = true' .lbwc-planning/config.json > "$tmp" && mv "$tmp" .lbwc-planning/config.json
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "config_require_phase_discussion=true"
-}
-
-@test "needs_discussion state when require_phase_discussion=true and phase lacks CONTEXT.md" {
-  local tmp
-  tmp=$(mktemp)
-  jq '.require_phase_discussion = true' .lbwc-planning/config.json > "$tmp" && mv "$tmp" .lbwc-planning/config.json
-  mkdir -p .lbwc-planning/phases/01-test/
-
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "next_phase_state=needs_discussion"
-  echo "$output" | grep -q "next_phase=01"
-}
-
-@test "needs_plan_and_execute when require_phase_discussion=true but CONTEXT.md exists" {
-  local tmp
-  tmp=$(mktemp)
-  jq '.require_phase_discussion = true' .lbwc-planning/config.json > "$tmp" && mv "$tmp" .lbwc-planning/config.json
-  mkdir -p .lbwc-planning/phases/01-test/
-  touch .lbwc-planning/phases/01-test/01-CONTEXT.md
-
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "next_phase_state=needs_plan_and_execute"
-}
-
-@test "needs_plan_and_execute when require_phase_discussion=false even without CONTEXT.md" {
-  mkdir -p .lbwc-planning/phases/01-test/
-
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "next_phase_state=needs_plan_and_execute"
-}
-
-@test "needs_discussion only applies to unplanned phases" {
-  local tmp
-  tmp=$(mktemp)
-  jq '.require_phase_discussion = true' .lbwc-planning/config.json > "$tmp" && mv "$tmp" .lbwc-planning/config.json
-  mkdir -p .lbwc-planning/phases/01-test/
-  # Phase has a plan already — discussion should not be required
-  touch .lbwc-planning/phases/01-test/01-01-PLAN.md
-
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "next_phase_state=needs_execute"
-}
-
-@test "needs_discussion targets first undiscussed phase in multi-phase project" {
-  local tmp
-  tmp=$(mktemp)
-  jq '.require_phase_discussion = true' .lbwc-planning/config.json > "$tmp" && mv "$tmp" .lbwc-planning/config.json
-  mkdir -p .lbwc-planning/phases/01-first/
-  mkdir -p .lbwc-planning/phases/02-second/
-  # Phase 1 is fully done
-  touch .lbwc-planning/phases/01-first/01-CONTEXT.md
-  touch .lbwc-planning/phases/01-first/01-01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .lbwc-planning/phases/01-first/01-01-SUMMARY.md
-  # Phase 2 has no context
-
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "next_phase_state=needs_discussion"
-  echo "$output" | grep -q "next_phase=02"
-  echo "$output" | grep -q "next_phase_slug=02-second"
-}
-
-@test "milestone UAT recovery takes priority over needs_discussion when all active phases done" {
-  local tmp
-  tmp=$(mktemp)
-  jq '.require_phase_discussion = true' .lbwc-planning/config.json > "$tmp" && mv "$tmp" .lbwc-planning/config.json
-  # All active phases complete
-  mkdir -p .lbwc-planning/phases/01-done/
-  touch .lbwc-planning/phases/01-done/01-CONTEXT.md
-  touch .lbwc-planning/phases/01-done/01-01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .lbwc-planning/phases/01-done/01-01-SUMMARY.md
-  # Shipped milestone with UAT issues
-  mkdir -p .lbwc-planning/milestones/v1/phases/01-shipped/
-  echo "# Shipped" > .lbwc-planning/milestones/v1/SHIPPED.md
-  touch .lbwc-planning/milestones/v1/phases/01-shipped/01-01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .lbwc-planning/milestones/v1/phases/01-shipped/01-01-SUMMARY.md
-  cat > .lbwc-planning/milestones/v1/phases/01-shipped/01-UAT.md <<'EOF'
----
-phase: 01
-status: issues_found
----
-- Severity: major
-EOF
-
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  # Active phases all_done (not needs_discussion — all are planned)
-  echo "$output" | grep -q "next_phase_state=all_done"
-  # Milestone UAT recovery detected
-  echo "$output" | grep -q "milestone_uat_issues=true"
-  echo "$output" | grep -q "milestone_uat_slug=v1"
-}
-
-# --- non-canonical directory handling ---
-
-@test "non-canonical phase dir without numeric prefix is skipped" {
-  mkdir -p .lbwc-planning/phases/misc-notes/
-  mkdir -p .lbwc-planning/phases/01-real/
-
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "phase_count=1"
-  echo "$output" | grep -q "next_phase=01"
-  echo "$output" | grep -q "next_phase_slug=01-real"
-  echo "$output" | grep -q "next_phase_state=needs_plan_and_execute"
-}
-
-@test "non-canonical CONTEXT.md does not satisfy discussion requirement" {
-  local tmp
-  tmp=$(mktemp)
-  jq '.require_phase_discussion = true' .lbwc-planning/config.json > "$tmp" && mv "$tmp" .lbwc-planning/config.json
-  mkdir -p .lbwc-planning/phases/01-test/
-  # Non-canonical — should NOT satisfy the CONTEXT.md check
-  touch .lbwc-planning/phases/01-test/NOTES-CONTEXT.md
-
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "next_phase_state=needs_discussion"
-}
-
-@test "canonical CONTEXT.md satisfies discussion requirement" {
-  local tmp
-  tmp=$(mktemp)
-  jq '.require_phase_discussion = true' .lbwc-planning/config.json > "$tmp" && mv "$tmp" .lbwc-planning/config.json
-  mkdir -p .lbwc-planning/phases/01-test/
-  # Canonical phase-prefixed CONTEXT.md
-  touch .lbwc-planning/phases/01-test/01-CONTEXT.md
-
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "next_phase_state=needs_plan_and_execute"
-}
-
-# --- SOURCE-UAT exclusion tests ---
-
-@test "SOURCE-UAT.md is not treated as a UAT report in active phase scan" {
-  mkdir -p .lbwc-planning/phases/01-remediate-test/
-  touch .lbwc-planning/phases/01-remediate-test/01-CONTEXT.md
-  touch .lbwc-planning/phases/01-remediate-test/01-01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .lbwc-planning/phases/01-remediate-test/01-01-SUMMARY.md
-  # SOURCE-UAT is a reference copy — should NOT trigger remediation
-  cat > .lbwc-planning/phases/01-remediate-test/01-SOURCE-UAT.md <<'EOF'
----
-phase: 01
-status: issues_found
----
-- Severity: major
-EOF
-
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "uat_issues_phase=none"
-  echo "$output" | grep -q "next_phase_state=all_done"
-}
-
-@test "SOURCE-UAT.md ignored while real UAT.md in later phase is detected" {
-  # Phase 01: completed remediation with SOURCE-UAT (should be ignored)
-  mkdir -p .lbwc-planning/phases/01-remediate-first/
-  touch .lbwc-planning/phases/01-remediate-first/01-01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .lbwc-planning/phases/01-remediate-first/01-01-SUMMARY.md
-  cat > .lbwc-planning/phases/01-remediate-first/01-SOURCE-UAT.md <<'EOF'
----
-phase: 01
-status: issues_found
----
-- Severity: major
-EOF
-
-  # Phase 02: has real UAT issues
-  mkdir -p .lbwc-planning/phases/02-executed/
-  touch .lbwc-planning/phases/02-executed/02-01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .lbwc-planning/phases/02-executed/02-01-SUMMARY.md
-  cat > .lbwc-planning/phases/02-executed/02-UAT.md <<'EOF'
----
-phase: 02
-status: issues_found
----
-- Severity: critical
-EOF
-
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "uat_issues_phase=02"
-  echo "$output" | grep -q "next_phase_state=needs_uat_remediation"
-}
-
-@test "completed remediation phases with SOURCE-UAT do not block unplanned phase" {
-  # Phase 01: unplanned (needs work)
-  mkdir -p .lbwc-planning/phases/01-remediate-unresolved/
-  touch .lbwc-planning/phases/01-remediate-unresolved/01-CONTEXT.md
-  cat > .lbwc-planning/phases/01-remediate-unresolved/01-SOURCE-UAT.md <<'EOF'
----
-phase: 01
-status: issues_found
----
-- Severity: critical
-EOF
-
-  # Phase 02: completed remediation with SOURCE-UAT only
-  mkdir -p .lbwc-planning/phases/02-remediate-done/
-  touch .lbwc-planning/phases/02-remediate-done/02-01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .lbwc-planning/phases/02-remediate-done/02-01-SUMMARY.md
-  cat > .lbwc-planning/phases/02-remediate-done/02-SOURCE-UAT.md <<'EOF'
----
-phase: 02
-status: issues_found
----
-- Severity: major
-EOF
-
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  # Phase 02 SOURCE-UAT should NOT trigger remediation
-  echo "$output" | grep -q "uat_issues_phase=none"
-  # Phase 01 has no plans — should route to needs_plan_and_execute
-  echo "$output" | grep -q "next_phase=01"
-  echo "$output" | grep -q "next_phase_state=needs_plan_and_execute"
-}
-
-@test "SOURCE-UAT.md in milestone phases is excluded from milestone UAT scan" {
-  mkdir -p .lbwc-planning/phases/01-done/
-  touch .lbwc-planning/phases/01-done/01-01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .lbwc-planning/phases/01-done/01-01-SUMMARY.md
-
-  mkdir -p .lbwc-planning/milestones/v1/phases/01-shipped/
-  echo "# Shipped" > .lbwc-planning/milestones/v1/SHIPPED.md
-  touch .lbwc-planning/milestones/v1/phases/01-shipped/01-01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .lbwc-planning/milestones/v1/phases/01-shipped/01-01-SUMMARY.md
-  # Only SOURCE-UAT — should NOT trigger milestone recovery
-  cat > .lbwc-planning/milestones/v1/phases/01-shipped/01-SOURCE-UAT.md <<'EOF'
----
-phase: 01
-status: issues_found
----
-- Severity: major
-EOF
-
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "milestone_uat_issues=false"
-}
-
-# --- Brownfield milestone cross-reference tests ---
-
-@test "milestone UAT skipped when active remediation phase references it" {
-  # Active remediation phase with CONTEXT referencing the milestone phase
-  mkdir -p .lbwc-planning/phases/01-remediate-v1-setup/
-  touch .lbwc-planning/phases/01-remediate-v1-setup/01-01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .lbwc-planning/phases/01-remediate-v1-setup/01-01-SUMMARY.md
-  cat > .lbwc-planning/phases/01-remediate-v1-setup/01-CONTEXT.md <<'EOF'
----
-phase: 01
-source_milestone: v1
-source_phase: 01-setup
-pre_seeded: true
----
-EOF
-
-  # Shipped milestone with UAT issues
-  mkdir -p .lbwc-planning/milestones/v1/phases/01-setup/
-  echo "# Shipped" > .lbwc-planning/milestones/v1/SHIPPED.md
-  touch .lbwc-planning/milestones/v1/phases/01-setup/01-01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .lbwc-planning/milestones/v1/phases/01-setup/01-01-SUMMARY.md
-  cat > .lbwc-planning/milestones/v1/phases/01-setup/01-UAT.md <<'EOF'
----
-phase: 01
-status: issues_found
----
-- Severity: major
-EOF
-
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "next_phase_state=all_done"
-  echo "$output" | grep -q "milestone_uat_issues=false"
-}
-
-@test "milestone UAT detected when no active remediation references it" {
-  # Active phase complete but NOT a remediation (no source_milestone in CONTEXT)
-  mkdir -p .lbwc-planning/phases/01-feature/
-  touch .lbwc-planning/phases/01-feature/01-01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .lbwc-planning/phases/01-feature/01-01-SUMMARY.md
-
-  # Shipped milestone with UAT issues — no active remediation covers it
-  mkdir -p .lbwc-planning/milestones/v1/phases/01-setup/
-  echo "# Shipped" > .lbwc-planning/milestones/v1/SHIPPED.md
-  touch .lbwc-planning/milestones/v1/phases/01-setup/01-01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .lbwc-planning/milestones/v1/phases/01-setup/01-01-SUMMARY.md
-  cat > .lbwc-planning/milestones/v1/phases/01-setup/01-UAT.md <<'EOF'
----
-phase: 01
-status: issues_found
----
-- Severity: major
-EOF
-
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "milestone_uat_issues=true"
-  echo "$output" | grep -q "milestone_uat_slug=v1"
-}
-
-@test "multiple phases with UAT issues are all reported in uat_issues_phases" {
-  mkdir -p .lbwc-planning/phases/01-first/
-  touch .lbwc-planning/phases/01-first/01-01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .lbwc-planning/phases/01-first/01-01-SUMMARY.md
-  cat > .lbwc-planning/phases/01-first/01-UAT.md <<'EOF'
----
-status: complete
----
-All tests passed.
-EOF
-
-  mkdir -p .lbwc-planning/phases/02-second/
-  touch .lbwc-planning/phases/02-second/02-01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .lbwc-planning/phases/02-second/02-01-SUMMARY.md
-  cat > .lbwc-planning/phases/02-second/02-UAT.md <<'EOF'
----
-status: issues_found
----
-- Severity: major
-EOF
-
-  mkdir -p .lbwc-planning/phases/03-third/
-  touch .lbwc-planning/phases/03-third/03-01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .lbwc-planning/phases/03-third/03-01-SUMMARY.md
-  cat > .lbwc-planning/phases/03-third/03-UAT.md <<'EOF'
----
-status: issues_found
----
-- Severity: major
-EOF
-
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  # First phase with issues is the routing target
-  echo "$output" | grep -q "uat_issues_phase=02"
-  echo "$output" | grep -q "next_phase=02"
-  echo "$output" | grep -q "next_phase_state=needs_uat_remediation"
-  # All phases with issues are listed
-  echo "$output" | grep -q "uat_issues_phases=02,03"
-  echo "$output" | grep -q "uat_issues_count=2"
-}
-
-@test "single phase with UAT issues reports count=1 and phases list" {
-  mkdir -p .lbwc-planning/phases/01-only/
-  touch .lbwc-planning/phases/01-only/01-01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .lbwc-planning/phases/01-only/01-01-SUMMARY.md
-  cat > .lbwc-planning/phases/01-only/01-UAT.md <<'EOF'
----
-status: issues_found
----
-- Severity: minor
-EOF
-
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "uat_issues_phase=01"
-  echo "$output" | grep -q "uat_issues_phases=01"
-  echo "$output" | grep -q "uat_issues_count=1"
-}
-
-@test "no UAT issues reports empty phases list and count=0" {
-  mkdir -p .lbwc-planning/phases/01-clean/
-  touch .lbwc-planning/phases/01-clean/01-01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .lbwc-planning/phases/01-clean/01-01-SUMMARY.md
-  cat > .lbwc-planning/phases/01-clean/01-UAT.md <<'EOF'
----
-status: complete
----
-All tests passed.
-EOF
-
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "uat_issues_phase=none"
-  echo "$output" | grep -q "uat_issues_phases=$"
-  echo "$output" | grep -q "uat_issues_count=0"
-}
-
-# --- Mid-remediation priority tests (issue #145) ---
-
-@test "mid-remediation phase takes priority over later phase UAT issues" {
-  # Phase 02: mid-remediation — original plan done, remediation plan created but not executed
-  mkdir -p .lbwc-planning/phases/02-feature/
-  touch .lbwc-planning/phases/02-feature/02-01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .lbwc-planning/phases/02-feature/02-01-SUMMARY.md
-  touch .lbwc-planning/phases/02-feature/02-02-PLAN.md
-  # No 02-02-SUMMARY.md — remediation plan not yet executed
-  echo "execute" > .lbwc-planning/phases/02-feature/.uat-remediation-stage
-  cat > .lbwc-planning/phases/02-feature/02-UAT.md <<'EOF'
----
-phase: 02
-status: issues_found
----
-- Severity: major
-EOF
-
-  # Phase 03: fully complete but has UAT issues
-  mkdir -p .lbwc-planning/phases/03-polish/
-  touch .lbwc-planning/phases/03-polish/03-01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .lbwc-planning/phases/03-polish/03-01-SUMMARY.md
-  cat > .lbwc-planning/phases/03-polish/03-UAT.md <<'EOF'
----
-phase: 03
-status: issues_found
----
-- Severity: major
-EOF
-
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  # Phase 02 mid-remediation should take priority over Phase 03 UAT
-  echo "$output" | grep -q "next_phase=02"
-  echo "$output" | grep -q "next_phase_state=needs_execute"
-  echo "$output" | grep -q "next_phase_plans=2"
-  echo "$output" | grep -q "next_phase_summaries=1"
-}
-
-@test "earlier unplanned phase takes priority over later phase UAT issues" {
-  # Phase 01: no plans at all — needs planning
-  mkdir -p .lbwc-planning/phases/01-setup/
-
-  # Phase 02: fully complete with UAT issues
-  mkdir -p .lbwc-planning/phases/02-feature/
-  touch .lbwc-planning/phases/02-feature/02-01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .lbwc-planning/phases/02-feature/02-01-SUMMARY.md
-  cat > .lbwc-planning/phases/02-feature/02-UAT.md <<'EOF'
----
-phase: 02
-status: issues_found
----
-- Severity: critical
-EOF
-
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  # Phase 01 unplanned should take priority over Phase 02 UAT
-  echo "$output" | grep -q "next_phase=01"
-  echo "$output" | grep -q "next_phase_state=needs_plan_and_execute"
-}
-
-@test "mid-execution phase without remediation marker takes priority over later UAT" {
-  # Phase 02: mid-execution (no .uat-remediation-stage, just incomplete plans)
-  mkdir -p .lbwc-planning/phases/02-feature/
-  touch .lbwc-planning/phases/02-feature/02-01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .lbwc-planning/phases/02-feature/02-01-SUMMARY.md
-  touch .lbwc-planning/phases/02-feature/02-02-PLAN.md
-  # No 02-02-SUMMARY.md — task 2 not yet executed
-
-  # Phase 03: fully complete with UAT issues
-  mkdir -p .lbwc-planning/phases/03-polish/
-  touch .lbwc-planning/phases/03-polish/03-01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .lbwc-planning/phases/03-polish/03-01-SUMMARY.md
-  cat > .lbwc-planning/phases/03-polish/03-UAT.md <<'EOF'
----
-phase: 03
-status: issues_found
----
-- Severity: major
-EOF
-
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  # Phase 02 mid-execution should take priority over Phase 03 UAT
-  echo "$output" | grep -q "next_phase=02"
-  echo "$output" | grep -q "next_phase_state=needs_execute"
-  echo "$output" | grep -q "next_phase_plans=2"
-  echo "$output" | grep -q "next_phase_summaries=1"
-}
-
-@test "earlier undiscussed phase with require_phase_discussion routes to needs_discussion over later UAT" {
-  # Enable discussion requirement
-  echo '{"require_phase_discussion": true}' > .lbwc-planning/config.json
-
-  # Phase 01: no plans, no CONTEXT — needs discussion first
-  mkdir -p .lbwc-planning/phases/01-setup/
-
-  # Phase 02: fully complete with UAT issues
-  mkdir -p .lbwc-planning/phases/02-feature/
-  touch .lbwc-planning/phases/02-feature/02-01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .lbwc-planning/phases/02-feature/02-01-SUMMARY.md
-  cat > .lbwc-planning/phases/02-feature/02-UAT.md <<'EOF'
----
-phase: 02
-status: issues_found
----
-- Severity: major
-EOF
-
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  # Phase 01 should route to needs_discussion, not needs_plan_and_execute
-  echo "$output" | grep -q "next_phase=01"
-  echo "$output" | grep -q "next_phase_state=needs_discussion"
-}
-
-@test "earlier discussed phase (CONTEXT exists, no PLAN) routes to needs_plan_and_execute over later UAT" {
-  # Enable discussion requirement
-  echo '{"require_phase_discussion": true}' > .lbwc-planning/config.json
-
-  # Phase 01: has CONTEXT (discussed) but no PLAN — needs planning
-  mkdir -p .lbwc-planning/phases/01-setup/
-  touch .lbwc-planning/phases/01-setup/01-CONTEXT.md
-
-  # Phase 02: fully complete with UAT issues
-  mkdir -p .lbwc-planning/phases/02-feature/
-  touch .lbwc-planning/phases/02-feature/02-01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .lbwc-planning/phases/02-feature/02-01-SUMMARY.md
-  cat > .lbwc-planning/phases/02-feature/02-UAT.md <<'EOF'
----
-phase: 02
-status: issues_found
----
-- Severity: major
-EOF
-
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  # Discussion done (CONTEXT exists) — should route to needs_plan_and_execute
-  echo "$output" | grep -q "next_phase=01"
-  echo "$output" | grep -q "next_phase_state=needs_plan_and_execute"
-}
-
-# --- UAT round count tracking tests ---
-
-@test "uat_round_count=0 when no round files exist" {
-  mkdir -p .lbwc-planning/phases/01-test/
-  touch .lbwc-planning/phases/01-test/01-01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .lbwc-planning/phases/01-test/01-01-SUMMARY.md
-  cat > .lbwc-planning/phases/01-test/01-UAT.md <<'EOF'
----
-phase: 01
-status: issues_found
----
-- Severity: major
-EOF
-
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "uat_round_count=0"
-}
-
-@test "uat_round_count=5 when five round files exist" {
-  mkdir -p .lbwc-planning/phases/03-feature/
-  touch .lbwc-planning/phases/03-feature/03-01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .lbwc-planning/phases/03-feature/03-01-SUMMARY.md
-
-  # Create 5 archived round files
-  for i in 01 02 03 04 05; do
-    printf 'round %s\n' "$i" > ".lbwc-planning/phases/03-feature/03-UAT-round-${i}.md"
-  done
-
-  # Active UAT with issues
-  cat > .lbwc-planning/phases/03-feature/03-UAT.md <<'EOF'
----
-phase: 03
-status: issues_found
----
-- Severity: major
-EOF
-
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "uat_round_count=5"
-}
-
-@test "uat_round_count=0 when no planning directory" {
-  rm -rf .lbwc-planning
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "uat_round_count=0"
-  grep -q "qa_attention_reason=none" <<< "$output"
-  grep -q "qa_reason=none" <<< "$output"
-}
-
-@test "uat_round_count=0 when UAT issues resolved (no routing target)" {
-  mkdir -p .lbwc-planning/phases/01-test/
-  touch .lbwc-planning/phases/01-test/01-01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .lbwc-planning/phases/01-test/01-01-SUMMARY.md
-  cat > .lbwc-planning/phases/01-test/01-UAT.md <<'EOF'
----
-phase: 01
-status: complete
----
-All tests passed.
-EOF
-  # Round files exist from previous remediation cycles
-  printf 'round 1\n' > .lbwc-planning/phases/01-test/01-UAT-round-01.md
-
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  # No active UAT issues → round count stays 0 (no routing target)
-  echo "$output" | grep -q "uat_round_count=0"
-}
-
-@test "auto-advance scoped to current round: previous-round summary does not trigger advance" {
-  # Round 02, stage=execute. Round 01 has plan+summary, round 02 has plan only.
-  # Auto-advance should NOT trigger because the current round (02) has no summary.
-  # Phase-root plan+summary required so the UAT scan picks up this phase.
-  mkdir -p .lbwc-planning/phases/01-feature/remediation/uat/round-01
-  mkdir -p .lbwc-planning/phases/01-feature/remediation/uat/round-02
-  touch .lbwc-planning/phases/01-feature/01-01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .lbwc-planning/phases/01-feature/01-01-SUMMARY.md
-  printf 'stage=execute\nround=02\nlayout=round-dir\n' > .lbwc-planning/phases/01-feature/remediation/uat/.uat-remediation-stage
-  touch .lbwc-planning/phases/01-feature/remediation/uat/round-01/R01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .lbwc-planning/phases/01-feature/remediation/uat/round-01/R01-SUMMARY.md
-  touch .lbwc-planning/phases/01-feature/remediation/uat/round-02/R02-PLAN.md
-  # No R02-SUMMARY.md — execution not complete for round 02
-
-  # Round 01 UAT with issues (needed to route into UAT remediation path)
-  cat > .lbwc-planning/phases/01-feature/remediation/uat/round-01/R01-UAT.md <<'EOF'
----
-phase: 01
-status: issues_found
----
-- Severity: major
-EOF
-
-  create_test_config
-  run_phase_detect
-  [ "$status" -eq 0 ]
-
-  # Stage must NOT advance to done — should remain needs_uat_remediation (execute)
-  echo "$output" | grep -q "next_phase_state=needs_uat_remediation"
-  # Confirm the state file was NOT rewritten to done
-  grep -q "^stage=execute$" .lbwc-planning/phases/01-feature/remediation/uat/.uat-remediation-stage
-}
-
-# --- UAT status normalization in phase-detect ---
-
-@test "phase with all_pass UAT is treated as verified and does not re-enter QA" {
-  mkdir -p .lbwc-planning/phases/01-feature
-  touch .lbwc-planning/phases/01-feature/01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .lbwc-planning/phases/01-feature/01-SUMMARY.md
-  cat > .lbwc-planning/phases/01-feature/01-UAT.md <<'EOF'
----
-phase: 01
-status: all_pass
-total_tests: 3
-passed: 3
-issues: 0
----
-All tests passed.
-EOF
-
-  # Enable auto_uat to trigger the unverified phases scan
-  cat > .lbwc-planning/config.json <<'CONF'
-{
-  "effort": "balanced",
-  "auto_uat": true,
-  "auto_commit": true,
-  "planning_tracking": "manual",
-  "auto_push": "never"
-}
-CONF
-
-  echo "# My Project" > .lbwc-planning/PROJECT.md
-  run_phase_detect
-  [ "$status" -eq 0 ]
-
-  # all_pass should be normalized to complete → phase is verified for UAT;
-  # after UAT cutover, missing QA metadata is dormant.
-  echo "$output" | grep -q "has_unverified_phases=false"
-  echo "$output" | grep -q "next_phase_state=all_done"
-  echo "$output" | grep -q "qa_status=none"
-}
-
-@test "phase with passed UAT is treated as verified (not unverified)" {
-  mkdir -p .lbwc-planning/phases/01-feature
-  touch .lbwc-planning/phases/01-feature/01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .lbwc-planning/phases/01-feature/01-SUMMARY.md
-  cat > .lbwc-planning/phases/01-feature/01-UAT.md <<'EOF'
----
-phase: 01
-status: passed
----
-All tests passed.
-EOF
-
-  cat > .lbwc-planning/config.json <<'CONF'
-{
-  "effort": "balanced",
-  "auto_uat": true,
-  "auto_commit": true,
-  "planning_tracking": "manual",
-  "auto_push": "never"
-}
-CONF
-
-  echo "# My Project" > .lbwc-planning/PROJECT.md
-  run_phase_detect
-  [ "$status" -eq 0 ]
-
-  echo "$output" | grep -q "has_unverified_phases=false"
-}
-
-@test "phase-detect skips verified phase and routes next unverified phase" {
-  cat > .lbwc-planning/config.json <<'CONF'
-{
-  "effort": "balanced",
-  "auto_uat": true,
-  "auto_commit": true,
-  "planning_tracking": "manual",
-  "auto_push": "never"
-}
-CONF
-  echo "# My Project" > .lbwc-planning/PROJECT.md
-
-  mkdir -p .lbwc-planning/phases/01-setup
-  touch .lbwc-planning/phases/01-setup/01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .lbwc-planning/phases/01-setup/01-SUMMARY.md
-  cat > .lbwc-planning/phases/01-setup/01-UAT.md <<'EOF'
----
-phase: 01
-status: passed
----
-All tests passed.
-EOF
-
-  mkdir -p .lbwc-planning/phases/02-polish
-  touch .lbwc-planning/phases/02-polish/02-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .lbwc-planning/phases/02-polish/02-SUMMARY.md
-
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"has_unverified_phases=true"* ]] || { printf '%s\n' "$output" >&3; false; }
-  [[ "$output" == *"first_unverified_phase=02"* ]] || { printf '%s\n' "$output" >&3; false; }
-  [[ "$output" == *"first_unverified_slug=02-polish"* ]] || { printf '%s\n' "$output" >&3; false; }
-  [[ "$output" == *"next_phase=02"* ]] || { printf '%s\n' "$output" >&3; false; }
-  [[ "$output" == *"next_phase_state=needs_verification"* ]] || { printf '%s\n' "$output" >&3; false; }
-}
-
-# --- QA status detection tests ---
-
-@test "qa_status defaults to none when no phases" {
-  mkdir -p .lbwc-planning/phases
-  echo "# My Project" > .lbwc-planning/PROJECT.md
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "qa_status=none"
-  grep -q "qa_reason=none" <<< "$output"
-  grep -q "qa_attention_reason=none" <<< "$output"
-  echo "$output" | grep -q "qa_round=00"
-}
-
-@test "qa_status is pending when SUMMARY.md exists but no VERIFICATION.md" {
-  mkdir -p .lbwc-planning/phases/01-test
-  echo "# Plan" > .lbwc-planning/phases/01-test/01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' '# Summary' 'Done.' > .lbwc-planning/phases/01-test/01-SUMMARY.md
-  echo "# My Project" > .lbwc-planning/PROJECT.md
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "qa_status=pending"
-  grep -q "qa_reason=missing_verification_artifact" <<< "$output"
-}
-
-@test "qa_status is passed when VERIFICATION.md has PASS result" {
-
-  mkdir -p .lbwc-planning/phases/01-test
-  echo "# Plan" > .lbwc-planning/phases/01-test/01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' '# Summary' 'Done.' > .lbwc-planning/phases/01-test/01-SUMMARY.md
-  echo "# My Project" > .lbwc-planning/PROJECT.md
-  current_commit="$(git rev-parse HEAD)"
-  printf '%s\n' '---' 'result: PASS' 'writer: write-verification.sh' 'plans_verified:' '  - 01' "verified_at_commit: ${current_commit}" '---' '# Verification' 'All passed.' > .lbwc-planning/phases/01-test/01-VERIFICATION.md
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "qa_status=passed"
-  grep -q "qa_reason=none" <<< "$output"
-}
-
-@test "qa_status accepts legacy status PASS when result is absent" {
-
-  mkdir -p .lbwc-planning/phases/01-test
-  echo "# Plan" > .lbwc-planning/phases/01-test/01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' '# Summary' 'Done.' > .lbwc-planning/phases/01-test/01-SUMMARY.md
-  echo "# My Project" > .lbwc-planning/PROJECT.md
-  current_commit="$(git rev-parse HEAD)"
-  printf '%s\n' '---' 'status: PASS' 'writer: write-verification.sh' 'plans_verified:' '  - 01' "verified_at_commit: ${current_commit}" '---' '# Verification' 'Legacy PASS artifact.' > .lbwc-planning/phases/01-test/01-VERIFICATION.md
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  grep -q "qa_status=passed" <<< "$output"
-  grep -q "qa_reason=none" <<< "$output"
-}
-
-@test "qa_status result field overrides conflicting legacy status" {
-  mkdir -p .lbwc-planning/phases/01-test
-  echo "# Plan" > .lbwc-planning/phases/01-test/01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' '# Summary' 'Done.' > .lbwc-planning/phases/01-test/01-SUMMARY.md
-  echo "# My Project" > .lbwc-planning/PROJECT.md
-  current_commit="$(git rev-parse HEAD)"
-  printf '%s\n' '---' 'result: FAIL' 'status: PASS' 'writer: write-verification.sh' 'plans_verified:' '  - 01' "verified_at_commit: ${current_commit}" '---' '# Verification' 'Result wins.' > .lbwc-planning/phases/01-test/01-VERIFICATION.md
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  grep -q "qa_status=failed" <<< "$output"
-  grep -q "qa_reason=none" <<< "$output"
-}
-
-@test "qa_status does not fall back to legacy status when result is blank" {
-  mkdir -p .lbwc-planning/phases/01-test
-  echo "# Plan" > .lbwc-planning/phases/01-test/01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' '# Summary' 'Done.' > .lbwc-planning/phases/01-test/01-SUMMARY.md
-  echo "# My Project" > .lbwc-planning/PROJECT.md
-  current_commit="$(git rev-parse HEAD)"
-  printf '%s\n' '---' 'result: ' 'status: PASS' 'writer: write-verification.sh' 'plans_verified:' '  - 01' "verified_at_commit: ${current_commit}" '---' '# Verification' 'Blank result is invalid.' > .lbwc-planning/phases/01-test/01-VERIFICATION.md
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  grep -q "qa_status=pending" <<< "$output"
-  grep -q "qa_reason=verification_result_missing" <<< "$output"
-}
-
-@test "qa_status explains unrecognized verification result" {
-  mkdir -p .lbwc-planning/phases/01-test
-  echo "# Plan" > .lbwc-planning/phases/01-test/01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' '# Summary' 'Done.' > .lbwc-planning/phases/01-test/01-SUMMARY.md
-  echo "# My Project" > .lbwc-planning/PROJECT.md
-  current_commit="$(git rev-parse HEAD)"
-  printf '%s\n' '---' 'result: MAYBE' 'status: PASS' 'writer: write-verification.sh' 'plans_verified:' '  - 01' "verified_at_commit: ${current_commit}" '---' '# Verification' 'Unknown result is invalid.' > .lbwc-planning/phases/01-test/01-VERIFICATION.md
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  grep -q "qa_status=pending" <<< "$output"
-  grep -q "qa_reason=verification_result_unrecognized" <<< "$output"
-}
-
-@test "qa_status is failed when PASS verification still has unresolved known issues" {
-
-  mkdir -p .lbwc-planning/phases/01-test
-  echo "# Plan" > .lbwc-planning/phases/01-test/01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' '# Summary' 'Done.' > .lbwc-planning/phases/01-test/01-SUMMARY.md
-  echo "# My Project" > .lbwc-planning/PROJECT.md
-  current_commit="$(git rev-parse HEAD)"
-  printf '%s\n' '---' 'result: PASS' 'writer: write-verification.sh' 'plans_verified:' '  - 01' "verified_at_commit: ${current_commit}" '---' '# Verification' 'All passed.' > .lbwc-planning/phases/01-test/01-VERIFICATION.md
-  cat > .lbwc-planning/phases/01-test/known-issues.json <<'EOF'
-{
-  "schema_version": 1,
-  "phase": "01",
-  "issues": [
-    {
-      "test": "FIGIRegistryServiceTests",
-      "file": "Tests/FIGIRegistryServiceTests.swift",
-      "error": "compositeFigi missing",
-      "first_seen_in": "01-01-SUMMARY.md",
-      "last_seen_in": "01-VERIFICATION.md",
-      "first_seen_round": 0,
-      "last_seen_round": 0,
-      "times_seen": 2
-    }
-  ]
-}
-EOF
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "qa_status=failed"
-}
-
-@test "phase-detect computes QA routing without restoring missing known-issues state" {
-
-  mkdir -p .lbwc-planning/phases/01-test
-  echo "# Plan" > .lbwc-planning/phases/01-test/01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' '# Summary' 'Done.' > .lbwc-planning/phases/01-test/01-SUMMARY.md
-  echo "# My Project" > .lbwc-planning/PROJECT.md
-  current_commit="$(git rev-parse HEAD)"
-  cat > .lbwc-planning/phases/01-test/01-VERIFICATION.md <<'EOF'
----
-result: FAIL
-writer: write-verification.sh
-plans_verified:
-  - 01
-EOF
-  printf '%s\n' "verified_at_commit: ${current_commit}" >> .lbwc-planning/phases/01-test/01-VERIFICATION.md
-  cat >> .lbwc-planning/phases/01-test/01-VERIFICATION.md <<'EOF'
----
-
-## Pre-existing Issues
-
-| Test | File | Error |
-|------|------|-------|
-| FIGIRegistryServiceTests | Tests/FIGIRegistryServiceTests.swift | compositeFigi missing |
-EOF
-
-  run_phase_detect
-
-  [ "$status" -eq 0 ]
-  [ ! -f .lbwc-planning/phases/01-test/known-issues.json ]
-  echo "$output" | grep -q "qa_status=failed"
-}
-
-@test "qa_status is passed when brownfield plain VERIFICATION.md has PASS result" {
-
-  mkdir -p .lbwc-planning/phases/01-test
-  echo "# Plan" > .lbwc-planning/phases/01-test/01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' '# Summary' 'Done.' > .lbwc-planning/phases/01-test/01-SUMMARY.md
-  echo "# My Project" > .lbwc-planning/PROJECT.md
-  current_commit="$(git rev-parse HEAD)"
-  printf '%s\n' '---' 'result: PASS' 'writer: write-verification.sh' 'plans_verified:' '  - 01' "verified_at_commit: ${current_commit}" '---' '# Verification' 'All passed.' > .lbwc-planning/phases/01-test/VERIFICATION.md
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "qa_status=passed"
-}
-
-@test "qa_status is passed when latest wave verification has PASS result" {
-
-  mkdir -p .lbwc-planning/phases/01-test
-  echo "# Plan" > .lbwc-planning/phases/01-test/01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' '# Summary' 'Done.' > .lbwc-planning/phases/01-test/01-SUMMARY.md
-  echo "# My Project" > .lbwc-planning/PROJECT.md
-  current_commit="$(git rev-parse HEAD)"
-  printf '%s\n' '---' 'result: FAIL' '---' '# Verification' 'Wave 1 failed.' > .lbwc-planning/phases/01-test/01-VERIFICATION-wave1.md
-  printf '%s\n' '---' 'result: PASS' 'writer: write-verification.sh' 'plans_verified:' '  - 01' "verified_at_commit: ${current_commit}" '---' '# Verification' 'Wave 2 passed.' > .lbwc-planning/phases/01-test/01-VERIFICATION-wave2.md
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "qa_status=passed"
-}
-
-@test "qa_status is failed when VERIFICATION.md has FAIL result" {
-  mkdir -p .lbwc-planning/phases/01-test
-  echo "# Plan" > .lbwc-planning/phases/01-test/01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' '# Summary' 'Done.' > .lbwc-planning/phases/01-test/01-SUMMARY.md
-  printf '%s\n' '---' 'result: FAIL' '---' '# Verification' 'Failed checks.' > .lbwc-planning/phases/01-test/01-VERIFICATION.md
-  echo "# My Project" > .lbwc-planning/PROJECT.md
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "qa_status=failed"
-}
-
-@test "qa_status is failed when VERIFICATION.md has PARTIAL result" {
-  mkdir -p .lbwc-planning/phases/01-test
-  echo "# Plan" > .lbwc-planning/phases/01-test/01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' '# Summary' 'Done.' > .lbwc-planning/phases/01-test/01-SUMMARY.md
-  printf '%s\n' '---' 'result: PARTIAL' '---' '# Verification' 'Partially passed checks.' > .lbwc-planning/phases/01-test/01-VERIFICATION.md
-  echo "# My Project" > .lbwc-planning/PROJECT.md
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  grep -q "qa_status=failed" <<< "$output"
-  grep -q "qa_reason=none" <<< "$output"
-}
-
-@test "qa_status accepts legacy status PARTIAL when result is absent" {
-  mkdir -p .lbwc-planning/phases/01-test
-  echo "# Plan" > .lbwc-planning/phases/01-test/01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' '# Summary' 'Done.' > .lbwc-planning/phases/01-test/01-SUMMARY.md
-  printf '%s\n' '---' 'status: PARTIAL' '---' '# Verification' 'Legacy partial artifact.' > .lbwc-planning/phases/01-test/01-VERIFICATION.md
-  echo "# My Project" > .lbwc-planning/PROJECT.md
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  grep -q "qa_status=failed" <<< "$output"
-  grep -q "qa_reason=none" <<< "$output"
-}
-
-@test "qa_status is remediating when qa-remediation-stage is active" {
-  mkdir -p .lbwc-planning/phases/01-test/remediation/qa
-  echo "# Plan" > .lbwc-planning/phases/01-test/01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' '# Summary' 'Done.' > .lbwc-planning/phases/01-test/01-SUMMARY.md
-  printf '%s\n' '---' 'result: FAIL' '---' '# Verification' 'Failed.' > .lbwc-planning/phases/01-test/01-VERIFICATION.md
-  printf '%s\n%s\n' 'stage=execute' 'round=01' > .lbwc-planning/phases/01-test/remediation/qa/.qa-remediation-stage
-  echo "# My Project" > .lbwc-planning/PROJECT.md
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "qa_status=remediating"
-  echo "$output" | grep -q "qa_round=01"
-}
-
-@test "qa_status is remediating for plan stage" {
-  mkdir -p .lbwc-planning/phases/01-test/remediation/qa
-  echo "# Plan" > .lbwc-planning/phases/01-test/01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' '# Summary' 'Done.' > .lbwc-planning/phases/01-test/01-SUMMARY.md
-  printf '%s\n' '---' 'result: FAIL' '---' '# Verification' 'Failed.' > .lbwc-planning/phases/01-test/01-VERIFICATION.md
-  printf '%s\n%s\n' 'stage=plan' 'round=02' > .lbwc-planning/phases/01-test/remediation/qa/.qa-remediation-stage
-  echo "# My Project" > .lbwc-planning/PROJECT.md
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "qa_status=remediating"
-}
-
-@test "qa_status is remediating for verify stage" {
-  mkdir -p .lbwc-planning/phases/01-test/remediation/qa
-  echo "# Plan" > .lbwc-planning/phases/01-test/01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' '# Summary' 'Done.' > .lbwc-planning/phases/01-test/01-SUMMARY.md
-  printf '%s\n' '---' 'result: FAIL' '---' '# Verification' 'Failed.' > .lbwc-planning/phases/01-test/01-VERIFICATION.md
-  printf '%s\n%s\n' 'stage=verify' 'round=01' > .lbwc-planning/phases/01-test/remediation/qa/.qa-remediation-stage
-  echo "# My Project" > .lbwc-planning/PROJECT.md
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "qa_status=remediating"
-}
-
-@test "qa_status is remediated when qa-remediation done and PASS" {
-
-  mkdir -p .lbwc-planning/phases/01-test/remediation/qa/round-01
-  echo "# Plan" > .lbwc-planning/phases/01-test/01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' '# Summary' 'Done.' > .lbwc-planning/phases/01-test/01-SUMMARY.md
-  echo "# My Project" > .lbwc-planning/PROJECT.md
-  cat > .lbwc-planning/phases/01-test/01-VERIFICATION.md <<'EOF'
----
-result: FAIL
-writer: write-verification.sh
----
-## Must-Have Checks
-| ID | Category | Description | Status | Evidence |
-|----|----------|-------------|--------|----------|
-| FAIL-01 | must_have | Original failure | FAIL | Missing |
-EOF
-  cat > .lbwc-planning/phases/01-test/remediation/qa/round-01/R01-PLAN.md <<'EOF'
----
-round: 01
-fail_classifications:
-  - {id: "FAIL-01", type: "process-exception", rationale: "Fixture documents a structurally valid remediated round"}
----
-EOF
-  round_anchor_commit="$(git rev-parse HEAD)"
-  cat > .lbwc-planning/phases/01-test/remediation/qa/round-01/R01-SUMMARY.md <<'EOF'
----
-plan: R01
-status: complete
-files_modified:
-  - README.md
-  - .lbwc-planning/phases/01-test/remediation/qa/round-01/R01-SUMMARY.md
-deviations: []
----
-EOF
-  printf '%s\n' '---' 'status: complete' '---' '# Summary' 'Documented historical process exception.' > .lbwc-planning/phases/01-test/01-SUMMARY.md
-  echo "remediation notes" > README.md
-  git add README.md .lbwc-planning/phases/01-test/01-SUMMARY.md
-  git commit -m "document remediation summary" --quiet
-  current_commit="$(git rev-parse HEAD)"
-  printf '%s\n%s\n%s\n' 'stage=done' 'round=01' "round_started_at_commit=${round_anchor_commit}" > .lbwc-planning/phases/01-test/remediation/qa/.qa-remediation-stage
-  printf '%s\n' '---' 'result: PASS' 'writer: write-verification.sh' 'plans_verified:' '  - R01' "verified_at_commit: ${current_commit}" '---' '# Verification' 'Passed after remediation.' > .lbwc-planning/phases/01-test/remediation/qa/round-01/R01-VERIFICATION.md
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "qa_status=remediated"
-}
-
-@test "qa_status stays failed when remediation PASS still has unresolved known issues" {
-  mkdir -p .lbwc-planning/phases/01-test/remediation/qa/round-01
-  echo "# Plan" > .lbwc-planning/phases/01-test/01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' '# Summary' 'Done.' > .lbwc-planning/phases/01-test/01-SUMMARY.md
-  echo "# My Project" > .lbwc-planning/PROJECT.md
-  current_commit="$(git rev-parse HEAD)"
-  cat > .lbwc-planning/phases/01-test/01-VERIFICATION.md <<'EOF'
----
-result: FAIL
-writer: write-verification.sh
----
-## Must-Have Checks
-| ID | Category | Description | Status | Evidence |
-|----|----------|-------------|--------|----------|
-| FAIL-01 | must_have | Original failure | FAIL | Missing |
-EOF
-  cat > .lbwc-planning/phases/01-test/remediation/qa/round-01/R01-PLAN.md <<'EOF'
----
-round: 01
-fail_classifications:
-  - {id: "FAIL-01", type: "code-fix", rationale: "Need a fix"}
----
-EOF
-  cat > .lbwc-planning/phases/01-test/remediation/qa/round-01/R01-SUMMARY.md <<'EOF'
----
-plan: R01
-status: complete
-files_modified:
-  - README.md
-deviations: []
----
-EOF
-  printf '%s\n%s\n%s\n' 'stage=done' 'round=01' "round_started_at_commit=${current_commit}" > .lbwc-planning/phases/01-test/remediation/qa/.qa-remediation-stage
-  printf '%s\n' '---' 'result: PASS' 'writer: write-verification.sh' 'plans_verified:' '  - R01' "verified_at_commit: ${current_commit}" '---' '# Verification' 'Passed after remediation.' > .lbwc-planning/phases/01-test/remediation/qa/round-01/R01-VERIFICATION.md
-  cat > .lbwc-planning/phases/01-test/known-issues.json <<'EOF'
-{
-  "schema_version": 1,
-  "phase": "01",
-  "issues": [
-    {
-      "test": "TransferMatchingServiceTests",
-      "file": "Tests/TransferMatchingServiceTests.swift",
-      "error": "debugTestConfiguration missing",
-      "first_seen_in": "01-01-SUMMARY.md",
-      "last_seen_in": "remediation/qa/round-01/R01-VERIFICATION.md",
-      "first_seen_round": 0,
-      "last_seen_round": 1,
-      "times_seen": 3
-    }
-  ]
-}
-EOF
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "qa_status=failed"
-}
-
-@test "qa_status is failed when qa-remediation done but FAIL in VERIFICATION" {
-  mkdir -p .lbwc-planning/phases/01-test/remediation/qa/round-01
-  echo "# Plan" > .lbwc-planning/phases/01-test/01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' '# Summary' 'Done.' > .lbwc-planning/phases/01-test/01-SUMMARY.md
-  printf '%s\n' '---' 'result: FAIL' '---' '# Verification' 'Original failure.' > .lbwc-planning/phases/01-test/01-VERIFICATION.md
-  printf '%s\n%s\n' 'stage=done' 'round=01' > .lbwc-planning/phases/01-test/remediation/qa/.qa-remediation-stage
-  echo "# My Project" > .lbwc-planning/PROJECT.md
-  printf '%s\n' '---' 'result: FAIL' '---' '# Verification' 'Still failing after remediation.' > .lbwc-planning/phases/01-test/remediation/qa/round-01/R01-VERIFICATION.md
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "qa_status=failed"
-}
-
-@test "qa_status is pending when qa-remediation done but VERIFICATION is missing" {
-  mkdir -p .lbwc-planning/phases/01-test/remediation/qa
-  echo "# Plan" > .lbwc-planning/phases/01-test/01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' '# Summary' 'Done.' > .lbwc-planning/phases/01-test/01-SUMMARY.md
-  printf '%s\n%s\n' 'stage=done' 'round=01' > .lbwc-planning/phases/01-test/remediation/qa/.qa-remediation-stage
-  echo "# My Project" > .lbwc-planning/PROJECT.md
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "qa_status=pending"
-}
-
-@test "qa_status remediated reads round VERIFICATION.md when stage=done" {
-
-  mkdir -p .lbwc-planning/phases/01-test/remediation/qa/round-01
-  echo "# Plan" > .lbwc-planning/phases/01-test/01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' '# Summary' 'Done.' > .lbwc-planning/phases/01-test/01-SUMMARY.md
-  echo "# My Project" > .lbwc-planning/PROJECT.md
-  # Phase-level stays as original FAIL
-  cat > .lbwc-planning/phases/01-test/01-VERIFICATION.md <<'EOF'
----
-result: FAIL
-writer: write-verification.sh
----
-## Must-Have Checks
-| ID | Category | Description | Status | Evidence |
-|----|----------|-------------|--------|----------|
-| FAIL-01 | must_have | Original failure | FAIL | Missing |
-EOF
-  cat > .lbwc-planning/phases/01-test/remediation/qa/round-01/R01-PLAN.md <<'EOF'
----
-round: 01
-fail_classifications:
-  - {id: "FAIL-01", type: "process-exception", rationale: "Fixture documents a structurally valid remediated round"}
----
-EOF
-  # Round VERIFICATION.md has PASS
-  round_anchor_commit="$(git rev-parse HEAD)"
-  cat > .lbwc-planning/phases/01-test/remediation/qa/round-01/R01-SUMMARY.md <<'EOF'
----
-plan: R01
-status: complete
-files_modified:
-  - README.md
-  - .lbwc-planning/phases/01-test/remediation/qa/round-01/R01-SUMMARY.md
-deviations: []
----
-EOF
-  printf '%s\n' '---' 'status: complete' '---' '# Summary' 'Round 01 documented the historical process exception.' > .lbwc-planning/phases/01-test/01-SUMMARY.md
-  echo "round pass docs" > README.md
-  git add README.md .lbwc-planning/phases/01-test/01-SUMMARY.md
-  git commit -m "round pass summary evidence" --quiet
-  current_commit="$(git rev-parse HEAD)"
-  printf '%s\n%s\n%s\n' 'stage=done' 'round=01' "round_started_at_commit=${round_anchor_commit}" > .lbwc-planning/phases/01-test/remediation/qa/.qa-remediation-stage
-  printf '%s\n' '---' 'result: PASS' 'writer: write-verification.sh' 'plans_verified:' '  - R01' "verified_at_commit: ${current_commit}" '---' '# Verification' 'Passed after fix.' > .lbwc-planning/phases/01-test/remediation/qa/round-01/R01-VERIFICATION.md
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "qa_status=remediated"
-}
-
-@test "qa_status failed reads round VERIFICATION.md FAIL when stage=done" {
-  mkdir -p .lbwc-planning/phases/01-test/remediation/qa/round-01
-  echo "# Plan" > .lbwc-planning/phases/01-test/01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' '# Summary' 'Done.' > .lbwc-planning/phases/01-test/01-SUMMARY.md
-  printf '%s\n%s\n' 'stage=done' 'round=01' > .lbwc-planning/phases/01-test/remediation/qa/.qa-remediation-stage
-  echo "# My Project" > .lbwc-planning/PROJECT.md
-  # Phase-level original FAIL
-  printf '%s\n' '---' 'result: FAIL' '---' '# Verification' 'Original failure.' > .lbwc-planning/phases/01-test/01-VERIFICATION.md
-  # Round VERIFICATION.md also FAIL
-  printf '%s\n' '---' 'result: FAIL' '---' '# Verification' 'Still failing.' > .lbwc-planning/phases/01-test/remediation/qa/round-01/R01-VERIFICATION.md
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "qa_status=failed"
-}
-
-@test "qa_status is pending when round VERIFICATION.md absent and stage=done" {
-  mkdir -p .lbwc-planning/phases/01-test/remediation/qa
-  echo "# Plan" > .lbwc-planning/phases/01-test/01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' '# Summary' 'Done.' > .lbwc-planning/phases/01-test/01-SUMMARY.md
-  printf '%s\n%s\n' 'stage=done' 'round=01' > .lbwc-planning/phases/01-test/remediation/qa/.qa-remediation-stage
-  echo "# My Project" > .lbwc-planning/PROJECT.md
-  # Phase-level PASS stays frozen, but missing round verification must fail closed.
-  current_commit="$(git rev-parse HEAD)"
-  printf '%s\n' '---' 'result: PASS' "verified_at_commit: ${current_commit}" '---' '# Verification' 'Passed.' > .lbwc-planning/phases/01-test/01-VERIFICATION.md
-  # No round VERIFICATION.md
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "qa_status=pending"
-}
-
-@test "qa_status remediated reads round-02 VERIFICATION.md when stage=done" {
-
-  mkdir -p .lbwc-planning/phases/01-test/remediation/qa/round-01
-  mkdir -p .lbwc-planning/phases/01-test/remediation/qa/round-02
-  echo "# Plan" > .lbwc-planning/phases/01-test/01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' '# Summary' 'Done.' > .lbwc-planning/phases/01-test/01-SUMMARY.md
-  echo "# My Project" > .lbwc-planning/PROJECT.md
-  # Phase-level stays as original FAIL
-  cat > .lbwc-planning/phases/01-test/01-VERIFICATION.md <<'EOF'
----
-result: FAIL
-writer: write-verification.sh
----
-## Must-Have Checks
-| ID | Category | Description | Status | Evidence |
-|----|----------|-------------|--------|----------|
-| FAIL-01 | must_have | Original failure | FAIL | Missing |
-EOF
-  cat > .lbwc-planning/phases/01-test/remediation/qa/round-01/R01-VERIFICATION.md <<'EOF'
----
-result: PASS
-writer: write-verification.sh
-plans_verified:
-  - R01
----
-## Checks
-| ID | Category | Description | Status | Evidence |
-|----|----------|-------------|--------|----------|
-| MH-01 | must_have | Structural bookkeeping passed | PASS | Done |
-EOF
-  cat > .lbwc-planning/phases/01-test/remediation/qa/round-02/R02-PLAN.md <<'EOF'
----
-round: 02
-fail_classifications:
-  - {id: "FAIL-01", type: "process-exception", rationale: "Fixture documents a structurally valid remediated round"}
----
-EOF
-  cat > .lbwc-planning/phases/01-test/remediation/qa/round-02/R02-SUMMARY.md <<'EOF'
----
-plan: R02
-status: complete
-files_modified:
-  - README.md
-  - .lbwc-planning/phases/01-test/remediation/qa/round-02/R02-SUMMARY.md
-deviations: []
----
-EOF
-  # Round-02 VERIFICATION.md has PASS
-  round_anchor_commit="$(git rev-parse HEAD)"
-  cat > .lbwc-planning/phases/01-test/remediation/qa/round-02/R02-SUMMARY.md <<'EOF'
----
-plan: R02
-status: complete
-files_modified:
-  - README.md
-  - .lbwc-planning/phases/01-test/remediation/qa/round-02/R02-SUMMARY.md
-deviations: []
----
-EOF
-  printf '%s\n' '---' 'status: complete' '---' '# Summary' 'Round 02 documented the historical process exception.' > .lbwc-planning/phases/01-test/01-SUMMARY.md
-  echo "round two docs" > README.md
-  git add README.md .lbwc-planning/phases/01-test/01-SUMMARY.md
-  git commit -m "round two summary evidence" --quiet
-  current_commit="$(git rev-parse HEAD)"
-  printf '%s\n%s\n%s\n' 'stage=done' 'round=02' "round_started_at_commit=${round_anchor_commit}" > .lbwc-planning/phases/01-test/remediation/qa/.qa-remediation-stage
-  printf '%s\n' '---' 'result: PASS' 'writer: write-verification.sh' 'plans_verified:' '  - R02' "verified_at_commit: ${current_commit}" '---' '# Verification' 'Passed after round 2.' > .lbwc-planning/phases/01-test/remediation/qa/round-02/R02-VERIFICATION.md
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "qa_status=remediated"
-}
-
-@test "stage-done resume does not resurrect stale phase-level known issues after cleared round verification" {
-
-  mkdir -p .lbwc-planning/phases/01-test/remediation/qa/round-01
-  echo "# Plan" > .lbwc-planning/phases/01-test/01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' '# Summary' 'Done.' > .lbwc-planning/phases/01-test/01-SUMMARY.md
-  echo "# My Project" > .lbwc-planning/PROJECT.md
-  round_anchor_commit="$(git rev-parse HEAD)"
-  cat > .lbwc-planning/phases/01-test/01-VERIFICATION.md <<'EOF'
----
-result: PASS
-writer: write-verification.sh
-plans_verified:
-  - 01
-EOF
-  printf '%s\n' "verified_at_commit: ${round_anchor_commit}" >> .lbwc-planning/phases/01-test/01-VERIFICATION.md
-  cat >> .lbwc-planning/phases/01-test/01-VERIFICATION.md <<'EOF'
----
-
-## Pre-existing Issues
-
-| Test | File | Error |
-|------|------|-------|
-| FIGIRegistryServiceTests | Tests/FIGIRegistryServiceTests.swift | stale phase-level issue |
-EOF
-  cat > .lbwc-planning/phases/01-test/remediation/qa/round-01/R01-PLAN.md <<'EOF'
----
-round: 01
-fail_classifications:
-  - {id: "FAIL-01", type: "code-fix", rationale: "Need a real fix"}
----
-EOF
-  cat > .lbwc-planning/phases/01-test/remediation/qa/round-01/R01-SUMMARY.md <<'EOF'
----
-plan: R01
-status: complete
-files_modified:
-  - src/Fix.swift
-  - README.md
-  - .lbwc-planning/phases/01-test/01-SUMMARY.md
-deviations: []
----
-EOF
-  mkdir -p src
-  echo "real code fix" > src/Fix.swift
-  echo "round pass docs" > README.md
-  printf '%s\n' '---' 'status: complete' '---' '# Summary' 'Round 01 documented the remediation outcome.' > .lbwc-planning/phases/01-test/01-SUMMARY.md
-  git add src/Fix.swift README.md .lbwc-planning/phases/01-test/01-SUMMARY.md
-  git commit -m "round pass summary evidence" --quiet
-  current_commit="$(git rev-parse HEAD)"
-  printf '%s\n%s\n%s\n' 'stage=done' 'round=01' "round_started_at_commit=${round_anchor_commit}" > .lbwc-planning/phases/01-test/remediation/qa/.qa-remediation-stage
-  printf '%s\n' '---' 'result: PASS' 'writer: write-verification.sh' 'plans_verified:' '  - R01' "verified_at_commit: ${current_commit}" '---' '# Verification' 'Passed after remediation.' > .lbwc-planning/phases/01-test/remediation/qa/round-01/R01-VERIFICATION.md
-
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  [ ! -f .lbwc-planning/phases/01-test/known-issues.json ]
-  ! echo "$output" | grep -q "next_phase_state=needs_qa_remediation"
-}
-
-@test "qa_status degrades gracefully with corrupt round in state file" {
-  mkdir -p .lbwc-planning/phases/01-test/remediation/qa
-  echo "# Plan" > .lbwc-planning/phases/01-test/01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' '# Summary' 'Done.' > .lbwc-planning/phases/01-test/01-SUMMARY.md
-  printf '%s\n%s\n' 'stage=done' 'round=abc' > .lbwc-planning/phases/01-test/remediation/qa/.qa-remediation-stage
-  echo "# My Project" > .lbwc-planning/PROJECT.md
-  # Phase-level with PASS (brownfield fallback target)
-  current_commit="$(git rev-parse HEAD)"
-  printf '%s\n' '---' 'result: PASS' "verified_at_commit: ${current_commit}" '---' '# Verification' 'Passed.' > .lbwc-planning/phases/01-test/01-VERIFICATION.md
-  run_phase_detect
-  # Must not crash — exits 0
-  [ "$status" -eq 0 ]
-}
-
-@test "needs_qa_remediation blocks needs_verification" {
-  mkdir -p .lbwc-planning/phases/01-test/remediation/qa
-  echo "# Plan" > .lbwc-planning/phases/01-test/01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' '# Summary' 'Done.' > .lbwc-planning/phases/01-test/01-SUMMARY.md
-  printf '%s\n' '---' 'result: FAIL' '---' '# Verification' 'Failed.' > .lbwc-planning/phases/01-test/01-VERIFICATION.md
-  printf '%s\n%s\n' 'stage=plan' 'round=01' > .lbwc-planning/phases/01-test/remediation/qa/.qa-remediation-stage
-  echo "# My Project" > .lbwc-planning/PROJECT.md
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "next_phase_state=needs_qa_remediation"
-}
-
-@test "later active QA remediation takes priority over earlier unverified phase" {
-  echo "# My Project" > .lbwc-planning/PROJECT.md
-
-  # Phase 01: fully built, no UAT yet → unverified
-  mkdir -p .lbwc-planning/phases/01-unverified
-  echo "# Plan" > .lbwc-planning/phases/01-unverified/01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' '# Summary' 'Done.' > .lbwc-planning/phases/01-unverified/01-SUMMARY.md
-
-  # Phase 02: fully built with active QA remediation
-  mkdir -p .lbwc-planning/phases/02-remediating/remediation/qa
-  echo "# Plan" > .lbwc-planning/phases/02-remediating/02-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' '# Summary' 'Done.' > .lbwc-planning/phases/02-remediating/02-SUMMARY.md
-  printf '%s\n' '---' 'result: FAIL' '---' '# Verification' 'Failed.' > .lbwc-planning/phases/02-remediating/02-VERIFICATION.md
-  printf '%s\n%s\n' 'stage=execute' 'round=01' > .lbwc-planning/phases/02-remediating/remediation/qa/.qa-remediation-stage
-
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "next_phase_state=needs_qa_remediation"
-  echo "$output" | grep -q "next_phase=02"
-  echo "$output" | grep -q "next_phase_slug=02-remediating"
-  echo "$output" | grep -q "qa_status=remediating"
-}
-
-@test "earlier UAT remediation keeps priority over later active QA remediation" {
-  echo "# My Project" > .lbwc-planning/PROJECT.md
-
-  # Phase 01: unresolved UAT issues
-  mkdir -p .lbwc-planning/phases/01-uat-issues
-  echo "# Plan" > .lbwc-planning/phases/01-uat-issues/01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' '# Summary' 'Done.' > .lbwc-planning/phases/01-uat-issues/01-SUMMARY.md
-  cat > .lbwc-planning/phases/01-uat-issues/01-UAT.md <<'EOF'
----
-phase: 01
-status: issues_found
----
-- Severity: major
-EOF
-
-  # Phase 02: active QA remediation
-  mkdir -p .lbwc-planning/phases/02-remediating/remediation/qa
-  echo "# Plan" > .lbwc-planning/phases/02-remediating/02-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' '# Summary' 'Done.' > .lbwc-planning/phases/02-remediating/02-SUMMARY.md
-  printf '%s\n' '---' 'result: FAIL' '---' '# Verification' 'Failed.' > .lbwc-planning/phases/02-remediating/02-VERIFICATION.md
-  printf '%s\n%s\n' 'stage=execute' 'round=01' > .lbwc-planning/phases/02-remediating/remediation/qa/.qa-remediation-stage
-
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "next_phase_state=needs_uat_remediation"
-  echo "$output" | grep -q "next_phase=01"
-}
-
-@test "later active QA remediation backed by known issues outranks earlier unplanned phase" {
-  echo "# My Project" > .lbwc-planning/PROJECT.md
-
-  mkdir -p .lbwc-planning/phases/01-unplanned
-
-  mkdir -p .lbwc-planning/phases/02-remediating/remediation/qa
-  echo "# Plan" > .lbwc-planning/phases/02-remediating/02-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' '# Summary' 'Done.' > .lbwc-planning/phases/02-remediating/02-SUMMARY.md
-  printf '%s\n' '---' 'result: FAIL' '---' '# Verification' 'Failed.' > .lbwc-planning/phases/02-remediating/02-VERIFICATION.md
-  printf '%s\n%s\n' 'stage=execute' 'round=01' > .lbwc-planning/phases/02-remediating/remediation/qa/.qa-remediation-stage
-  cat > .lbwc-planning/phases/02-remediating/known-issues.json <<'EOF'
-{
-  "schema_version": 1,
-  "phase": "02",
-  "issues": [
-    {
-      "test": "FIGIRegistryServiceTests",
-      "file": "Tests/FIGIRegistryServiceTests.swift",
-      "error": "compositeFigi missing",
-      "first_seen_in": "02-01-SUMMARY.md",
-      "last_seen_in": "02-VERIFICATION.md",
-      "first_seen_round": 0,
-      "last_seen_round": 0,
-      "times_seen": 2
-    }
-  ]
-}
-EOF
-
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "next_phase_state=needs_qa_remediation"
-  echo "$output" | grep -q "next_phase=02"
-}
-
-@test "earlier unfinished work still emits failed QA-attention for later stage-less known-issues backlog" {
-
-  echo "# My Project" > .lbwc-planning/PROJECT.md
-
-  mkdir -p .lbwc-planning/phases/01-unplanned
-
-  mkdir -p .lbwc-planning/phases/02-known-issues
-  echo "# Plan" > .lbwc-planning/phases/02-known-issues/02-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' '# Summary' 'Done.' > .lbwc-planning/phases/02-known-issues/02-SUMMARY.md
-  current_commit="$(git rev-parse HEAD)"
-  printf '%s\n' '---' 'result: PASS' 'writer: write-verification.sh' 'plans_verified:' '  - 02' "verified_at_commit: ${current_commit}" '---' '# Verification' 'Passed.' > .lbwc-planning/phases/02-known-issues/02-VERIFICATION.md
-  cat > .lbwc-planning/phases/02-known-issues/known-issues.json <<'EOF'
-{
-  "schema_version": 1,
-  "phase": "02",
-  "issues": [
-    {
-      "test": "FIGIRegistryServiceTests",
-      "file": "Tests/FIGIRegistryServiceTests.swift",
-      "error": "compositeFigi missing",
-      "first_seen_in": "02-01-SUMMARY.md",
-      "last_seen_in": "02-VERIFICATION.md",
-      "first_seen_round": 0,
-      "last_seen_round": 0,
-      "times_seen": 2
-    }
-  ]
-}
-EOF
-
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "next_phase=01"
-  echo "$output" | grep -q "next_phase_state=needs_plan_and_execute"
-  echo "$output" | grep -q "first_qa_attention_phase=02"
-  echo "$output" | grep -q "first_qa_attention_slug=02-known-issues"
-  echo "$output" | grep -q "qa_attention_status=failed"
-}
-
-@test "known-issues status probe failure still emits failed QA-attention for later backlog" {
-  echo "# My Project" > .lbwc-planning/PROJECT.md
-
-  mkdir -p .lbwc-planning/phases/01-unplanned
-
-  mkdir -p .lbwc-planning/phases/02-known-issues
-  echo "# Plan" > .lbwc-planning/phases/02-known-issues/02-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' '# Summary' 'Done.' > .lbwc-planning/phases/02-known-issues/02-SUMMARY.md
-  current_commit="$(git rev-parse HEAD)"
-  printf '%s\n' '---' 'result: PASS' 'writer: write-verification.sh' 'plans_verified:' '  - 02' "verified_at_commit: ${current_commit}" '---' '# Verification' 'Passed.' > .lbwc-planning/phases/02-known-issues/02-VERIFICATION.md
-  cat > .lbwc-planning/phases/02-known-issues/known-issues.json <<'EOF'
-{
-  "schema_version": 1,
-  "phase": "02",
-  "issues": [
-    {
-      "test": "FIGIRegistryServiceTests",
-      "file": "Tests/FIGIRegistryServiceTests.swift",
-      "error": "compositeFigi missing",
-      "first_seen_in": "02-01-SUMMARY.md",
-      "last_seen_in": "02-VERIFICATION.md",
-      "first_seen_round": 0,
-      "last_seen_round": 0,
-      "times_seen": 2
-    }
-  ]
-}
-EOF
-
-  local shim_dir
-  shim_dir="$TEST_TEMP_DIR/scripts-phase-detect-known-issues-probe-fail"
-  cp -R "$SCRIPTS_DIR" "$shim_dir"
-  cat > "$shim_dir/track-known-issues.sh" <<EOF
-#!/usr/bin/env bash
-cmd="\${1:-}"
-case "\$cmd" in
-  status)
-    exit 23
-    ;;
-  *)
-    exec "$SCRIPTS_DIR/track-known-issues.sh" "\$@"
-    ;;
-esac
-EOF
-  chmod +x "$shim_dir/track-known-issues.sh"
-
-  run_phase_detect "$shim_dir"
-
-  [ "$status" -eq 0 ]
-  [ -f .lbwc-planning/phases/02-known-issues/known-issues.json ]
-  echo "$output" | grep -q "next_phase=01"
-  echo "$output" | grep -q "next_phase_state=needs_plan_and_execute"
-  echo "$output" | grep -q "first_qa_attention_phase=02"
-  echo "$output" | grep -q "first_qa_attention_slug=02-known-issues"
-  echo "$output" | grep -q "qa_attention_status=failed"
-}
-
-@test "partial known-issues status payload still emits failed QA-attention for later backlog" {
-  echo "# My Project" > .lbwc-planning/PROJECT.md
-
-  mkdir -p .lbwc-planning/phases/01-unplanned
-
-  mkdir -p .lbwc-planning/phases/02-known-issues
-  echo "# Plan" > .lbwc-planning/phases/02-known-issues/02-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' '# Summary' 'Done.' > .lbwc-planning/phases/02-known-issues/02-SUMMARY.md
-  current_commit="$(git rev-parse HEAD)"
-  printf '%s\n' '---' 'result: PASS' 'writer: write-verification.sh' 'plans_verified:' '  - 02' "verified_at_commit: ${current_commit}" '---' '# Verification' 'Passed.' > .lbwc-planning/phases/02-known-issues/02-VERIFICATION.md
-  cat > .lbwc-planning/phases/02-known-issues/known-issues.json <<'EOF'
-{
-  "schema_version": 1,
-  "phase": "02",
-  "issues": [
-    {
-      "test": "FIGIRegistryServiceTests",
-      "file": "Tests/FIGIRegistryServiceTests.swift",
-      "error": "compositeFigi missing",
-      "first_seen_in": "02-01-SUMMARY.md",
-      "last_seen_in": "02-VERIFICATION.md",
-      "first_seen_round": 0,
-      "last_seen_round": 0,
-      "times_seen": 2
-    }
-  ]
-}
-EOF
-
-  local shim_dir
-  shim_dir="$TEST_TEMP_DIR/scripts-phase-detect-known-issues-partial-payload"
-  cp -R "$SCRIPTS_DIR" "$shim_dir"
-  cat > "$shim_dir/track-known-issues.sh" <<'EOF'
-#!/usr/bin/env bash
-cmd="${1:-}"
-case "$cmd" in
-  status)
-    printf 'known_issues_status=present\n'
-    exit 0
-    ;;
-  *)
-    exec "$LBWC_TEST_TRACK_KNOWN_ISSUES" "$@"
-    ;;
-esac
-EOF
-  chmod +x "$shim_dir/track-known-issues.sh"
-
-  LBWC_TEST_TRACK_KNOWN_ISSUES="$SCRIPTS_DIR/track-known-issues.sh" run_phase_detect "$shim_dir"
-
-  [ "$status" -eq 0 ]
-  [ -f .lbwc-planning/phases/02-known-issues/known-issues.json ]
-  echo "$output" | grep -q "next_phase=01"
-  echo "$output" | grep -q "next_phase_state=needs_plan_and_execute"
-  echo "$output" | grep -q "first_qa_attention_phase=02"
-  echo "$output" | grep -q "first_qa_attention_slug=02-known-issues"
-  echo "$output" | grep -q "qa_attention_status=failed"
-}
-
-@test "later active QA remediation outranks earlier mid-execution phase" {
-  echo "# My Project" > .lbwc-planning/PROJECT.md
-
-  mkdir -p .lbwc-planning/phases/01-executing
-  echo "# Plan" > .lbwc-planning/phases/01-executing/01-01-PLAN.md
-
-  mkdir -p .lbwc-planning/phases/02-remediating/remediation/qa
-  echo "# Plan" > .lbwc-planning/phases/02-remediating/02-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' '# Summary' 'Done.' > .lbwc-planning/phases/02-remediating/02-SUMMARY.md
-  printf '%s\n' '---' 'result: FAIL' '---' '# Verification' 'Failed.' > .lbwc-planning/phases/02-remediating/02-VERIFICATION.md
-  printf '%s\n%s\n' 'stage=execute' 'round=01' > .lbwc-planning/phases/02-remediating/remediation/qa/.qa-remediation-stage
-
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "next_phase_state=needs_qa_remediation"
-  echo "$output" | grep -q "next_phase=02"
-}
-
-@test "qa_status is pending when PASS verification is stale for current code" {
-
-  mkdir -p .lbwc-planning/phases/01-test
-  echo "# Plan" > .lbwc-planning/phases/01-test/01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' '# Summary' 'Done.' > .lbwc-planning/phases/01-test/01-SUMMARY.md
-  echo "# My Project" > .lbwc-planning/PROJECT.md
-
-  echo "print(\"old\")" > app.py
-  git add app.py
-  git commit -m "old app" --quiet
-  verified_commit="$(git rev-parse HEAD)"
-
-  printf '%s\n' \
-    '---' \
-    'result: PASS' \
-    'writer: write-verification.sh' \
-    'plans_verified:' \
-    '  - 01' \
-    "verified_at_commit: ${verified_commit}" \
-    '---' \
-    '# Verification' \
-    'Passed.' > .lbwc-planning/phases/01-test/01-VERIFICATION.md
-
-  echo "print(\"new\")" > app.py
-  git add app.py
-  git commit -m "new app" --quiet
-
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "qa_status=pending" || {
-    echo "# DIAG: full phase-detect.sh output follows" >&3
-    echo "$output" >&3
-    false
-  }
-  grep -q "qa_reason=verified_at_commit_mismatch" <<< "$output"
-}
-
-@test "qa_status is pending for brownfield PASS verification after later commit" {
-
-  mkdir -p .lbwc-planning/phases/01-test
-  echo "# Plan" > .lbwc-planning/phases/01-test/01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' '# Summary' 'Done.' > .lbwc-planning/phases/01-test/01-SUMMARY.md
-  echo "# My Project" > .lbwc-planning/PROJECT.md
-
-  echo "print(\"before\")" > app.py
-  git add app.py
-  git commit -m "before qa" --quiet
-
-  printf '%s\n' '---' 'result: PASS' 'writer: write-verification.sh' 'plans_verified:' '  - 01' '---' '# Verification' 'Passed.' > .lbwc-planning/phases/01-test/01-VERIFICATION.md
-  echo "print(\"after\")" > app.py
-  git add app.py
-  git commit -m "after qa" --quiet
-
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "qa_status=pending" || {
-    echo "# DIAG: full phase-detect.sh output follows" >&3
-    echo "$output" >&3
-    false
-  }
-  grep -q "qa_reason=product_changed_after_verification" <<< "$output"
-}
-
-@test "qa_status is pending when PASS verification has uncommitted product changes" {
-
-  mkdir -p .lbwc-planning/phases/01-test
-  echo "# Plan" > .lbwc-planning/phases/01-test/01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' '# Summary' 'Done.' > .lbwc-planning/phases/01-test/01-SUMMARY.md
-  echo "# My Project" > .lbwc-planning/PROJECT.md
-
-  echo "print(\"clean\")" > app.py
-  git add app.py
-  git commit -m "clean app" --quiet
-  verified_commit="$(git rev-parse HEAD)"
-
-  printf '%s\n' \
-    '---' \
-    'result: PASS' \
-    'writer: write-verification.sh' \
-    'plans_verified:' \
-    '  - 01' \
-    "verified_at_commit: ${verified_commit}" \
-    '---' \
-    '# Verification' \
-    'Passed.' > .lbwc-planning/phases/01-test/01-VERIFICATION.md
-
-  echo "print(\"dirty\")" > app.py
-
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "qa_status=pending" || {
-    echo "# DIAG: full phase-detect.sh output follows" >&3
-    echo "$output" >&3
-    false
-  }
-  grep -q "qa_reason=working_tree_changed" <<< "$output"
-}
-
-@test "qa_status ignores unrelated tracked and untracked working-tree dirt" {
-
-  mkdir -p .lbwc-planning/phases/01-test
-  cat > .lbwc-planning/phases/01-test/01-PLAN.md <<'EOF'
----
-files_modified: [app.py]
-files_touched: [app.py]
----
-EOF
-  printf '%s\n' '---' 'status: complete' '---' '# Summary' 'Done.' > .lbwc-planning/phases/01-test/01-SUMMARY.md
-  echo "# My Project" > .lbwc-planning/PROJECT.md
-
-  echo 'print("clean")' > app.py
-  echo 'tracked' > unrelated.txt
-  git add app.py unrelated.txt
-  git commit -m "phase product" --quiet
-  verified_commit="$(git rev-parse HEAD)"
-
-  printf '%s\n' \
-    '---' \
-    'result: PASS' \
-    'writer: write-verification.sh' \
-    'plans_verified:' \
-    '  - 01' \
-    "verified_at_commit: ${verified_commit}" \
-    '---' \
-    '# Verification' \
-    'Passed.' > .lbwc-planning/phases/01-test/01-VERIFICATION.md
-
-  echo 'changed elsewhere' > unrelated.txt
-  echo 'untracked elsewhere' > elsewhere.sh
-
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "qa_status=passed" || {
-    echo "# DIAG: full phase-detect.sh output follows" >&3
-    echo "$output" >&3
-    false
-  }
-  grep -q "qa_reason=none" <<< "$output"
 }
 
-@test "qa_status is pending when structured phase PASS fails qa-result-gate" {
-  mkdir -p .lbwc-planning/phases/01-test
-  echo "# Plan" > .lbwc-planning/phases/01-test/01-PLAN.md
-  cat > .lbwc-planning/phases/01-test/01-SUMMARY.md <<'EOF'
----
-status: complete
-deviations:
-  - Changed API approach
----
-EOF
-  echo "# My Project" > .lbwc-planning/PROJECT.md
-
-  printf '%s\n' \
-    '---' \
-    'result: PASS' \
-    'writer: ' \
-    '---' \
-    '# Verification' \
-    'Passed.' > .lbwc-planning/phases/01-test/01-VERIFICATION.md
-
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "qa_status=pending" || {
-    echo "# DIAG: full phase-detect.sh output follows" >&3
-    echo "$output" >&3
-    false
-  }
-  grep -q "qa_reason=qa_gate_rerun_required" <<< "$output"
-}
-
-@test "summary with leading blank line still counts as complete for pending QA routing" {
-  mkdir -p .lbwc-planning/phases/01-test
-  echo "# Plan" > .lbwc-planning/phases/01-test/01-PLAN.md
-  cat > .lbwc-planning/phases/01-test/01-SUMMARY.md <<'EOF'
-
----
-status: complete
----
-EOF
-  echo "# My Project" > .lbwc-planning/PROJECT.md
-
-  printf '%s\n' \
-    '---' \
-    'result: PASS' \
-    'writer: ' \
-    '---' \
-    '# Verification' \
-    'Passed.' > .lbwc-planning/phases/01-test/01-VERIFICATION.md
-
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "qa_status=pending" || {
-    echo "# DIAG: full phase-detect.sh output follows" >&3
-    echo "$output" >&3
-    false
-  }
-  grep -q "qa_reason=qa_gate_rerun_required" <<< "$output"
+sc_active_file_ignored() {
+  mkdir -p "$PD_PHASES/01-root-phase" "$PD_MILESTONES/old/phases/01-milestone-phase"
+  echo "old" > "$PD_PLAN_DIR/ACTIVE"
 }
-
-@test "qa_status is pending for brownfield remediated verification after later commit" {
-
-  mkdir -p .lbwc-planning/phases/01-test/remediation/qa/round-01
-  echo "# Plan" > .lbwc-planning/phases/01-test/01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' '# Summary' 'Done.' > .lbwc-planning/phases/01-test/01-SUMMARY.md
-  echo "# My Project" > .lbwc-planning/PROJECT.md
-
-  echo "print(\"before\")" > app.py
-  git add app.py
-  git commit -m "before remediated qa" --quiet
 
-  cat > .lbwc-planning/phases/01-test/01-VERIFICATION.md <<'EOF'
----
-result: FAIL
-writer: write-verification.sh
-plans_verified:
-  - 01
----
-## Must-Have Checks
-| ID | Category | Description | Status | Evidence |
-|----|----------|-------------|--------|----------|
-| FAIL-01 | must_have | Original failure | FAIL | Missing |
-EOF
-  cat > .lbwc-planning/phases/01-test/remediation/qa/round-01/R01-PLAN.md <<'EOF'
----
-round: 01
-fail_classifications:
-  - {id: "FAIL-01", type: "process-exception", rationale: "Fixture documents a structurally valid remediated round"}
----
-EOF
-  cat > .lbwc-planning/phases/01-test/remediation/qa/round-01/R01-SUMMARY.md <<'EOF'
----
-plan: R01
-status: complete
-files_modified:
-  - .lbwc-planning/phases/01-test/remediation/qa/round-01/R01-SUMMARY.md
-deviations: []
----
-EOF
-  printf '%s\n' '---' 'result: PASS' 'writer: write-verification.sh' 'plans_verified:' '  - R01' '---' '# Verification' 'Passed.' > .lbwc-planning/phases/01-test/remediation/qa/round-01/R01-VERIFICATION.md
-  printf '%s\n%s\n' 'stage=done' 'round=01' > .lbwc-planning/phases/01-test/remediation/qa/.qa-remediation-stage
-  echo "print(\"after\")" > app.py
-  git add app.py
-  git commit -m "after remediated qa" --quiet
-
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "qa_status=pending" || {
-    echo "# DIAG: full phase-detect.sh output follows" >&3
-    echo "$output" >&3
-    false
-  }
-  grep -q "qa_reason=product_changed_after_verification" <<< "$output"
+sc_orphan_uat() {
+  mkdir -p "$PD_PHASES/01-test"
+  pd_uat "$PD_PHASES/01-test/01-UAT.md" issues_found major 01
 }
-
-@test "terminal UAT makes stale QA attention dormant" {
-  mkdir -p .lbwc-planning/phases/01-test
-  echo "# Plan" > .lbwc-planning/phases/01-test/01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' '# Summary' 'Done.' > .lbwc-planning/phases/01-test/01-SUMMARY.md
-  echo "# My Project" > .lbwc-planning/PROJECT.md
-
-  echo "print(\"before\")" > app.py
-  git add app.py
-  git commit -m "before stale qa with uat" --quiet
-  verified_commit="$(git rev-parse HEAD)"
-
-  printf '%s\n' \
-    '---' \
-    'result: PASS' \
-    'writer: write-verification.sh' \
-    'plans_verified:' \
-    '  - 01' \
-    "verified_at_commit: ${verified_commit}" \
-    '---' \
-    '# Verification' \
-    'Passed.' > .lbwc-planning/phases/01-test/01-VERIFICATION.md
-
-  cat > .lbwc-planning/phases/01-test/01-UAT.md <<'EOF'
----
-phase: 01
-status: complete
----
-All tests passed.
-EOF
 
-  echo "print(\"after\")" > app.py
-  git add app.py
-  git commit -m "after stale qa with uat" --quiet
-
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "next_phase=none"
-  echo "$output" | grep -q "next_phase_slug=none"
-  echo "$output" | grep -q "next_phase_state=all_done"
-  echo "$output" | grep -q "first_qa_attention_phase=$"
-  echo "$output" | grep -q "qa_attention_status=none"
-  grep -q "qa_attention_reason=none" <<< "$output"
-  grep -q "qa_reason=none" <<< "$output"
+sc_mid_execution_uat() {
+  pd_plan 01-partial 1
+  pd_plan 01-partial 2
+  pd_summary "$PD_PHASES/01-partial/01-01-SUMMARY.md"
+  pd_uat "$PD_PHASES/01-partial/01-UAT.md" issues_found major 01
 }
-
-@test "terminal UAT makes failed authoritative QA dormant" {
-  mkdir -p .lbwc-planning/phases/01-test
-  echo "# Plan" > .lbwc-planning/phases/01-test/01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' '# Summary' 'Done.' > .lbwc-planning/phases/01-test/01-SUMMARY.md
-  echo "# My Project" > .lbwc-planning/PROJECT.md
 
-  printf '%s\n' '---' 'result: FAIL' '---' '# Verification' 'Failed.' > .lbwc-planning/phases/01-test/01-VERIFICATION.md
-
-  cat > .lbwc-planning/phases/01-test/01-UAT.md <<'EOF'
----
-phase: 01
-status: complete
----
-All tests passed.
-EOF
-
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "next_phase=none"
-  echo "$output" | grep -q "next_phase_state=all_done"
-  echo "$output" | grep -q "first_qa_attention_phase=$"
-  echo "$output" | grep -q "qa_attention_status=none"
-  echo "$output" | grep -q "qa_status=none"
+sc_legacy_plan_files() {
+  mkdir -p "$PD_PHASES/01-legacy"
+  touch "$PD_PHASES/01-legacy/PLAN.md"
+  pd_summary "$PD_PHASES/01-legacy/SUMMARY.md"
+  printf '%s\n' 'phase: 01' 'status: issues_found' > "$PD_PHASES/01-legacy/01-UAT.md"
 }
-
-@test "terminal UAT keeps QA dormant when phase sorting helper fails" {
-  mkdir -p .lbwc-planning/phases/01-test
-  mkdir -p .lbwc-planning/phases/02-clean
-  echo "# Plan" > .lbwc-planning/phases/01-test/01-PLAN.md
-  echo "# Plan" > .lbwc-planning/phases/02-clean/02-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' '# Summary' 'Done.' > .lbwc-planning/phases/01-test/01-SUMMARY.md
-  printf '%s\n' '---' 'status: complete' '---' '# Summary' 'Done.' > .lbwc-planning/phases/02-clean/02-SUMMARY.md
-  echo "# My Project" > .lbwc-planning/PROJECT.md
 
-  current_commit="$(git rev-parse HEAD)"
-
-  printf '%s\n' '---' 'result: FAIL' '---' '# Verification' 'Failed.' > .lbwc-planning/phases/01-test/01-VERIFICATION.md
-  printf '%s\n' '---' 'result: PASS' 'writer: write-verification.sh' 'plans_verified:' '  - 02' "verified_at_commit: ${current_commit}" '---' '# Verification' 'Passed.' > .lbwc-planning/phases/02-clean/02-VERIFICATION.md
-
-  cat > .lbwc-planning/phases/01-test/01-UAT.md <<'EOF'
----
-phase: 01
-status: complete
----
-All tests passed.
-EOF
-
-  cat > .lbwc-planning/phases/02-clean/02-UAT.md <<'EOF'
----
-phase: 02
-status: complete
----
-All tests passed.
-EOF
-
-  local fake_sort_dir
-  fake_sort_dir="$TEST_TEMP_DIR/fake-sort"
-  mkdir -p "$fake_sort_dir"
-  cat > "$fake_sort_dir/sort" <<'EOF'
-#!/usr/bin/env bash
-exit 23
-EOF
-  chmod +x "$fake_sort_dir/sort"
-
-  local original_path
-  original_path="$PATH"
-  PATH="$fake_sort_dir:$PATH"
-  run_phase_detect
-  PATH="$original_path"
-
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "phase_detect_complete=true"
-  echo "$output" | grep -q "phase_count=2"
-  echo "$output" | grep -q "next_phase=none"
-  echo "$output" | grep -q "next_phase_slug=none"
-  echo "$output" | grep -q "next_phase_state=all_done"
-  echo "$output" | grep -q "first_qa_attention_phase=$"
-  echo "$output" | grep -q "qa_attention_status=none"
+sc_later_phase_uat() {
+  local slug="$1" severity="$2"
+  pd_done "$slug"
+  pd_uat "$PD_PHASES/$slug/$(pd_phase_number "$slug")-UAT.md" issues_found "$severity" "$(pd_phase_number "$slug")"
 }
-
-@test "terminal UAT keeps failed QA dormant when UAT reread is degraded" {
-  mkdir -p .lbwc-planning/phases/01-test
-  echo "# Plan" > .lbwc-planning/phases/01-test/01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' '# Summary' 'Done.' > .lbwc-planning/phases/01-test/01-SUMMARY.md
-  echo "# My Project" > .lbwc-planning/PROJECT.md
-
-  printf '%s\n' '---' 'result: FAIL' '---' '# Verification' 'Failed.' > .lbwc-planning/phases/01-test/01-VERIFICATION.md
-
-  cat > .lbwc-planning/phases/01-test/01-UAT.md <<'EOF'
----
-phase: 01
-status: complete
----
-All tests passed.
-EOF
-
-  local shim_dir
-  shim_dir="$TEST_TEMP_DIR/scripts-phase-detect-uat-reread-degraded"
-  cp -R "$SCRIPTS_DIR" "$shim_dir"
-  cat >> "$shim_dir/uat-utils.sh" <<'EOF'
 
-extract_status_value() {
-  local file="${1:-}"
-  case "$file" in
-    *-UAT.md)
-      printf '%s\n' 'in_progress'
+sc_priority() {
+  case "$1" in
+    mid_remediation)
+      pd_plan 02-feature 1
+      pd_summary "$PD_PHASES/02-feature/02-01-SUMMARY.md"
+      pd_plan 02-feature 2
+      echo "execute" > "$PD_PHASES/02-feature/.uat-remediation-stage"
+      pd_uat "$PD_PHASES/02-feature/02-UAT.md" issues_found major 02
+      sc_later_phase_uat 03-polish major
       ;;
-    *)
-      printf '%s\n' ''
+    mid_execution)
+      pd_plan 02-feature 1
+      pd_summary "$PD_PHASES/02-feature/02-01-SUMMARY.md"
+      pd_plan 02-feature 2
+      sc_later_phase_uat 03-polish major
+      ;;
+    unplanned)
+      mkdir -p "$PD_PHASES/01-setup"
+      sc_later_phase_uat 02-feature critical
+      ;;
+    undiscussed)
+      pd_config .require_phase_discussion=true
+      mkdir -p "$PD_PHASES/01-setup"
+      sc_later_phase_uat 02-feature major
+      ;;
+    discussed)
+      pd_config .require_phase_discussion=true
+      mkdir -p "$PD_PHASES/01-setup"
+      touch "$PD_PHASES/01-setup/01-CONTEXT.md"
+      sc_later_phase_uat 02-feature major
       ;;
   esac
 }
-EOF
 
-  run_phase_detect "$shim_dir"
-
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "next_phase=none"
-  echo "$output" | grep -q "next_phase_slug=none"
-  echo "$output" | grep -q "next_phase_state=all_done"
-  echo "$output" | grep -q "first_qa_attention_phase=$"
-  echo "$output" | grep -q "qa_attention_status=none"
+sc_discuss() {
+  pd_config .require_phase_discussion=true
+  case "$1" in
+    undiscussed) mkdir -p "$PD_PHASES/01-test" ;;
+    discussed)
+      mkdir -p "$PD_PHASES/01-test"
+      touch "$PD_PHASES/01-test/01-CONTEXT.md"
+      ;;
+    planned) pd_plan 01-test 1 ;;
+    foreign_context)
+      mkdir -p "$PD_PHASES/01-test"
+      touch "$PD_PHASES/01-test/NOTES-CONTEXT.md"
+      ;;
+    multi_phase)
+      pd_done 01-first
+      touch "$PD_PHASES/01-first/01-CONTEXT.md"
+      mkdir -p "$PD_PHASES/02-second"
+      ;;
+  esac
 }
 
-@test "terminal UAT does not rebuild QA known-issues registry after cutover" {
-  mkdir -p .lbwc-planning/phases/01-test
-  echo "# Plan" > .lbwc-planning/phases/01-test/01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' '# Summary' 'Done.' > .lbwc-planning/phases/01-test/01-SUMMARY.md
-  echo "# My Project" > .lbwc-planning/PROJECT.md
-  current_commit="$(git rev-parse HEAD)"
-  cat > .lbwc-planning/phases/01-test/01-VERIFICATION.md <<'EOF'
----
-result: PASS
-writer: write-verification.sh
-plans_verified:
-  - 01
-EOF
-  printf '%s\n' "verified_at_commit: ${current_commit}" >> .lbwc-planning/phases/01-test/01-VERIFICATION.md
-  cat >> .lbwc-planning/phases/01-test/01-VERIFICATION.md <<'EOF'
----
-
-## Pre-existing Issues
-
-| Test | File | Error |
-|------|------|-------|
-| FIGIRegistryServiceTests | Tests/FIGIRegistryServiceTests.swift | compositeFigi missing |
-EOF
-  cat > .lbwc-planning/phases/01-test/01-UAT.md <<'EOF'
----
-phase: 01
-status: complete
----
-All tests passed.
-EOF
-
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  [ ! -f .lbwc-planning/phases/01-test/known-issues.json ]
-  echo "$output" | grep -q "next_phase=none"
-  echo "$output" | grep -q "next_phase_state=all_done"
-  echo "$output" | grep -q "qa_attention_status=none"
-  echo "$output" | grep -q "qa_status=none"
+sc_flat_uat() {
+  pd_done 01-test
+  case "$1" in
+    major) pd_uat_issue "$PD_PHASES/01-test/01-UAT.md" 01 issues_found "something is broken" major ;;
+    minor) pd_uat_issue "$PD_PHASES/01-test/01-UAT.md" 01 issues_found "cosmetic" minor ;;
+    bold)
+      pd_md "$PD_PHASES/01-test/01-UAT.md" '---' 'phase: 01' 'status: issues_found' '---' '' '## Tests' '' \
+        '### P01-T1: sample' '' '- **Result:** issue' '- **Issue:** sample' '  - **Severity:** major'
+      ;;
+    unparseable)
+      pd_md "$PD_PHASES/01-test/01-UAT.md" '---' 'phase: 01' 'status: issues_found' 'issues: 1' '---' '' \
+        '## Tests' '' 'Some text without parseable test headers.'
+      ;;
+    resolved_with_round)
+      pd_uat "$PD_PHASES/01-test/01-UAT.md" complete - 01
+      echo "round 1" > "$PD_PHASES/01-test/01-UAT-round-01.md"
+      ;;
+    terminal_missing_qa) pd_uat "$PD_PHASES/01-test/01-UAT.md" complete - 01 ;;
+  esac
 }
 
-@test "all_done without UAT routes to QA remediation when known issues already failed QA" {
-
-  mkdir -p .lbwc-planning/phases/01-test
-  echo "# Plan" > .lbwc-planning/phases/01-test/01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' '# Summary' 'Done.' > .lbwc-planning/phases/01-test/01-SUMMARY.md
-  echo "# My Project" > .lbwc-planning/PROJECT.md
-
-  current_commit="$(git rev-parse HEAD)"
-  printf '%s\n' '---' 'result: PASS' 'writer: write-verification.sh' 'plans_verified:' '  - 01' "verified_at_commit: ${current_commit}" '---' '# Verification' 'Passed.' > .lbwc-planning/phases/01-test/01-VERIFICATION.md
-  cat > .lbwc-planning/phases/01-test/known-issues.json <<'EOF'
-{
-  "schema_version": 1,
-  "phase": "01",
-  "issues": [
-    {
-      "test": "FIGIRegistryServiceTests",
-      "file": "Tests/FIGIRegistryServiceTests.swift",
-      "error": "compositeFigi missing",
-      "first_seen_in": "01-01-SUMMARY.md",
-      "last_seen_in": "01-VERIFICATION.md",
-      "first_seen_round": 0,
-      "last_seen_round": 0,
-      "times_seen": 2
-    }
-  ]
-}
-EOF
-
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "next_phase=01"
-  echo "$output" | grep -q "next_phase_slug=01-test"
-  echo "$output" | grep -q "next_phase_state=needs_qa_remediation"
-  echo "$output" | grep -q "first_qa_attention_phase=01"
-  echo "$output" | grep -q "qa_attention_status=failed"
-  echo "$output" | grep -q "qa_status=failed"
+sc_unplanned_uat_free() {
+  pd_plan 01-test 1
 }
 
-@test "terminal UAT makes round-scoped QA gate failure dormant" {
-  mkdir -p .lbwc-planning/phases/01-test/remediation/qa/round-01
-  echo "# Plan" > .lbwc-planning/phases/01-test/01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' '# Summary' 'Done.' > .lbwc-planning/phases/01-test/01-SUMMARY.md
-  echo "# My Project" > .lbwc-planning/PROJECT.md
-
-  cat > .lbwc-planning/phases/01-test/01-VERIFICATION.md <<'EOF'
----
-result: FAIL
-writer: write-verification.sh
----
-## Must-Have Checks
-| ID | Category | Description | Status | Evidence |
-|----|----------|-------------|--------|----------|
-| FAIL-01 | must_have | Original failure still needs remediation | FAIL | Missing |
-EOF
-
-  cat > .lbwc-planning/phases/01-test/remediation/qa/round-01/R01-PLAN.md <<'EOF'
----
-round: 01
-fail_classifications:
-  - {id: "FAIL-01", type: "code-fix", rationale: "Code still needs to change"}
----
-EOF
-  cat > .lbwc-planning/phases/01-test/remediation/qa/round-01/R01-SUMMARY.md <<'EOF'
----
-plan: R01
-status: complete
-files_modified:
-  - README.md
-deviations: []
----
-EOF
-  cat > .lbwc-planning/phases/01-test/remediation/qa/round-01/R01-VERIFICATION.md <<'EOF'
----
-result: PASS
-writer: write-verification.sh
-plans_verified:
-  - R01
----
-## Summary
-Result: PASS
-EOF
-  printf 'stage=done\nround=01\n' > .lbwc-planning/phases/01-test/remediation/qa/.qa-remediation-stage
-
-  cat > .lbwc-planning/phases/01-test/01-UAT.md <<'EOF'
----
-phase: 01
-status: complete
----
-All tests passed.
-EOF
-
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "next_phase=none"
-  echo "$output" | grep -q "next_phase_state=all_done"
-  echo "$output" | grep -q "qa_attention_status=none"
-  echo "$output" | grep -q "qa_status=none"
+sc_round_dir_uat() {
+  pd_done 01-test
+  pd_md "$PD_PHASES/01-test/remediation/uat/.uat-remediation-stage" 'round=01' 'layout=round-dir'
+  pd_uat_issue "$PD_PHASES/01-test/remediation/uat/round-01/R01-UAT.md" 01 issues_found "round-dir broken" critical
 }
 
-@test "verify-stage QA remediation outranks earlier unfinished work" {
-  echo "# My Project" > .lbwc-planning/PROJECT.md
-
-  mkdir -p .lbwc-planning/phases/01-unplanned
-
-  mkdir -p .lbwc-planning/phases/02-remediating/remediation/qa/round-01
-  echo "# Plan" > .lbwc-planning/phases/02-remediating/02-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' '# Summary' 'Done.' > .lbwc-planning/phases/02-remediating/02-SUMMARY.md
-  printf '%s\n' '---' 'result: FAIL' '---' '# Verification' 'Failed.' > .lbwc-planning/phases/02-remediating/02-VERIFICATION.md
-  printf '%s\n%s\n' 'stage=verify' 'round=01' > .lbwc-planning/phases/02-remediating/remediation/qa/.qa-remediation-stage
-
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "next_phase=02"
-  echo "$output" | grep -q "next_phase_state=needs_qa_remediation"
-  echo "$output" | grep -q "first_qa_attention_phase=02"
-  echo "$output" | grep -q "first_qa_attention_slug=02-remediating"
-  echo "$output" | grep -q "qa_attention_status=verify"
+pd_recurring_uat() {
+  local file="$1" issues_line="$2" description="$3"
+  pd_md "$file" '---' 'phase: 03' 'status: issues_found' $issues_line '---' '' '## Tests' '' \
+    '### P03-T2: recurring issue' '' '- **Result:** issue' '- **Issue:**' "  - Description: $description" '  - Severity: major'
 }
 
-# ---------- #599: UAT cutover blocks stale QA remediation ----------
-
-@test "phase-detect: stage=verify UAT issues route to next UAT round without mutating state" {
-  echo "# My Project" > .lbwc-planning/PROJECT.md
-  mkdir -p .lbwc-planning/phases/03-order-backed-sync-integration/remediation/uat/round-05
-  mkdir -p .lbwc-planning/phases/03-order-backed-sync-integration/remediation/qa
-  touch .lbwc-planning/phases/03-order-backed-sync-integration/03-01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .lbwc-planning/phases/03-order-backed-sync-integration/03-01-SUMMARY.md
-  printf 'stage=verify\nround=05\nlayout=round-dir\n' > .lbwc-planning/phases/03-order-backed-sync-integration/remediation/uat/.uat-remediation-stage
-  cat > .lbwc-planning/phases/03-order-backed-sync-integration/remediation/uat/round-05/R05-UAT.md <<'EOF'
----
-phase: 03
-round: 05
-status: issues_found
-issues: 1
----
-## Tests
-### P03-T1: still failing
-- **Result:** issue
-- **Issue:** UAT still found a problem
-  - Severity: major
-EOF
-  printf '%s\n%s\n' 'stage=execute' 'round=01' > .lbwc-planning/phases/03-order-backed-sync-integration/remediation/qa/.qa-remediation-stage
-  printf '%s\n' '---' 'result: FAIL' '---' '# Verification' 'Stale QA metadata.' > .lbwc-planning/phases/03-order-backed-sync-integration/03-VERIFICATION.md
-
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "next_phase=03"
-  echo "$output" | grep -q "next_phase_slug=03-order-backed-sync-integration"
-  echo "$output" | grep -q "next_phase_state=needs_uat_remediation"
-  ! echo "$output" | grep -q "next_phase_state=needs_qa_remediation"
-  grep -q '^stage=verify$' .lbwc-planning/phases/03-order-backed-sync-integration/remediation/uat/.uat-remediation-stage
-  grep -q '^round=05$' .lbwc-planning/phases/03-order-backed-sync-integration/remediation/uat/.uat-remediation-stage
-  grep -q '^layout=round-dir$' .lbwc-planning/phases/03-order-backed-sync-integration/remediation/uat/.uat-remediation-stage
-  [ ! -d .lbwc-planning/phases/03-order-backed-sync-integration/remediation/uat/round-06 ]
-  grep -q '^stage=execute$' .lbwc-planning/phases/03-order-backed-sync-integration/remediation/qa/.qa-remediation-stage
-  grep -q '^round=01$' .lbwc-planning/phases/03-order-backed-sync-integration/remediation/qa/.qa-remediation-stage
+sc_recurring_rounds() {
+  local dir="$1" description="$2"
+  pd_recurring_uat "$dir/03-UAT-round-01.md" "" "$description"
+  pd_recurring_uat "$dir/03-UAT-round-02.md" "" "$description"
+  pd_recurring_uat "$dir/03-UAT.md" "issues: 1" "$description"
 }
 
-@test "phase-detect: active QA remediation is dormant for supported UAT cutover layouts" {
-  echo "# My Project" > .lbwc-planning/PROJECT.md
+sc_inline_recurrence() {
+  pd_done 03-feature
+  sc_recurring_rounds "$PD_PHASES/03-feature" "still broken"
+}
 
-  local layout
-  for layout in phase_root_uat phase_root_archived_uat legacy_round_uat round_dir_uat phase_root_state legacy_state round_dir_state; do
-    rm -rf .lbwc-planning/phases
-    mkdir -p .lbwc-planning/phases/01-test/remediation/qa
-    echo "# Plan" > .lbwc-planning/phases/01-test/01-PLAN.md
-    printf '%s\n' '---' 'status: complete' '---' '# Summary' 'Done.' > .lbwc-planning/phases/01-test/01-SUMMARY.md
-    printf '%s\n' '---' 'result: FAIL' '---' '# Verification' 'Stale QA failure.' > .lbwc-planning/phases/01-test/01-VERIFICATION.md
-    printf '%s\n%s\n' 'stage=execute' 'round=01' > .lbwc-planning/phases/01-test/remediation/qa/.qa-remediation-stage
-
-    case "$layout" in
-      phase_root_uat)
-        cat > .lbwc-planning/phases/01-test/01-UAT.md <<'EOF'
----
-phase: 01
-status: complete
----
-All tests passed.
-EOF
-        ;;
-      phase_root_archived_uat)
-        printf '%s\n' '---' 'phase: 01' 'status: issues_found' '---' > .lbwc-planning/phases/01-test/01-UAT-round-01.md
-        ;;
-      legacy_round_uat)
-        mkdir -p .lbwc-planning/phases/01-test/remediation/round-01
-        printf '%s\n' '---' 'phase: 01' 'status: issues_found' '---' > .lbwc-planning/phases/01-test/remediation/round-01/R01-UAT.md
-        ;;
-      round_dir_uat)
-        mkdir -p .lbwc-planning/phases/01-test/remediation/uat/round-01
-        printf '%s\n' '---' 'phase: 01' 'status: issues_found' '---' > .lbwc-planning/phases/01-test/remediation/uat/round-01/R01-UAT.md
-        ;;
-      phase_root_state)
-        printf 'stage=verify\nround=01\nlayout=legacy\n' > .lbwc-planning/phases/01-test/.uat-remediation-stage
-        ;;
-      legacy_state)
-        mkdir -p .lbwc-planning/phases/01-test/remediation
-        printf 'stage=verify\nround=01\nlayout=legacy\n' > .lbwc-planning/phases/01-test/remediation/.uat-remediation-stage
-        ;;
-      round_dir_state)
-        mkdir -p .lbwc-planning/phases/01-test/remediation/uat
-        printf 'stage=verify\nround=01\nlayout=round-dir\n' > .lbwc-planning/phases/01-test/remediation/uat/.uat-remediation-stage
-        ;;
-    esac
-
-    run_phase_detect
-    [ "$status" -eq 0 ] || {
-      echo "layout=$layout" >&3
-      echo "$output" >&3
-      false
-    }
-    ! echo "$output" | grep -q "next_phase_state=needs_qa_remediation" || {
-      echo "layout=$layout" >&3
-      echo "$output" >&3
-      false
-    }
-    echo "$output" | grep -q "qa_after_uat_dormant=true" || {
-      echo "layout=$layout" >&3
-      echo "$output" >&3
-      false
-    }
-    grep -q '^stage=execute$' .lbwc-planning/phases/01-test/remediation/qa/.qa-remediation-stage
-    grep -q '^round=01$' .lbwc-planning/phases/01-test/remediation/qa/.qa-remediation-stage
+sc_five_rounds() {
+  local round
+  pd_done 03-feature
+  for round in 01 02 03 04 05; do
+    printf 'round %s\n' "$round" > "$PD_PHASES/03-feature/03-UAT-round-${round}.md"
   done
+  pd_uat "$PD_PHASES/03-feature/03-UAT.md" issues_found major 03
 }
 
-@test "phase-detect: auto_uat verification suppresses QA gate after UAT cutover" {
-  cat > .lbwc-planning/config.json <<'EOF'
-{
-  "effort": "balanced",
-  "auto_uat": true,
-  "max_uat_remediation_rounds": false
-}
-EOF
-  echo "# My Project" > .lbwc-planning/PROJECT.md
-  mkdir -p .lbwc-planning/phases/01-test/remediation/uat
-  echo "# Plan" > .lbwc-planning/phases/01-test/01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' '# Summary' 'Done.' > .lbwc-planning/phases/01-test/01-SUMMARY.md
-  printf '%s\n' '---' 'result: FAIL' '---' '# Verification' 'This QA failure is pre-UAT metadata.' > .lbwc-planning/phases/01-test/01-VERIFICATION.md
-  printf 'stage=verify\nround=01\nlayout=round-dir\n' > .lbwc-planning/phases/01-test/remediation/uat/.uat-remediation-stage
-
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "next_phase=01"
-  echo "$output" | grep -q "next_phase_state=needs_verification"
-  echo "$output" | grep -q "qa_status=none"
-  echo "$output" | grep -q "qa_reason=uat_cutover"
-  echo "$output" | grep -q "qa_after_uat_dormant=true"
-  ! echo "$output" | grep -q "next_phase_state=needs_qa_remediation"
+sc_uat_phase_list() {
+  case "$1" in
+    multiple)
+      pd_done 01-first
+      pd_uat "$PD_PHASES/01-first/01-UAT.md" complete -
+      pd_done 02-second
+      pd_uat "$PD_PHASES/02-second/02-UAT.md" issues_found major
+      pd_done 03-third
+      pd_uat "$PD_PHASES/03-third/03-UAT.md" issues_found major
+      ;;
+    single)
+      pd_done 01-only
+      pd_uat "$PD_PHASES/01-only/01-UAT.md" issues_found minor
+      ;;
+    none)
+      pd_done 01-clean
+      pd_uat "$PD_PHASES/01-clean/01-UAT.md" complete -
+      ;;
+  esac
 }
 
-# ---------- #369: cross-session reverification routing ----------
-
-@test "phase-detect: stage=done + round UAT with issues_found routes to needs_uat_remediation" {
-  # Scenario: UAT remediation round 02 completed, re-verification found issues,
-  # but the session ended before auto-continuing to round 03. The next session
-  # should recognise the round UAT and route to remediation, not re-verify.
-  mkdir -p .lbwc-planning/phases/01-feature/remediation/uat/round-01
-  mkdir -p .lbwc-planning/phases/01-feature/remediation/uat/round-02
-  touch .lbwc-planning/phases/01-feature/01-01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .lbwc-planning/phases/01-feature/01-01-SUMMARY.md
-  cat > .lbwc-planning/phases/01-feature/01-UAT.md <<'EOF'
----
-phase: 01
-status: issues_found
-issues: 1
----
-## Tests
-### P01-T1: sample test
-- **Result:** issue
-EOF
-  # Round 01 UAT (prior round, already remediated)
-  cat > .lbwc-planning/phases/01-feature/remediation/uat/round-01/R01-UAT.md <<'EOF'
----
-phase: 01
-round: 01
-status: issues_found
-issues: 1
----
-## Tests
-### P01-T1: sample test
-- **Result:** issue
-EOF
-  # Round 02 UAT — re-verification happened, still has issues
-  cat > .lbwc-planning/phases/01-feature/remediation/uat/round-02/R02-UAT.md <<'EOF'
----
-phase: 01
-round: 02
-status: issues_found
-issues: 1
----
-## Tests
-### P01-T1: sample test
-- **Result:** issue
-- **Issue:** fix did not resolve
-  - Description: test still fails
-  - Severity: major
-EOF
-  # Remediation state: round 02 done
-  printf 'stage=done\nround=02\nlayout=round-dir\n' > .lbwc-planning/phases/01-feature/remediation/uat/.uat-remediation-stage
-
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "next_phase_state=needs_uat_remediation"
-  grep -q '^stage=done$' .lbwc-planning/phases/01-feature/remediation/uat/.uat-remediation-stage
-  grep -q '^round=02$' .lbwc-planning/phases/01-feature/remediation/uat/.uat-remediation-stage
-  [ ! -d .lbwc-planning/phases/01-feature/remediation/uat/round-03 ]
+sc_source_uat() {
+  case "$1" in
+    active_scan)
+      pd_done 01-remediate-test
+      touch "$PD_PHASES/01-remediate-test/01-CONTEXT.md"
+      pd_uat "$PD_PHASES/01-remediate-test/01-SOURCE-UAT.md" issues_found major 01
+      ;;
+    later_real_uat)
+      pd_done 01-remediate-first
+      pd_uat "$PD_PHASES/01-remediate-first/01-SOURCE-UAT.md" issues_found major 01
+      pd_done 02-executed
+      pd_uat "$PD_PHASES/02-executed/02-UAT.md" issues_found critical 02
+      ;;
+    unplanned_neighbour)
+      mkdir -p "$PD_PHASES/01-remediate-unresolved"
+      touch "$PD_PHASES/01-remediate-unresolved/01-CONTEXT.md"
+      pd_uat "$PD_PHASES/01-remediate-unresolved/01-SOURCE-UAT.md" issues_found critical 01
+      pd_done 02-remediate-done
+      pd_uat "$PD_PHASES/02-remediate-done/02-SOURCE-UAT.md" issues_found major 02
+      ;;
+  esac
 }
 
-@test "phase-detect: stage=done + no round UAT routes to needs_reverification" {
-  # Scenario: UAT remediation round 02 completed execution, but re-verification
-  # has NOT happened yet. Should route to needs_reverification so it can run.
-  mkdir -p .lbwc-planning/phases/01-feature/remediation/uat/round-02
-  touch .lbwc-planning/phases/01-feature/01-01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .lbwc-planning/phases/01-feature/01-01-SUMMARY.md
-  cat > .lbwc-planning/phases/01-feature/01-UAT.md <<'EOF'
----
-phase: 01
-status: issues_found
-issues: 1
----
-## Tests
-### P01-T1: sample test
-- **Result:** issue
-EOF
-  touch .lbwc-planning/phases/01-feature/remediation/uat/round-02/R02-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .lbwc-planning/phases/01-feature/remediation/uat/round-02/R02-SUMMARY.md
-  # Remediation state: round 02 done, but NO R02-UAT.md
-  printf 'stage=done\nround=02\nlayout=round-dir\n' > .lbwc-planning/phases/01-feature/remediation/uat/.uat-remediation-stage
-
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "next_phase_state=needs_reverification"
-  # State file should NOT be modified
-  grep -q '^stage=done$' .lbwc-planning/phases/01-feature/remediation/uat/.uat-remediation-stage
-  grep -q '^round=02$' .lbwc-planning/phases/01-feature/remediation/uat/.uat-remediation-stage
+sc_auto_uat() {
+  pd_config '. + {effort:"balanced",auto_uat:true,auto_commit:true,planning_tracking:"manual",auto_push:"never"}'
+  pd_project
+  case "$1" in
+    all_pass)
+      pd_done_flat 01-feature
+      pd_md "$PD_PHASES/01-feature/01-UAT.md" '---' 'phase: 01' 'status: all_pass' 'total_tests: 3' 'passed: 3' 'issues: 0' '---' \
+        'All tests passed.'
+      ;;
+    passed)
+      pd_done_flat 01-feature
+      pd_uat "$PD_PHASES/01-feature/01-UAT.md" passed - 01
+      ;;
+    skip_verified)
+      pd_done_flat 01-setup
+      pd_uat "$PD_PHASES/01-setup/01-UAT.md" passed - 01
+      pd_done_flat 02-polish
+      ;;
+  esac
 }
 
-@test "phase-detect: stage=done + round UAT with complete status does NOT trigger remediation" {
-  # Scenario: UAT remediation round 01 completed, re-verification passed.
-  # Phase-detect sees no active UAT issues since round UAT is complete,
-  # so it exits the remediation routing block. Must NOT start another round.
-  mkdir -p .lbwc-planning/phases/01-feature/remediation/uat/round-01
-  touch .lbwc-planning/phases/01-feature/01-01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .lbwc-planning/phases/01-feature/01-01-SUMMARY.md
-  cat > .lbwc-planning/phases/01-feature/01-UAT.md <<'EOF'
----
-phase: 01
-status: issues_found
-issues: 1
----
-## Tests
-### P01-T1: sample test
-- **Result:** issue
-EOF
-  # Round 01 UAT — re-verification passed (all tests passed)
-  cat > .lbwc-planning/phases/01-feature/remediation/uat/round-01/R01-UAT.md <<'EOF'
----
-phase: 01
-round: 01
-status: complete
-issues: 0
----
-## Tests
-### P01-T1: sample test
-- **Result:** pass
-EOF
-  # Remediation state: round 01 done
-  printf 'stage=done\nround=01\nlayout=round-dir\n' > .lbwc-planning/phases/01-feature/remediation/uat/.uat-remediation-stage
-
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  # When round UAT is complete (tests passed), must NOT trigger another remediation round
-  ! echo "$output" | grep -q "next_phase_state=needs_uat_remediation"
-  # Phase exits remediation routing entirely — completed UAT is the terminal lane.
-  echo "$output" | grep -q "next_phase_state=all_done"
-  echo "$output" | grep -q "qa_status=none"
-  # State file should NOT be modified — no round advancement
-  grep -q '^stage=done$' .lbwc-planning/phases/01-feature/remediation/uat/.uat-remediation-stage
-  grep -q '^round=01$' .lbwc-planning/phases/01-feature/remediation/uat/.uat-remediation-stage
+sc_active_round_uat() {
+  local slug="$1" kind="$2" later="${3:-}" dir
+  dir="$PD_PHASES/$slug/remediation/uat"
+  pd_done "$slug"
+  pd_md "$dir/.uat-remediation-stage" 'stage=verify' 'round=06' 'layout=round-dir'
+  case "$kind" in
+    progress)
+      pd_md "$dir/round-06/R06-UAT.md" '---' 'phase: 01' 'status: in_progress' '---' '## Tests' '' \
+        '### PR06-T01: Completed checkpoint' '' '- **Result:** pass' '' '### PR06-T02: Next incomplete checkpoint' '' '- **Result:**'
+      ;;
+    nostatus)
+      pd_md "$dir/round-06/R06-UAT.md" '---' 'phase: 01' '---' 'UAT exists but has no authoritative status yet.'
+      ;;
+    running)
+      pd_md "$dir/round-06/R06-UAT.md" '---' "phase: $(pd_phase_number "$slug")" 'status: in_progress' '---' 'UAT is still running.'
+      ;;
+  esac
+  [ -z "$later" ] || mkdir -p "$PD_PHASES/$later"
 }
 
-@test "phase-detect: stage=done + legacy layout routes to needs_uat_remediation with correct paths" {
-  # Scenario: Legacy brownfield project uses .uat-remediation-stage at phase root
-  # and stores round UATs under remediation/round-NN/ (no /uat/ prefix).
-  # The auto-advance must create remediation/round-02 (legacy), NOT remediation/uat/round-02.
-  mkdir -p .lbwc-planning/phases/01-feature/remediation/round-01
-  touch .lbwc-planning/phases/01-feature/01-01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .lbwc-planning/phases/01-feature/01-01-SUMMARY.md
-  cat > .lbwc-planning/phases/01-feature/01-UAT.md <<'EOF'
----
-phase: 01
-status: issues_found
-issues: 1
----
-## Tests
-### P01-T1: sample test
-- **Result:** issue
-EOF
-  # Round 01 UAT at legacy path — re-verification found issues
-  cat > .lbwc-planning/phases/01-feature/remediation/round-01/R01-UAT.md <<'EOF'
----
-phase: 01
-round: 01
-status: issues_found
-issues: 1
----
-## Tests
-### P01-T1: sample test
-- **Result:** issue
-EOF
-  # Legacy state file at phase root (no /uat/ prefix)
-  printf 'stage=done\nround=01\n' > .lbwc-planning/phases/01-feature/.uat-remediation-stage
+sc_shipped_with_uat() {
+  local slug="$1" severity="$2"
+  pd_shipped v1
+  pd_done "$slug" "$PD_MILESTONES/v1/phases"
+  pd_uat "$PD_MILESTONES/v1/phases/$slug/$(pd_phase_number "$slug")-UAT.md" issues_found "$severity" "$(pd_phase_number "$slug")"
+}
 
-  run_phase_detect
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "next_phase_state=needs_uat_remediation"
-  grep -q '^stage=done$' .lbwc-planning/phases/01-feature/.uat-remediation-stage
-  grep -q '^round=01$' .lbwc-planning/phases/01-feature/.uat-remediation-stage
-  ! grep -q '^layout=' .lbwc-planning/phases/01-feature/.uat-remediation-stage
-  [ ! -d .lbwc-planning/phases/01-feature/remediation/round-02 ]
-  [ ! -d .lbwc-planning/phases/01-feature/remediation/uat/round-02 ]
+sc_milestone() {
+  case "$1" in
+    shipped_only)
+      mkdir -p "$PD_PHASES"
+      pd_shipped foundation
+      ;;
+    legacy_default) mkdir -p "$PD_MILESTONES/default/phases/01-legacy-phase" ;;
+    source_uat_only)
+      pd_done 01-done
+      pd_shipped v1
+      pd_done 01-shipped "$PD_MILESTONES/v1/phases"
+      pd_uat "$PD_MILESTONES/v1/phases/01-shipped/01-SOURCE-UAT.md" issues_found major 01
+      ;;
+    referenced_by_remediation)
+      pd_done 01-remediate-v1-setup
+      pd_md "$PD_PHASES/01-remediate-v1-setup/01-CONTEXT.md" '---' 'phase: 01' 'source_milestone: v1' 'source_phase: 01-setup' \
+        'pre_seeded: true' '---'
+      sc_shipped_with_uat 01-setup major
+      ;;
+    unreferenced)
+      pd_done 01-feature
+      sc_shipped_with_uat 01-setup major
+      ;;
+    over_discussion)
+      pd_config .require_phase_discussion=true
+      pd_done 01-done
+      touch "$PD_PHASES/01-done/01-CONTEXT.md"
+      sc_shipped_with_uat 01-shipped major
+      ;;
+  esac
+}
+
+sc_milestone_extract() {
+  local dir="$PD_MILESTONES/m01-test/phases"
+  mkdir -p "$PD_PHASES"
+  pd_shipped m01-test
+  case "$1" in
+    zero_issue)
+      pd_done 01-alpha "$dir"
+      pd_md "$dir/01-alpha/01-UAT.md" '---' 'phase: 01' 'status: issues_found' 'issues: 0' '---' '' '## Tests' '' \
+        '### P01-T1: all good' '' '- **Result:** pass'
+      ;;
+    major_issue)
+      pd_done 01-alpha "$dir"
+      pd_uat_issue "$dir/01-alpha/01-UAT.md" 01 issues_found "milestone broken" major
+      ;;
+    recurrence)
+      pd_done 03-feature "$dir"
+      sc_recurring_rounds "$dir/03-feature" "milestone still broken"
+      ;;
+    noncanonical_dir)
+      mkdir -p "$dir/setup-api"
+      touch "$dir/setup-api/03-01-PLAN.md"
+      pd_summary "$dir/setup-api/03-01-SUMMARY.md"
+      pd_md "$dir/setup-api/03-UAT.md" '---' 'phase: 03' 'status: issues_found' 'issues: 1' '---' '' '## Tests' '' \
+        '### P03-T1: recovered number' '' '- **Result:** issue' '- **Issue:**' \
+        '  - Description: non-canonical dir still reports phase 03' '  - Severity: major'
+      ;;
+    noncanonical_rounds | noncanonical_round_one)
+      mkdir -p "$dir/setup-api/remediation/uat/round-01"
+      pd_md "$dir/setup-api/PLAN.md" '---' 'phase: 03' 'plan: legacy' 'title: Setup' '---'
+      pd_summary "$dir/setup-api/SUMMARY.md"
+      if [ "$1" = "noncanonical_rounds" ]; then
+        pd_md "$dir/setup-api/remediation/uat/.uat-remediation-stage" stage=verify round=02 layout=round-dir
+        pd_recurring_uat "$dir/setup-api/remediation/uat/round-01/R01-UAT.md" "" "broke before"
+        pd_recurring_uat "$dir/setup-api/remediation/uat/round-02/R02-UAT.md" "issues: 1" "broke again"
+      else
+        pd_md "$dir/setup-api/remediation/uat/.uat-remediation-stage" stage=verify round=01 layout=round-dir
+        pd_recurring_uat "$dir/setup-api/remediation/uat/round-01/R01-UAT.md" "issues: 1" "broke first time"
+      fi
+      ;;
+  esac
+}
+
+@test "project tree reports its identity, defaults and next phase state" {
+  pd_table <<'CASES'
+no-planning-directory#sc_no_planning#planning_dir_exists=false~uat_round_count=0~qa_attention_reason=none~qa_reason=none
+planning-without-phases-dir#:#planning_dir_exists=true~project_exists=false
+bare-planning-defaults#mkdir -p .lbwc-planning/phases#planning_dir_exists=true~project_exists=false~phase_count=0~phases_dir=.lbwc-planning/phases~has_shipped_milestones=false~needs_milestone_rename=false~config_effort=balanced~config_autonomy=standard~config_require_phase_discussion=false~phase_detect_complete=true~!active_milestone=
+project-without-phases#sc_project_no_phases#project_exists=true~qa_status=none~qa_reason=none~qa_attention_reason=none~qa_round=00
+unplanned-phase#mkdir -p .lbwc-planning/phases/01-test#next_phase_state=needs_plan_and_execute
+planned-phase#pd_plan 01-test 1#next_phase_state=needs_execute
+finished-phase#pd_done 01-test#next_phase_state=all_done
+CASES
+}
+
+@test "full output matches the golden file for each canonical project state" {
+  local name
+  while read -r name; do
+    pd_reset
+    sc_golden "$name"
+    bash "$SCRIPTS_DIR/phase-detect.sh" > "$TEST_TEMP_DIR/actual-output.txt" < /dev/null
+    pd_golden_matches "$name" || return 1
+  done <<'CASES'
+no-planning
+unplanned
+incomplete
+all-done
+uat-issues
+qa-remediation
+milestone-recovery
+CASES
+}
+
+pd_golden_matches() {
+  local expected="$BATS_TEST_DIRNAME/fixtures/phase-detect-output/$1.txt"
+  grep -qx 'phase_detect_complete=true' "$TEST_TEMP_DIR/actual-output.txt" \
+    || { printf 'golden=%s missing completion marker\n' "$1" >&2; return 1; }
+  cmp -s "$expected" "$TEST_TEMP_DIR/actual-output.txt" \
+    || { printf 'golden=%s differs\n' "$1" >&2; diff -u "$expected" "$TEST_TEMP_DIR/actual-output.txt" >&2; return 1; }
+}
+
+@test "phase directory scan counts only canonical artifacts and picks the first unfinished phase" {
+  pd_table <<'CASES'
+noncanonical-plan-file-ignored#sc_noncanonical_plan#next_phase_state=needs_execute~next_phase_plans=1
+dotfile-plan-ignored#sc_dotfile_plan#next_phase_state=all_done
+noncanonical-phase-dir-skipped#sc_noncanonical_dir#phase_count=1~next_phase=01~next_phase_slug=01-real~next_phase_state=needs_plan_and_execute
+numeric-sort-not-lexicographic#sc_numeric_sort#uat_issues_phase=11~next_phase=11
+active-file-ignored#sc_active_file_ignored#phase_count=1~phases_dir=.lbwc-planning/phases
+mid-remediation-beats-later-uat#sc_priority mid_remediation#next_phase=02~next_phase_state=needs_execute~next_phase_plans=2~next_phase_summaries=1
+mid-execution-beats-later-uat#sc_priority mid_execution#next_phase=02~next_phase_state=needs_execute~next_phase_plans=2~next_phase_summaries=1
+unplanned-beats-later-uat#sc_priority unplanned#next_phase=01~next_phase_state=needs_plan_and_execute
+undiscussed-beats-later-uat#sc_priority undiscussed#next_phase=01~next_phase_state=needs_discussion
+discussed-beats-later-uat#sc_priority discussed#next_phase=01~next_phase_state=needs_plan_and_execute
+CASES
+}
+
+@test "phase discussion requirement gates only unplanned phases" {
+  pd_table <<'CASES'
+flag-true-reported#pd_config .require_phase_discussion=true#config_require_phase_discussion=true
+undiscussed-phase#sc_discuss undiscussed#next_phase_state=needs_discussion~next_phase=01
+canonical-context-satisfies#sc_discuss discussed#next_phase_state=needs_plan_and_execute
+planned-phase-skips-discussion#sc_discuss planned#next_phase_state=needs_execute
+foreign-context-does-not-satisfy#sc_discuss foreign_context#next_phase_state=needs_discussion
+first-undiscussed-phase-targeted#sc_discuss multi_phase#next_phase_state=needs_discussion~next_phase=02~next_phase_slug=02-second
+CASES
+}
+
+@test "UAT reports route flat layouts and fill the routing fields" {
+  pd_table <<'CASES'
+major-issue-routes-remediation#sc_flat_uat major#next_phase_state=needs_uat_remediation~next_phase=01~next_phase_slug=01-test~uat_issues_phase=01~uat_issues_major_or_higher=true~uat_file=01-UAT.md~uat_issues_count=1~uat_round_count=0~!---UAT_EXTRACT_START---
+minor-only-clears-major-flag#sc_flat_uat minor#next_phase_state=needs_uat_remediation~uat_issues_major_or_higher=false
+bold-severity-counts-as-major#sc_flat_uat bold#next_phase_state=needs_uat_remediation~uat_issues_major_or_higher=true
+unparseable-body-still-routes#sc_flat_uat unparseable#next_phase_state=needs_uat_remediation~uat_file=01-UAT.md~!---UAT_EXTRACT_START---
+no-remediation-no-marker#sc_unplanned_uat_free#!---UAT_EXTRACT_START---~uat_file=none
+round-dir-path-is-relative#sc_round_dir_uat#uat_file=remediation/uat/round-01/R01-UAT.md~uat_issues_count=1~!---UAT_EXTRACT_START---
+recurrence-counts-archived-rounds#sc_inline_recurrence#next_phase_state=needs_uat_remediation~uat_issues_count=1~uat_file=03-UAT.md~uat_round_count=2~!---UAT_EXTRACT_START---
+five-archived-rounds#sc_five_rounds#uat_round_count=5
+resolved-uat-resets-round-count#sc_flat_uat resolved_with_round#uat_round_count=0
+terminal-uat-without-qa-stays-done#sc_flat_uat terminal_missing_qa#uat_issues_phase=none~next_phase=none~next_phase_state=all_done~qa_status=none
+orphan-uat-ignored#sc_orphan_uat#uat_issues_phase=none~next_phase_state=needs_plan_and_execute
+mid-execution-uat-not-routed#sc_mid_execution_uat#uat_issues_phase=none~next_phase_state=needs_execute~next_phase_plans=2~next_phase_summaries=1
+legacy-plan-files-route#sc_legacy_plan_files#next_phase_state=needs_uat_remediation~next_phase=01~uat_issues_phase=01
+multiple-phases-listed#sc_uat_phase_list multiple#uat_issues_phase=02~next_phase=02~next_phase_state=needs_uat_remediation~uat_issues_phases=02,03~uat_issues_count=2
+single-phase-listed#sc_uat_phase_list single#uat_issues_phase=01~uat_issues_phases=01~uat_issues_count=1
+no-issues-listed-empty#sc_uat_phase_list none#uat_issues_phase=none~uat_issues_phases=~uat_issues_count=0
+source-uat-not-a-report#sc_source_uat active_scan#uat_issues_phase=none~next_phase_state=all_done
+source-uat-skipped-for-later-real-uat#sc_source_uat later_real_uat#uat_issues_phase=02~next_phase_state=needs_uat_remediation
+source-uat-does-not-block-unplanned#sc_source_uat unplanned_neighbour#uat_issues_phase=none~next_phase=01~next_phase_state=needs_plan_and_execute
+all-pass-status-counts-as-verified#sc_auto_uat all_pass#has_unverified_phases=false~next_phase_state=all_done~qa_status=none
+passed-status-counts-as-verified#sc_auto_uat passed#has_unverified_phases=false
+verified-phase-skipped-for-unverified#sc_auto_uat skip_verified#has_unverified_phases=true~first_unverified_phase=02~first_unverified_slug=02-polish~next_phase=02~next_phase_state=needs_verification
+CASES
+}
+
+@test "an in-progress round-dir UAT blocks archive routing and later phases" {
+  pd_table <<'CASES'
+progress-checkpoints#sc_active_round_uat 01-test progress#next_phase=01~next_phase_slug=01-test~next_phase_state=needs_verification~uat_blocking_phase=01~uat_blocking_status=active~uat_blocking_file=remediation/uat/round-06/R06-UAT.md~!next_phase_state=all_done
+missing-status#sc_active_round_uat 01-test nostatus#next_phase=01~next_phase_slug=01-test~next_phase_state=needs_verification~uat_blocking_phase=01~uat_blocking_status=active~uat_blocking_file=remediation/uat/round-06/R06-UAT.md~!next_phase_state=all_done
+boundary-phase-08#sc_active_round_uat 08-active-uat running 09-next#next_phase=08~next_phase_slug=08-active-uat~next_phase_state=needs_verification~uat_blocking_phase=08~uat_blocking_status=active~uat_blocking_file=remediation/uat/round-06/R06-UAT.md~!next_phase=09
+boundary-phase-09#sc_active_round_uat 09-active-uat running 10-next#next_phase=09~next_phase_slug=09-active-uat~next_phase_state=needs_verification~uat_blocking_phase=09~uat_blocking_status=active~uat_blocking_file=remediation/uat/round-06/R06-UAT.md~!next_phase=10
+CASES
+}
+
+@test "shipped milestones report rename and UAT recovery state" {
+  pd_table <<'CASES'
+shipped-milestone-detected#sc_milestone shipped_only#has_shipped_milestones=true
+legacy-default-reported-not-renamed#sc_milestone legacy_default#phase_detect_complete=true~needs_milestone_rename=true~+.lbwc-planning/milestones/default~+.lbwc-planning/milestones/default/phases/01-legacy-phase
+source-uat-excluded-from-milestone-scan#sc_milestone source_uat_only#milestone_uat_issues=false
+remediation-reference-suppresses-recovery#sc_milestone referenced_by_remediation#next_phase_state=all_done~milestone_uat_issues=false
+unreferenced-issues-trigger-recovery#sc_milestone unreferenced#milestone_uat_issues=true~milestone_uat_slug=v1
+recovery-outranks-discussion#sc_milestone over_discussion#next_phase_state=all_done~milestone_uat_issues=true~milestone_uat_slug=v1
+CASES
+}
+
+@test "milestone recovery emits the extractor block for the shipped phase" {
+  pd_table <<'CASES'
+issue-block-emitted#sc_milestone_extract major_issue#---MILESTONE_UAT_EXTRACT_START---~---MILESTONE_UAT_EXTRACT_END---~P01-T1|major|milestone broken
+zero-issue-matches-standalone-extractor#sc_milestone_extract zero_issue#%.lbwc-planning/milestones/m01-test/phases/01-alpha~uat_phase=01 uat_issues_total=0~!uat_extract_error=true
+recurrence-matches-standalone-extractor#sc_milestone_extract recurrence#%.lbwc-planning/milestones/m01-test/phases/03-feature
+noncanonical-dir-uses-resolved-number#sc_milestone_extract noncanonical_dir#milestone_uat_issues=true~milestone_phase_dir=.lbwc-planning/milestones/m01-test/phases/setup-api~uat_phase=03 uat_issues_total=1 uat_round=1 uat_file=03-UAT.md
+noncanonical-round-dir-resolves-latest-round#sc_milestone_extract noncanonical_rounds#milestone_uat_issues=true~milestone_phase_dir=.lbwc-planning/milestones/m01-test/phases/setup-api~uat_phase=03 uat_issues_total=1 uat_round=2 uat_file=R02-UAT.md~P03-T2|major|broke again|1,2
+noncanonical-round-one-parity#sc_milestone_extract noncanonical_round_one#milestone_uat_issues=true~uat_phase=03 uat_issues_total=1 uat_round=1 uat_file=R01-UAT.md~P03-T2|major|broke first time|1
+CASES
+}
+
+sc_late_failure() {
+  mkdir -p "$PD_PHASES"
+  printf '%s\n' '# Fixture Project' > "$PD_PLAN_DIR/PROJECT.md"
+  export PD_SCRIPTS_DIR="$TEST_TEMP_DIR/scripts-late-failure"
+  cp -R "$SCRIPTS_DIR" "$PD_SCRIPTS_DIR"
+  awk '/echo "milestone_uat_issues=\$MILESTONE_UAT_ISSUES"/ && !injected { print "exit 23"; injected=1 } { print }' \
+    "$SCRIPTS_DIR/lib/phase-detect-milestone-recovery.sh" > "$PD_SCRIPTS_DIR/lib/phase-detect-milestone-recovery.sh"
+  chmod +x "$PD_SCRIPTS_DIR/lib/phase-detect-milestone-recovery.sh"
+  export PD_RAW=1
+}
+
+sc_source_failure() {
+  pd_shim source-failure lib/phase-detect-support.sh 'return 23'
+  export PD_RAW=1
+}
+
+@test "an internal failure emits only the stable error marker" {
+  pd_table <<'CASES'
+late-failure-after-partial-output#sc_late_failure#=phase_detect_error=true
+library-fails-to-source#sc_source_failure#=phase_detect_error=true
+CASES
+}
+
+@test "phase-detect reports a stable setup error when its output file cannot be created" {
+  pd_reset
+  export PD_SCRIPTS_DIR="$TEST_TEMP_DIR/scripts-setup-failure"
+  cp -R "$SCRIPTS_DIR" "$PD_SCRIPTS_DIR"
+  pd_fake_bin mktemp 'exit 1'
+
+  run env PATH="$PD_PATH_PREFIX:$PATH" bash "$PD_SCRIPTS_DIR/phase-detect.sh"
+
+  [ "$status" -ne 0 ]
+  [ "$output" = $'phase_detect_error=true\nphase_detect_reason=setup_failed' ]
 }
