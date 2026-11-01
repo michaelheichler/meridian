@@ -6,8 +6,6 @@ load agent_generator_fixture
 OLD_BASH=/bin/bash
 BASH32_ERROR_PATTERN='invalid option|bad substitution|syntax error'
 FULL_RUN_ERROR_PATTERN='requires bash 4\.3|bad substitution|unbound variable|syntax error'
-# Ports are unmerged, so these still call the guard. Delete after the third.
-PENDING_GUARDED_SCRIPTS=(workflow-generator.sh render-workflow-template.sh tmux-spawn-group.sh)
 
 setup() {
   setup_temp_dir
@@ -28,14 +26,6 @@ skip_unless_old_bash() {
   [ "$major" = 3 ] || skip "$OLD_BASH is not bash 3.x"
 }
 
-is_pending_guarded() {
-  local pending
-  for pending in "${PENDING_GUARDED_SCRIPTS[@]}"; do
-    [ "$pending" = "$(basename "$1")" ] && return 0
-  done
-  return 1
-}
-
 calls_bash_guard() {
   grep -Eq '^[[:space:]]*require_bash_43([[:space:]]|$)' "$1"
 }
@@ -44,22 +34,10 @@ entry_scripts() {
   find "$SCRIPTS_DIR" -maxdepth 1 -name '*.sh' | sort
 }
 
-unguarded_entry_scripts() {
+guard_callers() {
   local script
   while IFS= read -r script; do
-    is_pending_guarded "$script" || printf '%s\n' "$script"
-  done < <(entry_scripts)
-}
-
-guard_list_drift() {
-  local script
-  while IFS= read -r script; do
-    if calls_bash_guard "$script" && ! is_pending_guarded "$script"; then
-      printf 'still calls require_bash_43: %s\n' "$(basename "$script")"
-    fi
-    if ! calls_bash_guard "$script" && is_pending_guarded "$script"; then
-      printf 'listed as pending but already ported, drop it from PENDING_GUARDED_SCRIPTS: %s\n' "$(basename "$script")"
-    fi
+    ! calls_bash_guard "$script" || basename "$script"
   done < <(entry_scripts)
 }
 
@@ -72,7 +50,7 @@ bash32_offenders() {
     if [[ "$stderr_text" =~ $BASH32_ERROR_PATTERN ]]; then
       printf '%s (exit %s): %s\n' "$(basename "$script")" "$status" "$(printf '%s' "$stderr_text" | head -n 1)"
     fi
-  done < <(unguarded_entry_scripts)
+  done < <(entry_scripts)
 }
 
 run_old_bash() {
@@ -165,14 +143,14 @@ case_render_agent_template() {
     || { report_case_failure render-agent-template "bash 3.2 output differs from modern bash"; return 1; }
 }
 
-@test "every unguarded entry script parses and starts under bash 3.2" {
+@test "every entry script parses and starts under bash 3.2" {
   skip_unless_old_bash
   run bash32_offenders
   [ -z "$output" ]
 }
 
-@test "no entry script outside the pending list still calls the bash 4.3 guard" {
-  run guard_list_drift
+@test "no entry script calls the bash 4.3 guard" {
+  run guard_callers
   [ -z "$output" ] || { echo "$output" >&2; return 1; }
 }
 
