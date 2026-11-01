@@ -98,6 +98,10 @@ expect_denied() {
 @test "TaskCreated denies a bound or unusable contract and leaves the manifest untouched" {
   fire_hook "$ADMISSION" TaskCreated native-5 "$CONTRACT_ID" >/dev/null
   expect_denied "task id already bound" "$ADMISSION" TaskCreated native-5 "$CONTRACT_ID" "is already bound"
+  cp "$CONTRACT" "$TEST_ROOT/contract.orig"
+  jq '.role = "tampered-role"' "$TEST_ROOT/contract.orig" > "$CONTRACT"
+  expect_denied "tampered contract in planned state" "$ADMISSION" TaskCreated native-11 "$CONTRACT_ID" "missing, stale, or invalid"
+  cp "$TEST_ROOT/contract.orig" "$CONTRACT"
   bash "$REPO_ROOT/scripts/task-contract.sh" state "$TEST_ROOT" "$CONTRACT_ID" dispatched >/dev/null
   bash "$REPO_ROOT/scripts/task-contract.sh" state "$TEST_ROOT" "$CONTRACT_ID" running >/dev/null
   expect_denied "contract past dispatched" "$ADMISSION" TaskCreated native-6 "$CONTRACT_ID" "missing, stale, or invalid"
@@ -122,4 +126,59 @@ expect_denied() {
   mv "$CONTROL_ROOT/m.tmp" "$CONTROL_ROOT/agent-manifest.json"
   rm "$CONTRACT"
   expect_denied "bound contract file missing" "$COMPLETION" TaskCompleted native-10 "" "binding is invalid"
+}
+
+hook_raw() {
+  local script="$1" payload="$2" root="${3:-}"
+  printf '%s' "$payload" | env -u LBWC_CONTROL_ROOT -u LBWC_PLANNING_DIR ${root:+LBWC_CONTROL_ROOT="$root"} bash "$script" 2>&1
+}
+
+hook_closed_stdin() {
+  LBWC_CONTROL_ROOT="$CONTROL_ROOT" bash "$1" < "$TEST_ROOT" 2>&1
+}
+
+hook_without_jq() {
+  mkdir -p "$TEST_ROOT/empty-bin"
+  PATH="$TEST_ROOT/empty-bin" "$BASH" "$1" </dev/null 2>&1
+}
+
+expect_blocked() {
+  local label="$1" reason="$2" before after code
+  shift 2
+  before=$(cat "$CONTROL_ROOT/agent-manifest.json")
+  output=$("$@") && code=0 || code=$?
+  after=$(cat "$CONTROL_ROOT/agent-manifest.json")
+  [ "$code" -eq 2 ] || { echo "[$label] exit $code, output: $output"; return 1; }
+  [[ "$output" == *"$reason"* ]] || { echo "[$label] reason missing, output: $output"; return 1; }
+  [ "$before" = "$after" ] || { echo "[$label] manifest changed on deny"; return 1; }
+}
+
+@test "TaskCreated blocks a malformed or unresolvable hook invocation" {
+  local nocwd='{"hook_event_name":"TaskCreated","cwd":"'"$BATS_TEST_TMPDIR"'","task_id":"t","task_subject":"s"}'
+  local noid='{"hook_event_name":"TaskCreated","cwd":"'"$TEST_ROOT"'","task_subject":"s"}'
+  local nosubject='{"hook_event_name":"TaskCreated","cwd":"'"$TEST_ROOT"'","task_id":"t"}'
+  expect_blocked "jq missing" "jq not available" hook_without_jq "$ADMISSION"
+  expect_blocked "payload unreadable" "unable to read TaskCreated payload" hook_closed_stdin "$ADMISSION"
+  expect_blocked "no control root" "no resolvable LBWC control root" hook_raw "$ADMISSION" "$nocwd"
+  expect_blocked "task id missing" "missing task identity" hook_raw "$ADMISSION" "$noid" "$CONTROL_ROOT"
+  expect_blocked "task subject missing" "missing task identity" hook_raw "$ADMISSION" "$nosubject" "$CONTROL_ROOT"
+}
+
+@test "TaskCompleted blocks a malformed or unresolvable hook invocation" {
+  local nocwd='{"hook_event_name":"TaskCompleted","cwd":"'"$BATS_TEST_TMPDIR"'","task_id":"t"}'
+  local noid='{"hook_event_name":"TaskCompleted","cwd":"'"$TEST_ROOT"'"}'
+  expect_blocked "jq missing" "jq not available" hook_without_jq "$COMPLETION"
+  expect_blocked "payload unreadable" "unable to read TaskCompleted payload" hook_closed_stdin "$COMPLETION"
+  expect_blocked "no control root" "no resolvable LBWC control root" hook_raw "$COMPLETION" "$nocwd"
+  expect_blocked "task id missing" "missing task identity" hook_raw "$COMPLETION" "$noid" "$CONTROL_ROOT"
+}
+
+@test "guards ignore events that are not their own and touch nothing" {
+  local before
+  before=$(cat "$CONTROL_ROOT/agent-manifest.json")
+  run hook_raw "$ADMISSION" '{"hook_event_name":"TaskCompleted","task_id":"t","task_subject":"s"}' "$CONTROL_ROOT"
+  [ "$status" -eq 0 ] && [ -z "$output" ] || { echo "[admission other event] exit $status output: $output"; false; }
+  run hook_raw "$COMPLETION" '{"hook_event_name":"TaskCreated","task_id":"t"}' "$CONTROL_ROOT"
+  [ "$status" -eq 0 ] && [ -z "$output" ] || { echo "[completion other event] exit $status output: $output"; false; }
+  [ "$before" = "$(cat "$CONTROL_ROOT/agent-manifest.json")" ]
 }
