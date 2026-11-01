@@ -122,8 +122,14 @@ run_verify() {
   mkdir -p "$PLANNING_DIR/phases/01-test"
   write_state 'Phase: 1 of 1 (test)' 'Plans: many'
   run run_verify
-  expect_case state-plans-invalid 1 "DRIFT STATE: Plans is"
+  expect_case state-plans-invalid 1 "DRIFT STATE: Plans is unparsable (value 'many'"
   expect_output_has state-plans-invalid "disk is 0/0"
+
+  fresh_planning state-plans-missing
+  mkdir -p "$PLANNING_DIR/phases/01-test"
+  write_state 'Phase: 1 of 1 (test)'
+  run run_verify
+  expect_case state-plans-missing 1 "DRIFT STATE: Plans is unparsable (value 'missing'"
 
   fresh_planning roadmap-no-dir
   make_minimal_project
