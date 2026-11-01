@@ -217,7 +217,7 @@ PROJECT_ROOT=$(CDPATH='' cd -- "${PLANNING_DIR%/}/.." && pwd -P)
 CDPATH='' cd -- "$PROJECT_ROOT"
 export LBWC_PLANNING_DIR="$PLANNING_DIR"
 
-ROUTING_FLAGS_JSON=$(routing_flags_json_from_args "${ROUTING_FLAGS[@]}")
+ROUTING_FLAGS_JSON=$(routing_flags_json_from_args ${ROUTING_FLAGS[@]+"${ROUTING_FLAGS[@]}"})
 
 SELECTED_JSON=$(LBWC_PLANNING_DIR="$PLANNING_DIR" bash "$SCRIPT_DIR/resolve-todo-item.sh" "$SELECTION" --session-snapshot --require-unfiltered --validate-live 2>/dev/null || true)
 if ! json_is_valid "$SELECTED_JSON"; then
