@@ -4,11 +4,13 @@ import re
 import sys
 from typing import Any, Optional
 
+from coverage_quoted_lines import quoted_lines
+
 # Because kcov keys a copy by its temp path, copies merge back by content.
 LINE = re.compile(r'^\{"lineNum":"\s*(\d+)","line":"(.*?)"((?:,"class":.*)?)\},?$')
 HITS = re.compile(r'"hits":"(\d+)"')
 ESCAPE = re.compile(r"\\(.)")
-DUMP_SUFFIX =re.compile(r"\.[0-9a-f]+\.js$")
+DUMP_SUFFIX = re.compile(r"\.[0-9a-f]+\.js$")
 
 
 def parse_line(raw: str) -> Optional[tuple[int, str, Optional[int]]]:
@@ -69,9 +71,11 @@ class Merger:
             lines[number] = lines.get(number, 0) + count
 
 
-def rows(merged: dict[str, dict[int, int]]) -> list[list[Any]]:
+def rows(merger: Merger) -> list[list[Any]]:
     table = []
-    for rel, lines in sorted(merged.items()):
+    for rel, all_lines in sorted(merger.merged.items()):
+        dropped = quoted_lines(merger.text(rel))
+        lines = {number: count for number, count in all_lines.items() if number not in dropped}
         covered = sum(1 for count in lines.values() if count > 0)
         total = len(lines)
         table.append([rel, covered, total, "%.2f" % (100.0 if not total else 100.0 * covered / total)])
@@ -83,7 +87,7 @@ def main(report_dir: str, repo: str, out_path: str) -> None:
     for dump_path in glob.glob(report_dir + "/*.js"):
         merger.add(dump_path)
     with open(out_path, "w") as handle:
-        for row in rows(merger.merged):
+        for row in rows(merger):
             handle.write("\t".join(str(cell) for cell in row) + "\n")
 
 
