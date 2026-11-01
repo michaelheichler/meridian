@@ -134,6 +134,8 @@ bash scripts/tests/agent-generator-core.sh
 bash scripts/release-verify.sh
 ```
 
+On macOS, run `bash scripts/dev/bats32.sh tests/` to execute the repo scripts under /bin/bash 3.2 while bats keeps the modern bash.
+
 After a new LBWC release, update the marketplace entry and the installed plugin:
 
 ```bash
