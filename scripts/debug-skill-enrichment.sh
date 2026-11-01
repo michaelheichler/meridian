@@ -97,7 +97,7 @@ extract_tokens() {
   printf '%s\n' "$QUERY" | tr '[:space:]' '\n' | awk '
     function clean(v) {
       gsub(/^[`"'"'"'([{<]+/, "", v)
-      gsub(/[`"'"'"')]}>.,:;!?]+$/, "", v)
+      gsub(/[]`"'"'"')}>.,:;!?]+$/, "", v)
       return v
     }
     function emit(v) {
