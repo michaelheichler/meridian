@@ -21,6 +21,14 @@ expect_case() {
     || record_case_failure "$label" "missing fragment=[$fragment] output=$output"
 }
 
+expect_case_exact() {
+  local label=$1 want_status=$2 expected=$3
+  [ "$status" -eq "$want_status" ] \
+    || record_case_failure "$label" "status=$status want=$want_status output=$output"
+  [ "$output" = "$expected" ] \
+    || record_case_failure "$label" "output=[$output] want=[$expected]"
+}
+
 expect_case_silent() {
   local label=$1 want_status=$2
   [ "$status" -eq "$want_status" ] \
