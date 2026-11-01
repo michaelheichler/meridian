@@ -1,5 +1,8 @@
 #!/usr/bin/env bats
 
+load gate_case_helper
+load gate_case_files
+
 setup() {
   REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/.." && pwd)"
   STATUSLINE="$REPO_ROOT/scripts/lbwc-statusline.sh"
@@ -25,6 +28,7 @@ case "$*" in
 esac
 EOF
   chmod +x "$BIN/git"
+  reset_case_failures
 }
 
 teardown() {
@@ -39,6 +43,16 @@ status_input() {
     cost:{total_cost_usd:1.25,total_duration_ms:65000,total_lines_added:12,total_lines_removed:3},
     rate_limits:{five_hour:{used_percentage:25,resets_at:"2026-08-09T18:00:00Z"},seven_day:{used_percentage:60,resets_at:"2026-08-15T18:00:00Z"}}
   }'
+}
+
+minimal_input() {
+  jq -cn --arg project "$PROJECT" '{model:{display_name:"Claude"},workspace:{project_dir:$project}}'
+}
+
+run_statusline() {
+  local input=$1
+  shift
+  run env -u TMUX -u TMUX_PANE PATH="$BIN:$PATH" "$@" bash "$STATUSLINE" <<< "$input"
 }
 
 write_tmux_config() {
@@ -61,7 +75,11 @@ write_tmux_registry() {
     > "$runtime/registry.json"
 }
 
-@test "statusline: renders native metrics, quota, and orchestration state without writes" {
+clear_tmux_runtime() {
+  rm -rf "$PROJECT/.lbwc-planning/.runtime"
+}
+
+@test "statusline: renders every line from native input, orchestration state and an absent quota without writes" {
   mkdir -p "$PROJECT/.lbwc-planning/phases/10-status"
   cat > "$PROJECT/.lbwc-planning/.contracts/tasks/task.json" <<EOF
 {"phase":"10"}
@@ -74,27 +92,23 @@ EOF
   python3 "$REPO_ROOT/scripts/lib/session-telemetry.py" record --root "$PROJECT/.lbwc-planning" --event session_start --outcome success >/dev/null
   local before
   before=$(find "$PROJECT" -type f -exec cksum {} \; | sort)
-  status_input > "$TEST_ROOT/status-input.json"
 
-  run bash -c "PATH='$BIN':\$PATH bash '$STATUSLINE' < '$TEST_ROOT/status-input.json'"
+  run_statusline "$(status_input)"
+  expect_case full-native-input 0 "Claude Opus"
+  expect_output_has full-native-input "feature/status"
+  [[ "$output" == *"5h"*"25%"*"7d"*"60%"* ]] || record_case_failure full-native-input "quota line missing output=$output"
+  [[ "$output" == *"phase 10"*"task task-10"*"pair 1 active"* ]] || record_case_failure full-native-input "flow line missing output=$output"
+  [[ "$output" == *"QA PASS"*"UAT complete"*"Telemetry"*"1 events"* ]] || record_case_failure full-native-input "quality line missing output=$output"
+  [ "$before" = "$(find "$PROJECT" -type f -exec cksum {} \; | sort)" ] \
+    || record_case_failure full-native-input "statusline wrote files into the project"
 
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"Claude Opus"* ]]
-  [[ "$output" == *"feature/status"* ]]
-  [[ "$output" == *"5h"*"25%"*"7d"*"60%"* ]]
-  [[ "$output" == *"phase 10"*"task task-10"*"pair 1 active"* ]]
-  [[ "$output" == *"QA PASS"*"UAT complete"*"Telemetry"*"1 events"* ]]
-  [ "$before" = "$(find "$PROJECT" -type f -exec cksum {} \; | sort)" ]
-}
+  mkdir -p "$TEST_ROOT/bare/.lbwc-planning"
+  run_statusline "$(jq -cn --arg project "$TEST_ROOT/bare" '{model:{display_name:"Claude"},workspace:{project_dir:$project}}')"
+  expect_case no-rate-limits 0 "Telemetry"
+  expect_output_lacks no-rate-limits "Quota"
+  expect_output_has no-rate-limits "off"
 
-@test "statusline: omits quota when Claude Code does not provide rate limits" {
-  run env PATH="$BIN:$PATH" bash "$STATUSLINE" <<EOF
-{"model":{"display_name":"Claude"},"workspace":{"project_dir":"$PROJECT"}}
-EOF
-
-  [ "$status" -eq 0 ]
-  [[ "$output" != *"Quota"* ]]
-  [[ "$output" == *"Telemetry"*"off"* ]]
+  assert_no_case_failures
 }
 
 @test "statusline: summarizes healthy and failed agent runtime with diagnostics" {
@@ -139,143 +153,122 @@ esac
 EOF
   chmod +x "$BIN/tmux"
 
-  run timeout 10 env PATH="$BIN:$PATH" TMUX=1 bash "$STATUSLINE" <<EOF
-{"model":{"display_name":"Claude"},"workspace":{"project_dir":"$PROJECT"}}
-EOF
+  run timeout 10 env PATH="$BIN:$PATH" TMUX=1 bash "$STATUSLINE" <<< "$(minimal_input)"
+  expect_case runtime-summary 0 "Backend tmux"
+  expect_output_has runtime-summary "session lbwc-main up"
+  expect_output_has runtime-summary "panes 4/4"
+  [[ "$output" == *"agents 3"*"running:1"*"idle:1"*"failed:1"* ]] || record_case_failure runtime-summary "agent counts missing output=$output"
+  [[ "$output" == *"stale 1"*"failed 1"* ]] || record_case_failure runtime-summary "stale and failed totals missing output=$output"
+  [[ "$output" == *"Diagnostics"*"stale lock"* ]] || record_case_failure runtime-summary "stale lock diagnostic missing output=$output"
 
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"Backend tmux"* ]]
-  [[ "$output" == *"session lbwc-main up"* ]]
-  [[ "$output" == *"panes 4/4"* ]]
-  [[ "$output" == *"agents 3"*"running:1"*"idle:1"*"failed:1"* ]]
-  [[ "$output" == *"stale 1"*"failed 1"* ]]
-  [[ "$output" == *"Diagnostics"*"stale lock"* ]]
+  assert_no_case_failures
 }
 
-@test "statusline: hides flow only inside tmux when configured" {
+@test "statusline: applies the hide, collapse and malformed tmux switches and the workflow backend" {
   write_tmux_config true false
   write_tmux_registry running 2000000000000
+  run_statusline "$(minimal_input)" TMUX=1
+  expect_case hide-agent-in-tmux 0 "Backend tmux"
+  expect_output_lacks hide-agent-in-tmux "Flow"
+  [[ "$output" == *"Context"*"Quality"* ]] || record_case_failure hide-agent-in-tmux "context and quality lines missing output=$output"
+  expect_output_has hide-agent-in-tmux "agents 1 running:1 idle:0 failed:0"
 
-  run env PATH="$BIN:$PATH" TMUX=1 bash "$STATUSLINE" <<EOF
-{"model":{"display_name":"Claude"},"workspace":{"project_dir":"$PROJECT"}}
-EOF
-
-  [ "$status" -eq 0 ]
-  [[ "$output" != *"Flow"* ]]
-  [[ "$output" == *"Context"*"Quality"* ]]
-  [[ "$output" == *"Backend tmux"* ]]
-  [[ "$output" == *"agents 1 running:1 idle:0 failed:0"* ]]
-}
-
-@test "statusline: collapses agent worktree panes inside tmux" {
   write_tmux_config false true
   write_tmux_registry failed 1
+  run_statusline "$(minimal_input)" LBWC_TEST_GIT_WORKTREE=true TMUX=1
+  expect_case collapse-agent-in-worktree 0 "Diagnostics failed agent"
+  [[ "$output" == *"LBWC"*"TMUX agents 1 running:0 idle:0 failed:1"* ]] || record_case_failure collapse-agent-in-worktree "collapsed line missing output=$output"
+  expect_output_lacks collapse-agent-in-worktree "Context"
+  expect_output_lacks collapse-agent-in-worktree "Flow"
+  expect_output_lacks collapse-agent-in-worktree "Quality"
+  expect_output_lacks collapse-agent-in-worktree "Backend"
 
-  run env PATH="$BIN:$PATH" LBWC_TEST_GIT_WORKTREE=true TMUX=1 bash "$STATUSLINE" <<EOF
-{"model":{"display_name":"Claude"},"workspace":{"project_dir":"$PROJECT"}}
-EOF
-
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"LBWC"*"TMUX agents 1 running:0 idle:0 failed:1"* ]]
-  [[ "$output" == *"Diagnostics failed agent"* ]]
-  [[ "$output" != *"Context"* ]]
-  [[ "$output" != *"Flow"* ]]
-  [[ "$output" != *"Quality"* ]]
-  [[ "$output" != *"Backend"* ]]
-}
-
-@test "statusline: collapse takes precedence over hide in tmux worktrees" {
   write_tmux_config true true
   write_tmux_registry running 2000000000000
+  run_statusline "$(minimal_input)" LBWC_TEST_GIT_WORKTREE=true TMUX=1
+  expect_case collapse-beats-hide 0 "TMUX agents 1 running:1 idle:0 failed:0"
+  expect_output_lacks collapse-beats-hide "Context"
+  expect_output_lacks collapse-beats-hide "Flow"
+  expect_output_lacks collapse-beats-hide "Quality"
 
-  run env PATH="$BIN:$PATH" LBWC_TEST_GIT_WORKTREE=true TMUX=1 bash "$STATUSLINE" <<EOF
-{"model":{"display_name":"Claude"},"workspace":{"project_dir":"$PROJECT"}}
-EOF
-
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"TMUX agents 1 running:1 idle:0 failed:0"* ]]
-  [[ "$output" != *"Context"* ]]
-  [[ "$output" != *"Flow"* ]]
-  [[ "$output" != *"Quality"* ]]
-}
-
-@test "statusline: preserves the standard contract outside tmux" {
   write_tmux_config true true
   write_tmux_registry failed 1
+  run_statusline "$(minimal_input)" LBWC_TEST_GIT_WORKTREE=true
+  [[ "$output" == *"Context"*"Flow"*"Quality"* ]] || record_case_failure outside-tmux "standard lines missing output=$output"
+  expect_case outside-tmux 0 ""
+  expect_output_lacks outside-tmux "Backend"
+  expect_output_lacks outside-tmux "TMUX"
+  expect_output_lacks outside-tmux "Diagnostics"
 
-  run env PATH="$BIN:$PATH" LBWC_TEST_GIT_WORKTREE=true bash "$STATUSLINE" <<EOF
-{"model":{"display_name":"Claude"},"workspace":{"project_dir":"$PROJECT"}}
-EOF
-
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"Context"*"Flow"*"Quality"* ]]
-  [[ "$output" != *"Backend"* ]]
-  [[ "$output" != *"TMUX"* ]]
-  [[ "$output" != *"Diagnostics"* ]]
-}
-
-@test "statusline: malformed tmux settings fail closed without hiding health" {
   printf '%s\n' '{"agent_execution_mode":"tmux","statusline_hide_agent_in_tmux":"true","statusline_collapse_agent_in_tmux":false}' > "$PROJECT/.lbwc-planning/config.json"
   write_tmux_registry failed 1
+  run_statusline "$(minimal_input)" TMUX=1
+  expect_case malformed-settings-fail-closed 0 "Flow"
+  expect_output_has malformed-settings-fail-closed "Backend invalid"
+  expect_output_has malformed-settings-fail-closed "Diagnostics configuration drift"
 
-  run env PATH="$BIN:$PATH" TMUX=1 bash "$STATUSLINE" <<EOF
-{"model":{"display_name":"Claude"},"workspace":{"project_dir":"$PROJECT"}}
-EOF
-
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"Flow"* ]]
-  [[ "$output" == *"Backend invalid"* ]]
-  [[ "$output" == *"Diagnostics configuration drift"* ]]
-}
-
-@test "statusline: workflow backend reports as itself without configuration drift" {
   printf '%s\n' '{"agent_execution_mode":"workflow","workflow_execution":{"enabled":true}}' > "$PROJECT/.lbwc-planning/config.json"
+  clear_tmux_runtime
+  run_statusline "$(minimal_input)" TMUX=1
+  expect_case workflow-backend 0 "Backend workflow"
+  expect_output_lacks workflow-backend "Backend invalid"
+  expect_output_lacks workflow-backend "Diagnostics"
 
-  run env PATH="$BIN:$PATH" TMUX=1 bash "$STATUSLINE" <<EOF
-{"model":{"display_name":"Claude"},"workspace":{"project_dir":"$PROJECT"}}
-EOF
-
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"Backend workflow"* ]]
-  [[ "$output" != *"Backend invalid"* ]]
-  [[ "$output" != *"Diagnostics"* ]]
+  assert_no_case_failures
 }
 
-@test "statusline installer: requires explicit confirmation and replacement approval" {
+@test "statusline-install: refuses without confirmation, replacement approval, valid arguments or valid settings" {
   local settings="$TEST_ROOT/settings.json"
   printf '%s\n' '{"statusLine":{"type":"command","command":"other-status"}}' > "$settings"
 
   run bash "$INSTALLER" --settings "$settings"
-  [ "$status" -eq 2 ]
-  [ "$output" = "statusline_install=confirmation_required" ]
+  expect_case no-confirmation 2 "statusline_install=confirmation_required"
 
   run bash "$INSTALLER" --settings "$settings" --yes
-  [ "$status" -eq 2 ]
-  [ "$output" = "statusline_install=replacement_confirmation_required" ]
-  [ "$(jq -r '.statusLine.command' "$settings")" = "other-status" ]
+  expect_case no-replace-approval 2 "statusline_install=replacement_confirmation_required"
+  [ "$(jq -r '.statusLine.command' "$settings")" = "other-status" ] \
+    || record_case_failure no-replace-approval "foreign statusline was overwritten"
+  [ ! -e "${settings}.lbwc-statusline.bak" ] \
+    || record_case_failure no-replace-approval "backup written for a refused install"
+
+  run bash "$INSTALLER" --settings "$settings" --bogus
+  expect_case unknown-argument 2 "Usage: statusline-install.sh"
+
+  run bash "$INSTALLER" --settings
+  expect_case settings-flag-without-path 2 "Usage: statusline-install.sh"
+
+  printf '%s\n' '[1,2]' > "$settings"
+  run bash "$INSTALLER" --settings "$settings" --yes
+  expect_case settings-not-an-object 2 "statusline_install=settings_malformed"
+
+  assert_no_case_failures
 }
 
-@test "statusline installer: writes object format and fifteen second refresh after approval" {
-  local settings="$TEST_ROOT/settings.json"
+@test "statusline-install: writes the command object with a fifteen second refresh and a backup" {
+  local settings="$TEST_ROOT/settings.json" fresh="$TEST_ROOT/nested/fresh.json" own="$TEST_ROOT/own.json"
+
   printf '{}\n' > "$settings"
-
   run bash "$INSTALLER" --settings "$settings" --yes
+  expect_case empty-settings 0 "statusline_install=installed refresh_interval=15"
+  expect_jq empty-settings "$settings" '.statusLine.type == "command" and .statusLine.refreshInterval == 15'
+  expect_jq empty-settings "$settings" '.statusLine.command | contains("lbwc-statusline.sh")'
+  expect_path empty-settings "${settings}.lbwc-statusline.bak"
 
-  [ "$status" -eq 0 ]
-  [ "$(jq -r '.statusLine.type' "$settings")" = "command" ]
-  [ "$(jq -r '.statusLine.refreshInterval' "$settings")" -eq 15 ]
-  [[ "$(jq -r '.statusLine.command' "$settings")" == *lbwc-statusline.sh* ]]
-  [ -f "${settings}.lbwc-statusline.bak" ]
-}
-
-@test "statusline installer: replaces another statusline only with both approvals" {
-  local settings="$TEST_ROOT/settings.json"
   printf '%s\n' '{"statusLine":{"type":"command","command":"other-status"}}' > "$settings"
-
   run bash "$INSTALLER" --settings "$settings" --yes --replace
+  expect_case replace-foreign 0 "statusline_install=installed"
+  expect_jq replace-foreign "$settings" '.statusLine.command | contains("lbwc-statusline.sh")'
+  expect_jq replace-foreign "$settings" '.statusLine.refreshInterval == 15'
+  expect_jq replace-foreign "${settings}.lbwc-statusline.bak" '.statusLine.command == "other-status"'
 
-  [ "$status" -eq 0 ]
-  [[ "$(jq -r '.statusLine.command' "$settings")" == *lbwc-statusline.sh* ]]
-  [ "$(jq -r '.statusLine.refreshInterval' "$settings")" -eq 15 ]
-  [ "$(jq -r '.statusLine.command' "${settings}.lbwc-statusline.bak")" = "other-status" ]
+  run bash "$INSTALLER" --settings "$fresh" --yes
+  expect_case missing-settings-file 0 "statusline_install=installed"
+  expect_jq missing-settings-file "$fresh" '.statusLine.refreshInterval == 15'
+
+  printf '%s\n' '{"statusLine":{"type":"command","command":"bash /old/lbwc-statusline.sh"}}' > "$own"
+  run bash "$INSTALLER" --settings "$own" --yes
+  expect_case reinstall-own-statusline 0 "statusline_install=installed"
+  expect_jq reinstall-own-statusline "$own" '.statusLine.command | contains("lbwc-statusline.sh") and (contains("/old/") | not)'
+
+  assert_no_case_failures
 }
