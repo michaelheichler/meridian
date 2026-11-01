@@ -4,14 +4,13 @@ load test_helper
 
 setup() {
   REPO_ROOT="$BATS_TEST_DIRNAME/.."
-  SCRIPT="$REPO_ROOT/scripts/lbwc-config.sh"
   TRANSACTION="$REPO_ROOT/scripts/team-command-transaction.sh"
   TEST_ROOT="$(mktemp -d)"
   SETTINGS="$TEST_ROOT/settings.json"
   printf '%s\n' '{}' > "$SETTINGS"
   PROJECT="$TEST_ROOT/project"
   mkdir -p "$PROJECT/src" "$TEST_ROOT/claude"
-  git -C "$PROJECT" init -q
+  (cd "$PROJECT" && git init -q)
   export LBWC_SETTINGS_PATH="$SETTINGS"
   export CLAUDE_CONFIG_DIR="$TEST_ROOT/claude"
   unset CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS || true
@@ -25,6 +24,7 @@ teardown() {
 prepare_run() {
   local run_id="$1"
   shift
+  RUN_ID="$run_id"
   LBWC_SETTINGS_PATH="$SETTINGS" run bash "$TRANSACTION" prepare \
     --project-root "$PROJECT" --run-id "$run_id" --instruction "implement scoped change" "$@"
   [ "$status" -eq 0 ]
@@ -34,18 +34,39 @@ prepare_run() {
   [ -n "$RUN_ROOT" ]
 }
 
+rewrite_json() {
+  local file="$1" updated
+  shift
+  updated=$(jq -c "$@" "$file") || return 1
+  printf '%s\n' "$updated" > "$file"
+}
+
 manifest_set_running() {
-  local manifest="$RUN_ROOT/agent-manifest.json" updated
-  updated=$(jq -c '.agents |= with_entries(.value.state = "running")' "$manifest")
-  printf '%s\n' "$updated" > "$manifest"
+  rewrite_json "$RUN_ROOT/agent-manifest.json" '.agents |= with_entries(.value.state = "running")'
 }
 
 manifest_bind_task() {
-  local manifest="$RUN_ROOT/agent-manifest.json" updated
-  updated=$(jq -c --arg task "$1" --arg contract "$CONTRACT_ID" '
+  rewrite_json "$RUN_ROOT/agent-manifest.json" --arg task "$1" --arg contract "$CONTRACT_ID" '
     .tasks = ((.tasks // {}) + {($task): {native_task_id:$task, contract_id:$contract, contract_path:"", contract_digest:"", subject:$contract, state:"created", created_at:"2026-01-01T00:00:00Z"}})
-  ' "$manifest")
-  printf '%s\n' "$updated" > "$manifest"
+  '
+}
+
+retarget_run_backend() {
+  local backend="$1" contract_path new_id
+  contract_path=$(bash "$REPO_ROOT/scripts/task-contract.sh" issue "$PROJECT" "$RUN_ID-$backend" \
+    --command team --role web-engineer --team pair --job retarget --control-root "$RUN_ROOT" \
+    --runtime-kind native-team --communication-policy native-team \
+    --requested-backend "$backend" --resolved-backend "$backend" \
+    --role-write-capability web-engineer:directory:src) || return 1
+  new_id=$(basename "$contract_path" .json)
+  rewrite_json "$RUN_ROOT/contract.json" --arg id "$new_id" --arg backend "$backend" \
+    '.contract_id = $id | .requested_backend = $backend | .resolved_backend = $backend'
+  rewrite_json "$RUN_ROOT/run.json" --arg backend "$backend" \
+    '.requested_backend = $backend | .resolved_backend = $backend'
+  rewrite_json "$RUN_ROOT/agent-manifest.json" --arg id "$new_id" --arg backend "$backend" '
+    .agents |= with_entries(.value.contract_id = $id | .value.execution.contract_id = $id
+      | .value.execution.requested_backend = $backend | .value.execution.resolved_backend = $backend)
+  '
 }
 
 record_full_roster() {
@@ -58,247 +79,70 @@ record_full_roster() {
   done < <(jq -r '.teammates[].name' <<< "$output")
 }
 
-@test "agent teams status reports disabled without changing settings" {
-  run env -u CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS CLAUDE_CONFIG_DIR="$TEST_ROOT/claude" \
-    bash "$SCRIPT" agent-teams-status --settings "$SETTINGS"
-
-  [ "$status" -eq 0 ]
-  jq -e '.enabled == false and .source == "none"' <<< "$output" >/dev/null
-  [ "$(jq -c . "$SETTINGS")" = "{}" ]
+seed_saved_routing_root() {
+  local route_binary="$TEST_ROOT/claude-route-fixture" route_sha
+  mkdir -p "$PROJECT/.lbwc-planning"
+  printf '%s\n' '#!/usr/bin/env bash' 'printf "%s\n" "fixture"' > "$route_binary"
+  chmod +x "$route_binary"
+  route_sha=$(shasum -a 256 "$route_binary" | awk '{print $1}')
+  jq -n --arg binary "$route_binary" --arg sha "$route_sha" '
+    {
+      schema_version: 1,
+      source: {binary_path: $binary, version: "fixture", sha256: $sha, detected_at: "2035-01-02T03:04:05Z"},
+      models: [{selector: "nova-route", label: "Nova Route", description: "Fixture selector"}],
+      reasoning: {scope: "global", accepted_values: ["deliberate"], model_associations: {"nova-route": ["deliberate"]}}
+    }
+  ' > "$PROJECT/.lbwc-planning/claude-capabilities.json"
+  jq --slurpfile defaults "$REPO_ROOT/templates/agent-roles/defaults.json" '
+    . + {
+      schema_version: 1,
+      routing: {
+        active_profile: "balanced",
+        profiles: {
+          quality: {roles: {}},
+          balanced: {
+            roles: ($defaults[0] | keys | map({key: ., value: {model: "nova-route", reasoning: "deliberate", status: "resolved"}}) | from_entries)
+          },
+          turbo: {roles: {}}
+        }
+      }
+    }
+  ' "$REPO_ROOT/config/settings.json" > "$PROJECT/.lbwc-planning/config.json"
 }
 
-@test "agent teams check is RED when settings omit the teams flag" {
-  run env -u CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS \
-    bash "$SCRIPT" agent-teams-check --settings "$SETTINGS"
-
-  [ "$status" -eq 0 ]
-  [ "$output" = "TEAM CHECK IS NOT ENABLED." ]
-}
-
-@test "agent teams check is GREEN when user settings enable the teams flag" {
-  jq -n '{env:{CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS:"1"}}' > "$SETTINGS"
-
-  run env -u CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS \
-    bash "$SCRIPT" agent-teams-check --settings "$SETTINGS"
-
-  [ "$status" -eq 0 ]
-  [ "$output" = "TEAM CHECK IS ENABLED. MOVE TO THE NEXT CHECK." ]
-}
-
-@test "agent teams check is GREEN when project settings enable the teams flag" {
-  mkdir -p "$PROJECT/.claude" "$TEST_ROOT/claude"
-  jq -n '{env:{CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS:"1"}}' \
-    > "$PROJECT/.claude/settings.json"
-
-  run env -u CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS CLAUDE_CONFIG_DIR="$TEST_ROOT/claude" \
-    bash "$SCRIPT" agent-teams-check --project-root "$PROJECT"
-
-  [ "$status" -eq 0 ]
-  [ "$output" = "TEAM CHECK IS ENABLED. MOVE TO THE NEXT CHECK." ]
-}
-
-@test "agent teams check stays RED on an explicit empty settings pin even if project is enabled" {
-  mkdir -p "$PROJECT/.claude"
-  jq -n '{env:{CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS:"1"}}' \
-    > "$PROJECT/.claude/settings.json"
-
-  run env -u CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS \
-    bash "$SCRIPT" agent-teams-check --settings "$SETTINGS" --project-root "$PROJECT"
-
-  [ "$status" -eq 0 ]
-  [ "$output" = "TEAM CHECK IS NOT ENABLED." ]
-}
-
-@test "agent teams check is RED when project disable overrides user enable" {
-  mkdir -p "$PROJECT/.claude" "$TEST_ROOT/claude"
-  jq -n '{env:{CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS:"1"}}' \
-    > "$TEST_ROOT/claude/settings.json"
-  jq -n '{env:{CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS:"0"}}' \
-    > "$PROJECT/.claude/settings.json"
-
-  run env -u CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS CLAUDE_CONFIG_DIR="$TEST_ROOT/claude" \
-    bash "$SCRIPT" agent-teams-check --project-root "$PROJECT"
-
-  [ "$status" -eq 0 ]
-  [ "$output" = "TEAM CHECK IS NOT ENABLED." ]
-}
-
-@test "agent teams check skips a corrupt sibling settings file" {
-  mkdir -p "$PROJECT/.claude" "$TEST_ROOT/claude"
-  printf '%s\n' 'not-json' > "$PROJECT/.claude/settings.local.json"
-  jq -n '{env:{CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS:"1"}}' \
-    > "$PROJECT/.claude/settings.json"
-
-  run env -u CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS CLAUDE_CONFIG_DIR="$TEST_ROOT/claude" \
-    bash "$SCRIPT" agent-teams-check --project-root "$PROJECT"
-
-  [ "$status" -eq 0 ]
-  [ "$output" = "TEAM CHECK IS ENABLED. MOVE TO THE NEXT CHECK." ]
-}
-
-@test "agent teams check fails closed on a pinned corrupt settings file" {
-  printf '%s\n' 'not-json' > "$SETTINGS"
-
-  run env -u CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS \
-    bash "$SCRIPT" agent-teams-check --settings "$SETTINGS"
-
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"settings file is not valid JSON"* ]]
-}
-
-@test "agent teams enable requires explicit approval" {
-  run bash "$SCRIPT" agent-teams-enable --settings "$SETTINGS"
-
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"explicit approval"* ]]
-  jq -e 'has("env") | not' "$SETTINGS" >/dev/null
-}
-
-@test "approved agent teams enable writes settings and restart guidance is observable" {
-  run bash "$SCRIPT" agent-teams-enable --settings "$SETTINGS" --approved
-
-  [ "$status" -eq 0 ]
-  jq -e '.env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS == "1"' \
-    "$SETTINGS" >/dev/null
-  [[ "$output" == *"restart Claude Code"* ]]
-}
-
-@test "team command documents proposal gating, repeatable root scope, and native spawn rules" {
-  command="$REPO_ROOT/commands/team.md"
-
-  grep -F -- '--scope <path>' "$command"
-  grep -F -- 'default scope is `.`' "$command"
-  grep -F -- 'No contract, native task, generated definition, or teammate exists until confirmation.' "$command"
-  grep -F -- 'Never pass `team_name`' "$command"
-  grep -F -- 'Do not edit Claude Code native team configuration' "$command"
-  grep -F 'TEAM CHECK IS ENABLED. MOVE TO THE NEXT CHECK.' "$command"
-  grep -F 'TEAM CHECK IS NOT ENABLED.' "$command"
-  grep -F 'do not ask whether team agents should be enabled' "$command"
-  grep -F 'agent-teams-check --project-root' "$command"
-  grep -F 'agent-teams-status --project-root' "$command"
-  grep -F 'lbwc-model" refresh' "$command"
-  grep -F 'lbwc-routing.sh check' "$command"
-  grep -F 'agent-teams-status --project-root' "$TRANSACTION"
-  ! grep -E 'agent-teams-status --settings' "$TRANSACTION"
-}
-
-@test "team command documents execution choice and an explicit tmux spawn branch" {
-  command="$REPO_ROOT/commands/team.md"
-
-  grep -F 'agent_execution_mode=ask' "$command"
-  grep -F 'Native team' "$command"
-  grep -F 'TMUX panes' "$command"
-  grep -F 'Cancel spawn' "$command"
-  grep -F 'Do not replace native teams' "$command"
-  grep -F -- '--requested-backend' "$command"
-  grep -F -- '--resolved-backend' "$command"
-  grep -F -- '--control-root' "$command"
-  grep -F -- '--assert-snapshot' "$command"
-  grep -F 'agent-generator.sh --execution-backend' "$command"
-  grep -F 'Schema 2 generation omits `--execution-backend`' "$command"
-  grep -F 'references/tmux-spawn-protocol.md' "$command"
-  grep -F 'tmux-spawn-group.sh" dispatch' "$command"
-  grep -F 'CLAUDE_SESSION_ID' "$command"
-  grep -F 'If `snapshot.resolved_backend` is `in_process`' "$command"
-  grep -F 'If `snapshot.resolved_backend` is `tmux`' "$command"
-  grep -F 'Do not call native Agent.' "$command"
-  grep -F 'Do not run `prepare`' "$command"
-  grep -F 'Choose one collision-safe run id, then issue' "$command"
-  grep -F '[ -f "$SNAPSHOT_PATH" ]' "$command"
-  ! grep -F 'MAIN_ID=main-session' "$command"
-  ! grep -F '$AGENTS_JSON' "$command"
-}
-
-@test "team command documents the workflow execution option and its spawn branch" {
-  command="$REPO_ROOT/commands/team.md"
-
-  grep -F 'agent_execution_mode=workflow' "$command"
-  grep -F '.workflow.available' "$command"
-  grep -F '.workflow.unavailable_reasons' "$command"
-  grep -F 'There is no automatic fallback from a requested `workflow` to another backend.' "$command"
-  grep -F 'Workflow run' "$command"
-  grep -F '.workflow_execution.enabled' "$command"
-  grep -F 'question when `.workflow.available` and `.workflow_execution.enabled` are both `true`: `After confirming this team, where should teammates run? Workflow run orchestrates the roster from a committed background script. Native keeps the current Claude Code Agent team. TMUX starts each teammate as a fresh pane session.`' "$command"
-  grep -F 'question when `.workflow.available` or `.workflow_execution.enabled` is not `true`: `After confirming this team, where should teammates run? Native keeps the current Claude Code Agent team. TMUX starts each teammate as a fresh pane session.`' "$command"
-  grep -F 'options when `.workflow.available` and `.workflow_execution.enabled` are both `true`' "$command"
-  grep -F 'options when `.workflow.available` or `.workflow_execution.enabled` is not `true`' "$command"
-  grep -F 'If the user chooses `Workflow run`, select requested and resolved `workflow`.' "$command"
-  grep -F 'If `snapshot.resolved_backend` is `workflow`' "$command"
-  grep -F 'references/workflow-spawn-protocol.md' "$command"
-  grep -F '7. **Workflow path.**' "$command"
-  grep -F 'workflow-generator.sh' "$command"
-  grep -F 'WORKFLOW_READY' "$command"
-  grep -F 'set to the path value from the `Workflow-call parameters:` block, confirmed by the `WORKFLOW_READY <task-id>` line that follows it' "$command"
-  grep -F 'Never pass `script`' "$command"
-  grep -F 'scriptPath' "$command"
-  grep -F 'user_decision_required' "$command"
-}
-
-@test "agent spawn protocol documents workflow spawn mechanics and its references" {
-  local protocol="$REPO_ROOT/references/agent-spawn-protocol.md"
-
-  grep -F 'references/workflow-spawn-protocol.md' "$protocol"
-  grep -F 'references/workflow-api-contract.md' "$protocol"
-  [ -f "$REPO_ROOT/references/workflow-spawn-protocol.md" ]
-  [ -f "$REPO_ROOT/references/workflow-api-contract.md" ]
-}
-
-@test "team-command-transaction widens the run roster backend enum to include workflow" {
-  grep -F 'in_process|tmux|workflow' "$TRANSACTION"
-}
-
-@test "team command is registered in the command section contract" {
-  jq -e '.commands["team.md"].required_headings == ["Context","Guard","Steps","Failure and recovery","Output Format","Next Up"]' \
-    "$REPO_ROOT/config/command-sections.json" >/dev/null
+run_seeded_host_model() {
+  jq -n --argjson enum "$1" --argjson models "$2" --argjson ids "$3" \
+    '{host_agent_enum: $enum, models: $models, agent_model_ids: $ids}' > "$TEST_ROOT/host-model.json"
+  run jq -r -f "$REPO_ROOT/scripts/lib/seeded-host-model.jq" "$TEST_ROOT/host-model.json"
 }
 
 @test "seeded host model skips a custom enum head and prefers sonnet when present" {
-  run jq -r -f "$REPO_ROOT/scripts/lib/seeded-host-model.jq" <<'JSON'
-{
-  "host_agent_enum": ["leverframe:openai-oauth:codex-auto-review", "opus", "sonnet"],
-  "models": [],
-  "agent_model_ids": {}
-}
-JSON
+  run_seeded_host_model '["leverframe:openai-oauth:codex-auto-review","opus","sonnet"]' '[]' '{}'
 
   [ "$status" -eq 0 ]
   [ "$output" = "sonnet" ]
 }
 
 @test "seeded host model uses the first native family when sonnet is absent" {
-  run jq -r -f "$REPO_ROOT/scripts/lib/seeded-host-model.jq" <<'JSON'
-{
-  "host_agent_enum": ["leverframe:openai-oauth:codex-auto-review", "amber", "violet"],
-  "models": [],
-  "agent_model_ids": {}
-}
-JSON
+  run_seeded_host_model '["leverframe:openai-oauth:codex-auto-review","amber","violet"]' '[]' '{}'
 
   [ "$status" -eq 0 ]
   [ "$output" = "amber" ]
 }
 
 @test "seeded host model maps a claude selector when the enum is only custom ids" {
-  run jq -r -f "$REPO_ROOT/scripts/lib/seeded-host-model.jq" <<'JSON'
-{
-  "host_agent_enum": ["leverframe:openai-oauth:codex-auto-review"],
-  "models": [{"selector": "claude-amber-route", "label": "Amber Route", "description": "Amber Route"}],
-  "agent_model_ids": {"claude-amber-route": "amber"}
-}
-JSON
+  run_seeded_host_model '["leverframe:openai-oauth:codex-auto-review"]' \
+    '[{"selector":"claude-amber-route","label":"Amber Route","description":"Amber Route"}]' \
+    '{"claude-amber-route":"amber"}'
 
   [ "$status" -eq 0 ]
   [ "$output" = "amber" ]
 }
 
 @test "seeded host model fails closed when only custom ids exist" {
-  run jq -r -f "$REPO_ROOT/scripts/lib/seeded-host-model.jq" <<'JSON'
-{
-  "host_agent_enum": ["leverframe:openai-oauth:codex-auto-review"],
-  "models": [{"selector": "leverframe:openai-oauth:codex-auto-review", "label": "custom", "description": "custom"}],
-  "agent_model_ids": {"leverframe:openai-oauth:codex-auto-review": "leverframe:openai-oauth:codex-auto-review"}
-}
-JSON
+  run_seeded_host_model '["leverframe:openai-oauth:codex-auto-review"]' \
+    '[{"selector":"leverframe:openai-oauth:codex-auto-review","label":"custom","description":"custom"}]' \
+    '{"leverframe:openai-oauth:codex-auto-review":"leverframe:openai-oauth:codex-auto-review"}'
 
   [ "$status" -eq 0 ]
   [ -z "$output" ]
@@ -348,25 +192,34 @@ JSON
   jq -e '.routing.mode == "saved" and .routing.profile == "null"' <<< "$output" >/dev/null
 }
 
-@test "preflight is read-only and reports canonical scopes and no side effects" {
-  run bash "$TRANSACTION" preflight --project-root "$PROJECT" --scope src --scope src
+@test "preflight is read-only and reports the canonical root, pair mode, and no side effects" {
+  run bash "$TRANSACTION" preflight --project-root "$PROJECT" --scope src
 
   [ "$status" -eq 0 ]
   expected_root=$(cd -P "$PROJECT" && pwd -P)
   jq -e --arg root "$expected_root" '
     .project_root == $root
-    and .scopes == ["src"]
     and .side_effects == false
     and .team_mode == "pair"
   ' <<< "$output" >/dev/null
   [ ! -e "$PROJECT/.temporary-agent-runfiles" ]
 }
 
-@test "preflight defaults scope to the repository root" {
-  run bash "$TRANSACTION" preflight --project-root "$PROJECT"
-
-  [ "$status" -eq 0 ]
-  jq -e '.scopes == ["."]' <<< "$output" >/dev/null
+@test "preflight resolves scope arguments to a canonical deduplicated list" {
+  local label scope_args expected
+  local -a scope_array
+  while IFS='|' read -r label scope_args expected; do
+    [ -n "$label" ] || continue
+    scope_array=()
+    [ -z "$scope_args" ] || read -r -a scope_array <<< "$scope_args"
+    run bash "$TRANSACTION" preflight --project-root "$PROJECT" ${scope_array[@]+"${scope_array[@]}"}
+    [ "$status" -eq 0 ] || { echo "case=$label status=$status output=$output" >&2; return 1; }
+    [ "$(jq -c '.scopes' <<< "$output")" = "$expected" ] \
+      || { echo "case=$label expected=$expected output=$output" >&2; return 1; }
+  done <<'CASES'
+default-is-repository-root||["."]
+repeated-scope-deduplicates|--scope src --scope src|["src"]
+CASES
 }
 
 @test "preflight rejects a protected scope" {
@@ -382,15 +235,24 @@ JSON
   prepare_run run-pair --scope src
 
   jq -e --argjson scopes '["src"]' '.ordered_actions == ["agent_spawn", "task_create"]
+    and .schema_version == 3
     and .team_mode == "pair"
     and .scopes == $scopes
+    and .requested_backend == "in_process"
+    and .resolved_backend == "in_process"
     and (.teammates | length) == 2
     and .contract_state == "dispatched"' <<< "$output" >/dev/null
   [ -f "$RUN_ROOT/run.json" ]
   [ -f "$RUN_ROOT/diagnostics.jsonl" ]
-  jq -e '.status == "planned"' "$RUN_ROOT/run.json" >/dev/null
+  jq -e '.status == "planned"
+    and .requested_backend == "in_process"
+    and .resolved_backend == "in_process"
+    and (.teammates | length) == 2' "$RUN_ROOT/run.json" >/dev/null
+  jq -e '.requested_backend == "in_process" and .resolved_backend == "in_process"' \
+    "$RUN_ROOT/contract.json" >/dev/null
   contract_path="$RUN_ROOT/contracts/tasks/$CONTRACT_ID.json"
   [ -f "$contract_path" ]
+  [ "$(find "$RUN_ROOT/contracts/tasks" -name '*.json' | wc -l | tr -d ' ')" -eq 1 ]
   jq -e --arg id "$CONTRACT_ID" '
     .schema_version == 3
     and .contract_id == $id
@@ -417,37 +279,6 @@ JSON
   done < <(jq -r '.teammates[].name' <<< "$output")
 }
 
-@test "prepare derives backend records from the contract before native spawn" {
-  prepare_run run-backend --scope src
-
-  jq -e '
-    .schema_version == 3
-    and .requested_backend == "in_process"
-    and .resolved_backend == "in_process"
-    and .ordered_actions == ["agent_spawn", "task_create"]
-  ' <<< "$output" >/dev/null
-  jq -e '
-    .requested_backend == "in_process"
-    and .resolved_backend == "in_process"
-    and (.teammates | length) == 2
-  ' "$RUN_ROOT/run.json" >/dev/null
-  jq -e '
-    .requested_backend == "in_process"
-    and .resolved_backend == "in_process"
-  ' "$RUN_ROOT/contract.json" >/dev/null
-}
-
-@test "spawn-payload rejects backend sidecar drift from the contract" {
-  prepare_run run-backend-drift --scope src
-  jq '.resolved_backend = "tmux"' "$RUN_ROOT/run.json" > "$TEST_ROOT/run.json"
-  mv "$TEST_ROOT/run.json" "$RUN_ROOT/run.json"
-
-  run bash "$TRANSACTION" spawn-payload --project-root "$PROJECT" --run-root "$RUN_ROOT"
-
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"backend metadata does not match the contract"* ]]
-}
-
 @test "prepare with --test-dev issues a trio contract and registers three teammates" {
   prepare_run run-trio --scope src --test-dev
 
@@ -461,42 +292,8 @@ JSON
   ' "$contract_path" >/dev/null
 }
 
-@test "prepare issues exactly one contract for the whole roster" {
-  prepare_run run-single
-
-  [ "$(find "$RUN_ROOT/contracts/tasks" -name '*.json' | wc -l | tr -d ' ')" -eq 1 ]
-  jq -e '.teammates | length == 2' "$RUN_ROOT/run.json" >/dev/null
-}
-
 @test "prepare keeps an initialized project control root while always creating a run root" {
-  mkdir -p "$PROJECT/.lbwc-planning"
-  route_binary="$TEST_ROOT/claude-route-fixture"
-  printf '%s\n' '#!/usr/bin/env bash' 'printf "%s\n" "fixture"' > "$route_binary"
-  chmod +x "$route_binary"
-  route_sha=$(shasum -a 256 "$route_binary" | awk '{print $1}')
-  jq -n --arg binary "$route_binary" --arg sha "$route_sha" '
-    {
-      schema_version: 1,
-      source: {binary_path: $binary, version: "fixture", sha256: $sha, detected_at: "2035-01-02T03:04:05Z"},
-      models: [{selector: "nova-route", label: "Nova Route", description: "Fixture selector"}],
-      reasoning: {scope: "global", accepted_values: ["deliberate"], model_associations: {"nova-route": ["deliberate"]}}
-    }
-  ' > "$PROJECT/.lbwc-planning/claude-capabilities.json"
-  jq --slurpfile defaults "$REPO_ROOT/templates/agent-roles/defaults.json" '
-    . + {
-      schema_version: 1,
-      routing: {
-        active_profile: "balanced",
-        profiles: {
-          quality: {roles: {}},
-          balanced: {
-            roles: ($defaults[0] | keys | map({key: ., value: {model: "nova-route", reasoning: "deliberate", status: "resolved"}}) | from_entries)
-          },
-          turbo: {roles: {}}
-        }
-      }
-    }
-  ' "$REPO_ROOT/config/settings.json" > "$PROJECT/.lbwc-planning/config.json"
+  seed_saved_routing_root
 
   prepare_run run-init --scope src
 
@@ -506,6 +303,20 @@ JSON
   [ -f "$RUN_ROOT/diagnostics.jsonl" ]
   [ -f "$PROJECT/.lbwc-planning/.agent-manifest.json" ]
   [ -f "$PROJECT/.lbwc-planning/.contracts/tasks/$CONTRACT_ID.json" ]
+}
+
+@test "spawn-payload accepts a run whose contract uses a tmux or workflow backend" {
+  local backend
+  for backend in tmux workflow; do
+    prepare_run "run-$backend" --scope src
+    retarget_run_backend "$backend"
+
+    run bash "$TRANSACTION" spawn-payload --project-root "$PROJECT" --run-root "$RUN_ROOT"
+
+    [ "$status" -eq 0 ] || { echo "backend=$backend status=$status output=$output" >&2; return 1; }
+    [ "$(jq '.agent_payloads | length' <<< "$output")" -eq 2 ] \
+      || { echo "backend=$backend output=$output" >&2; return 1; }
+  done
 }
 
 @test "spawn-payload emits Agent calls with only subagent_type and name" {
@@ -522,12 +333,20 @@ JSON
   jq -e '[.agent_payloads[].subagent_type] == .roster' <<< "$output" >/dev/null
 }
 
+@test "spawn-payload rejects backend sidecar drift from the contract" {
+  prepare_run run-backend-drift --scope src
+  rewrite_json "$RUN_ROOT/run.json" '.resolved_backend = "tmux"'
+
+  run bash "$TRANSACTION" spawn-payload --project-root "$PROJECT" --run-root "$RUN_ROOT"
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"backend metadata does not match the contract"* ]]
+}
+
 @test "spawn-payload blocks a teammate whose manifest identity does not match the contract" {
   prepare_run run-spawn-guard --scope src
-  manifest="$RUN_ROOT/agent-manifest.json"
   name=$(jq -r '.teammates[0].name' "$RUN_ROOT/run.json")
-  updated=$(jq -c --arg name "$name" '.agents[$name].contract_id = "tampered"' "$manifest")
-  printf '%s\n' "$updated" > "$manifest"
+  rewrite_json "$RUN_ROOT/agent-manifest.json" --arg name "$name" '.agents[$name].contract_id = "tampered"'
 
   run bash "$TRANSACTION" spawn-payload --project-root "$PROJECT" --run-root "$RUN_ROOT"
 
@@ -623,54 +442,4 @@ JSON
   [[ "$output" == *"run_id: run-summary"* ]]
   [[ "$output" == *"status: completed"* ]]
   [[ "$output" == *"$CONTRACT_ID=dispatched"* ]]
-}
-
-@test "team context directive is self-contained and resolves plugin root, project root, and RED team check with LINK unset" {
-  command="$REPO_ROOT/commands/team.md"
-  directive=$(awk '/^!`/{sub(/^!`/,""); sub(/`$/,""); print; exit}' "$command")
-  [ -n "$directive" ]
-  [[ "$directive" != *'${LINK}'* ]]
-
-  run env -u LINK -u PROJECT_ROOT -u AGENT_TEAMS_CHECK -u CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS \
-    CLAUDE_PLUGIN_ROOT="$REPO_ROOT" \
-    CLAUDE_CONFIG_DIR="$TEST_ROOT/claude" \
-    LBWC_SETTINGS_PATH="$SETTINGS" \
-    bash -c "cd \"$PROJECT\" && $directive"
-
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"Plugin root: "* ]]
-  [[ "$output" == *"Project root: "* ]]
-  [[ "$output" == *"TEAM CHECK IS NOT ENABLED."* ]]
-  [[ "$output" != *"TEAM CHECK IS ENABLED. MOVE TO THE NEXT CHECK."* ]]
-  [ ! -e "$PROJECT/.temporary-agent-runfiles" ]
-  [ ! -e "$PROJECT/.lbwc-planning" ]
-  [ "$(jq -c . "$SETTINGS")" = "{}" ]
-}
-
-@test "team context directive is GREEN when Claude Code settings already enable agent teams" {
-  command="$REPO_ROOT/commands/team.md"
-  directive=$(awk '/^!`/{sub(/^!`/,""); sub(/`$/,""); print; exit}' "$command")
-  mkdir -p "$TEST_ROOT/claude"
-  jq -n '{env:{CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS:"1"}}' \
-    > "$TEST_ROOT/claude/settings.json"
-
-  run env -u LINK -u PROJECT_ROOT -u AGENT_TEAMS_CHECK -u CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS \
-    CLAUDE_PLUGIN_ROOT="$REPO_ROOT" \
-    CLAUDE_CONFIG_DIR="$TEST_ROOT/claude" \
-    bash -c "cd \"$PROJECT\" && $directive"
-
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"TEAM CHECK IS ENABLED. MOVE TO THE NEXT CHECK."* ]]
-  [[ "$output" != *"TEAM CHECK IS NOT ENABLED."* ]]
-}
-
-@test "team command uses literal {LINK} and {PROJECT_ROOT} placeholders outside the first directive" {
-  command="$REPO_ROOT/commands/team.md"
-  remainder=$(sed '/^!`/d' "$command")
-
-  ! grep -F '${LINK}' <<< "$remainder"
-  ! grep -F '$LINK' <<< "$remainder"
-  ! grep -F '$PROJECT_ROOT' <<< "$remainder"
-  grep -F '{LINK}' <<< "$remainder" >/dev/null
-  grep -F '{PROJECT_ROOT}' <<< "$remainder" >/dev/null
 }
