@@ -34,11 +34,11 @@ You type one command, and Meridian takes the project one correct step forward.
 | <img src="assets/icons/build.png" alt="" width="32"><br>**Phases** | Each phase moves through a reviewed plan, contract-bound building, a QA verdict, and your own acceptance test. |
 | <img src="assets/icons/compass.png" alt="" width="32"><br>**Status** | The statusline shows the phase, the team, and the checks. Every step ends with a short card that names the next action. |
 
-Meridian runs on local files and small bash scripts, so it needs no server or account. It runs on the bash that ships with macOS.
+Meridian works with local files and small scripts for the bash that ships with macOS, so it needs no server or account.
 
 ## Quick start
 
-Add the marketplace and install the plugin. Then restart Claude Code.
+After you add the marketplace and install the plugin, restart Claude Code.
 
 ```bash
 claude plugin marketplace add michaelheichler/lbwc
