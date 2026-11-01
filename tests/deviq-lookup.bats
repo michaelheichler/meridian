@@ -1,68 +1,67 @@
 #!/usr/bin/env bats
 
 load test_helper
+load gate_case_helper
+load rejection_case_helper
 
-@test "search: query matches an id, title, and description hit" {
-  run env CLAUDE_PLUGIN_ROOT="$PROJECT_ROOT" bash "$SCRIPTS_DIR/deviq-lookup.sh" blob
-
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"antipatterns/blob | The Blob |"* ]]
+lookup() {
+  run env CLAUDE_PLUGIN_ROOT="$PROJECT_ROOT" bash "$SCRIPTS_DIR/deviq-lookup.sh" "$@"
 }
 
-@test "search: results are capped at 8 lines" {
-  run env CLAUDE_PLUGIN_ROOT="$PROJECT_ROOT" bash "$SCRIPTS_DIR/deviq-lookup.sh" the
+expect_exact() {
+  local label="$1" want="$2"
+  [ "$output" = "$want" ] || record_case_failure "$label" "want exact=[$want] output=$output"
+}
+
+expect_absent() {
+  local label="$1" fragment="$2"
+  [[ "$output" != *"$fragment"* ]] || record_case_failure "$label" "unexpected fragment=[$fragment] output=$output"
+}
+
+@test "lookup finds articles by index text, body text, category and id with exit 0" {
+  reset_case_failures
+
+  lookup blob
+  expect_case index-search 0 "antipatterns/blob | The Blob |"
+
+  lookup --grep "God Object"
+  expect_case body-grep-maps-to-index 0 "antipatterns/blob | The Blob |"
+
+  lookup --category antipatterns blob
+  expect_case category-filter-keeps-match 0 "antipatterns/blob"
+  expect_absent category-filter-keeps-match "design-patterns/"
+
+  lookup --show antipatterns/blob
+  expect_case show-prints-vendored-body 0 "title: The Blob"
+
+  assert_no_case_failures
+}
+
+@test "lookup answers misses and garbage input with exit 0 and a plain message" {
+  reset_case_failures
+
+  lookup --category design-patterns blob
+  expect_case category-excludes-other-categories 0
+  expect_exact category-excludes-other-categories "no match"
+
+  lookup zzzzzznotarealtermxyz
+  expect_case query-without-hits 0
+  expect_exact query-without-hits "no match"
+
+  lookup --show nope/nope
+  expect_case show-missing-id 0 "no article found for id: nope/nope"
+
+  lookup --bogus-flag "; rm -rf /" "$(printf '\xff\xfe')"
+  expect_case garbage-arguments 0
+
+  assert_no_case_failures
+}
+
+@test "search results are capped at 8 lines" {
+  lookup the
 
   [ "$status" -eq 0 ]
   [ "$(echo "$output" | wc -l | tr -d ' ')" -eq 8 ]
-}
-
-@test "--show prints the vendored article body" {
-  run env CLAUDE_PLUGIN_ROOT="$PROJECT_ROOT" bash "$SCRIPTS_DIR/deviq-lookup.sh" --show antipatterns/blob
-
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"title: The Blob"* ]]
-}
-
-@test "--show on a missing id reports the error and still exits 0" {
-  run env CLAUDE_PLUGIN_ROOT="$PROJECT_ROOT" bash "$SCRIPTS_DIR/deviq-lookup.sh" --show nope/nope
-
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"no article found for id: nope/nope"* ]]
-}
-
-@test "--category filters search results to that category" {
-  run env CLAUDE_PLUGIN_ROOT="$PROJECT_ROOT" bash "$SCRIPTS_DIR/deviq-lookup.sh" --category antipatterns blob
-
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"antipatterns/blob"* ]]
-  [[ "$output" != *"design-patterns/"* ]]
-}
-
-@test "--category excludes matches from other categories" {
-  run env CLAUDE_PLUGIN_ROOT="$PROJECT_ROOT" bash "$SCRIPTS_DIR/deviq-lookup.sh" --category design-patterns blob
-
-  [ "$status" -eq 0 ]
-  [ "$output" = "no match" ]
-}
-
-@test "a query with no hits prints no match and exits 0" {
-  run env CLAUDE_PLUGIN_ROOT="$PROJECT_ROOT" bash "$SCRIPTS_DIR/deviq-lookup.sh" zzzzzznotarealtermxyz
-
-  [ "$status" -eq 0 ]
-  [ "$output" = "no match" ]
-}
-
-@test "garbage flags and arguments never exit non-zero" {
-  run env CLAUDE_PLUGIN_ROOT="$PROJECT_ROOT" bash "$SCRIPTS_DIR/deviq-lookup.sh" --bogus-flag "; rm -rf /" "$(printf '\xff\xfe')"
-
-  [ "$status" -eq 0 ]
-}
-
-@test "--grep finds an article by body text and maps it back through the index" {
-  run env CLAUDE_PLUGIN_ROOT="$PROJECT_ROOT" bash "$SCRIPTS_DIR/deviq-lookup.sh" --grep "God Object"
-
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"antipatterns/blob | The Blob |"* ]]
 }
 
 @test "vendored corpus matches MANIFEST.json sha256 hashes" {

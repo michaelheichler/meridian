@@ -1,6 +1,8 @@
 #!/usr/bin/env bats
 
 load test_helper
+load gate_case_helper
+load rejection_case_helper
 
 setup() {
   setup_temp_dir
@@ -18,42 +20,35 @@ run_nudge() {
     | env CLAUDE_PLUGIN_ROOT="$PROJECT_ROOT" bash "$SCRIPTS_DIR/deviq-nudge.sh"
 }
 
-@test "content matching a nudge pattern emits a PostToolUse additionalContext" {
-  run run_nudge "this class has become a real god object over time"
+@test "writes without a usable match stay silent with exit 0" {
+  reset_case_failures
 
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"additionalContext"* ]]
-  [[ "$output" == *"antipatterns/blob"* ]]
-  [[ "$output" == *"scripts/deviq-lookup.sh --show"* ]]
-}
-
-@test "garbage stdin exits 0 with no output" {
   run bash -c "printf 'not json{{{' | env CLAUDE_PLUGIN_ROOT='$PROJECT_ROOT' bash '$SCRIPTS_DIR/deviq-nudge.sh'"
+  expect_case_silent garbage-stdin 0
 
-  [ "$status" -eq 0 ]
-  [ -z "$output" ]
+  run bash -c "printf '%s' '{\"tool_input\":{\"content\":\"god object\"}}' | env CLAUDE_PLUGIN_ROOT='$TEST_TEMP_DIR' bash '$SCRIPTS_DIR/deviq-nudge.sh'"
+  expect_case_silent missing-nudge-map 0
+
+  run run_nudge "adds a simple helper function to format dates"
+  expect_case_silent no-matching-pattern 0
+
+  assert_no_case_failures
 }
 
-@test "a second matching write inside the cooldown window is silent" {
-  run run_nudge "another god object showing up here"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"additionalContext"* ]]
+@test "a matching write nudges once and the cooldown silences the next match" {
+  reset_case_failures
+
+  run run_nudge "this class has become a real god object over time"
+  expect_case first-match-nudges 0 "additionalContext"
+  expect_fragment first-match-nudges "antipatterns/blob"
+  expect_fragment first-match-nudges "scripts/deviq-lookup.sh --show"
 
   run run_nudge "yet another god object right here"
-  [ "$status" -eq 0 ]
-  [ -z "$output" ]
-}
+  expect_case_silent second-match-in-cooldown 0
 
-@test "a missing nudge map exits 0 with no output" {
-  run bash -c "printf '%s' '{\"tool_input\":{\"content\":\"god object\"}}' | env CLAUDE_PLUGIN_ROOT='$TEST_TEMP_DIR' bash '$SCRIPTS_DIR/deviq-nudge.sh'"
+  printf '0\n' > "$TEST_TEMP_DIR/.lbwc-planning/deviq/.nudge-last"
+  run run_nudge "a god object again after the cooldown ended"
+  expect_case match-after-cooldown-expiry 0 "additionalContext"
 
-  [ "$status" -eq 0 ]
-  [ -z "$output" ]
-}
-
-@test "content with no matching pattern is silent" {
-  run run_nudge "adds a simple helper function to format dates"
-
-  [ "$status" -eq 0 ]
-  [ -z "$output" ]
+  assert_no_case_failures
 }
