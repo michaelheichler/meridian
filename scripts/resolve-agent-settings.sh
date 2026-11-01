@@ -101,8 +101,7 @@ if [ "$TEMPORARY_ROUTING_MODE" = true ]; then
       MERGED_SETTINGS=$(lbwc_merged_config "$CONFIG_PATH")
       WORKFLOW_EFFORT=$(normalize_workflow_effort "$(jq -r '.effort // "balanced"' <<< "$MERGED_SETTINGS")" 2>/dev/null || printf 'balanced')
     fi
-    role_default_turns "$TEMPLATE_DEFAULTS" "$ROLE" BASE_TURNS || fail "no maxTurns default for role '$ROLE' in $TEMPLATE_DEFAULTS"
-    scale_turn_value "$BASE_TURNS" "$WORKFLOW_EFFORT" RESOLVED_MAX_TURNS
+    resolve_configured_turns "$PROJECT_CONFIG" "$TEMPLATE_DEFAULTS" "$ROLE" "$WORKFLOW_EFFORT" RESOLVED_MAX_TURNS || fail "$TURN_ERROR"
   fi
   emit() {
     local name="$1" value="$2" quoted
@@ -154,14 +153,7 @@ else
     WORKFLOW_EFFORT=$(normalize_workflow_effort "$CFG_EFFORT" 2>/dev/null || echo "balanced")
   fi
 
-  ROLE_MAXTURNS_OVERRIDE=$(jq -r --arg r "$ROLE" '.roles[$r].max_turns | if . == null then "" else tostring end' <<< "$PROJECT_CONFIG")
-  if [ -n "$ROLE_MAXTURNS_OVERRIDE" ]; then
-    normalize_turn_value "$ROLE_MAXTURNS_OVERRIDE" BASE || fail "invalid roles.$ROLE.max_turns value '$ROLE_MAXTURNS_OVERRIDE'"
-  else
-    role_default_turns "$TEMPLATE_DEFAULTS" "$ROLE" BASE \
-      || fail "no max_turns resolved for role '$ROLE': set roles.$ROLE.max_turns in project config or $ROLE.maxTurns in $TEMPLATE_DEFAULTS"
-  fi
-  scale_turn_value "$BASE" "$WORKFLOW_EFFORT" MAX_TURNS
+  resolve_configured_turns "$PROJECT_CONFIG" "$TEMPLATE_DEFAULTS" "$ROLE" "$WORKFLOW_EFFORT" MAX_TURNS || fail "$TURN_ERROR"
 fi
 
 emit() {

@@ -50,10 +50,11 @@ resolve_routing_seeded() {
 }
 
 resolve_routing_max_turns() {
-  local engineer="$1" workflow_effort="$2" out_turns="$3" base_turns turns
-  role_default_turns "$ROLE_DEFAULTS_PATH" "$engineer" base_turns \
-    || fail "no maxTurns default for role '$engineer' in $ROLE_DEFAULTS_PATH"
-  scale_turn_value "$base_turns" "$workflow_effort" turns || fail "unknown workflow effort '$workflow_effort'"
+  local engineer="$1" workflow_effort="$2" out_turns="$3" config_json='{}' turns
+  if [ "$CONTROL_ROOT_KIND" = "active-planning" ] && [ -f "$ACTIVE_CONTROL_ROOT/config.json" ]; then
+    config_json=$(jq -c . "$ACTIVE_CONTROL_ROOT/config.json" 2>/dev/null) || config_json='{}'
+  fi
+  resolve_configured_turns "$config_json" "$ROLE_DEFAULTS_PATH" "$engineer" "$workflow_effort" turns || fail "$TURN_ERROR"
   [ -n "$turns" ] || turns=null
   printf -v "$out_turns" '%s' "$turns"
 }
