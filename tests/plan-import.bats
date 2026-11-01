@@ -1,24 +1,55 @@
 #!/usr/bin/env bats
 
 load test_helper
+load gate_case_helper
+load gate_case_files
 
 setup() {
   setup_temp_dir
   SCRIPT="$SCRIPTS_DIR/plan-import.sh"
-  GSD_SOURCE="$PROJECT_ROOT/tests/fixtures/import/gsd/.planning"
+  mkdir -p "$TEST_TEMP_DIR/gsd"
+  cp -R "$PROJECT_ROOT/tests/fixtures/import/gsd/.planning" "$TEST_TEMP_DIR/gsd/.planning"
+  GSD_SOURCE="$TEST_TEMP_DIR/gsd/.planning"
+  cd "$TEST_TEMP_DIR"
+  reset_case_failures
 }
 
 teardown() {
+  cd "$PROJECT_ROOT"
   teardown_temp_dir
 }
 
-@test "GSD adapter emits verified schema 1 IR with source provenance" {
-  output_path="$TEST_TEMP_DIR/gsd-ir.json"
+fresh_project() {
+  PROJECT="$TEST_TEMP_DIR/$1"
+  PLANNING="$PROJECT/.lbwc-planning"
+  mkdir -p "$PROJECT"
+}
 
-  run bash "$SCRIPT" normalize --adapter gsd --source "$GSD_SOURCE" --output "$output_path"
+stage_gsd() {
+  run bash "$SCRIPT" stage --adapter gsd --source "$GSD_SOURCE" --project-root "$PROJECT" --import-id "$1"
+  STAGE="$PROJECT/.temporary-agent-runfiles/imports/$1"
+  expect_status "stage-$1" 0
+}
 
-  [ "$status" -eq 0 ]
-  jq -e '
+promote_staged() {
+  local args artifact
+  args=(--project-root "$PROJECT" --stage "$STAGE")
+  while IFS= read -r artifact; do
+    args+=(--artifact "$artifact")
+  done < <(jq -r '.additions[]' "$STAGE/preview.json")
+  run bash "$SCRIPT" promote "${args[@]}"
+}
+
+digest_of() {
+  shasum -a 256 "$1" | awk '{print $1}'
+}
+
+@test "plan-import normalize: gsd and markdown adapters emit tagged IR within the caps" {
+  local source number
+
+  run bash "$SCRIPT" normalize --adapter gsd --source "$GSD_SOURCE" --output "$TEST_TEMP_DIR/gsd-ir.json"
+  expect_status gsd-ir 0
+  expect_jq gsd-ir "$TEST_TEMP_DIR/gsd-ir.json" '
     .schema_version == 1 and
     .source.system == "gsd" and
     .source.trust_tier == "verified-adapter" and
@@ -27,52 +58,17 @@ teardown() {
     .project.name == "Fixture Project" and
     .phases[0].status == "complete" and
     (.provenance | any(.field == "project.name" and .extraction_method == "markdown-heading")) and
-    (.provenance | any(.field == "phases[0].status" and .extraction_method == "summary-file-presence"))
-  ' "$output_path" >/dev/null
-}
+    (.provenance | any(.field == "phases[0].status" and .extraction_method == "summary-file-presence"))'
 
-@test "GSD digest changes when a hidden source file changes" {
-  first="$TEST_TEMP_DIR/first.json"
-  second="$TEST_TEMP_DIR/second.json"
-  original_hidden=$(<"$GSD_SOURCE/.source-marker")
-
-  run bash "$SCRIPT" digest --source "$GSD_SOURCE" --output "$first"
-  [ "$status" -eq 0 ]
-  printf '%s\n' 'changed hidden source content' > "$GSD_SOURCE/.source-marker"
-  run bash "$SCRIPT" digest --source "$GSD_SOURCE" --output "$second"
-  [ "$status" -eq 0 ]
-
-  first_digest=$(jq -r '.digest' "$first")
-  second_digest=$(jq -r '.digest' "$second")
-  [ "$first_digest" != "$second_digest" ]
-  printf '%s\n' "$original_hidden" > "$GSD_SOURCE/.source-marker"
-}
-
-@test "legacy GSD index wrapper does not modify its source" {
-  before=$(find "$GSD_SOURCE" -type f -print | LC_ALL=C sort | shasum -a 256 | awk '{print $1}')
-
-  run bash "$SCRIPTS_DIR/generate-gsd-index.sh" "$GSD_SOURCE"
-
-  [ "$status" -eq 0 ]
-  jq -e '(.gsd_version == "3") and (.quick_paths.roadmap | endswith("/ROADMAP.md"))' <<< "$output" >/dev/null
-  after=$(find "$GSD_SOURCE" -type f -print | LC_ALL=C sort | shasum -a 256 | awk '{print $1}')
-  [ "$before" = "$after" ]
-  [ ! -e "$GSD_SOURCE/INDEX.json" ]
-}
-
-@test "generic Markdown adapter is unverified and enforces file and byte caps" {
   source="$TEST_TEMP_DIR/markdown"
-  output_path="$TEST_TEMP_DIR/markdown-ir.json"
   mkdir -p "$source"
   for number in $(seq 1 65); do
     printf '# Generic %s\n' "$number" > "$source/plan-$number.md"
   done
   dd if=/dev/zero of="$source/oversized.md" bs=1048577 count=1 2>/dev/null
-
-  run bash "$SCRIPT" normalize --adapter markdown --source "$source" --output "$output_path"
-
-  [ "$status" -eq 0 ]
-  jq -e '
+  run bash "$SCRIPT" normalize --adapter markdown --source "$source" --output "$TEST_TEMP_DIR/markdown-ir.json"
+  expect_status markdown-caps 0
+  expect_jq markdown-caps "$TEST_TEMP_DIR/markdown-ir.json" '
     .source.trust_tier == "unverified-markdown" and
     (.plans | length) == 64 and
     (.source.limits.max_files == 64) and
@@ -80,341 +76,265 @@ teardown() {
     (.source.limits.max_total_bytes == 8388608) and
     (.plans | all(.status == null and .depends_on == null)) and
     (.warnings | any(contains("file-count-cap"))) and
-    (.warnings | any(contains("file-size-cap")))
-  ' "$output_path" >/dev/null
-}
+    (.warnings | any(contains("file-size-cap")))'
 
-@test "generic Markdown adapter reports total byte cap skips" {
   source="$TEST_TEMP_DIR/markdown-bytes"
-  output_path="$TEST_TEMP_DIR/markdown-bytes-ir.json"
   mkdir -p "$source"
   for number in $(seq 1 9); do
     dd if=/dev/zero of="$source/plan-$number.md" bs=1000000 count=1 2>/dev/null
   done
+  run bash "$SCRIPT" normalize --adapter markdown --source "$source" --output "$TEST_TEMP_DIR/markdown-bytes-ir.json"
+  expect_status markdown-total-bytes 0
+  expect_jq markdown-total-bytes "$TEST_TEMP_DIR/markdown-bytes-ir.json" '(.source.skipped_files | any(.reason == "total-byte-cap")) and (.warnings | any(contains("total-byte-cap")))'
 
-  run bash "$SCRIPT" normalize --adapter markdown --source "$source" --output "$output_path"
-
-  [ "$status" -eq 0 ]
-  jq -e '(.source.skipped_files | any(.reason == "total-byte-cap")) and (.warnings | any(contains("total-byte-cap")))' "$output_path" >/dev/null
+  assert_no_case_failures
 }
 
-@test "staging validates a complete tree and leaves canonical files unchanged" {
-  project="$TEST_TEMP_DIR/project"
-  mkdir -p "$project/.lbwc-planning"
-  printf '%s\n' '# Existing canonical project' > "$project/.lbwc-planning/PROJECT.md"
-  before=$(shasum -a 256 "$project/.lbwc-planning/PROJECT.md" | awk '{print $1}')
+@test "plan-import usage: rejects missing commands and arguments" {
+  run bash "$SCRIPT"
+  expect_case no-command 2 "Usage: plan-import.sh"
 
-  run bash "$SCRIPT" stage --adapter gsd --source "$GSD_SOURCE" --project-root "$project" --import-id import-one
+  run bash "$SCRIPT" bogus
+  expect_case unknown-command 2 "Usage: plan-import.sh"
 
-  [ "$status" -eq 0 ]
-  stage="$project/.temporary-agent-runfiles/imports/import-one"
-  [ -f "$stage/ir.json" ]
-  [ -f "$stage/preview.json" ]
-  [ -f "$stage/tree/.lbwc-planning/PROJECT.md" ]
-  run bash "$SCRIPT" validate-stage --project-root "$project" --stage "$stage"
-  [ "$status" -eq 0 ]
-  after=$(shasum -a 256 "$project/.lbwc-planning/PROJECT.md" | awk '{print $1}')
-  [ "$before" = "$after" ]
+  run bash "$SCRIPT" --help
+  expect_case help-flag 2 "Usage: plan-import.sh"
+
+  run bash "$SCRIPT" normalize --adapter gsd
+  expect_case normalize-missing-args 1 "normalize requires --adapter, --source, and --output"
+
+  run bash "$SCRIPT" stage --adapter gsd --source "$GSD_SOURCE" --bogus
+  expect_case unknown-option 1 "unknown option: --bogus"
+
+  run bash "$SCRIPT" promote --project-root "$TEST_TEMP_DIR"
+  expect_case promote-missing-stage 1 "promote requires --project-root and --stage"
+
+  assert_no_case_failures
 }
 
-@test "unchanged source re-import is reported as idempotent" {
-  project="$TEST_TEMP_DIR/project"
-  mkdir -p "$project"
+@test "plan-import digest: follows hidden source files" {
+  local first second
 
-  run bash "$SCRIPT" stage --adapter gsd --source "$GSD_SOURCE" --project-root "$project" --import-id first-import
-  [ "$status" -eq 0 ]
-  run bash "$SCRIPT" reimport --source "$GSD_SOURCE" --project-root "$project"
+  run bash "$SCRIPT" digest --source "$GSD_SOURCE" --output "$TEST_TEMP_DIR/first.json"
+  expect_status digest-first 0
+  run bash "$SCRIPT" digest --source "$GSD_SOURCE" --output "$TEST_TEMP_DIR/again.json"
+  expect_status digest-again 0
+  [ "$(jq -r '.digest' "$TEST_TEMP_DIR/first.json")" = "$(jq -r '.digest' "$TEST_TEMP_DIR/again.json")" ] \
+    || record_case_failure digest-stable "unchanged source produced two digests"
 
-  [ "$status" -eq 0 ]
-  jq -e '.status == "unchanged" and .previous_import_id == "first-import"' <<< "$output" >/dev/null
+  printf '%s\n' 'changed hidden source content' > "$GSD_SOURCE/.source-marker"
+  run bash "$SCRIPT" digest --source "$GSD_SOURCE" --output "$TEST_TEMP_DIR/second.json"
+  expect_status digest-second 0
+  first=$(jq -r '.digest' "$TEST_TEMP_DIR/first.json")
+  second=$(jq -r '.digest' "$TEST_TEMP_DIR/second.json")
+  [ "$first" != "$second" ] || record_case_failure digest-hidden-change "hidden file change left the digest unchanged"
+
+  assert_no_case_failures
 }
 
-@test "promotion requires explicit artifacts and rollback restores every destination" {
-  project="$TEST_TEMP_DIR/project"
-  mkdir -p "$project/.lbwc-planning"
-  printf '%s\n' '# Old project' > "$project/.lbwc-planning/PROJECT.md"
-  printf '%s\n' '# Old roadmap' > "$project/.lbwc-planning/ROADMAP.md"
+@test "generate-gsd-index: indexes a GSD tree without modifying it" {
+  local before after
 
-  run bash "$SCRIPT" stage --adapter gsd --source "$GSD_SOURCE" --project-root "$project" --import-id rollback-import
-  [ "$status" -eq 0 ]
-  stage="$project/.temporary-agent-runfiles/imports/rollback-import"
+  before=$(find "$GSD_SOURCE" -type f -print | LC_ALL=C sort | shasum -a 256 | awk '{print $1}')
+  run bash "$SCRIPTS_DIR/generate-gsd-index.sh" "$GSD_SOURCE"
+  expect_status gsd-index 0
+  expect_jq_output gsd-index '(.gsd_version == "3") and (.quick_paths.roadmap | endswith("/ROADMAP.md"))'
+  after=$(find "$GSD_SOURCE" -type f -print | LC_ALL=C sort | shasum -a 256 | awk '{print $1}')
+  [ "$before" = "$after" ] || record_case_failure gsd-index "source tree digest changed"
+  expect_no_path gsd-index "$GSD_SOURCE/INDEX.json"
 
-  run bash "$SCRIPT" promote --project-root "$project" --stage "$stage"
-  [ "$status" -ne 0 ]
-  grep -Fqx '# Old project' "$project/.lbwc-planning/PROJECT.md"
-
-  run env LBWC_IMPORT_FAIL_AFTER=1 bash "$SCRIPT" promote --project-root "$project" --stage "$stage" \
-    --artifact .lbwc-planning/PROJECT.md --artifact .lbwc-planning/ROADMAP.md
-  [ "$status" -ne 0 ]
-  grep -Fqx '# Old project' "$project/.lbwc-planning/PROJECT.md"
-  grep -Fqx '# Old roadmap' "$project/.lbwc-planning/ROADMAP.md"
+  assert_no_case_failures
 }
 
-@test "single Markdown file source stages as an unverified imported plan" {
-  project="$TEST_TEMP_DIR/project"
-  mkdir -p "$project"
+@test "plan-import stage: builds a validated tree and leaves canonical files alone" {
+  local before
+
+  fresh_project canonical-kept
+  mkdir -p "$PLANNING"
+  printf '%s\n' '# Existing canonical project' > "$PLANNING/PROJECT.md"
+  before=$(digest_of "$PLANNING/PROJECT.md")
+  stage_gsd import-one
+  expect_path stage-tree "$STAGE/ir.json"
+  expect_path stage-tree "$STAGE/preview.json"
+  expect_path stage-tree "$STAGE/tree/.lbwc-planning/PROJECT.md"
+  run bash "$SCRIPT" validate-stage --project-root "$PROJECT" --stage "$STAGE"
+  expect_status validate-stage 0
+  expect_same_digest canonical-kept "$PLANNING/PROJECT.md" "$before"
+  expect_no_path canonical-kept "$PLANNING/imports/import-one/manifest.json"
+
+  fresh_project single-markdown
   printf '# Solo Plan\n\nBody text.\n' > "$TEST_TEMP_DIR/solo.md"
-
-  run bash "$SCRIPT" stage --adapter markdown --source "$TEST_TEMP_DIR/solo.md" --project-root "$project" --import-id md-file
-  [ "$status" -eq 0 ]
-  stage="$project/.temporary-agent-runfiles/imports/md-file"
-  jq -e '
+  run bash "$SCRIPT" stage --adapter markdown --source "$TEST_TEMP_DIR/solo.md" --project-root "$PROJECT" --import-id md-file
+  STAGE="$PROJECT/.temporary-agent-runfiles/imports/md-file"
+  expect_status single-markdown 0
+  expect_jq single-markdown "$STAGE/preview.json" '
     .source.trust_tier == "unverified-markdown" and
     (.additions | index(".lbwc-planning/imported-markdown/solo.md") != null) and
-    (.unknowns | any(. == "solo.md"))
-  ' "$stage/preview.json" >/dev/null
-  [ -f "$stage/tree/.lbwc-planning/imported-markdown/solo.md" ]
-  grep -F 'unverified generic Markdown import' "$stage/tree/.lbwc-planning/imported-markdown/solo.md" >/dev/null
-  grep -F 'Body text.' "$stage/tree/.lbwc-planning/imported-markdown/solo.md" >/dev/null
-}
+    (.unknowns | any(. == "solo.md"))'
+  expect_file_line single-markdown "$STAGE/tree/.lbwc-planning/imported-markdown/solo.md" 'unverified generic Markdown import'
+  expect_file_line single-markdown "$STAGE/tree/.lbwc-planning/imported-markdown/solo.md" 'Body text\.'
 
-@test "preview paths are repository-relative and conflicts carry semantic detail" {
-  project="$TEST_TEMP_DIR/project"
-  mkdir -p "$project/.lbwc-planning"
-  printf -- '- [x] **REQ-01**: Import the project without changing the source\n- [ ] **REQ-02**: Preserve source provenance\n- [ ] **REQ-99**: Existing only\n' > "$project/.lbwc-planning/REQUIREMENTS.md"
-
-  run bash "$SCRIPT" stage --adapter gsd --source "$GSD_SOURCE" --project-root "$project" --import-id semantic
-  [ "$status" -eq 0 ]
-  preview="$project/.temporary-agent-runfiles/imports/semantic/preview.json"
-  jq -e '
+  fresh_project semantic-preview
+  mkdir -p "$PLANNING"
+  printf -- '- [x] **REQ-01**: Import the project without changing the source\n- [ ] **REQ-02**: Preserve source provenance\n- [ ] **REQ-99**: Existing only\n' > "$PLANNING/REQUIREMENTS.md"
+  stage_gsd semantic
+  expect_jq semantic-preview "$STAGE/preview.json" '
     ([.additions[], .overlaps[], .conflicts[].artifact, .unknowns[], .skipped[].path] | all(startswith("/") | not)) and
     (.conflicts | length == 1) and
     (.conflicts[0].artifact == ".lbwc-planning/REQUIREMENTS.md") and
     (.conflicts[0].detail.removed_ids == ["REQ-99"]) and
     (.conflicts[0].detail.changed_statuses | length == 2) and
     (.conflicts[0].source_digest | test("^[0-9a-f]{64}$")) and
-    (.conflicts[0].destination_digest | test("^[0-9a-f]{64}$"))
-  ' "$preview" >/dev/null
+    (.conflicts[0].destination_digest | test("^[0-9a-f]{64}$"))'
+
+  assert_no_case_failures
 }
 
-@test "promotion writes template-valid canonical artifacts and provenance" {
-  project="$TEST_TEMP_DIR/project"
-  mkdir -p "$project"
+@test "plan-import stage reject: fails closed on an invalid adapter output" {
+  fresh_project bad-adapter
+  mkdir -p "$TEST_TEMP_DIR/not-gsd"
+  run bash "$SCRIPT" stage --adapter gsd --source "$TEST_TEMP_DIR/not-gsd" --project-root "$PROJECT" --import-id bad-import
+  expect_status bad-adapter 1
+  expect_no_path bad-adapter "$PLANNING"
 
-  run bash "$SCRIPT" stage --adapter gsd --source "$GSD_SOURCE" --project-root "$project" --import-id full-import
-  [ "$status" -eq 0 ]
-  stage="$project/.temporary-agent-runfiles/imports/full-import"
-  artifacts=$(jq -r '.additions[]' "$stage/preview.json")
-
-  promote_args=(--project-root "$project" --stage "$stage")
-  while IFS= read -r artifact; do
-    promote_args+=(--artifact "$artifact")
-  done <<< "$artifacts"
-  run bash "$SCRIPT" promote "${promote_args[@]}"
-  [ "$status" -eq 0 ]
-
-  promoted_planning="$project/.lbwc-planning"
-  grep -Fx '# Fixture Project' "$promoted_planning/PROJECT.md" >/dev/null
-  grep -F '**Core value:**' "$promoted_planning/PROJECT.md" >/dev/null
-  grep -F '## Current Phase' "$promoted_planning/STATE.md" >/dev/null
-  grep -F '## Key Decisions' "$promoted_planning/STATE.md" >/dev/null
-  grep -F '### Phase 1: foundation' "$promoted_planning/ROADMAP.md" >/dev/null
-  grep -F -- '- [x] **REQ-02**' "$promoted_planning/REQUIREMENTS.md" >/dev/null
-  grep -Fx 'phase: 1' "$promoted_planning/phases/01-foundation/01-01-PLAN.md" >/dev/null
-  grep -F '<objective>' "$promoted_planning/phases/01-foundation/01-01-PLAN.md" >/dev/null
-  grep -F 'Implement the import boundary.' "$promoted_planning/phases/01-foundation/01-01-PLAN.md" >/dev/null
-
-  provenance="$promoted_planning/imports/full-import"
-  [ -f "$provenance/manifest.json" ]
-  [ -f "$provenance/ir.json" ]
-  [ -f "$provenance/preview.json" ]
-  jq -e '.status == "promoted"' "$provenance/manifest.json" >/dev/null
-
-  consistency_output=$(cd "$project" && LBWC_PLANNING_DIR="$promoted_planning" bash "$SCRIPTS_DIR/verify-state-consistency.sh") || {
-    printf 'verify-state-consistency failed: %s\n' "$consistency_output" >&2
-    false
-  }
-  [[ "$consistency_output" == *'state_consistency=ok'* ]]
+  assert_no_case_failures
 }
 
-@test "fresh successful import is a complete initialized LBWC project including config.json" {
-  project="$TEST_TEMP_DIR/project"
-  mkdir -p "$project"
+@test "plan-import reimport: reports an unchanged source and allows a fresh stage" {
+  fresh_project reimport-staged
+  stage_gsd first-import
+  run bash "$SCRIPT" reimport --source "$GSD_SOURCE" --project-root "$PROJECT"
+  expect_status reimport-staged 0
+  expect_jq_output reimport-staged '.status == "unchanged" and .previous_import_id == "first-import"'
 
-  run bash "$SCRIPT" stage --adapter gsd --source "$GSD_SOURCE" --project-root "$project" --import-id init-import
-  [ "$status" -eq 0 ]
-  stage="$project/.temporary-agent-runfiles/imports/init-import"
-  artifacts=$(jq -r '.additions[]' "$stage/preview.json")
+  fresh_project reimport-promoted
+  stage_gsd re-one
+  promote_staged
+  expect_status reimport-promote 0
+  run bash "$SCRIPT" reimport --source "$GSD_SOURCE" --project-root "$PROJECT"
+  expect_status reimport-promoted 0
+  expect_jq_output reimport-promoted '.status == "unchanged" and .previous_import_id == "re-one"'
+  run bash "$SCRIPT" stage --adapter gsd --source "$GSD_SOURCE" --project-root "$PROJECT" --import-id re-two
+  expect_status reimport-restage 0
 
-  promote_args=(--project-root "$project" --stage "$stage")
-  while IFS= read -r artifact; do
-    promote_args+=(--artifact "$artifact")
-  done <<< "$artifacts"
-  run bash "$SCRIPT" promote "${promote_args[@]}"
-  [ "$status" -eq 0 ]
-
-  promoted_planning="$project/.lbwc-planning"
-  # Complete initialized tree: all canonical artifacts plus config.json.
-  for expected in PROJECT.md REQUIREMENTS.md ROADMAP.md STATE.md config.json; do
-    [ -f "$promoted_planning/$expected" ]
-  done
-
-  # config.json is valid per the repository validator and matches init defaults.
-  run bash "$SCRIPTS_DIR/lbwc-config.sh" validate-config-json < "$promoted_planning/config.json"
-  [ "$status" -eq 0 ]
-  expected_config=$(bash "$SCRIPTS_DIR/lbwc-config.sh" default-config)
-  [ "$(jq -S . "$promoted_planning/config.json")" = "$(jq -S . <<< "$expected_config")" ]
-  jq -e '.schema_version == 1 and (.routing.profiles | keys | sort == ["balanced","quality","turbo"])' "$promoted_planning/config.json" >/dev/null
-
-  # Planning directory passes repository config and state validation.
-  config_validate_output=$(bash "$SCRIPTS_DIR/lbwc-config.sh" validate "$promoted_planning") || {
-    printf 'lbwc-config validate failed: %s\n' "$config_validate_output" >&2
-    false
-  }
-  consistency_output=$(cd "$project" && LBWC_PLANNING_DIR="$promoted_planning" bash "$SCRIPTS_DIR/verify-state-consistency.sh") || {
-    printf 'verify-state-consistency failed: %s\n' "$consistency_output" >&2
-    false
-  }
-  [[ "$consistency_output" == *'state_consistency=ok'* ]]
+  assert_no_case_failures
 }
 
-@test "promotion rejects a source that changed after staging" {
-  project="$TEST_TEMP_DIR/project"
-  mkdir -p "$project"
+@test "plan-import promote: writes template-valid artifacts, config and provenance" {
+  local promoted
 
-  run bash "$SCRIPT" stage --adapter gsd --source "$GSD_SOURCE" --project-root "$project" --import-id drift-import
-  [ "$status" -eq 0 ]
-  stage="$project/.temporary-agent-runfiles/imports/drift-import"
-  original_hidden=$(<"$GSD_SOURCE/.source-marker")
+  fresh_project promote-full
+  stage_gsd full-import
+  promote_staged
+  expect_status promote-full 0
+  promoted="$PLANNING"
+
+  expect_file_line content "$promoted/PROJECT.md" '^# Fixture Project$'
+  expect_file_line content "$promoted/PROJECT.md" '\*\*Core value:\*\*'
+  expect_file_line content "$promoted/STATE.md" '## Current Phase'
+  expect_file_line content "$promoted/STATE.md" '## Key Decisions'
+  expect_file_line content "$promoted/ROADMAP.md" '### Phase 1: foundation'
+  expect_file_line content "$promoted/REQUIREMENTS.md" '^- \[x\] \*\*REQ-02\*\*'
+  expect_file_line content "$promoted/phases/01-foundation/01-01-PLAN.md" '^phase: 1$'
+  expect_file_line content "$promoted/phases/01-foundation/01-01-PLAN.md" '<objective>'
+  expect_file_line content "$promoted/phases/01-foundation/01-01-PLAN.md" 'Implement the import boundary\.'
+
+  expect_path provenance "$promoted/imports/full-import/ir.json"
+  expect_path provenance "$promoted/imports/full-import/preview.json"
+  expect_jq provenance "$promoted/imports/full-import/manifest.json" '.status == "promoted"'
+
+  run bash "$SCRIPTS_DIR/lbwc-config.sh" validate-config-json < "$promoted/config.json"
+  expect_status config-valid 0
+  [ "$(jq -S . "$promoted/config.json")" = "$(bash "$SCRIPTS_DIR/lbwc-config.sh" default-config | jq -S .)" ] \
+    || record_case_failure config-defaults "config.json differs from init defaults"
+  expect_jq config-shape "$promoted/config.json" '.schema_version == 1 and (.routing.profiles | keys | sort == ["balanced","quality","turbo"])'
+  run bash "$SCRIPTS_DIR/lbwc-config.sh" validate "$promoted"
+  expect_status config-validate 0
+
+  run bash -c 'cd "$1" && LBWC_PLANNING_DIR="$2" bash "$3"' _ "$PROJECT" "$promoted" "$SCRIPTS_DIR/verify-state-consistency.sh"
+  expect_case state-consistency 0 "state_consistency=ok"
+
+  assert_no_case_failures
+}
+
+@test "plan-import promote reject: refuses unsafe artifacts and drifted sources" {
+  fresh_project guard-artifacts
+  stage_gsd guard-import
+  run bash "$SCRIPT" promote --project-root "$PROJECT" --stage "$STAGE"
+  expect_status no-artifacts 1
+  run bash "$SCRIPT" promote --project-root "$PROJECT" --stage "$STAGE" --artifact '.lbwc-planning/../config.json'
+  expect_status artifact-dotdot-config 1
+  run bash "$SCRIPT" promote --project-root "$PROJECT" --stage "$STAGE" --artifact '../outside.md'
+  expect_status artifact-parent 1
+  run bash "$SCRIPT" promote --project-root "$PROJECT" --stage "$STAGE" --artifact '/absolute.md'
+  expect_status artifact-absolute 1
+  run bash "$SCRIPT" promote --project-root "$PROJECT" --stage "$STAGE" --artifact '.lbwc-planning/config.json.md'
+  expect_status artifact-near-allowlist 1
+  expect_no_path guard-artifacts "$PLANNING/config.json"
+
+  fresh_project source-drift
+  stage_gsd drift-import
   printf '%s\n' 'mutated after staging' > "$GSD_SOURCE/.source-marker"
+  run bash "$SCRIPT" promote --project-root "$PROJECT" --stage "$STAGE" --artifact .lbwc-planning/PROJECT.md
+  expect_case source-drift 1 "source changed after staging"
+  expect_no_path source-drift "$PLANNING/PROJECT.md"
+  expect_no_path source-drift "$PLANNING/imports/drift-import/manifest.json"
 
-  run bash "$SCRIPT" promote --project-root "$project" --stage "$stage" --artifact .lbwc-planning/PROJECT.md
-  [ "$status" -ne 0 ]
-  [[ "$output" == *'source changed after staging'* ]]
-  [ ! -e "$project/.lbwc-planning/PROJECT.md" ]
-  [ ! -e "$project/.lbwc-planning/imports/drift-import/manifest.json" ]
-  printf '%s\n' "$original_hidden" > "$GSD_SOURCE/.source-marker"
+  assert_no_case_failures
 }
 
-@test "failed promotion restores canonical digests and removes provenance" {
-  project="$TEST_TEMP_DIR/project"
-  mkdir -p "$project/.lbwc-planning"
-  printf '%s\n' '# Canonical project' > "$project/.lbwc-planning/PROJECT.md"
-  printf '%s\n' '# Canonical state' > "$project/.lbwc-planning/STATE.md"
-  before_project=$(shasum -a 256 "$project/.lbwc-planning/PROJECT.md" | awk '{print $1}')
-  before_state=$(shasum -a 256 "$project/.lbwc-planning/STATE.md" | awk '{print $1}')
+@test "plan-import promote rollback: restores every destination when promotion fails" {
+  local before_project before_state
 
-  run bash "$SCRIPT" stage --adapter gsd --source "$GSD_SOURCE" --project-root "$project" --import-id fail-import
-  [ "$status" -eq 0 ]
-  stage="$project/.temporary-agent-runfiles/imports/fail-import"
+  fresh_project fail-after-one
+  mkdir -p "$PLANNING"
+  printf '%s\n' '# Old project' > "$PLANNING/PROJECT.md"
+  printf '%s\n' '# Old roadmap' > "$PLANNING/ROADMAP.md"
+  stage_gsd rollback-import
+  run env LBWC_IMPORT_FAIL_AFTER=1 bash "$SCRIPT" promote --project-root "$PROJECT" --stage "$STAGE" \
+    --artifact .lbwc-planning/PROJECT.md --artifact .lbwc-planning/ROADMAP.md
+  expect_case fail-after-one 1 "promotion failed after artifact .lbwc-planning/PROJECT.md"
+  expect_file_line fail-after-one "$PLANNING/PROJECT.md" '^# Old project$'
+  expect_file_line fail-after-one "$PLANNING/ROADMAP.md" '^# Old roadmap$'
 
-  run env LBWC_IMPORT_FAIL_AFTER=2 bash "$SCRIPT" promote --project-root "$project" --stage "$stage" \
-    --artifact .lbwc-planning/PROJECT.md \
-    --artifact .lbwc-planning/STATE.md \
-    --artifact .lbwc-planning/REQUIREMENTS.md
-  [ "$status" -ne 0 ]
-  [ "$(shasum -a 256 "$project/.lbwc-planning/PROJECT.md" | awk '{print $1}')" = "$before_project" ]
-  [ "$(shasum -a 256 "$project/.lbwc-planning/STATE.md" | awk '{print $1}')" = "$before_state" ]
-  [ ! -e "$project/.lbwc-planning/REQUIREMENTS.md" ]
-  [ ! -e "$project/.lbwc-planning/imports/fail-import/manifest.json" ]
-}
+  fresh_project fail-after-two
+  mkdir -p "$PLANNING"
+  printf '%s\n' '# Canonical project' > "$PLANNING/PROJECT.md"
+  printf '%s\n' '# Canonical state' > "$PLANNING/STATE.md"
+  before_project=$(digest_of "$PLANNING/PROJECT.md")
+  before_state=$(digest_of "$PLANNING/STATE.md")
+  stage_gsd fail-import
+  run env LBWC_IMPORT_FAIL_AFTER=2 bash "$SCRIPT" promote --project-root "$PROJECT" --stage "$STAGE" \
+    --artifact .lbwc-planning/PROJECT.md --artifact .lbwc-planning/STATE.md --artifact .lbwc-planning/REQUIREMENTS.md
+  expect_status fail-after-two 1
+  expect_same_digest fail-after-two "$PLANNING/PROJECT.md" "$before_project"
+  expect_same_digest fail-after-two "$PLANNING/STATE.md" "$before_state"
+  expect_no_path fail-after-two "$PLANNING/REQUIREMENTS.md"
+  expect_no_path fail-after-two "$PLANNING/imports/fail-import/manifest.json"
 
-@test "cancel-equivalent staged import leaves canonical digests unchanged" {
-  project="$TEST_TEMP_DIR/project"
-  mkdir -p "$project/.lbwc-planning"
-  printf '%s\n' '# Untouched' > "$project/.lbwc-planning/PROJECT.md"
-  before=$(shasum -a 256 "$project/.lbwc-planning/PROJECT.md" | awk '{print $1}')
+  fresh_project validation-fails
+  mkdir -p "$PLANNING"
+  printf '%s\n' '# Canonical project' > "$PLANNING/PROJECT.md"
+  printf '%s\n' '# Canonical state' > "$PLANNING/STATE.md"
+  before_project=$(digest_of "$PLANNING/PROJECT.md")
+  before_state=$(digest_of "$PLANNING/STATE.md")
+  stage_gsd validate-fail-import
+  run env LBWC_IMPORT_FAIL_VALIDATION=1 bash "$SCRIPT" promote --project-root "$PROJECT" --stage "$STAGE" \
+    --artifact .lbwc-planning/PROJECT.md --artifact .lbwc-planning/STATE.md \
+    --artifact .lbwc-planning/REQUIREMENTS.md --artifact .lbwc-planning/config.json
+  expect_case validation-fails 1 "post-promotion validation failed"
+  expect_same_digest validation-fails "$PLANNING/PROJECT.md" "$before_project"
+  expect_same_digest validation-fails "$PLANNING/STATE.md" "$before_state"
+  expect_no_path validation-fails "$PLANNING/REQUIREMENTS.md"
+  expect_no_path validation-fails "$PLANNING/config.json"
+  expect_no_path validation-fails "$PLANNING/imports/validate-fail-import/manifest.json"
 
-  run bash "$SCRIPT" stage --adapter gsd --source "$GSD_SOURCE" --project-root "$project" --import-id cancel-import
-  [ "$status" -eq 0 ]
-  run bash "$SCRIPT" validate-stage --project-root "$project" --stage "$project/.temporary-agent-runfiles/imports/cancel-import"
-  [ "$status" -eq 0 ]
-  [ "$(shasum -a 256 "$project/.lbwc-planning/PROJECT.md" | awk '{print $1}')" = "$before" ]
-  [ ! -e "$project/.lbwc-planning/imports/cancel-import/manifest.json" ]
-}
+  fresh_project partial-without-config
+  stage_gsd partial-import
+  run bash "$SCRIPT" promote --project-root "$PROJECT" --stage "$STAGE" --artifact .lbwc-planning/PROJECT.md
+  expect_case partial-without-config 1 "post-promotion validation failed"
+  expect_no_path partial-without-config "$PLANNING/imports/partial-import/manifest.json"
+  expect_no_path partial-without-config "$PLANNING"
 
-@test "reimport after promotion is unchanged and restaging a fresh preview works" {
-  project="$TEST_TEMP_DIR/project"
-  mkdir -p "$project"
-
-  run bash "$SCRIPT" stage --adapter gsd --source "$GSD_SOURCE" --project-root "$project" --import-id re-one
-  [ "$status" -eq 0 ]
-  stage="$project/.temporary-agent-runfiles/imports/re-one"
-  # A partial promote without config.json fails post-promotion validation and rolls back.
-  run bash "$SCRIPT" promote --project-root "$project" --stage "$stage" --artifact .lbwc-planning/PROJECT.md
-  [ "$status" -ne 0 ]
-  [[ "$output" == *'post-promotion validation failed'* ]]
-  [ ! -e "$project/.lbwc-planning/imports/re-one/manifest.json" ]
-  # The failed first import leaves no newly created empty planning directory.
-  [ ! -e "$project/.lbwc-planning" ]
-
-  # A complete promote including config.json succeeds.
-  artifacts=$(jq -r '.additions[]' "$stage/preview.json")
-  promote_args=(--project-root "$project" --stage "$stage")
-  while IFS= read -r artifact; do
-    promote_args+=(--artifact "$artifact")
-  done <<< "$artifacts"
-  run bash "$SCRIPT" promote "${promote_args[@]}"
-  [ "$status" -eq 0 ]
-
-  run bash "$SCRIPT" reimport --source "$GSD_SOURCE" --project-root "$project"
-  [ "$status" -eq 0 ]
-  jq -e '.status == "unchanged" and .previous_import_id == "re-one"' <<< "$output" >/dev/null
-
-  run bash "$SCRIPT" stage --adapter gsd --source "$GSD_SOURCE" --project-root "$project" --import-id re-two
-  [ "$status" -eq 0 ]
-}
-
-@test "staging fails closed on an invalid adapter output" {
-  project="$TEST_TEMP_DIR/project"
-  mkdir -p "$project"
-  bad_source="$TEST_TEMP_DIR/not-gsd"
-  mkdir -p "$bad_source"
-
-  run bash "$SCRIPT" stage --adapter gsd --source "$bad_source" --project-root "$project" --import-id bad-import
-  [ "$status" -ne 0 ]
-  [ ! -e "$project/.lbwc-planning" ]
-}
-
-@test "promotion rejects artifacts outside the staged tree allowlist" {
-  project="$TEST_TEMP_DIR/project"
-  mkdir -p "$project"
-
-  run bash "$SCRIPT" stage --adapter gsd --source "$GSD_SOURCE" --project-root "$project" --import-id guard-import
-  [ "$status" -eq 0 ]
-  stage="$project/.temporary-agent-runfiles/imports/guard-import"
-
-  # config.json is allowlisted, but only as that exact artifact; a traversal or
-  # absolute path is still rejected.
-  run bash "$SCRIPT" promote --project-root "$project" --stage "$stage" --artifact '.lbwc-planning/../config.json'
-  [ "$status" -ne 0 ]
-  run bash "$SCRIPT" promote --project-root "$project" --stage "$stage" --artifact '../outside.md'
-  [ "$status" -ne 0 ]
-  run bash "$SCRIPT" promote --project-root "$project" --stage "$stage" --artifact '/absolute.md'
-  [ "$status" -ne 0 ]
-  run bash "$SCRIPT" promote --project-root "$project" --stage "$stage" --artifact '.lbwc-planning/config.json.md'
-  [ "$status" -ne 0 ]
-  [ ! -e "$project/.lbwc-planning/config.json" ]
-}
-
-@test "failed post-promotion validation rolls back existing and absent files plus provenance" {
-  project="$TEST_TEMP_DIR/project"
-  mkdir -p "$project/.lbwc-planning"
-  printf '%s\n' '# Canonical project' > "$project/.lbwc-planning/PROJECT.md"
-  printf '%s\n' '# Canonical state' > "$project/.lbwc-planning/STATE.md"
-  before_project=$(shasum -a 256 "$project/.lbwc-planning/PROJECT.md" | awk '{print $1}')
-  before_state=$(shasum -a 256 "$project/.lbwc-planning/STATE.md" | awk '{print $1}')
-
-  run bash "$SCRIPT" stage --adapter gsd --source "$GSD_SOURCE" --project-root "$project" --import-id validate-fail-import
-  [ "$status" -eq 0 ]
-  stage="$project/.temporary-agent-runfiles/imports/validate-fail-import"
-
-  # Promote existing (PROJECT.md, STATE.md) and absent (REQUIREMENTS.md) artifacts
-  # while forcing post-promotion canonical validation to fail.
-  run env LBWC_IMPORT_FAIL_VALIDATION=1 bash "$SCRIPT" promote --project-root "$project" --stage "$stage" \
-    --artifact .lbwc-planning/PROJECT.md \
-    --artifact .lbwc-planning/STATE.md \
-    --artifact .lbwc-planning/REQUIREMENTS.md \
-    --artifact .lbwc-planning/config.json
-  [ "$status" -ne 0 ]
-  [[ "$output" == *'post-promotion validation failed'* ]]
-
-  # Existing files restored to their exact prior digests.
-  [ "$(shasum -a 256 "$project/.lbwc-planning/PROJECT.md" | awk '{print $1}')" = "$before_project" ]
-  [ "$(shasum -a 256 "$project/.lbwc-planning/STATE.md" | awk '{print $1}')" = "$before_state" ]
-  # Absent files removed.
-  [ ! -e "$project/.lbwc-planning/REQUIREMENTS.md" ]
-  [ ! -e "$project/.lbwc-planning/config.json" ]
-  # New provenance removed.
-  [ ! -e "$project/.lbwc-planning/imports/validate-fail-import/manifest.json" ]
+  assert_no_case_failures
 }
