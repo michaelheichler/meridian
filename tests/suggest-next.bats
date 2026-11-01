@@ -6,6 +6,8 @@ load gate_case_files
 
 setup() {
   setup_temp_dir
+  cd "$TEST_TEMP_DIR" || return 1
+  git init -q
   reset_case_failures
   PLANNING_DIR="$TEST_TEMP_DIR/dir with space/.lbwc-planning"
   mkdir -p "$PLANNING_DIR/debugging/active"
@@ -73,7 +75,7 @@ shipped_phase() {
 
 next_up() {
   cd "$ROOT" || return 1
-  run env SN_PD_FIXTURE="$ROOT/pd.out" LBWC_PLANNING_DIR="$PLANNING_DIR" bash "$SN_SCRIPTS/suggest-next.sh" "$@"
+  run env SN_PD_FIXTURE="$ROOT/pd.out" LBWC_PLANNING_DIR="$PLANNING_DIR" /bin/bash "$SN_SCRIPTS/suggest-next.sh" "$@"
 }
 
 @test "suggest-next offers the debug resume suggestion when no phases exist" {
@@ -92,10 +94,15 @@ next_up() {
 
 @test "suggest-next after vibe picks the fix, finish, remediation or next-phase step from the planning state" {
   project fail-names-plan
-  add_plan 01-setup 01-01 partial
+  add_plan 01-setup 01-01 failed
   next_up vibe fail
   expect_case fail-names-plan 0 "/lbwc:fix -- Fix plan 01-01 (failed verification)"
   expect_output_has fail-names-plan "/lbwc:vibe -- Re-run verification"
+
+  project partial-plan-named
+  add_plan 01-setup 01-01 partial
+  next_up vibe fail
+  expect_case partial-plan-named 0 "/lbwc:fix -- Fix plan 01-01 (failed verification)"
 
   project partial-keeps-going
   add_plan 01-setup 01-01 none

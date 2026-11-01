@@ -85,6 +85,21 @@ state() {
   state current-round
   expect_case round-legacy-stored 0 04
 
+  fresh_phase research-without-round
+  write_lines "$ROUND_STATE" stage=research
+  state current-round
+  expect_case research-without-round 0 01
+
+  fresh_phase round-without-stage
+  write_lines "$ROUND_STATE" round=01
+  state get
+  expect_case round-without-stage 0 none
+
+  fresh_phase done-without-round
+  write_lines "$ROUND_STATE" stage=done
+  state current-round
+  expect_case done-without-round 0 01
+
   fresh_phase round-no-state
   state current-round
   expect_case round-no-state 0 01
@@ -213,6 +228,19 @@ state() {
   write_uat "$PHASE_DIR/remediation/uat/round-01/R01-UAT.md" complete
   state needs-round
   expect_case round-dir-complete-uat 1 "current UAT is 'complete'"
+
+  fresh_phase legacy-own-round
+  write_lines "$ROUND_STATE" stage=done round=01 layout=legacy
+  write_uat "$PHASE_DIR/remediation/uat/round-01/R01-UAT.md" issues_found
+  state needs-round
+  expect_case legacy-own-round 0 "round=02"
+
+  fresh_phase legacy-flat-archive
+  write_lines "$ROUND_STATE" stage=done round=01 layout=legacy
+  write_uat "$PHASE_DIR/01-UAT-round-01.md" issues_found
+  write_uat "$PHASE_DIR/01-UAT.md" issues_found
+  state needs-round
+  expect_case legacy-flat-archive 0 "round=03"
 
   fresh_phase flat-round-uat
   write_lines "$ROUND_STATE" stage=done round=02 layout=round-dir
