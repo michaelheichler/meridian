@@ -34,11 +34,15 @@ count_summary_files() {
 }
 
 check_state() {
-  local state_file="$PLANNING_DIR/STATE.md" phase plans_done plans_total phase_dir actual_plans actual_summaries
+  local state_file="$PLANNING_DIR/STATE.md" phase plans_raw plans_done plans_total phase_dir actual_plans actual_summaries
   [[ -f "$state_file" ]] || return 0
   phase=$(grep '^Phase:' "$state_file" | head -1 | sed -E 's/^Phase:[[:space:]]*([0-9]+).*/\1/' | tr -d '[:space:]')
-  plans_done=$(grep '^Plans:' "$state_file" | head -1 | sed -E 's/^Plans:[[:space:]]*([0-9]+)\/([0-9]+).*/\1/' | tr -d '[:space:]')
-  plans_total=$(grep '^Plans:' "$state_file" | head -1 | sed -E 's/^Plans:[[:space:]]*([0-9]+)\/([0-9]+).*/\2/' | tr -d '[:space:]')
+  plans_raw=$(sed -n 's/^Plans:[[:space:]]*//p' "$state_file" | head -1 | tr -d '\r')
+  plans_done="" plans_total=""
+  if [[ "$plans_raw" =~ ^([0-9]+)/([0-9]+) ]]; then
+    plans_done="${BASH_REMATCH[1]}"
+    plans_total="${BASH_REMATCH[2]}"
+  fi
   if [[ ! "$phase" =~ ^[0-9]+$ ]]; then
     drift "STATE" "Phase field is missing or invalid"
     return 0
@@ -50,8 +54,10 @@ check_state() {
   fi
   actual_plans=$(count_plan_files "$phase_dir")
   actual_summaries=$(count_summary_files "$phase_dir")
-  if [[ ! "$plans_done" =~ ^[0-9]+$ || ! "$plans_total" =~ ^[0-9]+$ || "$plans_total" -ne "$actual_plans" || "$plans_done" -ne "$actual_summaries" ]]; then
-    drift "STATE" "Plans is ${plans_done:-invalid}/${plans_total:-invalid}, disk is $actual_summaries/$actual_plans"
+  if [[ -z "$plans_done" ]]; then
+    drift "STATE" "Plans is unparsable (value '${plans_raw:-missing}', expected done/total), disk is $actual_summaries/$actual_plans"
+  elif [[ "$plans_total" -ne "$actual_plans" || "$plans_done" -ne "$actual_summaries" ]]; then
+    drift "STATE" "Plans is $plans_done/$plans_total, disk is $actual_summaries/$actual_plans"
   fi
 }
 
