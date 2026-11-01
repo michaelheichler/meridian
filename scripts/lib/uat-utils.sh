@@ -236,7 +236,10 @@ latest_non_source_uat() {
 count_uat_rounds() {
   local dir="$1"
   local phase_num="$2"
+  local skip_round="${3:-}"
   local max_round=0
+
+  skip_round="${skip_round#"${skip_round%%[!0]*}"}"
 
   case "$dir" in
     */) ;;
@@ -259,6 +262,7 @@ count_uat_rounds() {
     local rr_num
     rr_num=$(basename "$rf" | sed 's/^R0*\([0-9]*\)-UAT\.md$/\1/')
     if [ -n "$rr_num" ] && echo "$rr_num" | grep -qE '^[0-9]+$'; then
+      [ "$rr_num" = "$skip_round" ] && continue
       if [ "$rr_num" -gt "$max_round" ] 2>/dev/null; then
         max_round="$rr_num"
       fi
@@ -277,7 +281,7 @@ uat_phase_num_for_dir() {
 }
 
 uat_infer_legacy_current_round() {
-  local phase_dir="$1" phase_num archived_rounds current_round
+  local phase_dir="$1" own_round="${2:-}" phase_num archived_rounds current_round
 
   phase_num=$(uat_phase_num_for_dir "$phase_dir")
   if [ -z "$phase_num" ]; then
@@ -285,7 +289,7 @@ uat_infer_legacy_current_round() {
     return 0
   fi
 
-  archived_rounds=$(count_uat_rounds "$phase_dir" "$phase_num")
+  archived_rounds=$(count_uat_rounds "$phase_dir" "$phase_num" "$own_round")
   if [[ "$archived_rounds" =~ ^[0-9]+$ ]] && [ "$archived_rounds" -gt 0 ] 2>/dev/null; then
     current_round=$((archived_rounds + 1))
     printf '%02d\n' "$current_round"
@@ -306,7 +310,7 @@ uat_resolve_legacy_round() {
     return 0
   fi
 
-  uat_infer_legacy_current_round "$phase_dir"
+  uat_infer_legacy_current_round "$phase_dir" "$stored_num"
 }
 
 extract_round_issue_ids() {
