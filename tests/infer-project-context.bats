@@ -1,5 +1,8 @@
 #!/usr/bin/env bats
 
+load gate_case_helper
+load gate_case_files
+
 setup() {
   REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/.." && pwd)"
   SCRIPT="$REPO_ROOT/scripts/infer-project-context.sh"
@@ -7,9 +10,13 @@ setup() {
   MAP_DIR="$TEST_ROOT/codebase"
   TEST_REPO="$TEST_ROOT/repo"
   mkdir -p "$MAP_DIR" "$TEST_REPO"
+  reset_case_failures
 }
 
 teardown() {
+  if command -v git-ai >/dev/null; then
+    git-ai await --timeout 5 >/dev/null 2>&1 || true
+  fi
   rm -rf "$TEST_ROOT"
 }
 
@@ -63,43 +70,72 @@ write_concerns() {
     > "$MAP_DIR/CONCERNS.md"
 }
 
-@test "canonical map infers every project context field without concern text" {
+run_infer() {
+  run bash "$SCRIPT" "$MAP_DIR" "$TEST_REPO"
+}
+
+@test "infer-project-context: infers every field from the map, with source attribution and without concern text" {
   local purpose="A Claude Code plugin for a plan, execute, verify workflow."
   write_stack "Purpose" "$purpose"
   write_supporting_map
   write_concerns
 
-  run bash "$SCRIPT" "$MAP_DIR" "$TEST_REPO"
+  run_infer
+  expect_case canonical-map 0 ""
+  expect_jq_output canonical-map ".purpose == {value: \"$purpose\", source: \"STACK.md: Purpose\"}"
+  expect_jq_output canonical-map '(.purpose.value | contains("DO NOT USE THIS AS PURPOSE") | not)'
+  expect_jq_output canonical-map '(.purpose.value | contains("Catastrophic data loss risk") | not)'
+  expect_jq_output canonical-map '.tech_stack.source == "STACK.md" and (.tech_stack.value | index("Bash") != null and index("jq") != null)'
+  expect_jq_output canonical-map '.architecture == {value: "Markdown commands delegate work to Bash scripts.", source: "ARCHITECTURE.md"}'
+  expect_jq_output canonical-map '.features == {value: ["Lifecycle"], source: "INDEX.md"}'
 
-  [ "$status" -eq 0 ]
-  jq -e --arg expected "$purpose" '
-    .purpose == {value: $expected, source: "STACK.md: Purpose"} and
-    (.purpose.value | contains("DO NOT USE THIS AS PURPOSE") | not) and
-    (.purpose.value | contains("Catastrophic data loss risk") | not) and
-    (.tech_stack.value != null) and
-    (.architecture.value != null) and
-    (.features.value != null)
-  ' <<< "$output" > /dev/null
-}
+  write_stack "What this repo is" "A transitional map purpose."
+  run_infer
+  expect_case transitional-purpose-heading 0 ""
+  expect_jq_output transitional-purpose-heading '.purpose == {value: "A transitional map purpose.", source: "STACK.md: What this repo is"}'
 
-@test "transitional purpose heading remains supported" {
-  local purpose="A transitional map purpose."
-  write_stack "What this repo is" "$purpose"
-
-  run bash "$SCRIPT" "$MAP_DIR" "$TEST_REPO"
-
-  [ "$status" -eq 0 ]
-  jq -e --arg expected "$purpose" \
-    '.purpose == {value: $expected, source: "STACK.md: What this repo is"}' \
-    <<< "$output" > /dev/null
-}
-
-@test "missing purpose section returns the null object" {
   write_stack "Languages and tools" "No purpose exists in this map."
-  write_concerns
+  run_infer
+  expect_case missing-purpose-section 0 ""
+  expect_jq_output missing-purpose-section '.purpose == {value: null, source: null}'
 
-  run bash "$SCRIPT" "$MAP_DIR" "$TEST_REPO"
+  rm -f "$MAP_DIR/STACK.md" "$MAP_DIR/ARCHITECTURE.md" "$MAP_DIR/INDEX.md"
+  run_infer
+  expect_case empty-map 0 ""
+  expect_jq_output empty-map '.tech_stack == {value: null, source: null} and .architecture == {value: null, source: null} and .features == {value: null, source: null} and .purpose == {value: null, source: null}'
 
-  [ "$status" -eq 0 ]
-  jq -e '.purpose == {value: null, source: null}' <<< "$output" > /dev/null
+  run bash "$SCRIPT" --help
+  expect_case help 0 "Usage: infer-project-context.sh CODEBASE_DIR [REPO_ROOT]"
+
+  assert_no_case_failures
+}
+
+@test "infer-project-context: names the project from the origin remote, then plugin.json, then the directory" {
+  run_infer
+  expect_case directory-fallback 0 ""
+  expect_jq_output directory-fallback '.name == {value: "repo", source: "directory"}'
+
+  mkdir -p "$TEST_REPO/.claude-plugin"
+  printf '%s\n' '{"name":"manifest-name"}' > "$TEST_REPO/.claude-plugin/plugin.json"
+  run_infer
+  expect_case plugin-json 0 ""
+  expect_jq_output plugin-json '.name == {value: "manifest-name", source: "plugin.json"}'
+
+  git -C "$TEST_REPO" init -q
+  git -C "$TEST_REPO" remote add origin https://example.com/acme/widget.git
+  run_infer
+  expect_case origin-remote 0 ""
+  expect_jq_output origin-remote '.name == {value: "widget", source: "repo"}'
+
+  assert_no_case_failures
+}
+
+@test "infer-project-context: rejects a missing argument and a missing codebase directory" {
+  run bash "$SCRIPT"
+  expect_case no-arguments 1 "CODEBASE_DIR is required"
+
+  run bash "$SCRIPT" "$TEST_ROOT/absent"
+  expect_case missing-codebase-dir 1 "CODEBASE_DIR does not exist"
+
+  assert_no_case_failures
 }
