@@ -1,6 +1,8 @@
 #!/usr/bin/env bats
 
 load test_helper
+load gate_case_helper
+load gate_case_files
 
 setup() {
   setup_temp_dir
@@ -18,14 +20,28 @@ setup() {
   write_fake_claude
   write_fake_curl
   prepare_release
+  cd "$RTK_TEST_ROOT"
+  reset_case_failures
 }
 
 teardown() {
+  cd "$PROJECT_ROOT"
   teardown_temp_dir
 }
 
 manager() {
   bash "$RTK_TEST_ROOT/scripts/rtk-manager.sh" "$@"
+}
+
+reset_rtk() {
+  rm -rf "$LBWC_RTK_DIR"
+  export LBWC_RTK_BACKUPS="$LBWC_RTK_DIR/backups"
+  unset RTK_FIXTURE_PROXY_FAILURE
+  prepare_release
+}
+
+count_files_named() {
+  find "$LBWC_RTK_BACKUPS" -type f -name "$1" 2>/dev/null | wc -l | tr -d '[:space:]'
 }
 
 target_name() {
@@ -111,131 +127,6 @@ EOF
 EOF
 }
 
-@test "rtk-manager: status reports a missing project-local install" {
-  run manager status --json
-
-  [ "$status" -eq 0 ]
-  [ "$(printf '%s' "$output" | jq -r '.installed')" = false ]
-  [ "$(printf '%s' "$output" | jq -r '.binary')" = "$LBWC_RTK_BINARY" ]
-}
-
-@test "rtk-manager: install requires explicit confirmation" {
-  run manager install
-
-  [ "$status" -eq 2 ]
-  [[ "$output" == *'install requires --yes'* ]]
-  [ ! -e "$LBWC_RTK_BINARY" ]
-}
-
-@test "rtk-manager: update requires explicit confirmation" {
-  run manager update
-
-  [ "$status" -eq 2 ]
-  [[ "$output" == *'update requires --yes'* ]]
-}
-
-@test "rtk-manager: uninstall requires explicit confirmation" {
-  run manager uninstall
-
-  [ "$status" -eq 2 ]
-  [[ "$output" == *'uninstall requires --yes'* ]]
-}
-
-@test "rtk-manager: rejects state paths outside the project" {
-  run env LBWC_RTK_DIR="$TEST_TEMP_DIR/outside" bash "$RTK_TEST_ROOT/scripts/rtk-manager.sh" status
-
-  [ "$status" -eq 2 ]
-  [[ "$output" == *'state must stay inside this project'* ]]
-}
-
-@test "rtk-manager: rejects project paths that traverse a symbolic link" {
-  mkdir -p "$TEST_TEMP_DIR/outside"
-  ln -s "$TEST_TEMP_DIR/outside" "$RTK_TEST_ROOT/escape"
-
-  run env -u LBWC_RTK_BINARY -u LBWC_RTK_RECEIPT -u LBWC_RTK_BACKUPS LBWC_RTK_DIR="$RTK_TEST_ROOT/escape/rtk" bash "$RTK_TEST_ROOT/scripts/rtk-manager.sh" install --yes
-
-  [ "$status" -eq 2 ]
-  [[ "$output" == *'may not traverse symbolic links'* ]]
-  [ ! -e "$TEST_TEMP_DIR/outside/rtk" ]
-}
-
-@test "rtk-manager: dry-run validates a checksummed release without writing state" {
-  run manager install --yes --dry-run
-
-  [ "$status" -eq 0 ]
-  [[ "$output" == *'dry-run: install RTK v9.9.9'* ]]
-  [ ! -e "$LBWC_RTK_BINARY" ]
-  [ ! -e "$LBWC_RTK_RECEIPT" ]
-}
-
-@test "rtk-manager: install writes a receipt and verify runs the smoke check" {
-  run manager install --yes
-
-  [ "$status" -eq 0 ]
-  [ -x "$LBWC_RTK_BINARY" ]
-  [ -f "$LBWC_RTK_RECEIPT" ]
-  [ "$(jq -r '.release.tag' "$LBWC_RTK_RECEIPT")" = v9.9.9 ]
-  [ "$(jq -r '.claude_code_smoke' "$LBWC_RTK_RECEIPT")" = available ]
-
-  run manager verify --json
-
-  [ "$status" -eq 0 ]
-  [ "$(printf '%s' "$output" | jq -r '.verified')" = true ]
-  [ "$(printf '%s' "$output" | jq -r '.claude_code_smoke')" = available ]
-}
-
-@test "rtk-manager: update creates a unique backup before replacement" {
-  manager install --yes
-  printf 'old binary\n' > "$LBWC_RTK_BINARY"
-  chmod +x "$LBWC_RTK_BINARY"
-
-  run manager update --yes
-
-  [ "$status" -eq 0 ]
-  [ "$(find "$LBWC_RTK_BACKUPS" -type f -name rtk | wc -l | tr -d '[:space:]')" = 1 ]
-  [ "$(find "$LBWC_RTK_BACKUPS" -type f -name rtk-install.json | wc -l | tr -d '[:space:]')" = 1 ]
-  "$LBWC_RTK_BINARY" --version
-}
-
-@test "rtk-manager: backup creation failure preserves the current install" {
-  manager install --yes
-  before_binary="$(sha256_value "$LBWC_RTK_BINARY")"
-  before_receipt="$(sha256_value "$LBWC_RTK_RECEIPT")"
-  printf 'blocked\n' > "$LBWC_RTK_DIR/blocked"
-  export LBWC_RTK_BACKUPS="$LBWC_RTK_DIR/blocked"
-
-  run manager update --yes
-
-  [ "$status" -eq 2 ]
-  [[ "$output" == *'could not create a backup'* ]]
-  [ "$(sha256_value "$LBWC_RTK_BINARY")" = "$before_binary" ]
-  [ "$(sha256_value "$LBWC_RTK_RECEIPT")" = "$before_receipt" ]
-}
-
-@test "rtk-manager: smoke failure rolls back the verified binary and receipt" {
-  manager install --yes
-  before_binary="$(sha256_value "$LBWC_RTK_BINARY")"
-  before_receipt="$(sha256_value "$LBWC_RTK_RECEIPT")"
-  export RTK_FIXTURE_PROXY_FAILURE=true
-
-  run manager update --yes
-
-  [ "$status" -eq 2 ]
-  [[ "$output" == *'compatibility smoke check'* ]]
-  [ "$(sha256_value "$LBWC_RTK_BINARY")" = "$before_binary" ]
-  [ "$(sha256_value "$LBWC_RTK_RECEIPT")" = "$before_receipt" ]
-}
-
-@test "rtk-manager: checksum mismatch prevents installation" {
-  printf '%064d  rtk-%s.tar.gz\n' 0 "$(target_name)" > "$TEST_TEMP_DIR/release/checksums.txt"
-
-  run manager install --yes
-
-  [ "$status" -eq 2 ]
-  [[ "$output" == *'checksum mismatch'* ]]
-  [ ! -e "$LBWC_RTK_BINARY" ]
-}
-
 build_archive_with_entry() {
   python3 -I -c '
 import io, sys, tarfile
@@ -250,38 +141,148 @@ with tarfile.open(out, "w:gz") as archive:
   printf '%s  rtk-%s.tar.gz\n' "$(sha256_value "$TEST_TEMP_DIR/release/archive.tar.gz")" "$(target_name)" > "$TEST_TEMP_DIR/release/checksums.txt"
 }
 
-@test "rtk-manager: parent traversal archive paths prevent installation" {
+@test "rtk-manager usage: reports status, verify and rejects bad invocations" {
+  run manager status --json
+  expect_status status-missing 0
+  expect_jq_output status-missing '.installed == false'
+  expect_output_has status-missing "$LBWC_RTK_BINARY"
+
+  run manager
+  expect_case no-command 2 "Usage: rtk-manager.sh"
+
+  run manager bogus
+  expect_case unknown-command 2 "unknown command bogus"
+
+  run manager status --bogus
+  expect_case unknown-option 2 "unknown option --bogus"
+
+  run manager --help
+  expect_case help-flag 0 "Usage: rtk-manager.sh"
+
+  run manager status --help
+  expect_case help-after-command 0 "Usage: rtk-manager.sh"
+
+  assert_no_case_failures
+}
+
+@test "rtk-manager guards: demand --yes and keep state inside the project" {
+  local command_name
+
+  for command_name in install update uninstall; do
+    reset_rtk
+    run manager "$command_name"
+    expect_case "$command_name-needs-yes" 2 "$command_name requires --yes"
+    expect_no_path "$command_name-needs-yes" "$LBWC_RTK_BINARY"
+  done
+
+  run env LBWC_RTK_DIR="$TEST_TEMP_DIR/outside" bash "$RTK_TEST_ROOT/scripts/rtk-manager.sh" status
+  expect_case state-outside-project 2 "state must stay inside this project"
+
+  mkdir -p "$TEST_TEMP_DIR/outside"
+  ln -s "$TEST_TEMP_DIR/outside" "$RTK_TEST_ROOT/escape"
+  run env -u LBWC_RTK_BINARY -u LBWC_RTK_RECEIPT -u LBWC_RTK_BACKUPS LBWC_RTK_DIR="$RTK_TEST_ROOT/escape/rtk" bash "$RTK_TEST_ROOT/scripts/rtk-manager.sh" install --yes
+  expect_case symlink-traversal 2 "may not traverse symbolic links"
+  expect_no_path symlink-traversal "$TEST_TEMP_DIR/outside/rtk"
+
+  assert_no_case_failures
+}
+
+@test "rtk-manager install: validates a dry run, then writes a receipt that verify accepts" {
+  reset_rtk
+  run manager install --yes --dry-run
+  expect_case dry-run 0 "dry-run: install RTK v9.9.9"
+  expect_no_path dry-run "$LBWC_RTK_BINARY"
+  expect_no_path dry-run "$LBWC_RTK_RECEIPT"
+
+  run manager install --yes
+  expect_status install 0
+  [ -x "$LBWC_RTK_BINARY" ] || record_case_failure install "binary is not executable"
+  expect_path install "$LBWC_RTK_RECEIPT"
+  expect_jq install "$LBWC_RTK_RECEIPT" '.release.tag == "v9.9.9" and .claude_code_smoke == "available"'
+
+  run manager verify --json
+  expect_status verify 0
+  expect_jq_output verify '.verified == true and .claude_code_smoke == "available"'
+
+  run manager status --json
+  expect_status status-installed 0
+  expect_jq_output status-installed '.installed == true'
+
+  assert_no_case_failures
+}
+
+@test "rtk-manager install reject: refuses bad checksums and unsafe archive paths" {
+  reset_rtk
+  printf '%064d  rtk-%s.tar.gz\n' 0 "$(target_name)" > "$TEST_TEMP_DIR/release/checksums.txt"
+  run manager install --yes
+  expect_case checksum-mismatch 2 "checksum mismatch"
+  expect_no_path checksum-mismatch "$LBWC_RTK_BINARY"
+
+  reset_rtk
   build_archive_with_entry 'dir/../rtk'
-
   run manager install --yes
+  expect_case archive-parent-traversal 2 "unsafe or empty paths"
+  expect_no_path archive-parent-traversal "$LBWC_RTK_BINARY"
 
-  [ "$status" -eq 2 ]
-  [[ "$output" == *'unsafe or empty paths'* ]]
-  [ ! -e "$LBWC_RTK_BINARY" ]
-}
-
-@test "rtk-manager: absolute archive paths prevent installation" {
+  reset_rtk
   build_archive_with_entry '/rtk'
-
   run manager install --yes
+  expect_case archive-absolute-path 2 "unsafe or empty paths"
+  expect_no_path archive-absolute-path "$LBWC_RTK_BINARY"
 
-  [ "$status" -eq 2 ]
-  [[ "$output" == *'unsafe or empty paths'* ]]
-  [ ! -e "$LBWC_RTK_BINARY" ]
+  assert_no_case_failures
 }
 
-@test "rtk-manager: uninstall dry-run preserves state and confirmed uninstall keeps a backup" {
+@test "rtk-manager update: backs up first and rolls back when the smoke check fails" {
+  local before_binary before_receipt
+
+  reset_rtk
   manager install --yes
+  printf 'old binary\n' > "$LBWC_RTK_BINARY"
+  chmod +x "$LBWC_RTK_BINARY"
+  run manager update --yes
+  expect_status update-backup 0
+  [ "$(count_files_named rtk)" = 1 ] || record_case_failure update-backup "expected one backed up binary"
+  [ "$(count_files_named rtk-install.json)" = 1 ] || record_case_failure update-backup "expected one backed up receipt"
+  run "$LBWC_RTK_BINARY" --version
+  expect_case update-backup-runs 0 "rtk 9.9.9"
 
+  reset_rtk
+  manager install --yes
+  before_binary="$(sha256_value "$LBWC_RTK_BINARY")"
+  before_receipt="$(sha256_value "$LBWC_RTK_RECEIPT")"
+  printf 'blocked\n' > "$LBWC_RTK_DIR/blocked"
+  export LBWC_RTK_BACKUPS="$LBWC_RTK_DIR/blocked"
+  run manager update --yes
+  expect_case backup-failure 2 "could not create a backup"
+  expect_same_digest backup-failure "$LBWC_RTK_BINARY" "$before_binary"
+  expect_same_digest backup-failure "$LBWC_RTK_RECEIPT" "$before_receipt"
+
+  reset_rtk
+  manager install --yes
+  before_binary="$(sha256_value "$LBWC_RTK_BINARY")"
+  before_receipt="$(sha256_value "$LBWC_RTK_RECEIPT")"
+  export RTK_FIXTURE_PROXY_FAILURE=true
+  run manager update --yes
+  expect_case smoke-failure 2 "compatibility smoke check"
+  expect_same_digest smoke-failure "$LBWC_RTK_BINARY" "$before_binary"
+  expect_same_digest smoke-failure "$LBWC_RTK_RECEIPT" "$before_receipt"
+
+  assert_no_case_failures
+}
+
+@test "rtk-manager uninstall: a dry run keeps the install and a confirmed run keeps a backup" {
+  reset_rtk
+  manager install --yes
   run manager uninstall --yes --dry-run
-
-  [ "$status" -eq 0 ]
-  [ -x "$LBWC_RTK_BINARY" ]
+  expect_status uninstall-dry-run 0
+  [ -x "$LBWC_RTK_BINARY" ] || record_case_failure uninstall-dry-run "dry run removed the binary"
 
   run manager uninstall --yes
+  expect_case uninstall 0 "uninstall: removed project-local RTK install"
+  expect_no_path uninstall "$LBWC_RTK_BINARY"
+  expect_no_path uninstall "$LBWC_RTK_RECEIPT"
+  [ "$(count_files_named rtk)" = 1 ] || record_case_failure uninstall "expected one backed up binary"
 
-  [ "$status" -eq 0 ]
-  [ ! -e "$LBWC_RTK_BINARY" ]
-  [ ! -e "$LBWC_RTK_RECEIPT" ]
-  [ "$(find "$LBWC_RTK_BACKUPS" -type f -name rtk | wc -l | tr -d '[:space:]')" = 1 ]
+  assert_no_case_failures
 }
