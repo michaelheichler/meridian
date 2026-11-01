@@ -1,441 +1,267 @@
 #!/usr/bin/env bats
 
 load test_helper
+load gate_case_helper
+load gate_case_files
 
 setup() {
   setup_temp_dir
+  reset_case_failures
+  SCRIPT="$SCRIPTS_DIR/extract-skill-follow-up-files.sh"
 }
 
 teardown() {
   teardown_temp_dir
 }
 
-write_skill_fixture() {
-  local base_dir="$1"
-  local skill_name="$2"
-  shift 2
-
-  write_custom_skill_fixture "$base_dir" "$skill_name" "$(cat <<'EOF'
----
-name: fixture-skill
-description: Fixture skill
----
-
-# Fixture Skill
-
-## References
-
-- [First](references/first.md)
-- [Second](references/second.md)
-- [Anchor](#local-anchor)
-- [External](https://example.com/reference.md)
-- [Missing](references/missing.md)
-EOF
-)" "$@"
+row_dir() {
+  local dir="$BATS_TEST_TMPDIR/$1"
+  mkdir -p "$dir/project" "$dir/home" "$dir/cfg"
+  printf '%s\n' "$dir"
 }
 
-write_custom_skill_fixture() {
-  local base_dir="$1"
-  local skill_name="$2"
-  local skill_body="$3"
+phys() {
+  (cd "$1" && pwd -P)
+}
+
+skill_body() {
+  printf '%s\n' '---' 'name: fixture-skill' 'description: Fixture skill' '---' '' '# Fixture Skill' '' '## References' '' "$@"
+}
+
+make_skill() {
+  local base_dir=$1 skill_name=$2 body=$3 rel_path
   shift 3
-
   mkdir -p "$base_dir/$skill_name/references"
-  printf '%s\n' "$skill_body" > "$base_dir/$skill_name/SKILL.md"
-
+  printf '%s\n' "$body" > "$base_dir/$skill_name/SKILL.md"
   for rel_path in "$@"; do
-    if [[ "$rel_path" == */ ]]; then
-      mkdir -p "$base_dir/$skill_name/$rel_path"
-      continue
-    fi
-
     mkdir -p "$(dirname "$base_dir/$skill_name/$rel_path")"
     printf '# %s\n' "$rel_path" > "$base_dir/$skill_name/$rel_path"
   done
 }
 
-@test "extract-skill-follow-up-files: resolves project .claude skills to exact paths" {
-  local project_dir="$TEST_TEMP_DIR/project"
-  mkdir -p "$project_dir"
-  write_skill_fixture "$project_dir/.claude/skills" "swiftdata" \
-    "references/first.md" \
-    "references/second.md"
-
-  run bash "$SCRIPTS_DIR/extract-skill-follow-up-files.sh" --project-dir "$project_dir" swiftdata
-
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"<skill_follow_up_files>"* ]]
-  [[ "$output" == *"Skill: swiftdata"* ]]
-  [[ "$output" == *"$project_dir/.claude/skills/swiftdata/references/first.md"* ]]
-  [[ "$output" == *"$project_dir/.claude/skills/swiftdata/references/second.md"* ]]
-  [[ "$output" != *"https://example.com/reference.md"* ]]
-  [[ "$output" != *"missing.md"* ]]
+make_standard_skill() {
+  make_skill "$1" "$2" "$(skill_body '- [First](references/first.md)' '- [Second](references/second.md)')" \
+    references/first.md references/second.md
 }
 
-@test "extract-skill-follow-up-files: prefers project .claude skills over global copies" {
-  local project_dir="$TEST_TEMP_DIR/project"
-  mkdir -p "$project_dir"
-  export CLAUDE_CONFIG_DIR="$TEST_TEMP_DIR/.claude-config"
-  mkdir -p "$CLAUDE_CONFIG_DIR/skills"
-
-  write_skill_fixture "$CLAUDE_CONFIG_DIR/skills" "swiftdata" \
-    "references/first.md" \
-    "references/second.md"
-  write_skill_fixture "$project_dir/.claude/skills" "swiftdata" \
-    "references/first.md" \
-    "references/second.md"
-
-  run bash "$SCRIPTS_DIR/extract-skill-follow-up-files.sh" --project-dir "$project_dir" swiftdata
-
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"$project_dir/.claude/skills/swiftdata/references/first.md"* ]]
-  [[ "$output" != *"$CLAUDE_CONFIG_DIR/skills/swiftdata/references/first.md"* ]]
+run_extract() {
+  local row=$1
+  shift
+  run env HOME="$row/home" CLAUDE_CONFIG_DIR="$row/cfg" bash "$SCRIPT" --project-dir "$row/project" "$@"
 }
 
-@test "extract-skill-follow-up-files: falls back to CLAUDE_CONFIG_DIR skills" {
-  local project_dir="$TEST_TEMP_DIR/project"
-  mkdir -p "$project_dir"
-  export CLAUDE_CONFIG_DIR="$TEST_TEMP_DIR/.claude-config"
-  mkdir -p "$CLAUDE_CONFIG_DIR/skills"
-
-  write_skill_fixture "$CLAUDE_CONFIG_DIR/skills" "find-docs" \
-    "references/first.md" \
-    "references/second.md"
-
-  run bash "$SCRIPTS_DIR/extract-skill-follow-up-files.sh" --project-dir "$project_dir" find-docs
-
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"Skill: find-docs"* ]]
-  [[ "$output" == *"$CLAUDE_CONFIG_DIR/skills/find-docs/references/first.md"* ]]
+run_extract_no_cfg() {
+  local row=$1
+  shift
+  run env -u CLAUDE_CONFIG_DIR HOME="$row/home" bash "$SCRIPT" --project-dir "$row/project" "$@"
 }
 
-@test "extract-skill-follow-up-files: falls back to HOME/.config/claude-code skills when CLAUDE_CONFIG_DIR is unset" {
-  local project_dir="$TEST_TEMP_DIR/project"
-  mkdir -p "$project_dir"
-  unset CLAUDE_CONFIG_DIR
-  mkdir -p "$HOME/.config/claude-code/skills"
+@test "extract-skill-follow-up-files emits absolute paths of in-skill markdown link targets" {
+  local row project cfg home
 
-  write_skill_fixture "$HOME/.config/claude-code/skills" "find-docs" \
-    "references/first.md" \
-    "references/second.md"
+  row=$(row_dir project-skill)
+  project=$(phys "$row/project")
+  make_skill "$row/project/.claude/skills" swiftdata "$(skill_body \
+    '- [First](references/first.md)' '- [Second](references/second.md)' '- [Anchor](#local-anchor)' \
+    '- [External](https://example.com/reference.md)' '- [Mail](mailto:a@example.com)' \
+    '- [Rooted](/etc/hosts)' '- [Missing](references/missing.md)')" \
+    references/first.md references/second.md
+  run_extract "$row" swiftdata
+  expect_case "project-skill-exact-block" 0 ""
+  [ "$output" = "$(printf '%s\n' '<skill_follow_up_files>' 'Skill: swiftdata' \
+    "- $project/.claude/skills/swiftdata/references/first.md" \
+    "- $project/.claude/skills/swiftdata/references/second.md" '' '</skill_follow_up_files>')" ] \
+    || record_case_failure "project-skill-exact-block" "unexpected block=[$output]"
 
-  run bash "$SCRIPTS_DIR/extract-skill-follow-up-files.sh" --project-dir "$project_dir" find-docs
+  row=$(row_dir project-over-global)
+  project=$(phys "$row/project")
+  cfg=$(phys "$row/cfg")
+  make_standard_skill "$row/cfg/skills" swiftdata
+  make_standard_skill "$row/project/.claude/skills" swiftdata
+  run_extract "$row" swiftdata
+  expect_case "project-over-global" 0 "$project/.claude/skills/swiftdata/references/first.md"
+  expect_output_lacks "project-over-global-no-global" "$cfg/skills/swiftdata"
 
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"Skill: find-docs"* ]]
-  [[ "$output" == *"$HOME/.config/claude-code/skills/find-docs/references/first.md"* ]]
+  row=$(row_dir config-dir)
+  cfg=$(phys "$row/cfg")
+  make_standard_skill "$row/cfg/skills" find-docs
+  run_extract "$row" find-docs
+  expect_case "config-dir-fallback" 0 "Skill: find-docs"
+  expect_output_has "config-dir-fallback-path" "$cfg/skills/find-docs/references/first.md"
+
+  row=$(row_dir home-config-claude-code)
+  home=$(phys "$row/home")
+  make_standard_skill "$row/home/.config/claude-code/skills" find-docs
+  run_extract_no_cfg "$row" find-docs
+  expect_case "home-config-claude-code" 0 "Skill: find-docs"
+  expect_output_has "home-config-claude-code-path" "$home/.config/claude-code/skills/find-docs/references/first.md"
+
+  row=$(row_dir home-claude)
+  home=$(phys "$row/home")
+  make_standard_skill "$row/home/.claude/skills" find-docs
+  run_extract_no_cfg "$row" find-docs
+  expect_case "home-claude" 0 "$home/.claude/skills/find-docs/references/first.md"
+
+  assert_no_case_failures
 }
 
-@test "extract-skill-follow-up-files: falls back to HOME/.claude skills when newer config dir is absent" {
-  local project_dir="$TEST_TEMP_DIR/project"
-  mkdir -p "$project_dir"
-  unset CLAUDE_CONFIG_DIR
+@test "extract-skill-follow-up-files splits skill lists and keeps valid skills next to unsafe names" {
+  local row project
 
-  write_skill_fixture "$HOME/.claude/skills" "find-docs" \
-    "references/first.md" \
-    "references/second.md"
+  row=$(row_dir whitespace-list)
+  make_standard_skill "$row/project/.claude/skills" swiftdata
+  make_standard_skill "$row/project/.claude/skills" swift-testing
+  run_extract "$row" "swiftdata swift-testing"
+  expect_case "whitespace-list" 0 "Skill: swiftdata"
+  expect_output_has "whitespace-list-second" "Skill: swift-testing"
 
-  run bash "$SCRIPTS_DIR/extract-skill-follow-up-files.sh" --project-dir "$project_dir" find-docs
+  row=$(row_dir comma-list)
+  make_standard_skill "$row/project/.claude/skills" swiftdata
+  make_standard_skill "$row/project/.claude/skills" swift-testing
+  run_extract "$row" "swiftdata,swift-testing" absent-skill
+  expect_case "comma-list" 0 "Skill: swiftdata"
+  expect_output_has "comma-list-second" "Skill: swift-testing"
+  expect_output_lacks "comma-list-absent-skill-skipped" "absent-skill"
 
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"$HOME/.claude/skills/find-docs/references/first.md"* ]]
+  row=$(row_dir separator)
+  make_standard_skill "$row/project/.claude/skills" swiftdata
+  run_extract "$row" -- swiftdata
+  expect_case "double-dash-separator" 0 "Skill: swiftdata"
+
+  row=$(row_dir traversal-token-in-list)
+  project=$(phys "$row/project")
+  make_standard_skill "$row/project/.claude/skills" swiftdata
+  make_standard_skill "$row/project/.agents/skills" swiftdata
+  run_extract "$row" "swiftdata ../../.agents/skills/swiftdata"
+  expect_case "traversal-token-in-list" 0 "$project/.claude/skills/swiftdata/references/first.md"
+  expect_output_lacks "traversal-token-in-list-no-agents" "$project/.agents/skills"
+
+  assert_no_case_failures
 }
 
-@test "extract-skill-follow-up-files: ignores .agents, .pi, and HOME/.agents lookalike roots" {
-  local project_dir="$TEST_TEMP_DIR/project"
-  mkdir -p "$project_dir"
+@test "extract-skill-follow-up-files normalizes in-tree links and drops links that leave the skill" {
+  local row project cfg first_count
 
-  write_skill_fixture "$project_dir/.agents/skills" "swiftdata" \
-    "references/first.md" \
-    "references/second.md"
-  write_skill_fixture "$project_dir/.pi/skills" "swiftdata" \
-    "references/first.md" \
-    "references/second.md"
-  write_skill_fixture "$HOME/.agents/skills" "swiftdata" \
-    "references/first.md" \
-    "references/second.md"
+  row=$(row_dir normalize-dedupe)
+  project=$(phys "$row/project")
+  make_skill "$row/project/.claude/skills" swiftdata "$(skill_body \
+    '- [First](references/first.md)' '- [Duplicate First](./references/first.md)' \
+    '- [Normalized](docs/../references/second.md)' '- [Fragment](references/third.md#section)')" \
+    references/first.md references/second.md references/third.md docs/.keep
+  run_extract "$row" swiftdata
+  expect_case "normalize-dedupe" 0 "$project/.claude/skills/swiftdata/references/first.md"
+  expect_output_has "normalized-link" "$project/.claude/skills/swiftdata/references/second.md"
+  expect_output_has "fragment-stripped" "$project/.claude/skills/swiftdata/references/third.md"
+  first_count=$(printf '%s\n' "$output" | grep -cFx -- "- $project/.claude/skills/swiftdata/references/first.md")
+  [ "$first_count" -eq 1 ] || record_case_failure "dedupe-count" "first.md listed $first_count times"
 
-  run bash "$SCRIPTS_DIR/extract-skill-follow-up-files.sh" --project-dir "$project_dir" swiftdata
+  row=$(row_dir project-escape-link)
+  project=$(phys "$row/project")
+  make_skill "$row/project/.claude/skills" swiftdata "$(skill_body \
+    '- [Safe](references/first.md)' '- [Escape](../other-skill/references/secret.md)')" references/first.md
+  make_standard_skill "$row/project/.claude/skills" other-skill
+  printf '# secret\n' > "$row/project/.claude/skills/other-skill/references/secret.md"
+  run_extract "$row" swiftdata
+  expect_case "project-escape-link" 0 "$project/.claude/skills/swiftdata/references/first.md"
+  expect_output_lacks "project-escape-link-secret" "other-skill"
 
-  [ "$status" -eq 0 ]
-  [ -z "$output" ]
+  row=$(row_dir global-escape-link)
+  cfg=$(phys "$row/cfg")
+  make_skill "$row/cfg/skills" find-docs "$(skill_body \
+    '- [Safe](references/first.md)' '- [Normalized](docs/../references/second.md)' \
+    '- [Escape](../other-skill/references/secret.md)')" references/first.md references/second.md docs/.keep
+  make_standard_skill "$row/cfg/skills" other-skill
+  printf '# secret\n' > "$row/cfg/skills/other-skill/references/secret.md"
+  run_extract "$row" find-docs
+  expect_case "global-escape-link" 0 "$cfg/skills/find-docs/references/first.md"
+  expect_output_has "global-escape-link-normalized" "$cfg/skills/find-docs/references/second.md"
+  expect_output_lacks "global-escape-link-secret" "other-skill"
+
+  row=$(row_dir project-symlink)
+  project=$(phys "$row/project")
+  make_skill "$row/project/.claude/skills" swiftdata "$(skill_body \
+    '- [Safe](references/first.md)' '- [Symlink Escape](references/linked-outside.md)')" references/first.md
+  printf '# secret\n' > "$row/outside.md"
+  ln -s "$row/outside.md" "$row/project/.claude/skills/swiftdata/references/linked-outside.md"
+  run_extract "$row" swiftdata
+  expect_case "project-symlink" 0 "$project/.claude/skills/swiftdata/references/first.md"
+  expect_output_lacks "project-symlink-dropped" "linked-outside.md"
+
+  row=$(row_dir global-symlink)
+  cfg=$(phys "$row/cfg")
+  make_skill "$row/cfg/skills" find-docs "$(skill_body \
+    '- [Safe](references/first.md)' '- [Symlink Escape](references/linked-outside.md)')" references/first.md
+  printf '# secret\n' > "$row/outside.md"
+  ln -s "$row/outside.md" "$row/cfg/skills/find-docs/references/linked-outside.md"
+  run_extract "$row" find-docs
+  expect_case "global-symlink" 0 "$cfg/skills/find-docs/references/first.md"
+  expect_output_lacks "global-symlink-dropped" "linked-outside.md"
+
+  assert_no_case_failures
 }
 
-@test "extract-skill-follow-up-files: ignores traversal tokens that would escape into project lookalike roots" {
-  local project_dir="$TEST_TEMP_DIR/project"
-  mkdir -p "$project_dir/.claude/skills"
+@test "extract-skill-follow-up-files stays silent for unresolvable or unsafe skills" {
+  local row
 
-  write_skill_fixture "$project_dir/.agents/skills" "swiftdata" \
-    "references/first.md" \
-    "references/second.md"
-  write_skill_fixture "$project_dir/.pi/skills" "swiftdata" \
-    "references/first.md" \
-    "references/second.md"
+  row=$(row_dir lookalike-roots)
+  make_standard_skill "$row/project/.agents/skills" swiftdata
+  make_standard_skill "$row/project/.pi/skills" swiftdata
+  make_standard_skill "$row/home/.agents/skills" swiftdata
+  run_extract "$row" swiftdata
+  expect_case_silent "lookalike-roots" 0
 
-  run bash "$SCRIPTS_DIR/extract-skill-follow-up-files.sh" --project-dir "$project_dir" ../../.agents/skills/swiftdata ../../.pi/skills/swiftdata
+  row=$(row_dir traversal-project-lookalike)
+  mkdir -p "$row/project/.claude/skills"
+  make_standard_skill "$row/project/.agents/skills" swiftdata
+  make_standard_skill "$row/project/.pi/skills" swiftdata
+  run_extract "$row" ../../.agents/skills/swiftdata ../../.pi/skills/swiftdata
+  expect_case_silent "traversal-project-lookalike" 0
 
-  [ "$status" -eq 0 ]
-  [ -z "$output" ]
+  row=$(row_dir traversal-home-agents)
+  mkdir -p "$row/home/.claude/skills"
+  make_standard_skill "$row/home/.agents/skills" swiftdata
+  run_extract_no_cfg "$row" ../../.agents/skills/swiftdata
+  expect_case_silent "traversal-home-agents" 0
+
+  row=$(row_dir no-links)
+  make_skill "$row/project/.claude/skills" swiftdata "$(skill_body 'This skill intentionally has no markdown links.')"
+  run_extract "$row" swiftdata
+  expect_case_silent "no-links" 0
+
+  row=$(row_dir dot-segments)
+  run_extract "$row" . ..
+  expect_case_silent "dot-segments" 0
+
+  row=$(row_dir unknown-skill)
+  run_extract "$row" not-installed
+  expect_case_silent "unknown-skill" 0
+
+  row=$(row_dir no-skill-arguments)
+  run_extract "$row"
+  expect_case_silent "no-skill-arguments" 0
+
+  row=$(row_dir only-separators)
+  run_extract "$row" " , ,"
+  expect_case_silent "only-separators" 0
+
+  assert_no_case_failures
 }
 
-@test "extract-skill-follow-up-files: ignores traversal tokens that would escape into HOME/.agents through the global root" {
-  local project_dir="$TEST_TEMP_DIR/project"
-  mkdir -p "$project_dir"
-  unset CLAUDE_CONFIG_DIR
-  mkdir -p "$HOME/.claude/skills"
+@test "extract-skill-follow-up-files handles help and option errors" {
+  local row
+  row=$(row_dir options)
 
-  write_skill_fixture "$HOME/.agents/skills" "swiftdata" \
-    "references/first.md" \
-    "references/second.md"
+  run bash "$SCRIPT" --help
+  expect_case "help-long" 0 "Usage: bash extract-skill-follow-up-files.sh [--project-dir PATH]"
 
-  run bash "$SCRIPTS_DIR/extract-skill-follow-up-files.sh" --project-dir "$project_dir" ../../.agents/skills/swiftdata
+  run bash "$SCRIPT" -h
+  expect_case "help-short" 0 "Usage: bash extract-skill-follow-up-files.sh"
 
-  [ "$status" -eq 0 ]
-  [ -z "$output" ]
-}
+  run bash "$SCRIPT" --project-dir
+  expect_case "project-dir-without-value" 1 "--project-dir requires a value"
 
-@test "extract-skill-follow-up-files: skill with no markdown links exits 0 and emits nothing" {
-  local project_dir="$TEST_TEMP_DIR/project"
-  mkdir -p "$project_dir"
+  run bash "$SCRIPT" --project-dir "$row/absent" swiftdata
+  expect_status "missing-project-dir" 1
 
-  write_custom_skill_fixture "$project_dir/.claude/skills" "swiftdata" "$(cat <<'EOF'
----
-name: fixture-skill
-description: Fixture skill
----
-
-# Fixture Skill
-
-This skill intentionally has no markdown links.
-EOF
-)"
-
-  run bash "$SCRIPTS_DIR/extract-skill-follow-up-files.sh" --project-dir "$project_dir" swiftdata
-
-  [ "$status" -eq 0 ]
-  [ -z "$output" ]
-}
-
-@test "extract-skill-follow-up-files: rejects project-local SKILL.md links that normalize outside the active skill directory" {
-  local project_dir="$TEST_TEMP_DIR/project"
-  mkdir -p "$project_dir"
-
-  write_custom_skill_fixture "$project_dir/.claude/skills" "swiftdata" "$(cat <<'EOF'
----
-name: fixture-skill
-description: Fixture skill
----
-
-# Fixture Skill
-
-## References
-
-- [Safe](references/first.md)
-- [Normalized](docs/../references/second.md)
-- [Escape](../other-skill/references/secret.md)
-EOF
-)" \
-    "references/first.md" \
-    "references/second.md" \
-    "docs/"
-
-  mkdir -p "$project_dir/.claude/skills/other-skill/references"
-  printf '# secret\n' > "$project_dir/.claude/skills/other-skill/references/secret.md"
-
-  run bash "$SCRIPTS_DIR/extract-skill-follow-up-files.sh" --project-dir "$project_dir" swiftdata
-
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"$project_dir/.claude/skills/swiftdata/references/first.md"* ]]
-  [[ "$output" == *"$project_dir/.claude/skills/swiftdata/references/second.md"* ]]
-  [[ "$output" != *"$project_dir/.claude/skills/other-skill/references/secret.md"* ]]
-}
-
-@test "extract-skill-follow-up-files: rejects global SKILL.md links that normalize outside the active skill directory" {
-  local project_dir="$TEST_TEMP_DIR/project"
-  mkdir -p "$project_dir"
-  export CLAUDE_CONFIG_DIR="$TEST_TEMP_DIR/.claude-config"
-  mkdir -p "$CLAUDE_CONFIG_DIR/skills"
-
-  write_custom_skill_fixture "$CLAUDE_CONFIG_DIR/skills" "find-docs" "$(cat <<'EOF'
----
-name: fixture-skill
-description: Fixture skill
----
-
-# Fixture Skill
-
-## References
-
-- [Safe](references/first.md)
-- [Normalized](docs/../references/second.md)
-- [Escape](../other-skill/references/secret.md)
-EOF
-)" \
-    "references/first.md" \
-    "references/second.md" \
-    "docs/"
-
-  mkdir -p "$CLAUDE_CONFIG_DIR/skills/other-skill/references"
-  printf '# secret\n' > "$CLAUDE_CONFIG_DIR/skills/other-skill/references/secret.md"
-
-  run bash "$SCRIPTS_DIR/extract-skill-follow-up-files.sh" --project-dir "$project_dir" find-docs
-
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"$CLAUDE_CONFIG_DIR/skills/find-docs/references/first.md"* ]]
-  [[ "$output" == *"$CLAUDE_CONFIG_DIR/skills/find-docs/references/second.md"* ]]
-  [[ "$output" != *"$CLAUDE_CONFIG_DIR/skills/other-skill/references/secret.md"* ]]
-}
-
-@test "extract-skill-follow-up-files: preserves normalized in-tree links and dedupes equivalent paths" {
-  local project_dir="$TEST_TEMP_DIR/project"
-  local project_dir_abs
-  local first_path first_count
-  mkdir -p "$project_dir"
-
-  write_custom_skill_fixture "$project_dir/.claude/skills" "swiftdata" "$(cat <<'EOF'
----
-name: fixture-skill
-description: Fixture skill
----
-
-# Fixture Skill
-
-## References
-
-- [First](references/first.md)
-- [Duplicate First](./references/first.md)
-- [Normalized](docs/../references/second.md)
-EOF
-)" \
-    "references/first.md" \
-    "references/second.md" \
-    "docs/"
-
-  run bash "$SCRIPTS_DIR/extract-skill-follow-up-files.sh" --project-dir "$project_dir" swiftdata
-
-  [ "$status" -eq 0 ]
-  project_dir_abs=$(cd "$project_dir" && pwd -P)
-  [[ "$output" == *"$project_dir_abs/.claude/skills/swiftdata/references/first.md"* ]]
-  [[ "$output" == *"$project_dir_abs/.claude/skills/swiftdata/references/second.md"* ]]
-
-  first_path="$project_dir_abs/.claude/skills/swiftdata/references/first.md"
-  first_count=$(printf '%s\n' "$output" | awk -v needle="- $first_path" '$0 == needle { count++ } END { print count + 0 }')
-  [ "$first_count" -eq 1 ]
-}
-
-@test "extract-skill-follow-up-files: rejects project-local symlinked follow-up files that resolve outside the active skill directory" {
-  local project_dir="$TEST_TEMP_DIR/project"
-  local project_dir_abs outside_file
-  mkdir -p "$project_dir"
-
-  write_custom_skill_fixture "$project_dir/.claude/skills" "swiftdata" "$(cat <<'EOF'
----
-name: fixture-skill
-description: Fixture skill
----
-
-# Fixture Skill
-
-## References
-
-- [Safe](references/first.md)
-- [Symlink Escape](references/linked-outside.md)
-EOF
-)" \
-    "references/first.md"
-
-  mkdir -p "$TEST_TEMP_DIR/outside"
-  outside_file="$TEST_TEMP_DIR/outside/project-secret.md"
-  printf '# secret\n' > "$outside_file"
-  ln -s "$outside_file" "$project_dir/.claude/skills/swiftdata/references/linked-outside.md"
-
-  run bash "$SCRIPTS_DIR/extract-skill-follow-up-files.sh" --project-dir "$project_dir" swiftdata
-
-  [ "$status" -eq 0 ]
-  project_dir_abs=$(cd "$project_dir" && pwd -P)
-  [[ "$output" == *"$project_dir_abs/.claude/skills/swiftdata/references/first.md"* ]]
-  [[ "$output" != *"linked-outside.md"* ]]
-}
-
-@test "extract-skill-follow-up-files: rejects global symlinked follow-up files that resolve outside the active skill directory" {
-  local project_dir="$TEST_TEMP_DIR/project"
-  local claude_dir_abs outside_file
-  mkdir -p "$project_dir"
-  export CLAUDE_CONFIG_DIR="$TEST_TEMP_DIR/.claude-config"
-  mkdir -p "$CLAUDE_CONFIG_DIR/skills"
-
-  write_custom_skill_fixture "$CLAUDE_CONFIG_DIR/skills" "find-docs" "$(cat <<'EOF'
----
-name: fixture-skill
-description: Fixture skill
----
-
-# Fixture Skill
-
-## References
-
-- [Safe](references/first.md)
-- [Symlink Escape](references/linked-outside.md)
-EOF
-)" \
-    "references/first.md"
-
-  mkdir -p "$TEST_TEMP_DIR/outside"
-  outside_file="$TEST_TEMP_DIR/outside/global-secret.md"
-  printf '# secret\n' > "$outside_file"
-  ln -s "$outside_file" "$CLAUDE_CONFIG_DIR/skills/find-docs/references/linked-outside.md"
-
-  run bash "$SCRIPTS_DIR/extract-skill-follow-up-files.sh" --project-dir "$project_dir" find-docs
-
-  [ "$status" -eq 0 ]
-  claude_dir_abs=$(cd "$CLAUDE_CONFIG_DIR" && pwd -P)
-  [[ "$output" == *"$claude_dir_abs/skills/find-docs/references/first.md"* ]]
-  [[ "$output" != *"linked-outside.md"* ]]
-}
-
-@test "extract-skill-follow-up-files: preserves valid skills when a whitespace-delimited list includes a traversal token" {
-  local project_dir="$TEST_TEMP_DIR/project"
-  mkdir -p "$project_dir/.claude/skills"
-
-  write_skill_fixture "$project_dir/.claude/skills" "swiftdata" \
-    "references/first.md" \
-    "references/second.md"
-  write_skill_fixture "$project_dir/.agents/skills" "swiftdata" \
-    "references/first.md" \
-    "references/second.md"
-
-  run bash "$SCRIPTS_DIR/extract-skill-follow-up-files.sh" --project-dir "$project_dir" "swiftdata ../../.agents/skills/swiftdata"
-
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"Skill: swiftdata"* ]]
-  [[ "$output" == *"$project_dir/.claude/skills/swiftdata/references/first.md"* ]]
-  [[ "$output" != *"$project_dir/.agents/skills/swiftdata/references/first.md"* ]]
-}
-
-@test "extract-skill-follow-up-files: ignores dot-segment pseudo skill names" {
-  local project_dir="$TEST_TEMP_DIR/project"
-  mkdir -p "$project_dir"
-
-  run bash "$SCRIPTS_DIR/extract-skill-follow-up-files.sh" --project-dir "$project_dir" . ..
-
-  [ "$status" -eq 0 ]
-  [ -z "$output" ]
-}
-
-@test "extract-skill-follow-up-files: splits whitespace-delimited skill lists passed as one argument" {
-  local project_dir="$TEST_TEMP_DIR/project"
-  mkdir -p "$project_dir"
-
-  write_skill_fixture "$project_dir/.claude/skills" "swiftdata" \
-    "references/first.md" \
-    "references/second.md"
-  write_skill_fixture "$project_dir/.claude/skills" "swift-testing" \
-    "references/first.md" \
-    "references/second.md"
-
-  run bash "$SCRIPTS_DIR/extract-skill-follow-up-files.sh" --project-dir "$project_dir" "swiftdata swift-testing"
-
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"Skill: swiftdata"* ]]
-  [[ "$output" == *"Skill: swift-testing"* ]]
+  assert_no_case_failures
 }

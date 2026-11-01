@@ -1,75 +1,88 @@
 #!/usr/bin/env bats
 
 load test_helper
+load gate_case_helper
+load gate_case_files
 
 setup() {
   setup_temp_dir
+  reset_case_failures
   SCRIPT="$SCRIPTS_DIR/debug-start-manual.sh"
-  PLANNING_DIR="$TEST_TEMP_DIR/.lbwc-planning"
-  mkdir -p "$PLANNING_DIR"
 }
 
 teardown() {
   teardown_temp_dir
 }
 
-@test "manual start strips routing metadata and creates source todo" {
-  run bash -c 'printf %s "$1" | REF_HASH=abcd1234 bash "$2" "$3"' _ \
-    '  Parser crash (ref:abcd1234) --parallel  ' "$SCRIPT" "$PLANNING_DIR"
-
-  [ "$status" -eq 0 ]
-  eval "$output"
-  [ "$BUG_DESC" = "Parser crash" ]
-  [ "$SLUG" = "parser-crash" ]
-  [ "$MANUAL_REF" = "abcd1234" ]
-  [ -f "$session_file" ]
-  grep -Fq '**Text:** Parser crash' "$session_file"
-  grep -Fq '**Ref:** abcd1234' "$session_file"
+expect_var() {
+  local label=$1 name=$2 want=$3
+  [ "${!name-}" = "$want" ] || record_case_failure "$label" "$name=[${!name-}] want=[$want]"
 }
 
-@test "manual start validates and persists detail fields" {
-  detail='{"status":"ok","detail":{"context":"Parser boundary","files":["src/parser.sh","tests/parser.bats"]}}'
-
-  run env DETAIL_STATUS=ok DETAIL_RESULT_JSON="$detail" bash -c \
-    'printf %s "$1" | bash "$2" "$3"' _ 'Parser crash' "$SCRIPT" "$PLANNING_DIR"
-
-  [ "$status" -eq 0 ]
-  eval "$output"
-  [ "$MANUAL_DETAIL_CONTEXT" = "Parser boundary" ]
-  [ "$MANUAL_DETAIL_FILES" = '["src/parser.sh","tests/parser.bats"]' ]
-  grep -Fq 'Parser boundary' "$session_file"
-  grep -Fq 'src/parser.sh' "$session_file"
+run_manual() {
+  local planning=$1 input=$2 detail_status=$3 detail_json=$4 ref=$5
+  run env DETAIL_STATUS="$detail_status" DETAIL_RESULT_JSON="$detail_json" REF_HASH="$ref" \
+    bash -c 'printf %s "$1" | bash "$2" "$3"' _ "$input" "$SCRIPT" "$planning"
 }
 
-@test "manual start rejects malformed successful detail" {
-  run env DETAIL_STATUS=ok DETAIL_RESULT_JSON='{"status":"ok","detail":{"files":"src/parser.sh"}}' \
-    bash -c 'printf %s "$1" | bash "$2" "$3"' _ 'Parser crash' "$SCRIPT" "$PLANNING_DIR"
+@test "debug-start-manual starts a session with a normalized description slug and detail" {
+  local label input detail_status detail_json ref want_desc want_slug want_context want_files want_ref planning
+  local session_file BUG_DESC SLUG MANUAL_REF MANUAL_DETAIL_CONTEXT MANUAL_DETAIL_FILES DETAIL_STATUS
+  while IFS='|' read -r label input detail_status detail_json ref want_desc want_slug want_context want_files want_ref; do
+    [ -n "$label" ] || continue
+    planning="$BATS_TEST_TMPDIR/$label/.lbwc-planning"
+    mkdir -p "$planning"
+    session_file=""
+    run_manual "$planning" "$input" "${detail_status:-none}" "$detail_json" "$ref"
+    expect_case "$label" 0 ""
+    eval "$output"
+    expect_var "$label-desc" BUG_DESC "$want_desc"
+    expect_var "$label-slug" SLUG "$want_slug"
+    expect_var "$label-ref" MANUAL_REF "$want_ref"
+    expect_var "$label-context" MANUAL_DETAIL_CONTEXT "$want_context"
+    expect_var "$label-files" MANUAL_DETAIL_FILES "$want_files"
+    expect_var "$label-status" DETAIL_STATUS "${detail_status:-none}"
+    expect_file_line "$label-session-text" "$session_file" "^- \*\*Text:\*\* $want_desc\$"
+    expect_file_line "$label-session-ref" "$session_file" "^- \*\*Ref:\*\* $want_ref\$"
+  done <<'CASES'
+strips-routing-metadata|  Parser crash (ref:abcd1234) --parallel  |||abcd1234|Parser crash|parser-crash||[]|abcd1234
+strips-competing-flag|--competing Parser crash||||Parser crash|parser-crash||[]|none
+punctuation-slug|Fix: parser!! (v2)||||Fix: parser!! (v2)|fix-parser-v2||[]|none
+slug-cut-without-trailing-dash|alpha beta gamma delta epsilon zeta eta theta abc xyz||||alpha beta gamma delta epsilon zeta eta theta abc xyz|alpha-beta-gamma-delta-epsilon-zeta-eta-theta-abc||[]|none
+detail-persisted|Parser crash|ok|{"status":"ok","detail":{"context":"Parser boundary","files":["src/parser.sh","tests/parser.bats"]}}||Parser crash|parser-crash|Parser boundary|["src/parser.sh","tests/parser.bats"]|none
+detail-defaults|Parser crash|ok|{"status":"ok","detail":{}}||Parser crash|parser-crash||[]|none
+detail-only-uses-debug-slug|--serial|ok|{"status":"ok","detail":{"context":"Parser boundary","files":[]}}|||debug|Parser boundary|[]|none
+not-found-status-keeps-description|Parser crash|not_found|||Parser crash|parser-crash||[]|none
+error-status-keeps-description|Parser crash|error|||Parser crash|parser-crash||[]|none
+CASES
 
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"DETAIL_RESULT_JSON is invalid"* ]]
-  [ ! -e "$PLANNING_DIR/debugging/.active-session" ]
+  assert_no_case_failures
 }
 
-@test "manual start rejects an empty description without detail" {
-  run bash -c 'printf %s "$1" | bash "$2" "$3"' _ \
-    ' --competing (ref:abcd1234) ' "$SCRIPT" "$PLANNING_DIR"
+@test "debug-start-manual rejects bad input without creating a session" {
+  local label planning_arg input detail_status detail_json fragment planning
+  while IFS='|' read -r label planning_arg input detail_status detail_json fragment; do
+    [ -n "$label" ] || continue
+    planning="$BATS_TEST_TMPDIR/$label/.lbwc-planning"
+    mkdir -p "$planning"
+    [ "$planning_arg" = "-" ] && planning=""
+    run_manual "$planning" "$input" "${detail_status:-none}" "$detail_json" ""
+    expect_case "$label" 1 "$fragment"
+    expect_no_path "$label-no-session" "$BATS_TEST_TMPDIR/$label/.lbwc-planning/debugging/.active-session"
+    expect_no_path "$label-no-active-dir" "$BATS_TEST_TMPDIR/$label/.lbwc-planning/debugging/active"
+  done <<'CASES'
+missing-planning-dir|-|Parser crash|||planning directory is required
+invalid-detail-status|+|Parser crash|bogus||invalid detail status: bogus
+ok-without-json|+|Parser crash|ok||detail status ok requires DETAIL_RESULT_JSON
+malformed-files-detail|+|Parser crash|ok|{"status":"ok","detail":{"files":"src/parser.sh"}}|DETAIL_RESULT_JSON is invalid
+non-string-file-entries|+|Parser crash|ok|{"status":"ok","detail":{"files":[1]}}|DETAIL_RESULT_JSON is invalid
+json-status-not-ok|+|Parser crash|ok|{"status":"error"}|does not have status ok
+not-json|+|Parser crash|ok|garbage|DETAIL_RESULT_JSON is invalid
+empty-description|+| --competing (ref:abcd1234) |||bug description is empty
+empty-description-with-not-found|+|--serial|not_found||bug description is empty
+CASES
 
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"bug description is empty"* ]]
-  [ ! -e "$PLANNING_DIR/debugging/.active-session" ]
-}
-
-@test "manual start uses debug slug when valid detail supplies all context" {
-  detail='{"status":"ok","detail":{"context":"Parser boundary","files":[]}}'
-
-  run env DETAIL_STATUS=ok DETAIL_RESULT_JSON="$detail" bash -c \
-    'printf %s "$1" | bash "$2" "$3"' _ '--serial' "$SCRIPT" "$PLANNING_DIR"
-
-  [ "$status" -eq 0 ]
-  eval "$output"
-  [ "$BUG_DESC" = "" ]
-  [ "$SLUG" = "debug" ]
-  [ -f "$session_file" ]
+  assert_no_case_failures
 }
 
 @test "debug command delegates complete inline verification protocol" {
