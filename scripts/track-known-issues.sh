@@ -9,7 +9,7 @@ VERIFICATION_FILE="${3:-}"
 
 usage() {
   cat >&2 <<'EOF'
-usage: track-known-issues.sh <status|sync-summaries|sync-verification|promote-todos|resolve|clear> <phase-dir> [verification-file|signature]
+usage: track-known-issues.sh <status|sync-summaries|sync-verification|promote-todos|resolve|clear|lookup-signature|suppress> <phase-dir> [verification-file|signature]
 
 Registry: .lbwc-planning/phases/{NN}-{slug}/known-issues.json
 Each entry carries a deterministic 12-hex signature (sha256 of normalized
@@ -31,12 +31,18 @@ is one entry, and resolution is checked against evidence, not agent claims.
       Mark one entry resolved by its signature.
   clear <phase-dir>
       Remove the registry (round closed clean).
+  lookup-signature <phase-dir>
+      Reads {test,file,error,disposition,source_path} JSON on stdin and prints
+      {status:ok,signature:{...}} for the matching entry, or {status:error,code,message}.
+  suppress <phase-dir>
+      Reads a signature JSON plus via on stdin and marks the entry suppressed so
+      promote-todos skips it. Idempotent. Prints {status:ok,action,signature} or an error object.
 EOF
   exit 1
 }
 
 case "$CMD" in
-  status|clear|sync-summaries|promote-todos) [ -n "$PHASE_DIR" ] || usage ;;
+  status|clear|sync-summaries|promote-todos|lookup-signature|suppress) [ -n "$PHASE_DIR" ] || usage ;;
   sync-verification|resolve) [ -n "$PHASE_DIR" ] && [ -n "$VERIFICATION_FILE" ] || usage ;;
   *) usage ;;
 esac
@@ -52,6 +58,7 @@ REGISTRY="${PHASE_DIR%/}/known-issues.json"
 . "$SCRIPT_DIR/lib/known-issues-registry.sh"
 . "$SCRIPT_DIR/lib/known-issues-sync.sh"
 . "$SCRIPT_DIR/lib/known-issues-promote.sh"
+. "$SCRIPT_DIR/lib/track-known-issues-suppress.sh"
 
 case "$CMD" in
   status) cmd_status; exit 0 ;;
@@ -59,5 +66,7 @@ case "$CMD" in
   resolve) cmd_resolve "$VERIFICATION_FILE"; exit 0 ;;
   sync-summaries) sync_summaries; exit 0 ;;
   promote-todos) promote_todos; exit 0 ;;
+  lookup-signature) cmd_lookup_signature; exit 0 ;;
+  suppress) cmd_suppress; exit 0 ;;
   sync-verification) sync_verification "$VERIFICATION_FILE" ;;
 esac
