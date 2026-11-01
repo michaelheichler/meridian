@@ -221,16 +221,10 @@ route_pass_result() {
 
 route_gate_result() {
   route_failed_result
-  case "$RESULT" in
-    PASS)
-      emit_exemption_notice
-      route_pass_result
-      ;;
-    FAIL|PARTIAL)
-      echo "qa_gate_routing=REMEDIATION_REQUIRED"
-      ;;
-    *)
-      echo "qa_gate_routing=QA_RERUN_REQUIRED"
-      ;;
-  esac
+  if [ "$RESULT" = "PASS" ]; then
+    emit_exemption_notice
+    route_pass_result
+  else
+    echo "qa_gate_routing=QA_RERUN_REQUIRED"
+  fi
 }
