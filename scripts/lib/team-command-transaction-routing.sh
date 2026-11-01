@@ -50,19 +50,11 @@ resolve_routing_seeded() {
 }
 
 resolve_routing_max_turns() {
-  local engineer="$1" workflow_effort="$2" out_turns="$3" num den base_turns turns
-  case "$workflow_effort" in
-    thorough) num=3; den=2 ;;
-    balanced) num=1; den=1 ;;
-    fast) num=4; den=5 ;;
-    turbo) num=3; den=5 ;;
-  esac
-  base_turns=$(jq -r --arg role "$engineer" '.[$role].maxTurns // empty' "$ROLE_DEFAULTS_PATH")
-  case "$base_turns" in
-    ''|*[!0-9]*) fail "no maxTurns default for role '$engineer' in $ROLE_DEFAULTS_PATH" ;;
-  esac
-  turns=$(( (base_turns * num + den / 2) / den ))
-  [ "$turns" -ge 1 ] || turns=1
+  local engineer="$1" workflow_effort="$2" out_turns="$3" base_turns turns
+  role_default_turns "$ROLE_DEFAULTS_PATH" "$engineer" base_turns \
+    || fail "no maxTurns default for role '$engineer' in $ROLE_DEFAULTS_PATH"
+  scale_turn_value "$base_turns" "$workflow_effort" turns || fail "unknown workflow effort '$workflow_effort'"
+  [ -n "$turns" ] || turns=null
   printf -v "$out_turns" '%s' "$turns"
 }
 

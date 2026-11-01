@@ -28,7 +28,7 @@ parse_resolved_settings() {
     [ -n "$line" ] || continue
     key=${line%%=*}
     case "$key" in
-      RESOLVED_AGENT|RESOLVED_AGENT_MODEL|RESOLVED_MODEL|RESOLVED_MAX_TURNS|RESOLVED_EFFORT|RESOLVED_REASONING|RESOLVED_REASONING_JSON) ;;
+      RESOLVED_AGENT|RESOLVED_AGENT_MODEL|RESOLVED_MODEL|RESOLVED_MAX_TURNS|RESOLVED_MAX_TURNS_SET|RESOLVED_EFFORT|RESOLVED_REASONING|RESOLVED_REASONING_JSON) ;;
       *) fail "invalid resolver assignment '$key'" ;;
     esac
     raw=${line#*=}
@@ -79,9 +79,11 @@ resolve_role_settings() {
   run_settings_resolver "$role"
   RESOLVED_AGENT_MODEL=""
   RESOLVED_REASONING_JSON=""
+  RESOLVED_MAX_TURNS=""
+  RESOLVED_MAX_TURNS_SET=""
   parse_resolved_settings "$RESOLVER_OUTPUT"
   [ -n "$RESOLVED_AGENT_MODEL" ] || fail "resolver omitted the Claude Code model selector for '$role'"
-  [ -n "$RESOLVED_MAX_TURNS" ] || fail "resolver omitted the max turns value for '$role'"
+  [ "$RESOLVED_MAX_TURNS_SET" = 1 ] || fail "resolver omitted the max turns value for '$role'"
   jq -e 'type == "string" or . == null' <<< "$RESOLVED_REASONING_JSON" >/dev/null 2>&1 \
     || fail "resolver emitted invalid reasoning JSON for '$role'"
   keyed_set ROLE_MODEL "$role" "$RESOLVED_AGENT_MODEL"
