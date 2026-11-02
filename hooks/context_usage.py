@@ -52,12 +52,14 @@ def _native_record(path, session_id):
         return False
 
 
-def _write_record(path, record):
+def _write_record(path, record, session_id=None):
     temporary = None
     try:
         with tempfile.NamedTemporaryFile(mode="w", dir=os.path.dirname(path), delete=False) as output:
             temporary = output.name
             output.write(record + "\n")
+        if session_id is not None and _native_record(path, session_id):
+            return
         os.replace(temporary, path)
     finally:
         if temporary and os.path.exists(temporary):
@@ -98,8 +100,7 @@ def _update_usage(planning_dir, data):
         return
     ctx_size = _context_window(planning_dir)
     used_pct = min(100, max(0, (size // CHARS_PER_TOKEN) * 100 // ctx_size))
-    if not _native_record(usage_path, session_id):
-        _write_record(usage_path, f"{session_id}|{used_pct}|{ctx_size}")
+    _write_record(usage_path, f"{session_id}|{used_pct}|{ctx_size}", session_id)
 
 
 def main() -> None:
