@@ -25,46 +25,6 @@ Ask in plain text and wait for the response.
 Process the response before you resume structured prompts.
 Resume structured prompts only if another bounded decision remains.
 
-## Context
-
-Store the working directory as `{PROJECT_ROOT}`.
-
-```bash
-!`pwd`
-```
-
-Resolve the plugin root with this self-contained directive.
-Shell variables do not survive across directives.
-
-```bash
-!`SESSION_KEY="${CLAUDE_SESSION_ID:-default}"; L="/tmp/.lbwc-plugin-root-link-${SESSION_KEY}"; R="$L/scripts/resolve-plugin-root.sh"; [ -f "$R" ] || R="${CLAUDE_PLUGIN_ROOT:-}/scripts/resolve-plugin-root.sh"; [ -f "$R" ] || { echo "LBWC: plugin root unavailable. Restart this session to recreate $L." >&2; exit 1; }; LINK=$(bash "$R" --require-script indexer-sync.sh) || exit 1; printf 'Plugin root: %s\n' "$LINK"`
-```
-
-Store the returned `Plugin root` value as `{LINK}` and `{plugin-root}` for all later helper calls.
-Never guess a plugin path or replace a missing helper with inline code.
-When a step references a script, template, command, or reference file, replace `{plugin-root}` with the stored value.
-
-Read the existing state.
-
-```bash
-!`ls -la .lbwc-planning 2>/dev/null || echo "No .lbwc-planning directory"`
-```
-
-Find project files.
-
-```bash
-!`ls package.json pyproject.toml Cargo.toml go.mod Gemfile build.gradle pom.xml mix.exs 2>/dev/null || echo "No detected project files"`
-```
-
-Find global and project skills.
-
-```bash
-!`if [ -n "${CLAUDE_CONFIG_DIR:-}" ]; then _cd="$CLAUDE_CONFIG_DIR"; elif [ -d "$HOME/.config/claude-code" ]; then _cd="$HOME/.config/claude-code"; else _cd="$HOME/.claude"; fi; ls "$_cd/skills/" 2>/dev/null || echo "No global skills"`
-```
-
-```bash
-!`ls .claude/skills/ 2>/dev/null || echo "No project skills"`
-```
 
 ## Index freshness gate
 
@@ -143,15 +103,7 @@ Use this AskUserQuestion text.
 "○ LBWC includes a custom status line showing phase progress, context usage, cost, duration, and more. It updates after every response. Install it?"
 If HAS_OTHER, explain that installation replaces the existing statusline.
 
-If the user approves, set `statusLine` to this object.
-
-```json
-{"type": "command", "command": "bash -c 'for _d in \"${CLAUDE_CONFIG_DIR:-}\" \"$HOME/.config/claude-code\" \"$HOME/.claude\"\ndo\n  [ -z \"$_d\" ] && continue\n  f=$(ls -1 \"$_d\"/plugins/cache/lbwc-marketplace/lbwc/*/scripts/lbwc-statusline.sh 2>/dev/null | sort -V | tail -1 || true)\n  [ -f \"$f\" ] && exec bash \"$f\"\ndone'"}
-```
-
-Use object format with `type`+`command`.
-A plain string fails without an error.
-If the user declines, display "○ Skipped. Run /lbwc:config to install it later."
+Read `{plugin-root}/references/commands/init-statusline-install.md` for the approved statusline installation or its decline output.
 
 For Step 0c, write settings.json once if it changed.
 Display this summary.
@@ -167,15 +119,7 @@ Environment setup complete:
 Before scaffolding, look for `.planning/` or an explicit external plan path in the invocation.
 If neither exists, continue without a prompt.
 
-If an external plan exists, ask one bounded choice with `Import external plan`, `Start fresh initialization`, or `Cancel`.
-
-- For `Import external plan`, display `Run /lbwc:import .planning` or the explicit source path. Stop before creating `.lbwc-planning`.
-- For `Start fresh initialization`, continue to Step 1. Do not read, copy, index, or modify the external source.
-- For `Cancel`, leave settings and project artifacts unchanged, then stop.
-
-`/lbwc:import` is the only import authority.
-Init never copies `.planning`, creates a GSD archive, or generates an import index.
-It never infers GSD state or promotes imported artifacts.
+If an external plan exists, Read `{plugin-root}/references/commands/init-external-plan.md` before any scaffold write.
 
 ### Step 1. Scaffold directory
 
@@ -239,11 +183,7 @@ It keeps `.lbwc-planning/.gitignore` current for transient runtime files in ever
 
 ### Step 1.5. Install git hooks
 
-1. Run `git rev-parse --git-dir`. If the directory is not a git repository, display "○ Git hooks skipped (not a git repository)" and skip.
-2. Run `bash "{plugin-root}/scripts/install-hooks.sh"` and choose the display text from its output.
-   - If the output contains "Installed", display `✓ Git hooks installed (pre-push)`.
-   - If the output contains "already installed", display `✓ Git hooks (already installed)`.
-   - If the output contains "Updated" or "Upgraded", display `✓ Git hooks updated (pre-push)`.
+For optional git-hook installation, Read `{plugin-root}/references/commands/init-git-hooks.md` and skip installation outside a git repository.
 
 ### Step 1.8. Detect and initialize routing profiles
 
@@ -265,11 +205,7 @@ Never hand-write them during init.
 
 ### Step 2. Brownfield detection and discovery
 
-For Step 2a, if BROWNFIELD=true, gather a codebase profile.
-
-- Count source files by extension with Glob. Exclude .lbwc-planning/, node_modules/, .git/, vendor/, dist/, build/, target/, .next/, **pycache**/, .venv/, coverage/.
-- Store SOURCE_FILE_COUNT and look for test files, CI/CD, Docker, and monorepo indicators.
-- Add Codebase Profile to STATE.md.
+For Step 2a with `BROWNFIELD=true`, Read `{plugin-root}/references/commands/init-brownfield-profile.md` to gather the codebase profile.
 
 For Step 2b, run `bash "{plugin-root}/scripts/detect-stack.sh" "$(pwd)"`.
 Save the full JSON and display `✓ Stack: {comma-separated detected_stack items}`.
@@ -279,76 +215,18 @@ Run `bash "{plugin-root}/scripts/resolve-lsp.sh"` with the `detected_stack` JSON
 Capture the JSON output.
 
 If `env_needed=false` AND all plugins have `plugin_enabled=true`, display `✓ LSP: already configured` and skip to 2c.
-Otherwise, display the detected languages and recommended LSP plugins, then follow these substeps.
+Otherwise, Read `{plugin-root}/references/commands/init-lsp-setup.md` for the conditional environment, language-server, and plugin setup choices.
 
-For Step 2.5a, if `env_needed=true`, ask about the environment flag.
-
-- Use AskUserQuestion with "○ LSP Tools\n\nEnable LSP tools for Claude Code? This adds ENABLE_LSP_TOOL=1 to settings.json,\ngiving Claude access to goToDefinition, findReferences, and other code navigation tools."
-  - If the user approves, set `env.ENABLE_LSP_TOOL` to `"1"` in `CLAUDE_DIR/settings.json`. Use the write pattern from Step 0c.
-  - If the user declines, display "○ LSP env flag skipped".
-
-For Step 2.5b, check each plugin where `binary_installed=false`.
-
-- If `install_cmd` is not null, use AskUserQuestion with "Install {description} language server?\nCommand: `{install_cmd}`".
-  - If the user approves, run the command via Bash.
-  - If the user declines, display "○ {description}: skipped".
-- If `install_cmd` is null and only install_url exists, display "○ {description}: manual install: {install_url}".
-
-For Step 2.5c, if any plugins have `plugin_enabled=false`, inspect the marketplace catalog.
-
-- Check the catalog with `unset CLAUDECODE && claude plugin marketplace list 2>&1 | grep -q "{org}"`. Use `org` from the first pending plugin.
-- If the catalog is missing, use AskUserQuestion with "LSP plugins are published on the `{org}` marketplace catalog. Add it?"
-  - If the user approves, run `unset CLAUDECODE && claude plugin marketplace add {org} 2>&1`.
-  - If the user declines or the command fails, display "○ Marketplace catalog not available: skipping plugin installs" and skip 2.5d.
-
-For Step 2.5d, ask about each plugin where `plugin_enabled=false`.
-
-- Use AskUserQuestion with "Install Claude LSP plugins for: {comma-separated descriptions}?"
-  - If the user approves, run `unset CLAUDECODE && claude plugin marketplace update {org} 2>&1` once.
-  - Then, for each approved plugin, run `unset CLAUDECODE && claude plugin install {plugin} 2>&1`.
-  - If the user declines, display "○ LSP plugins: skipped".
-
-Display `✓ LSP: {N} language server(s) configured` or `○ LSP: skipped`.
-If settings.json changes or plugin installation occurred, display `(restart Claude Code to activate LSP)`.
-
-For Step 2c, adapt codebase mapping to the project.
-
-- If BROWNFIELD=false, skip mapping and display `○ Greenfield: skipping codebase mapping`.
-- If SOURCE_FILE_COUNT < 200, read `{plugin-root}/commands/map.md` and follow it inline.
-- If SOURCE_FILE_COUNT >= 200, run mapping inline and display `◆ Codebase mapping started ({SOURCE_FILE_COUNT} files)`.
-
-Never run mapping in the background.
-Complete mapping before Step 3.
+For Step 2c, Read `{plugin-root}/references/commands/init-codebase-mapping.md` to map brownfield projects inline or display the greenfield skip before Step 3.
 
 ### Step 3. Convergence through stack updates and search
 
 For Step 3a, if this is greenfield, proceed immediately.
 Otherwise, make sure that mapping completed and display `✓ Codebase mapped ({document-count} documents)`.
 
-For Step 3b, if `.lbwc-planning/codebase/STACK.md` exists, read it.
-Merge additional stack components into detected_stack[].
+When stack or pattern mapping files exist, Read `{plugin-root}/references/commands/init-stack-conventions.md` for Steps 3b and 3b2. For greenfield, follow its empty-conventions path.
 
-For Step 3b2, if `.lbwc-planning/codebase/PATTERNS.md` exists, detect conventions.
-
-- Read PATTERNS.md, ARCHITECTURE.md, STACK.md, CONCERNS.md.
-- Extract conventions per `{plugin-root}/commands/teach.md` (Step R2).
-- Write `.lbwc-planning/conventions.json` and display `✓ {count} conventions auto-detected from codebase`.
-
-If this is greenfield, write `{"conventions": []}` and display `○ Conventions: none yet (add with /lbwc:teach)`.
-
-For Step 3c, search the registry in parallel.
-If npx is missing or the skills CLI fails, skip the search.
-Otherwise, run `npx skills find "<stack-item>"` for all detected_stack items through concurrent Bash calls.
-Deduplicate results against installed skills.
-If detected_stack is empty, search by project type.
-Display results with the `(registry)` tag.
-
-For Step 3d, combine curated results from 2b and registry results from 3c in one AskUserQuestion multiSelect.
-Tag each result `(curated)` or `(registry)`.
-Use at most four visible choices, including `Skip`.
-If more than three skills qualify, show the top three plus `Skip`.
-Point broader discovery to `/lbwc:skills`.
-Install selected skills into the current project with `npx skills add <skill> -y`.
+For Steps 3c and 3d, Read `{plugin-root}/references/commands/init-skill-search.md` and follow its registry-search or CLI-unavailable path.
 
 ### Step 3.5. Generate bootstrap CLAUDE.md
 
@@ -357,14 +235,7 @@ LBWC needs its rules and state sections in a CLAUDE.md file.
 
 Read root `CLAUDE.md` with the Read tool.
 
-- If the file exists, preserve all user-authored content verbatim. Never overwrite the file or assume that its first heading and core-value lines belong to LBWC.
-- Refresh only the exact canonical sections that LBWC already emitted, `## Active Context`, `## LBWC Rules`, and `## Plugin Isolation`.
-- If the file has no Code Intelligence heading or guidance anywhere, add `## Code Intelligence`.
-
-After refreshing existing sections, display `✓ CLAUDE.md (LBWC sections refreshed in place)`.
-If the file does not exist, create a new `CLAUDE.md` through `bootstrap-claude.sh` during Step 7f.
-Do not compose the file by hand here.
-Do not append `## Project Conventions` or `## Commands` to `CLAUDE.md`.
+When root CLAUDE.md exists, Read `{plugin-root}/references/commands/init-existing-claude.md` before refreshing its owned sections. If absent, follow its Step 7f creation path.
 
 ### Step 4. Present summary
 
@@ -420,40 +291,7 @@ For Step 6a, if SCENARIO=GREENFIELD or SCENARIO=HYBRID, follow the greenfield br
 - Set SKIP_INFERENCE=true.
 - Skip to Step 7, which asks discovery questions inline.
 
-For Step 6b, if SCENARIO=BROWNFIELD, follow the brownfield branch.
-
-- Run `bash "{plugin-root}/scripts/infer-project-context.sh" .lbwc-planning/codebase/ "$(pwd)"`.
-- Capture the JSON output to `.lbwc-planning/inference.json` via Bash.
-- Parse the JSON and display the inferred fields.
-
-  ```text
-  ◆ Inferred project context:
-    Name:         {name.value} (source: {name.source})
-    Tech stack:   {tech_stack.value | join(", ")} (source: {tech_stack.source})
-    Architecture: {architecture.value} (source: {architecture.source})
-    Purpose:      {purpose.value} (source: {purpose.source})
-    Features:     {features.value | join(", ")} (source: {features.source})
-  ```
-
-- For null fields, always display `{field}: (not detected)`.
-
-For Step 6d, confirm inference in all non-greenfield scenarios.
-Use AskUserQuestion with "Does this look right?" and these choices.
-
-- **"Yes, looks right"** → Proceed to Step 7 with inferred data as-is.
-- **"Close, but needs adjustments"** → Enter correction flow (6e).
-- **"Define from scratch"** → Set SKIP_INFERENCE=true and proceed to Step 7.
-
-For Step 6e, if the user picks "Close, but needs adjustments", start the correction flow.
-Display all fields as a numbered list.
-Ask "Which fields would you like to correct?" as intentional freeform input without options.
-Accept comma-separated field numbers, for example, 1,3,5.
-Do not format the field list as a structured options array.
-
-For each selected field, use AskUserQuestion to ask for the corrected value.
-Update the inference JSON with those values.
-After all corrections, display the updated summary and proceed to Step 7 with the corrected data.
-Write the final confirmed or corrected data to `.lbwc-planning/inference.json` for Step 7.
+For `SCENARIO=BROWNFIELD`, Read `{plugin-root}/references/commands/init-brownfield-inference.md` for inference, confirmation, and any field corrections before Step 7.
 
 ### Step 7. Bootstrap execution
 
@@ -474,21 +312,8 @@ Use `[{name, goal, requirements[], success_criteria[]}]` in phases.json.
 Step 7g removes temporary discovery.json, phases.json, and inference.json files.
 Display `◆ Generating project files...`.
 
-For Step 7a, gather project data.
-If SKIP_INFERENCE=true because this is greenfield or the user chose "Define from scratch", ask freeform discovery questions without options.
-
-1. "What is your project name?"
-2. "Describe your project in one sentence."
-3. "What are the key requirements? (one per line)"
-4. "What phases do you envision? For each, give a name and goal. (e.g., 'Auth: User login and registration')"
-
-Store the answers for bootstrap script input.
-If SKIP_INFERENCE=false, read `.lbwc-planning/inference.json` for the confirmed project context.
-Extract NAME from `name.value` and DESCRIPTION from `purpose.value`.
-For remaining user-authored content that inference does not cover, ask intentional freeform questions without options.
-
-1. "What are the key requirements?" (pre-fill from inferred features if available)
-2. "What phases do you envision?" (pre-fill from GSD recent_phases if available)
+For Step 7a with `SKIP_INFERENCE=true`, Read `{plugin-root}/references/commands/init-discovery-input.md` for freeform discovery before generating PROJECT.md.
+For Step 7a with `SKIP_INFERENCE=false`, Read `{plugin-root}/references/commands/init-inferred-input.md` for confirmed context and remaining freeform questions before generating PROJECT.md.
 
 For Step 7b, generate PROJECT.md.
 
@@ -515,47 +340,9 @@ Point to `/lbwc:vibe` to complete planning from those placeholders.
 Build one complete brief from the Step 7a project data.
 Reuse the brief across both branches below.
 
-When `RESOLVED_BACKEND` is `in_process`, follow `{plugin-root}/references/agent-spawn-protocol.md`.
-Issue a solo, read-only `architect` command contract for `initial requirements and roadmap`.
-Run generic `scripts/agent-generator.sh architect` with the identical brief.
-Use the same contract path and task id.
-The generator routes through detected `lbwc-model` configuration.
-Advance the contract to `dispatched`.
-Spawn only with the emitted `model` and final `SPAWN_READY` name as `subagent_type` and `name`.
+When `RESOLVED_BACKEND=in_process`, Read `{plugin-root}/references/commands/init-native-architect.md` before issuing the Architect contract and spawning.
 
-When `RESOLVED_BACKEND` is `workflow`, follow `{plugin-root}/references/workflow-spawn-protocol.md`.
-The default Architect role permits `Write`.
-Its schema 3 contract requires a granted write capability or an explicit `--read-only-role architect` declaration.
-The Architect returns discovery and phase JSON in its report and writes nothing.
-Issue the contract as read-only.
-
-```bash
-PROJECT_ROOT=$(pwd)
-CONTROL_ROOT="$PROJECT_ROOT/.lbwc-planning"
-ARCHITECT_BRIEF="draft initial requirements and roadmap"
-CONTRACT_PATH=$(bash "{plugin-root}/scripts/task-contract.sh" issue "$PROJECT_ROOT" "init-architect" --command init --role architect --team solo --job "$ARCHITECT_BRIEF" --control-root "$CONTROL_ROOT" --requested-backend workflow --resolved-backend workflow --read-only-role architect) || exit 1
-TASK_ID=$(basename "$CONTRACT_PATH" .json)
-GENERATOR_OUTPUT=$(bash "{plugin-root}/scripts/agent-generator.sh" architect --job "$ARCHITECT_BRIEF" --contract "$CONTRACT_PATH" --task-id "$TASK_ID" --control-root "$CONTROL_ROOT" --execution-backend workflow) || exit 1
-NAME=$(printf '%s\n' "$GENERATOR_OUTPUT" | awk '/^SPAWN_READY/{print $2}')
-WORKFLOW_OUTPUT=$(bash "{plugin-root}/scripts/workflow-generator.sh" solo architect --job "$ARCHITECT_BRIEF" --contract "$CONTRACT_PATH" --task-id "$TASK_ID" --name "$NAME" --control-root "$CONTROL_ROOT") || exit 1
-bash "{plugin-root}/scripts/task-contract.sh" state "$PROJECT_ROOT" "$TASK_ID" dispatched >/dev/null || exit 1
-SCRIPT_PATH=$(printf '%s\n' "$WORKFLOW_OUTPUT" | awk '/^  path:/{print $2}')
-```
-
-Read the emitted `Agent-call parameters:` and `SPAWN_READY <name>` line, which the code captures as `NAME`.
-Use only that printed name, never an invented name.
-Read the `Workflow-call parameters:` block and the following `WORKFLOW_READY <task-id>` line.
-Call `Workflow` exactly once with `scriptPath` set to `SCRIPT_PATH`.
-Never pass `script` or inline or paraphrase the rendered file contents into the call.
-The `PreToolUse` guard on `Workflow` independently checks the path against the registered digest.
-If the guard denies the call, stop without a fallback.
-`Workflow` runs the Architect in the background.
-Its tool result reports only the launch, not the Architect report.
-Before Step 7d validation and persistence, wait for the terminal result from that run.
-Only a `user_decision_required` result returns control to the user.
-For that result, ask exactly one bounded `AskUserQuestion`.
-Every other terminal result carries the Architect report.
-Validate it exactly like the `in_process` branch above.
+When `RESOLVED_BACKEND=workflow`, Read `{plugin-root}/references/commands/init-workflow-architect.md` and await its terminal Architect report before validation or persistence.
 
 Render the prompt prefix through `{plugin-root}/references/skill-activation-payload.md`.
 Ask the Architect to return exactly two complete JSON values in its report.
@@ -619,39 +406,7 @@ The helper follows these rules.
 
 ### Step 8. Completion summary
 
-The user now has project-defining files and can run `/lbwc:vibe` when ready.
-Display a banner per @${CLAUDE_PLUGIN_ROOT}/references/lbwc-brand-essentials.md with the title "LBWC Initialization Complete".
-
-```text
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-LBWC Initialization Complete
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-```
-
-Display all files that this command created or updated.
-Include the core project artifacts.
-
-- `✓ .lbwc-planning/PROJECT.md`
-- `✓ .lbwc-planning/REQUIREMENTS.md`
-- `✓ .lbwc-planning/ROADMAP.md`
-- `✓ .lbwc-planning/STATE.md`
-
-Include configuration and instructions.
-
-- `✓ CLAUDE.md`
-- `✓ .lbwc-planning/config.json`
-
-Include conditional artifacts only when their conditions apply.
-
-- If planning_tracking=commit and changes existed, display `✓ Bootstrap planning artifacts committed`.
-- If BROWNFIELD=true, display `✓ Codebase mapped`.
-
-Display the next steps.
-
-```text
-➜ Next: Run /lbwc:vibe to start planning your first milestone
-  Or:   Run /lbwc:status to review project state
-```
+After bootstrap succeeds, Read `{plugin-root}/references/commands/init-completion.md` and display its success summary and conditional artifact lines.
 
 ## Failure and recovery
 
@@ -679,3 +434,44 @@ Follow @${CLAUDE_PLUGIN_ROOT}/references/lbwc-brand-essentials.md
 
 Use a Phase Banner with a double-line box, a File Checklist (✓), ○ for pending, and a Next Up Block.
 Use no ANSI color codes.
+
+## Context
+
+Store the working directory as `{PROJECT_ROOT}`.
+
+```bash
+!`pwd`
+```
+
+Resolve the plugin root with this self-contained directive.
+Shell variables do not survive across directives.
+
+```bash
+!`SESSION_KEY="${CLAUDE_SESSION_ID:-default}"; L="/tmp/.lbwc-plugin-root-link-${SESSION_KEY}"; R="$L/scripts/resolve-plugin-root.sh"; [ -f "$R" ] || R="${CLAUDE_PLUGIN_ROOT:-}/scripts/resolve-plugin-root.sh"; [ -f "$R" ] || { echo "LBWC: plugin root unavailable. Restart this session to recreate $L." >&2; exit 1; }; LINK=$(bash "$R" --require-script indexer-sync.sh) || exit 1; printf 'Plugin root: %s\n' "$LINK"`
+```
+
+Store the returned `Plugin root` value as `{LINK}` and `{plugin-root}` for all later helper calls.
+Never guess a plugin path or replace a missing helper with inline code.
+When a step references a script, template, command, or reference file, replace `{plugin-root}` with the stored value.
+
+Read the existing state.
+
+```bash
+!`ls -la .lbwc-planning 2>/dev/null || echo "No .lbwc-planning directory"`
+```
+
+Find project files.
+
+```bash
+!`ls package.json pyproject.toml Cargo.toml go.mod Gemfile build.gradle pom.xml mix.exs 2>/dev/null || echo "No detected project files"`
+```
+
+Find global and project skills.
+
+```bash
+!`if [ -n "${CLAUDE_CONFIG_DIR:-}" ]; then _cd="$CLAUDE_CONFIG_DIR"; elif [ -d "$HOME/.config/claude-code" ]; then _cd="$HOME/.config/claude-code"; else _cd="$HOME/.claude"; fi; ls "$_cd/skills/" 2>/dev/null || echo "No global skills"`
+```
+
+```bash
+!`ls .claude/skills/ 2>/dev/null || echo "No project skills"`
+```
