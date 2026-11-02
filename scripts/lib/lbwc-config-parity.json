@@ -10,7 +10,7 @@
   "active_profile": "default",
   "custom_profiles": {},
   "agent_max_turns": {},
-  "qa_skip_agents": [],
+  "qa_skip_agents": ["docs"],
   "token_budgets": true,
   "two_phase_completion": true,
   "smart_routing": true,
