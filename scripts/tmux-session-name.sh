@@ -17,7 +17,7 @@ fail() {
 
 safe_component() {
   local value="$1" limit="$2"
-  value=$(printf '%s' "$value" | LC_ALL=C tr -cs 'A-Za-z0-9._-' '-' | tr -s '-')
+  value=$(printf '%s' "$value" | LC_ALL=C tr -cs 'A-Za-z0-9_-' '-' | tr -s '-')
   while [[ "$value" == -* ]]; do value="${value#-}"; done
   while [[ "$value" == *- ]]; do value="${value%-}"; done
   value="${value:0:limit}"
