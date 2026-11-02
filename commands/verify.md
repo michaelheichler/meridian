@@ -209,128 +209,37 @@ Store the plugin root path output above as `{plugin-root}` for use in script inv
 
 Current state:
 ```bash
-!`head -40 .lbwc-planning/STATE.md 2>/dev/null || echo "No state found"`
+!`bash "/tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/verify-load-context.sh" state`
 ```
 
 The SessionStart hook pre-injects config.
 
 Phase directories:
 ```bash
-!`ls .lbwc-planning/phases/ 2>/dev/null || echo "No phases directory"`
+!`bash "/tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/verify-load-context.sh" phases`
 ```
 
 Phase state:
 ```bash
-!`SESSION_KEY="${CLAUDE_SESSION_ID:-default}"
-L="/tmp/.lbwc-plugin-root-link-${SESSION_KEY}"
-P="/tmp/.lbwc-phase-detect-${SESSION_KEY}.txt"
-PD=""
-_refresh_phase_detect() {
-  local resolver root
-  resolver="$L/scripts/resolve-plugin-root.sh"
-  if [ ! -f "$resolver" ]; then
-    if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/resolve-plugin-root.sh" ]; then
-      resolver="${CLAUDE_PLUGIN_ROOT}/scripts/resolve-plugin-root.sh"
-    else
-      return 1
-    fi
-  fi
-  root=$(bash "$resolver" --require-script phase-detect.sh 2>/dev/null) || return 1
-  PD=$(bash "$root/scripts/phase-detect.sh" 2>/dev/null) || PD=""
-  if [ -z "$(printf '%s' "$PD" | tr -d '[:space:]')" ] || [ "$PD" = "phase_detect_error=true" ]; then
-    return 1
-  fi
-  printf '%s' "$PD" > "$P"
-  return 0
-}
-if ! _refresh_phase_detect; then
-  PD="phase_detect_error=true"
-  printf '%s\n' "$PD" > "$P"
-fi
-[ -f "$P" ] && PD=$(cat "$P")
-if [ -n "$(printf '%s' "$PD" | tr -d '[:space:]')" ] && [ "$PD" != "phase_detect_error=true" ]; then
-  printf '%s' "$PD"
-else
-  echo "phase_detect_error=true"
-fi`
+!`bash "/tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/verify-load-context.sh" phase-state`
 ```
 
-!`bash "/tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/suggest-compact.sh" verify 2>/dev/null || true`
+!`bash "/tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/verify-load-context.sh" compact`
 
 Pre-computed verify context (PLAN/SUMMARY aggregation):
 ```
-!`SESSION_KEY="${CLAUDE_SESSION_ID:-default}"
-P="/tmp/.lbwc-phase-detect-${SESSION_KEY}.txt"
-PD=""
-[ -f "$P" ] && PD=$(cat "$P")
-if [ -z "$(printf '%s' "$PD" | tr -d '[:space:]')" ] || [ "$PD" = "phase_detect_error=true" ]
-then
-  echo "verify_target_slug=unavailable"
-else
-  STATE=$(printf '%s' "$PD" | grep '^next_phase_state=' | head -1 | cut -d= -f2)
-  SLUG=$(printf '%s' "$PD" | grep '^next_phase_slug=' | head -1 | cut -d= -f2)
-  FU_SLUG=$(printf '%s' "$PD" | grep '^first_unverified_slug=' | head -1 | cut -d= -f2)
-  if [ "$STATE" = "needs_reverification" ] || [ "$STATE" = "needs_verification" ]
-  then
-    TARGET="$SLUG"
-  else
-    TARGET="${FU_SLUG:-$SLUG}"
-  fi
-  echo "verify_target_slug=$TARGET"
-fi
-echo "verify_context=deferred_until_target_resolution"`
+!`bash "/tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/verify-load-context.sh" verify-context`
 ```
 This lightweight block emits only the auto-detected target hint. It does not compile PLAN or SUMMARY aggregation. Step 1 resolves any explicit target before the single Step 2 compiler call.
 
 Pre-computed UAT resume metadata:
 ```
-!`SESSION_KEY="${CLAUDE_SESSION_ID:-default}"
-L="/tmp/.lbwc-plugin-root-link-${SESSION_KEY}"
-P="/tmp/.lbwc-phase-detect-${SESSION_KEY}.txt"
-PD=""
-_refresh_phase_detect() {
-  local resolver root
-  resolver="$L/scripts/resolve-plugin-root.sh"
-  if [ ! -f "$resolver" ]; then
-    if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/resolve-plugin-root.sh" ]; then
-      resolver="${CLAUDE_PLUGIN_ROOT}/scripts/resolve-plugin-root.sh"
-    else
-      return 1
-    fi
-  fi
-  root=$(bash "$resolver" --require-script phase-detect.sh 2>/dev/null) || return 1
-  PD=$(bash "$root/scripts/phase-detect.sh" 2>/dev/null) || PD=""
-  if [ -z "$(printf '%s' "$PD" | tr -d '[:space:]')" ] || [ "$PD" = "phase_detect_error=true" ]; then
-    return 1
-  fi
-  printf '%s' "$PD" > "$P"
-  return 0
-}
-if ! _refresh_phase_detect; then
-  PD="phase_detect_error=true"
-  printf '%s\n' "$PD" > "$P"
-fi
-[ -f "$P" ] && PD=$(cat "$P")
-if [ -z "$(printf '%s' "$PD" | tr -d '[:space:]')" ] || [ "$PD" = "phase_detect_error=true" ]; then
-  echo "uat_resume=unavailable"
-else
-  STATE=$(printf '%s' "$PD" | grep '^next_phase_state=' | head -1 | cut -d= -f2)
-  SLUG=$(printf '%s' "$PD" | grep '^next_phase_slug=' | head -1 | cut -d= -f2)
-  FU_SLUG=$(printf '%s' "$PD" | grep '^first_unverified_slug=' | head -1 | cut -d= -f2)
-  if [ "$STATE" = "needs_reverification" ] || [ "$STATE" = "needs_verification" ]; then TARGET="$SLUG"; else TARGET="${FU_SLUG:-$SLUG}"; fi
-  PDIR=".lbwc-planning/phases/$TARGET"
-  if [ -n "$TARGET" ] && [ -d "$PDIR" ] && [ -L "$L" ] && [ -f "$L/scripts/extract-uat-resume.sh" ]; then
-    echo "uat_resume_target_slug=$TARGET"
-    bash "$L/scripts/extract-uat-resume.sh" "$PDIR" 2>/dev/null || echo "uat_resume=error"
-  else
-    echo "uat_resume=unavailable"
-  fi
-fi`
+!`bash "/tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/verify-load-context.sh" uat-resume`
 ```
 
 QA verification summary (pre-extracted from VERIFICATION.md):
 ```
-!`bash "/tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/extract-verified-items.sh" .lbwc-planning/phases/*/ 2>/dev/null || true`
+!`bash "/tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/verify-load-context.sh" qa-summary`
 ```
 
 @${CLAUDE_PLUGIN_ROOT}/references/ask-user-question.md
