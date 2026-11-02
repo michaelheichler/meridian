@@ -2,6 +2,8 @@
 
 load test_helper
 load todo_helper
+load gate_case_helper
+load isolated_case_helper
 
 setup() {
   setup_temp_dir
@@ -55,7 +57,7 @@ expect_registry() {
   [ "$actual" = "$3" ] || fail_case "$1" "registry $2 = '$actual' expected '$3'"
 }
 
-@test "add stores argument or stdin detail under its hash, truncates long context, and recovers or creates the registry" {
+add_detail_and_recover_registry() {
   local long_context detail ctx_len
   while IFS='|' read -r label registry hash detail expected_summary; do
     [ -n "$label" ] || continue
@@ -94,7 +96,7 @@ CASES
   expect_registry stdin-detail '.items.abcd1234.summary' "User's repro doesn't work"
 }
 
-@test "get returns the registry entry, the legacy fallback, or not_found as valid JSON" {
+get_detail_with_legacy_fallback() {
   while IFS='|' read -r label registry legacy hash expected_status summary context files_len; do
     [ -n "$label" ] || continue
     seed_registry "$registry"
@@ -118,7 +120,7 @@ invalid-hash-with-quote-and-backslash|{"schema_version":1,"items":{}}|-|a"b\c|no
 CASES
 }
 
-@test "remove deletes the registry entry and legacy fallback, keeps other entries, and leaves a malformed registry alone" {
+remove_only_selected_detail() {
   while IFS='|' read -r label registry legacy hash action kept_key kept_summary; do
     [ -n "$label" ] || continue
     seed_registry "$registry"
@@ -156,7 +158,7 @@ CASES
   [ "$(cat "$DETAILS_PATH")" = "not json" ]
 }
 
-@test "list reports the entry count and rejects a malformed registry" {
+list_detail_counts() {
   while IFS='|' read -r label registry expected_status count; do
     [ -n "$label" ] || continue
     seed_registry "$registry"
@@ -172,7 +174,12 @@ malformed-registry|not json|error|-
 CASES
 }
 
-@test "gc removes registry entries that STATE.md no longer references" {
+@test "todo details preserve registry behavior across lifecycle commands" {
+  run_scenario_cases add_detail_and_recover_registry get_detail_with_legacy_fallback \
+    remove_only_selected_detail list_detail_counts collect_unreferenced_details
+}
+
+collect_unreferenced_details() {
   while IFS='|' read -r label heading refs keys kept_keys action; do
     [ -n "$label" ] || continue
     write_state_with_refs "$heading" "$refs"

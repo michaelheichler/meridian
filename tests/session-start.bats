@@ -1,6 +1,7 @@
 #!/usr/bin/env bats
 
 load gate_case_helper
+load isolated_case_helper
 load rejection_case_helper
 
 setup() {
@@ -137,7 +138,7 @@ compaction_count_row() {
     || record_case_failure "$label" "expected=$expected actual=$(read_compaction_count)"
 }
 
-@test "session-start links the exact session plugin root, fails clearly when it cannot, and persists unset CDPATH to a writable CLAUDE_ENV_FILE exactly once" {
+link_session_plugin_root_and_persist_environment() {
   local plugin_root="$TEST_ROOT/plugin" canonical_root
   canonical_root=$(cd "$REPO_ROOT" && pwd -P)
   reset_case_failures
@@ -172,7 +173,7 @@ compaction_count_row() {
   assert_no_case_failures
 }
 
-@test "session-start context reflects planning and subsystem state" {
+report_planning_and_subsystem_context() {
   reset_case_failures
 
   context_row cold-start-reports-init-needed prepare_cold_start
@@ -197,7 +198,7 @@ compaction_count_row() {
   assert_no_case_failures
 }
 
-@test "session-start applies the source-specific compaction count policy, creates no planning dir on startup, and resets a near-limit count so the loop stop stays quiet" {
+apply_source_specific_compaction_policy() {
   reset_case_failures
 
   compaction_count_row startup-resets-stale-count '{"source":"startup"}' 0
@@ -311,7 +312,7 @@ run_concurrent_session_starts() {
   '
 }
 
-@test "session-start tmux bind fails closed on a missing, mismatched or reused credential and binds a valid one-shot credential exactly once, even under concurrent attempts" {
+bind_tmux_session_with_one_shot_credentials() {
   reset_case_failures
 
   prepare_bound_agent
@@ -382,7 +383,13 @@ expect_cleanup_skipped() {
   [ ! -e "$CLEANUP_ARGV_LOG" ] || record_case_failure "$1" "stub ran with argv=$(cat "$CLEANUP_ARGV_LOG")"
 }
 
-@test "session-start runs the temporary run cleanup for the project root and reports retained state" {
+@test "session start initializes context and enforces session lifecycle policies" {
+  run_scenario_cases link_session_plugin_root_and_persist_environment \
+    report_planning_and_subsystem_context apply_source_specific_compaction_policy \
+    bind_tmux_session_with_one_shot_credentials cleanup_project_runfiles_and_report_retained_state
+}
+
+cleanup_project_runfiles_and_report_retained_state() {
   reset_case_failures
 
   cleanup_row prints-output-adds-context prints git

@@ -2,6 +2,7 @@
 
 load test_helper
 load gate_case_helper
+load isolated_case_helper
 load gate_case_files
 
 setup() {
@@ -44,7 +45,7 @@ digest_of() {
   shasum -a 256 "$1" | awk '{print $1}'
 }
 
-@test "plan-import normalize: gsd and markdown adapters emit tagged IR within the caps" {
+normalize_adapters_with_resource_caps() {
   local source number
 
   run bash "$SCRIPT" normalize --adapter gsd --source "$GSD_SOURCE" --output "$TEST_TEMP_DIR/gsd-ir.json"
@@ -90,7 +91,7 @@ digest_of() {
   assert_no_case_failures
 }
 
-@test "plan-import usage: rejects missing commands and arguments" {
+reject_missing_import_arguments() {
   run bash "$SCRIPT"
   expect_case no-command 2 "Usage: plan-import.sh"
 
@@ -112,7 +113,7 @@ digest_of() {
   assert_no_case_failures
 }
 
-@test "plan-import digest: follows hidden source files" {
+include_hidden_files_in_source_digest() {
   local first second
 
   run bash "$SCRIPT" digest --source "$GSD_SOURCE" --output "$TEST_TEMP_DIR/first.json"
@@ -146,7 +147,7 @@ digest_of() {
   assert_no_case_failures
 }
 
-@test "plan-import stage builds a validated tree, leaves canonical files alone, and fails closed on an invalid adapter output" {
+stage_validated_imports_without_canonical_changes() {
   local before
 
   fresh_project canonical-kept
@@ -196,7 +197,7 @@ digest_of() {
   assert_no_case_failures
 }
 
-@test "plan-import reimport: reports an unchanged source and allows a fresh stage" {
+reimport_unchanged_sources() {
   fresh_project reimport-staged
   stage_gsd first-import
   run bash "$SCRIPT" reimport --source "$GSD_SOURCE" --project-root "$PROJECT"
@@ -216,7 +217,13 @@ digest_of() {
   assert_no_case_failures
 }
 
-@test "plan-import promote writes template-valid artifacts, config and provenance, refuses unsafe artifacts and drifted sources, and restores every destination when promotion fails" {
+@test "plan import validates source and artifacts and restores failed promotions" {
+  run_scenario_cases normalize_adapters_with_resource_caps reject_missing_import_arguments \
+    include_hidden_files_in_source_digest stage_validated_imports_without_canonical_changes \
+    reimport_unchanged_sources promote_safely_and_restore_failed_destinations
+}
+
+promote_safely_and_restore_failed_destinations() {
   local promoted before_project before_state
 
   fresh_project promote-full
