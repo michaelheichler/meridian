@@ -23,12 +23,22 @@ IFS= read -r capability || fail 'capability input is unavailable'
 tmux_runtime_configure_existing "$control_root"
 tmux_heartbeat_settings "$control_root" || fail 'heartbeat settings are invalid'
 
+failures=0
 while sleep "$TMUX_HEARTBEAT_INTERVAL"; do
-  registry=$(tmux_runtime_registry_read) || exit 1
+  if ! registry=$(tmux_runtime_registry_read); then
+    failures=$((failures + 1))
+    [ "$failures" -lt 3 ] || exit 1
+    continue
+  fi
   agent=$(jq -er --arg agent "$agent_id" --arg session "$session_id" '.agents[] | select(.agent_id == $agent and .claude_session_id == $session and (.state == "running" or .state == "idle")) | [.state, .tmux_pane_id] | @tsv' <<<"$registry") || exit 0
   IFS=$'\t' read -r state pane_id <<<"$agent"
   [[ "$pane_id" =~ ^%[0-9]+$ ]] || exit 0
   present=$(tmux display-message -p -t "$pane_id" '#{pane_id}' 2>/dev/null) || exit 0
   [ "$present" = "$pane_id" ] || exit 0
-  printf '%s\n' "$capability" | bash "$SCRIPT_DIR/tmux-bus.sh" --control-root "$control_root" heartbeat --agent-id "$agent_id" --session-id "$session_id" --capability-stdin --state "$state" >/dev/null || exit 1
+  if printf '%s\n' "$capability" | bash "$SCRIPT_DIR/tmux-bus.sh" --control-root "$control_root" heartbeat --agent-id "$agent_id" --session-id "$session_id" --capability-stdin --state "$state" >/dev/null; then
+    failures=0
+  else
+    failures=$((failures + 1))
+    [ "$failures" -lt 3 ] || exit 1
+  fi
 done
