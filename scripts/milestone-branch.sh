@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd)"
+SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd -P)"
 . "$SCRIPT_DIR/lib/lbwc-settings.sh"
 
 action="${1:?Usage: milestone-branch.sh <start|complete|finish> [planning-dir] [slug]}"
@@ -43,8 +43,9 @@ if [ "$current" = "$branch" ] && [ -f "$state" ]; then
   printf 'branch_action=already_started\nbranch=%s\n' "$branch"
   exit 0
 fi
-planning_path=$(CDPATH='' cd -- "$planning_dir" && pwd)
+planning_path=$(CDPATH='' cd -- "$planning_dir" && pwd -P)
 repo_root=$(git rev-parse --show-toplevel)
+repo_root=$(CDPATH='' cd -- "$repo_root" && pwd -P)
 case "$planning_path" in
   "$repo_root"/*) planning_relative="${planning_path#"$repo_root"/}" ;;
   *) printf 'Error: planning directory must be inside the repository\n' >&2; exit 1 ;;
