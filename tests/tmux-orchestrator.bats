@@ -3,6 +3,9 @@
 load gate_case_helper
 load gate_case_files
 load rejection_case_helper
+load test_helper
+load tmux_config_fixture
+load tmux_watchdog_fixture
 
 setup() {
   unset TMUX TMUX_PANE
@@ -51,58 +54,7 @@ fi
 exec sleep 30
 SCRIPT
   chmod +x "$BIN_DIR/claude"
-  cat > "$BIN_DIR/tmux" <<'SCRIPT'
-#!/usr/bin/env bash
-if [ "$1" = "split-window" ] && [ -n "${LBWC_TEST_SPLIT_COUNTER:-}" ]; then
-  count=0
-  [ -f "$LBWC_TEST_SPLIT_COUNTER" ] && count=$(cat "$LBWC_TEST_SPLIT_COUNTER")
-  count=$((count + 1))
-  printf '%s\n' "$count" > "$LBWC_TEST_SPLIT_COUNTER"
-  [ "$count" -lt 2 ] || exit 1
-fi
-if [ "$1" = "split-window" ] && [ -n "${LBWC_TEST_FAST_CHILD_ENV:-}" ]; then
-  arguments=("$@")
-  : > "$LBWC_TEST_FAST_CHILD_ENV"
-  for argument in "$@"; do
-    case "$argument" in
-      LBWC_TMUX_AGENT=*|LBWC_TMUX_CONTROL_ROOT=*|LBWC_TMUX_AGENT_ID=*|LBWC_TMUX_CONTRACT_ID=*)
-        printf '%s\n' "$argument" >> "$LBWC_TEST_FAST_CHILD_ENV"
-        ;;
-      esac
-  done
-  pane_id=$("$LBWC_TEST_TMUX_BINARY" -L "$LBWC_TEST_TMUX_SERVER" "${arguments[0]}" \
-    -e "PATH=$LBWC_TEST_CHILD_PATH" \
-    -e "LBWC_TEST_FAST_CHILD_ENV=$LBWC_TEST_FAST_CHILD_ENV" \
-    -e "LBWC_TEST_FAST_CHILD_STATUS=$LBWC_TEST_FAST_CHILD_STATUS" \
-    -e "LBWC_TEST_FAST_CHILD_OUTPUT=$LBWC_TEST_FAST_CHILD_OUTPUT" \
-    -e "LBWC_TEST_FAST_CHILD_READY=$LBWC_TEST_FAST_CHILD_READY" \
-    -e "LBWC_TEST_FAST_CHILD_RELEASE=$LBWC_TEST_FAST_CHILD_RELEASE" \
-    -e "LBWC_TEST_FAST_CHILD_PANE=$LBWC_TEST_FAST_CHILD_PANE" \
-    -e "LBWC_TEST_FAST_CHILD_STARTED=$LBWC_TEST_FAST_CHILD_STARTED" \
-    -e "LBWC_TEST_FAST_CHILD_EXIT=$LBWC_TEST_FAST_CHILD_EXIT" \
-    -e "LBWC_TEST_SESSION_START=$LBWC_TEST_SESSION_START" \
-    "${arguments[@]:1}" "$LBWC_TEST_CHILD_SHELL" --noprofile --norc) || exit 1
-  printf '%s\n' "$pane_id"
-  exit 0
-fi
-if [ "$1" = "send-keys" ] && [ -n "${LBWC_TEST_SEND_KEYS_COUNTER:-}" ]; then
-  count=0
-  [ -f "$LBWC_TEST_SEND_KEYS_COUNTER" ] && count=$(cat "$LBWC_TEST_SEND_KEYS_COUNTER")
-  count=$((count + 1))
-  printf '%s\n' "$count" > "$LBWC_TEST_SEND_KEYS_COUNTER"
-  [ "$count" -le "${LBWC_TEST_FAIL_SEND_KEYS_AFTER:-0}" ] || exit 1
-fi
-if [ "$1" = "split-window" ] && [ -n "${LBWC_TEST_LAYOUT_AFTER_SPLIT:-}" ]; then
-  printf '{"tmux":{"layout":"%s"}}\n' "$LBWC_TEST_LAYOUT_AFTER_SPLIT" > "$LBWC_TEST_CONFIG_PATH"
-fi
-if [ "$1" = "select-layout" ] && [ -n "${LBWC_TEST_SELECT_LAYOUT_LOG:-}" ]; then
-  printf '%s\n' "$*" >> "$LBWC_TEST_SELECT_LAYOUT_LOG"
-fi
-if [ "$1" = "select-layout" ] && [ "${LBWC_TEST_FAIL_LAYOUT:-0}" = 1 ]; then
-  exit 1
-fi
-exec "$LBWC_TEST_TMUX_BINARY" -L "$LBWC_TEST_TMUX_SERVER" "$@"
-SCRIPT
+  cp "$BATS_TEST_DIRNAME/tmux_orchestrator_proxy.bash" "$BIN_DIR/tmux"
   chmod +x "$BIN_DIR/tmux"
   export LBWC_TEST_JQ_BINARY="$(command -v jq)"
   cat > "$BIN_DIR/jq" <<'SCRIPT'
@@ -700,4 +652,45 @@ prepare_teardown_agent() {
   [ "$status" -eq 0 ]
   [ "$(jq -r '.orchestrator_target' <<< "$output")" = "$orchestrator_target" ]
   [ "$(tmux_on_test_server display-message -p -t "$SESSION" '#{pane_id}')" = "$expected_pane" ]
+}
+
+@test "configured session names remain addressable through owned cleanup" {
+  config_test_repo
+  run_config_rows name <<'ROWS'
+custom-prefix|custom;project;custom-project;none
+full-prefix|abcdefghijklmnopqrstuvwxyz123456;project;abcdefghijklmnopqrstuvwxyz123456-project;abcdefghijklmnopqrstuvwxyz123456
+dotted-project|missing;my.app;lbwc-my-app;none
+colon-project|missing;my:app;lbwc-my-app;none
+default-prefix|missing;project;lbwc-project;none
+explicit-prefix|custom;project;custom-project;override
+ROWS
+}
+
+@test "attach policies preserve the requested agent visibility and roll back failed splits" {
+  config_test_repo
+  run_config_rows policy <<'ROWS'
+visible-horizontal|visible_grid;1;success
+visible-final-agent|visible_grid;3;success
+default-focus|missing;2;success
+orchestrator-focus|orchestrator_only;2;success
+unsupported-policy|unsupported;1;reject
+visible-layout-rollback|visible_grid;1;rollback
+ROWS
+}
+
+@test "heartbeat intervals preserve liveness without reviving obsolete agents" {
+  config_test_repo
+  run_config_rows heartbeat <<'ROWS'
+running-heartbeat|live;1;none;running
+idle-heartbeat|live;1;none;idle
+derived-stale-limit|stale;1;none;running
+capped-cli-limit|stale;1;90000;running
+stricter-config-limit|stale;30;configured;running
+stricter-cli-limit|stale;30;2000;running
+failed-sender|terminal;1;none;failed
+shutdown-sender|terminal;1;none;shutdown
+rebound-sender|terminal;1;none;rebound
+absent-pane-sender|terminal;1;none;absent
+missing-interval|defaults;30;none;running
+ROWS
 }
