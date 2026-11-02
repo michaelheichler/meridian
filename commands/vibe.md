@@ -70,7 +70,7 @@ When detector output has `needs_milestone_rename=true`, the main session itself 
 
 ### Confirmation Gate
 
-Every mode triggers confirmation before executing. Follow the shared interaction contract in `references/ask-user-question.md`, then use the AskUserQuestion tool with the question from the routing table's Confirmation column (marked with `→ AskUserQuestion:`). This section stays local to `/lbwc:vibe`: it defines when confirmation is skipped, which routing copy to use, and which alternatives belong to each route.
+Every mode triggers confirmation before executing. Follow the shared interaction contract in `references/ask-user-question.md`, then use AskUserQuestion with the question from the routing table's Confirmation column (marked with `→ AskUserQuestion:`). This local section defines when `/lbwc:vibe` skips confirmation and selects routing copy. It also defines the alternatives for each route.
 
 - **Exception:** `--yolo` skips all confirmation gates. Error guards (missing roadmap, uninitialized project) still halt.
 - **Exception:** Flags skip confirmation (explicit intent).
@@ -86,35 +86,35 @@ Every mode triggers confirmation before executing. Follow the shared interaction
 
 ## Modes
 
-### Mode: Import
+### Mode Import
 
 Explicit `--import [path]` and clear natural-language requests to import, migrate, or bring in external plans route here before Init Redirect. Do not infer import intent from ordinary planning language.
 
-If the project is uninitialized and an external plan source is detected, ask one bounded choice: `Import external plan`, `Start fresh initialization`, or `Cancel`. Import routes to `/lbwc:import`. Fresh initialization routes to Init Redirect. Cancel leaves project state unchanged.
+When initialization has not run and the detector finds an external plan source, offer a bounded choice. `Import external plan` routes to `/lbwc:import`, while `Start fresh initialization` routes to Init Redirect. `Cancel` leaves project state unchanged.
 
 Read `commands/import.md` and execute that workflow inline in the main session. Preserve any active remediation state because import is an explicit user-selected interruption, not a replacement for the persisted remediation backlog. After promotion, re-run phase detection before selecting the next lifecycle mode.
 
-### Mode: Init Redirect
+### Mode Init Redirect
 
-If `planning_dir_exists=false`: display "Run /lbwc:init first to set up your project." STOP.
+If `planning_dir_exists=false`, display "Run /lbwc:init first to set up your project." STOP.
 
-### Mode: Bootstrap
+### Mode Bootstrap
 
 Read `{LINK}/references/vibe-mode-bootstrap.md` and follow it. `{LINK}` is the first line of the plugin-root/state block in the Context output, labeled `first line is LINK`.
 
-### Mode: Scope
+### Mode Scope
 
 **Guard:** PROJECT.md exists but `phase_count=0`.
 
 **Steps:**
 
-1. Load context: PROJECT.md, REQUIREMENTS.md. If `.lbwc-planning/codebase/META.md` exists, read ARCHITECTURE.md and CONCERNS.md (whichever exist) from `.lbwc-planning/codebase/`.
+1. Read PROJECT.md and REQUIREMENTS.md. If `.lbwc-planning/codebase/META.md` exists, read ARCHITECTURE.md and CONCERNS.md (whichever exist) from `.lbwc-planning/codebase/`.
 2. If $ARGUMENTS (excl. flags) provided, use as scope. Else ask: "What do you want to build?" Show uncovered requirements as suggestions.
 3. **Decompose through a contracted Architect:** Follow `references/agent-spawn-protocol.md`. Build one complete brief from PROJECT.md, REQUIREMENTS.md, the scope description, and the required output shape. Issue a solo, read-only `architect` command contract for `milestone scope decomposition`. Run the generic `scripts/agent-generator.sh architect` call with the identical brief, contract path, and task id. Advance the contract to `dispatched`, then use the emitted `model` and final `SPAWN_READY` name for `subagent_type` and `name`. Pass no effort, max-turn, timeout, team, background, isolation, or worker-cwd fields.
 
    Render the prompt prefix through `references/skill-activation-payload.md`. Ask the Architect to return a complete roadmap proposal with 3 to 5 independently plannable phases, goals, success criteria, dependency order, decomposition rationale, and REQ-ID mapping. The Architect is read-only. It does not write ROADMAP.md or mutate planning state. Apply the no-tool invariant from `references/subagent-contracts.md` to its return.
 
-   Validate the returned phase count, unique names, complete REQ-ID coverage, dependency order, and source scope. The main session writes `.lbwc-planning/ROADMAP.md` only after that validation. A malformed, incomplete, or tool-less return stops Scope mode without writing partial roadmap state. Display `◆ Spawning Architect agent...` followed by `✓ Architect agent complete` only after validation.
+   Check the returned phase count and require unique names. Validate complete REQ-ID coverage against source scope, then check dependency order. The main session writes `.lbwc-planning/ROADMAP.md` only after that validation. A malformed, incomplete, or tool-less return stops Scope mode without writing partial roadmap state. Display `◆ Spawning Architect agent...` followed by `✓ Architect agent complete` only after validation.
 4. Read the validated phase list from ROADMAP.md. Create `.lbwc-planning/phases/{NN}-{slug}/` directories for each phase.
 5. Update STATE.md by calling bootstrap-state.sh. Extract `PROJECT_NAME` from PROJECT.md, derive `MILESTONE_NAME` from the scope description (step 2), and use the phase count from step 3. The script preserves existing project-level sections (Todos, Decisions, Blockers, Codebase Profile) while restoring the `## Current Phase` section:
 
@@ -136,13 +136,14 @@ Read `{LINK}/references/vibe-mode-bootstrap.md` and follow it. `{LINK}` is the f
    bash /tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/planning-git.sh commit-boundary "scope milestone" .lbwc-planning/config.json
    ```
 
-   Behavior: `planning_tracking=commit` commits `.lbwc-planning/` if changed (ROADMAP.md, STATE.md, CONTEXT.md, phase dirs). Other modes no-op.
-8. Display "Scoping complete. {N} phases created." STOP. Do not auto-continue to planning.
+   With `planning_tracking=commit`, the helper commits `.lbwc-planning/` if changed (ROADMAP.md, STATE.md, CONTEXT.md, phase dirs). Other modes no-op.
+8. The main session runs `bash "{LINK}/scripts/milestone-branch.sh" start .lbwc-planning`. Stop on failure, including a dirty tree, and ask the user to commit or set aside changes before retrying. Never stash automatically or delegate Git actions.
+9. Display "Scoping complete. {N} phases created." STOP. Do not auto-continue to planning.
 
-### Mode: Discuss
+### Mode Discuss
 
 **Guard:** Initialized, phase exists in roadmap.
-**Phase auto-detection:** First phase without `*-CONTEXT.md`. All discussed: STOP "All phases discussed. Specify: `/lbwc:vibe --discuss N`"
+**Phase auto-detection:** First phase without `*-CONTEXT.md`. If all phases have context, STOP with "All phases discussed. Specify `/lbwc:vibe --discuss N`".
 
 **Continuation mode:** When the target phase already has a `{NN}-CONTEXT.md`, this is a **continuation discussion**, not a fresh one. If the CONTEXT.md has `pre_seeded: true` in its YAML frontmatter (remediation phase), WARN the user that this phase has pre-seeded UAT context and ask whether they want to re-discuss (which overwrites the pre-seeded content) or skip discussion and proceed to planning. Otherwise display: "Phase {NN} already has discussion context. Continuing to explore additional topics." The Discussion Engine will load existing decisions as baseline and focus on uncovered gray areas.
 
@@ -156,10 +157,10 @@ Read `{LINK}/references/vibe-mode-bootstrap.md` and follow it. `{LINK}` is the f
    bash /tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/planning-git.sh commit-boundary "discuss phase {NN}" .lbwc-planning/config.json
    ```
 
-   Behavior: `planning_tracking=commit` commits `{NN}-CONTEXT.md` and `discovery.json` if changed. Other modes no-op.
+   With `planning_tracking=commit`, the helper commits `{NN}-CONTEXT.md` and `discovery.json` if changed. Other modes no-op.
 4. Run `bash /tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/suggest-next.sh vibe`.
 
-### Mode: Assumptions
+### Mode Assumptions
 
 **Guard:** Initialized, phase exists in roadmap.
 **Phase auto-detection:** Same as Discuss mode.
@@ -176,22 +177,22 @@ Read `{LINK}/references/vibe-mode-bootstrap.md` and follow it. `{LINK}` is the f
    bash /tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/planning-git.sh commit-boundary "assumptions phase {NN}" .lbwc-planning/config.json
    ```
 
-   Behavior: `planning_tracking=commit` commits `{NN}-CONTEXT.md` and `discovery.json` if changed. Other modes no-op.
+   With `planning_tracking=commit`, the helper commits `{NN}-CONTEXT.md` and `discovery.json` if changed. Other modes no-op.
 4. Run `bash /tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/suggest-next.sh vibe`.
 
-### Mode: UAT Remediation
+### Mode UAT Remediation
 
 Read `{LINK}/references/vibe-uat-remediation.md` and follow it. `{LINK}` is the first line of the plugin-root/state block in the Context output, labeled `first line is LINK`.
 
-### Mode: Milestone UAT Recovery
+### Mode Milestone UAT Recovery
 
 Read `{LINK}/references/vibe-mode-milestone-uat-recovery.md` and follow it. `{LINK}` is the first line of the plugin-root/state block in the Context output, labeled `first line is LINK`.
 
-### Mode: Plan
+### Mode Plan
 
 Read `{LINK}/references/vibe-mode-plan.md` and follow it. `{LINK}` is the first line of the plugin-root/state block in the Context output, labeled `first line is LINK`.
 
-### Mode: Execute
+### Mode Execute
 
 Before loading the execute protocol, resolve `{PHASE_DIR}` as the selected canonical directory below `{PROJECT_ROOT}/.lbwc-planning/phases/`. Its frozen runtime snapshot path is `{PHASE_DIR}/.runtime-snapshot.json`.
 
@@ -202,7 +203,7 @@ Before loading the execute protocol, resolve `{PHASE_DIR}` as the selected canon
    ```
 
    On success, use the returned `snapshot.requested_backend`, `snapshot.resolved_backend`, `snapshot.effort`, `snapshot.routing_profile`, `snapshot.routing_roles`, and `snapshot.tmux_execution` as the sole execution authority. Do not resolve again from live configuration. A non-zero result is `backend drift` or malformed runtime state. Stop before contracts, generation, spawning, telemetry, or prompts and preserve all state.
-2. When no snapshot exists, read the validated execution configuration once. An explicit `agent_execution_mode` wins outright, including an explicit `in_process` or `tmux`. `agent_execution_mode=in_process` selects requested and resolved `in_process`. `agent_execution_mode=tmux` selects requested `tmux`. `agent_execution_mode=workflow` selects requested `workflow`: read `.workflow.available` from `{PROJECT_ROOT}/.lbwc-planning/claude-capabilities.json` and `.workflow_execution.enabled` from `{PROJECT_ROOT}/.lbwc-planning/config.json`. When `.workflow.available` is `false`, stop before any contract or agent exists and report `.workflow.unavailable_reasons` verbatim. Otherwise, when `.workflow_execution.enabled` is not `true`, stop before any contract or agent exists with `workflow backend is disabled in configuration`. Otherwise resolve `workflow`. There is no automatic fallback from a requested `workflow` to another backend. For `agent_execution_mode=ask`, read both `.workflow.available` and `.workflow_execution.enabled` from the same catalog and config first, then ask one bounded execution-mode question before any contract or agent exists. Follow `{LINK}/references/ask-user-question.md`: exactly one question, `multiSelect` false, two to four visible options.
+2. When no snapshot exists, read the validated execution configuration once. An explicit `agent_execution_mode` wins outright, including an explicit `in_process` or `tmux`. `agent_execution_mode=in_process` selects requested and resolved `in_process`. `agent_execution_mode=tmux` selects requested `tmux`. `agent_execution_mode=workflow` selects requested `workflow`. Read `.workflow.available` from `{PROJECT_ROOT}/.lbwc-planning/claude-capabilities.json` and `.workflow_execution.enabled` from `{PROJECT_ROOT}/.lbwc-planning/config.json`. When `.workflow.available` is `false`, stop before any contract or agent exists and report `.workflow.unavailable_reasons` verbatim. Otherwise, when `.workflow_execution.enabled` is not `true`, stop before any contract or agent exists and report that configuration disables the workflow backend. Otherwise resolve `workflow`. There is no automatic fallback from a requested `workflow` to another backend. For `agent_execution_mode=ask`, read both `.workflow.available` and `.workflow_execution.enabled` from the same catalog and config first, then ask one bounded execution-mode question before any contract or agent exists. Follow `{LINK}/references/ask-user-question.md` with exactly one question, `multiSelect` false, and two to four visible options.
 
    - header: `Execute execution`
    - question when `.workflow.available` and `.workflow_execution.enabled` are both `true`: `Where should this phase's task groupings run? Workflow run orchestrates each grouping through a committed background script. Native keeps the current Claude Code Agent spawn. TMUX starts each grouping as a fresh pane session.`
@@ -217,13 +218,13 @@ Before loading the execute protocol, resolve `{PHASE_DIR}` as the selected canon
      - `TMUX panes`: Start each grouping as a fresh pane session through provision and split-group.
      - `Cancel spawn`: Do not spawn any grouping for this execution.
 
-   If the user chooses `Workflow run`, select requested and resolved `workflow`. If the user chooses `Native spawn`, select requested and resolved `in_process`. If the user chooses `TMUX panes`, select requested `tmux`. If the user chooses `Cancel spawn`, run exactly:
+   For `Workflow run`, select requested and resolved `workflow`, while `Native spawn` selects both as `in_process`. `TMUX panes` selects requested `tmux` only. When the user chooses `Cancel spawn`, run exactly:
 
    ```bash
    bash "{LINK}/scripts/runtime-snapshot.sh" cancel --planning-dir "{PROJECT_ROOT}/.lbwc-planning" --phase-dir "{PHASE_DIR}"
    ```
 
-   Report the cancellation and stop. This transition writes `{PHASE_DIR}/.runtime-cancelled.json` and creates no snapshot. It does not mutate contracts, manifests, or telemetry. Never fall back to in-process agents.
+   Report the cancellation and stop. This transition writes `{PHASE_DIR}/.runtime-cancelled.json` and creates no snapshot. It leaves contracts and manifests unchanged and does not write telemetry. Never fall back to in-process agents.
 3. For requested `tmux`, complete TMUX preflight before freezing. On preflight success, resolved backend is `tmux`. On preflight failure, only `tmux_execution.comms_fallback=fall_back_to_in_process` may resolve to `in_process`. `bus_only` stops without a snapshot. Then run exactly:
 
    ```bash
@@ -232,35 +233,35 @@ Before loading the execute protocol, resolve `{PHASE_DIR}` as the selected canon
 
    A `created` or `matched` result moves runtime state to `ready` without changing task contracts. Pass its `snapshot.resolved_backend` to every generator or TMUX dispatch. The helper atomically records schema version, canonical phase, requested and resolved backend, effort, active routing profile and models, complete TMUX settings and restrictions, and the canonical source-config digest.
 
-Copy snapshot backends into CLI flags. Control root is `{PROJECT_ROOT}/.lbwc-planning`, the freeze `--planning-dir`. When `snapshot.requested_backend` equals `snapshot.resolved_backend`, pass those values plus `--control-root` and `--assert-snapshot` so `open` cannot disagree with the snapshot. When they differ, that is the already-frozen `comms_fallback` case: omit the schema 3 backend flags (`open` requires matching backends), then follow the native Agent path.
+Copy snapshot backends into CLI flags. Control root is `{PROJECT_ROOT}/.lbwc-planning`, the freeze `--planning-dir`. When `snapshot.requested_backend` equals `snapshot.resolved_backend`, pass those values plus `--control-root` and `--assert-snapshot` so `open` cannot disagree with the snapshot. When they differ, that is the already-frozen `comms_fallback` case. Omit the schema 3 backend flags (`open` requires matching backends), then follow the native Agent path.
 
 Pass `snapshot.resolved_backend` to every `agent-generator.sh --execution-backend` invocation that follows a schema 3 open. Stop on contract, generator, preflight, provision, split-group, or bus failure. Do not silently switch to in-process except the already-frozen `comms_fallback` case above. Schema 2 generation omits `--execution-backend`.
 
 If `snapshot.resolved_backend` is `in_process`, keep the native Agent path in `{LINK}/references/vibe-mode-execute.md`.
 
-If `snapshot.resolved_backend` is `tmux`, `{LINK}/references/vibe-mode-execute.md` follows `{LINK}/references/tmux-spawn-protocol.md` on this branch only. Do not call native Agent. Do not invent a second orchestrator. Do not follow execute-protocol Agent spawn on this branch.
+If `snapshot.resolved_backend` is `tmux`, `{LINK}/references/vibe-mode-execute.md` follows `{LINK}/references/tmux-spawn-protocol.md` on this branch only. Do not call native Agent or follow execute-protocol Agent spawn on this branch, and never invent a second orchestrator.
 
 If `snapshot.resolved_backend` is `workflow`, `{LINK}/references/vibe-mode-execute.md` follows `{LINK}/references/workflow-spawn-protocol.md` on this branch only. Do not call native Agent and do not run the tmux spawn driver.
 
 Read `{LINK}/references/vibe-mode-execute.md` and follow it. `{LINK}` is the first line of the plugin-root/state block in the Context output, labeled `first line is LINK`.
 
-### Mode: Verify
+### Mode Verify
 
 Read `{LINK}/references/vibe-mode-verify.md` and follow it. `{LINK}` is the first line of the plugin-root/state block in the Context output, labeled `first line is LINK`.
 
-### Mode: Add Phase
+### Mode Add Phase
 
 Read `{LINK}/references/vibe-mode-add-phase.md` and follow it. `{LINK}` is the first line of the plugin-root/state block in the Context output, labeled `first line is LINK`.
 
-### Mode: Insert Phase
+### Mode Insert Phase
 
 Read `{LINK}/references/vibe-mode-insert-phase.md` and follow it. `{LINK}` is the first line of the plugin-root/state block in the Context output, labeled `first line is LINK`.
 
-### Mode: Remove Phase
+### Mode Remove Phase
 
 Read `{LINK}/references/vibe-mode-remove-phase.md` and follow it. `{LINK}` is the first line of the plugin-root/state block in the Context output, labeled `first line is LINK`.
 
-### Mode: Archive
+### Mode Archive
 
 Read `{LINK}/references/vibe-mode-archive.md` and follow it. `{LINK}` is the first line of the plugin-root/state block in the Context output, labeled `first line is LINK`.
 
@@ -268,13 +269,13 @@ Read `{LINK}/references/vibe-mode-archive.md` and follow it. `{LINK}` is the fir
 
 After Execute mode completes, continue automatically only when the installed configuration resolves autonomy to `pure-vibe`. Before each iteration, require every task contract to be terminal, every generated manifest member to be `used` or `expired`, every main-session commit to exist, and the selected summary and verification artifacts to validate. Re-run `phase-detect.sh` instead of carrying forward a prior route.
 
-If the new detector output selects the next unbuilt phase, run its Plan mode and then Execute mode. Stop on `all_done`, any blocking remediation route, a required user decision, contract or manifest drift, a failed gate, or missing evidence. Other autonomy levels stop after the current phase. LBWC solo, pair, and trio groups close through their manifest lifecycle. Do not invent a source team shutdown flow or a delegation-state marker.
+If the new detector output selects the next unbuilt phase, run its Plan mode and then Execute mode. Stop on `all_done` or any blocking remediation route. A required user decision also stops the loop, as do contract or manifest drift, gate failure, and missing evidence. Other autonomy levels stop after the current phase. LBWC solo, pair, and trio groups close through their manifest lifecycle. Do not invent a source team shutdown flow or a delegation-state marker.
 
 ## Failure and recovery
 
-A failed root resolver, detector, contract issue, generator call, tmux preflight, provision, split-group, bus publish/await/ack, artifact validation, state transition, or planning Git helper stops the current mode. Report the exact failing command boundary and preserve existing state. Never create placeholder plans, summaries, verification, or UAT files to make detection advance. Recovery re-runs `/lbwc:vibe` after the named blocker is corrected. If a bounded user dialog is dismissed or killed, clear the pending decision and resume normally.
+A failed root resolver, detector, contract issue, generator call, tmux preflight, provision, split-group, bus publish/await/ack, artifact validation, state transition, or planning Git helper stops the current mode. Report the exact failing command boundary and preserve existing state. Never create placeholder plans, summaries, verification, or UAT files to make detection advance. Recovery re-runs `/lbwc:vibe` after the user or main session corrects the named blocker. If the user dismisses a bounded dialog or the runtime kills it, clear the pending decision and resume normally.
 
-If the workflow generator fails or the `Workflow` call is denied during Execute mode, leave that grouping's contract `planned` and report the failure verbatim. Do not fall back to `in_process` or `tmux`.
+If the workflow generator fails or the runtime denies the `Workflow` call during Execute mode, leave that grouping's contract `planned` and report the failure verbatim. Do not fall back to `in_process` or `tmux`.
 
 ## Output Format
 
@@ -291,7 +292,7 @@ Per-mode output:
 - **Add/Insert/Remove Phase:** Phase Banner, ✓ checklist, Next Up
 - **Archive:** Phase Banner, Metrics (phases, tasks, commits, reqs, deviations), archive path, tag, branch, memory status, Next Up
 
-Rules: Phase Banner (double-line box), ◆ running, ✓ complete, ✗ failed, ○ skipped, Metrics Block, Next Up Block, no ANSI color codes.
+Use a Phase Banner (double-line box), Metrics Block, and Next Up Block without ANSI color codes. Status symbols remain ◆ running, ✓ complete, ✗ failed, and ○ skipped.
 
 ## Next Up
 
