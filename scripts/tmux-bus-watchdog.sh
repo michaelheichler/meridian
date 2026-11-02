@@ -6,6 +6,8 @@ umask 077
 SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd -P)"
 source "$SCRIPT_DIR/lib/lbwc-control-root.sh"
 source "$SCRIPT_DIR/lib/tmux-runtime.sh"
+source "$SCRIPT_DIR/lib/lbwc-config-files.sh"
+source "$SCRIPT_DIR/lib/tmux-heartbeat-settings.sh"
 
 fail() {
   printf 'tmux-watchdog: %s\n' "$1" >&2
@@ -13,7 +15,7 @@ fail() {
 }
 
 usage() {
-  printf '%s\n' 'Usage: tmux-bus-watchdog.sh --control-root PATH check --orchestrator-id ID --orchestrator-session-id ID --orchestrator-capability TOKEN --stale-after-ms MS --shutdown-timeout-ms MS' >&2
+  printf '%s\n' 'Usage: tmux-bus-watchdog.sh --control-root PATH check --orchestrator-id ID --orchestrator-session-id ID --orchestrator-capability TOKEN [--stale-after-ms MS] --shutdown-timeout-ms MS' >&2
   exit 2
 }
 
@@ -21,7 +23,8 @@ pane_exists() {
   local pane_id
   # Unknown targets exit 0 with empty output, so the exit code alone misleads.
   pane_id=$(tmux display-message -p -t "$1" '#{pane_id}' 2>/dev/null) || return 1
-  [ -n "$pane_id" ]
+  [ -n "$pane_id" ] || return 1
+  case "$1" in %*) [ "$pane_id" = "$1" ] ;; *) return 0 ;; esac
 }
 
 persist_shutdown() {
@@ -145,13 +148,17 @@ while [ "$#" -gt 0 ]; do
 done
 
 [ "$command" = check ] || usage
-for value in "$orchestrator_id" "$orchestrator_session_id" "$orchestrator_capability" "$stale_after_ms" "$shutdown_timeout_ms"; do
+for value in "$orchestrator_id" "$orchestrator_session_id" "$orchestrator_capability" "$shutdown_timeout_ms"; do
   [ -n "$value" ] || usage
 done
-[[ "$stale_after_ms" =~ ^[1-9][0-9]*$ ]] || usage
+[ -z "$stale_after_ms" ] || [[ "$stale_after_ms" =~ ^[1-9][0-9]*$ ]] || usage
 [[ "$shutdown_timeout_ms" =~ ^[1-9][0-9]*$ ]] || usage
 
 tmux_runtime_configure_existing "$control_root" >/dev/null 2>&1 || fail 'runtime registry is malformed'
+tmux_heartbeat_settings "$control_root" || fail 'heartbeat settings are invalid'
+if [ -z "$stale_after_ms" ] || [ "$stale_after_ms" -gt "$TMUX_HEARTBEAT_STALE_MS" ]; then
+  stale_after_ms="$TMUX_HEARTBEAT_STALE_MS"
+fi
 trap tmux_runtime_cleanup_locks EXIT
 tmux_runtime_require_bus || fail 'runtime registry is malformed'
 tmux_runtime_lock_acquire registry 5000 30000
@@ -167,7 +174,7 @@ while IFS= read -r agent; do
   pane_exists "$pane_id" && continue
   dead_ids=$(jq --arg id "$agent_id" '. + [$id]' <<<"$dead_ids")
 done < <(jq -c '.agents[] | select(.state != "shutdown" and .state != "failed") | {agent_id,tmux_pane_id}' <<<"$registry")
-stale=$(jq -c --argjson now "$now" --argjson threshold "$stale_after_ms" --argjson dead_ids "$dead_ids" '[.agents[] | select(.state != "shutdown" and ((.state == "failed" and .watchdog_cleanup_pending == true) or (.state != "failed" and ((.heartbeat_at_ms == null or (.heartbeat_at_ms + $threshold) <= $now) or (.agent_id as $id | $dead_ids | index($id)))))) | {agent_id, tmux_target, report_failure: (.state != "failed")}]' <<<"$registry")
+stale=$(jq -c --argjson now "$now" --argjson threshold "$stale_after_ms" --argjson dead_ids "$dead_ids" '[.agents[] | select(.state != "shutdown" and ((.state == "failed" and .watchdog_cleanup_pending == true) or (.state != "failed" and ((.heartbeat_at_ms == null or (.heartbeat_at_ms + $threshold) <= $now) or (.agent_id as $id | $dead_ids | index($id)))))) | {agent_id, tmux_target: (.tmux_pane_id // .tmux_target), report_failure: (.state != "failed")}]' <<<"$registry")
 if [ "$(jq 'length' <<<"$stale")" -eq 0 ]; then
   tmux_runtime_lock_release registry
   jq -n '{state: "healthy", stale_agents: []}'
