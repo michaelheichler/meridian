@@ -3,6 +3,7 @@
 load test_helper
 load gate_case_helper
 load gate_case_files
+load state_case_helper
 
 setup() {
   setup_temp_dir
@@ -78,7 +79,7 @@ next_up() {
   run env SN_PD_FIXTURE="$ROOT/pd.out" LBWC_PLANNING_DIR="$PLANNING_DIR" /bin/bash "$SN_SCRIPTS/suggest-next.sh" "$@"
 }
 
-@test "suggest-next offers the debug resume suggestion when no phases exist" {
+suggest_debug_without_phases() {
   [ -x "$SCRIPTS_DIR/debug-session-state.sh" ]
 
   write_debug_session qa_pending
@@ -92,7 +93,7 @@ next_up() {
   [[ "$output" == *"Address UAT issues"* ]]
 }
 
-@test "suggest-next after vibe picks the fix, finish, remediation or next-phase step from the planning state" {
+suggest_after_vibe() {
   project fail-names-plan
   add_plan 01-setup 01-01 failed
   next_up vibe fail
@@ -199,7 +200,7 @@ next_up() {
   assert_no_case_failures
 }
 
-@test "suggest-next after plan reports the plan count and effort and upgrades a config without a model profile" {
+suggest_after_plan() {
   project counted
   add_plan 01-setup 01-01 none
   add_plan 01-setup 01-02 none
@@ -215,7 +216,7 @@ next_up() {
   assert_no_case_failures
 }
 
-@test "suggest-next after qa resumes a debug session or routes on the QA result" {
+suggest_after_qa() {
   debug_project debug-qa-failed-result qa_pending
   next_up qa fail
   expect_case debug-qa-failed-result 0 "/lbwc:debug --resume -- Address QA failures"
@@ -310,7 +311,7 @@ next_up() {
   assert_no_case_failures
 }
 
-@test "suggest-next after fix resumes a debug session or offers UAT only while the fix marker is fresh" {
+suggest_after_fix() {
   debug_project debug-qa-failed qa_failed
   next_up fix
   expect_case debug-qa-failed 0 "/lbwc:debug --resume -- Address QA failures"
@@ -350,7 +351,7 @@ next_up() {
   assert_no_case_failures
 }
 
-@test "suggest-next after verify ships, continues, or sizes the UAT remediation by severity" {
+suggest_after_verify() {
   debug_project debug-uat-failed uat_failed
   next_up verify pass
   expect_case debug-uat-failed 0 "/lbwc:debug --resume -- Address UAT issues"
@@ -415,7 +416,7 @@ next_up() {
   assert_no_case_failures
 }
 
-@test "suggest-next after debug maps every session status to its resume step" {
+suggest_after_debug() {
   debug_project qa-pending qa_pending
   next_up debug
   expect_case qa-pending 0 "/lbwc:debug --resume -- Continue to QA verification"
@@ -441,7 +442,7 @@ next_up() {
   assert_no_case_failures
 }
 
-@test "suggest-next after config, setup commands or an unknown command points at the next project step" {
+suggest_after_setup() {
   project init
   shipped_phase 01-setup 01-01
   printf '{"issues":[{"id":1}]}\n' > "$PHASES/01-setup/known-issues.json"
@@ -489,7 +490,7 @@ next_up() {
   assert_no_case_failures
 }
 
-@test "suggest-next after status routes to the most urgent step and adds map and known-issue notes" {
+suggest_after_status() {
   project reverify
   shipped_phase 01-setup 01-01
   phase_detect_says next_phase_state=needs_reverification next_phase=1
@@ -574,7 +575,7 @@ next_up() {
   assert_no_case_failures
 }
 
-@test "suggest-next measures map staleness as changed files since the mapped commit" {
+suggest_map_staleness() {
   project half-changed
   shipped_phase 01-setup 01-01
   setup_unrelated_git_repo "$ROOT"
@@ -595,7 +596,22 @@ next_up() {
   assert_no_case_failures
 }
 
-@test "suggest-next after resume routes to the next step and always offers the progress view" {
+@test "suggest-next routes each command from project, verification and debug state" {
+  run_state_case suggest_debug_without_phases
+  run_state_case suggest_after_vibe
+  run_state_case suggest_after_plan
+  run_state_case suggest_after_qa
+  run_state_case suggest_after_fix
+  run_state_case suggest_after_verify
+  run_state_case suggest_after_debug
+  run_state_case suggest_after_setup
+  run_state_case suggest_after_status
+  run_state_case suggest_map_staleness
+  run_state_case suggest_after_resume
+  assert_no_case_failures
+}
+
+suggest_after_resume() {
   project reverify
   shipped_phase 01-setup 01-01
   phase_detect_says next_phase_state=needs_reverification next_phase=1

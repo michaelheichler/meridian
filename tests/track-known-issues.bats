@@ -4,6 +4,7 @@ bats_require_minimum_version 1.5.0
 
 load gate_case_helper
 load gate_case_files
+load state_case_helper
 
 setup() {
   REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/.." && pwd)"
@@ -138,7 +139,7 @@ expect_digest_is() {
   [ "$actual" = "$2" ] || record_case_failure "$1" "registry bytes changed, before=$2 after=$actual"
 }
 
-@test "track-known-issues sync-summaries builds an idempotent registry that keeps a suppression, and sync-verification counts a repeat, resolves on PASS and tolerates a missing file" {
+known_issues_sync() {
   write_summary
   run bash "$SCRIPT" sync-summaries "$PHASE_DIR"
   expect_case first-sync 0 "known_issues_status=present"
@@ -182,7 +183,7 @@ expect_digest_is() {
   assert_no_case_failures
 }
 
-@test "track-known-issues promote-todos: writes each root-canonical issue once and skips suppressed ones" {
+known_issues_promote_todos() {
   reset_phase
   write_summary
   bash "$SCRIPT" sync-summaries "$PHASE_DIR" >/dev/null
@@ -223,7 +224,7 @@ expect_digest_is() {
   assert_no_case_failures
 }
 
-@test "track-known-issues: rejects a missing STATE.md, a malformed registry, a bad phase directory and incomplete usage" {
+known_issues_rejects_bad_input() {
   write_summary
   bash "$SCRIPT" sync-summaries "$PHASE_DIR" >/dev/null
   run bash "$SCRIPT" promote-todos "$PHASE_DIR"
@@ -259,7 +260,7 @@ expect_digest_is() {
   assert_no_case_failures
 }
 
-@test "track-known-issues status, resolve and clear: report the registry state and update it" {
+known_issues_status_resolve_and_clear() {
   run bash "$SCRIPT" status "$PHASE_DIR"
   expect_case status-missing 0 "known_issues_status=missing"
   expect_output_has status-missing "known_issues_count=0"
@@ -307,7 +308,7 @@ coded_error_row() {
   expect_digest_is "$label" "$before"
 }
 
-@test "track-known-issues lookup-signature and suppress answer ok with the registry entry and mark only the match, or report a coded error and leave the registry untouched" {
+known_issues_lookup_and_suppress() {
   local phys_dir
   phys_dir="$(cd "$PHASE_DIR" && pwd -P)"
 
@@ -354,6 +355,15 @@ coded_error_row() {
   expect_entry_is repeat-keeps-first-via TransferTests .suppressed.via "\"$SUPPRESS_VIA\""
   expect_digest_is repeat-bytes "$digest_after_first"
 
+  assert_no_case_failures
+}
+
+@test "known issues preserve registry synchronization, promotion, resolution and suppression contracts" {
+  run_state_case known_issues_sync
+  run_state_case known_issues_promote_todos
+  run_state_case known_issues_rejects_bad_input
+  run_state_case known_issues_status_resolve_and_clear
+  run_state_case known_issues_lookup_and_suppress
   assert_no_case_failures
 }
 
