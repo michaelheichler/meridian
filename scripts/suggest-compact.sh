@@ -216,7 +216,8 @@ if [ ! -f "$USAGE_FILE" ]; then
   exit 0
 fi
 
-IFS='|' read -r FIELD1 FIELD2 FIELD3 USAGE_SOURCE < "$USAGE_FILE" 2>/dev/null || exit 0
+IFS='|' read -r FIELD1 FIELD2 FIELD3 < "$USAGE_FILE" 2>/dev/null || exit 0
+FIELD3=${FIELD3%%|*}
 
 if [ -n "${FIELD3:-}" ] && [[ "${FIELD2:-}" =~ ^[0-9]+([.][0-9]+)?$ ]] && [[ "${FIELD3:-}" =~ ^[0-9]+$ ]]; then
   FILE_SID="$FIELD1"
