@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-set -Eeuo pipefail
+set -u
+set -Eeo pipefail
 umask 077
 
 SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname "$0")" && pwd -P)
@@ -105,7 +106,7 @@ if [ -n "${TMUX:-}" ]; then
   exit 0
 fi
 
-session=$(bash "$SCRIPT_DIR/tmux-session-name.sh" --project-root "$project_root" --main-id "$main_id") || fail 'cannot derive a safe tmux session name'
+session=$(bash "$SCRIPT_DIR/tmux-session-name.sh" --project-root "$project_root" --control-root "$control_root" --main-id "$main_id") || fail 'cannot derive a safe tmux session name'
 if tmux has-session -t "$session" 2>/dev/null; then
   fail "tmux session already exists for this main ID: $session; inspect or clean up the orphan before retrying"
 fi

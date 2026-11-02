@@ -1,8 +1,13 @@
 #!/usr/bin/env bash
-set -Eeuo pipefail
+set -u
+set -Eeo pipefail
+
+SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname "$0")" && pwd -P)
+. "$SCRIPT_DIR/lib/lbwc-control-root.sh"
+. "$SCRIPT_DIR/lib/lbwc-config-files.sh"
 
 usage() {
-  printf '%s\n' 'Usage: tmux-session-name.sh --project-root PATH --main-id ID [--prefix PREFIX]' >&2
+  printf '%s\n' 'Usage: tmux-session-name.sh --project-root PATH --main-id ID [--control-root PATH] [--prefix PREFIX]' >&2
 }
 
 fail() {
@@ -23,13 +28,19 @@ safe_component() {
 
 project_root=""
 main_id=""
-prefix="lbwc"
+prefix=''
+requested_control_root=''
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --project-root)
       [ "$#" -ge 2 ] || fail '--project-root requires a path'
       project_root="$2"
+      shift 2
+      ;;
+    --control-root)
+      [ "$#" -ge 2 ] || fail '--control-root requires a path'
+      requested_control_root="$2"
       shift 2
       ;;
     --main-id)
@@ -58,7 +69,13 @@ done
 command -v shasum >/dev/null 2>&1 || fail 'shasum is unavailable; cannot derive a collision-resistant session name'
 
 project_root=$(CDPATH='' cd -- "$project_root" && pwd -P)
-prefix=$(safe_component "$prefix" 24) || fail 'prefix has no safe characters'
+if [ -z "$prefix" ]; then
+  control_root=$(lbwc_resolve_control_root "$requested_control_root" "$project_root" "$project_root" 2>/dev/null || true)
+  config='{}'
+  [ -z "$control_root" ] || config=$(read_existing_config "$control_root/config.json")
+  prefix=$(jq -er '.tmux_execution.session_name_prefix // "lbwc"' <<<"$config") || fail 'cannot read session prefix'
+fi
+prefix=$(safe_component "$prefix" 32) || fail 'prefix has no safe characters'
 project_slug=$(safe_component "$(basename "$project_root")" 40) || fail 'project root name has no safe characters'
 main_short=$(safe_component "$main_id" 8) || fail 'main ID has no safe characters'
 session_hash=$(printf '%s\0%s' "$project_root" "$main_id" | shasum -a 256) || fail 'cannot derive session name digest'
