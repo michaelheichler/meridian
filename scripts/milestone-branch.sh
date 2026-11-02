@@ -4,9 +4,9 @@ set -euo pipefail
 SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd)"
 . "$SCRIPT_DIR/lib/lbwc-settings.sh"
 
-action="${1:?Usage: milestone-branch.sh <start|complete> [planning-dir] [slug]}"
+action="${1:?Usage: milestone-branch.sh <start|complete|finish> [planning-dir] [slug]}"
 planning_dir="${2:-.lbwc-planning}"
-case "$action" in start|complete) ;; *) exit 1 ;; esac
+case "$action" in start|complete|finish) ;; *) exit 1 ;; esac
 config=$(lbwc_merged_config "$planning_dir/config.json")
 enabled=$(jq -r 'if .branch_per_milestone == null then false else .branch_per_milestone end' <<< "$config")
 if [ "$enabled" != true ]; then
@@ -26,14 +26,32 @@ if [ "$action" = complete ]; then
   fi
   exit 0
 fi
-if [ -n "$(git status --porcelain --untracked-files=all)" ]; then
-  printf 'Error: milestone branch requires a clean working tree\n' >&2
-  exit 1
-fi
 current=$(git symbolic-ref --quiet --short HEAD) || { printf 'Error: detached HEAD\n' >&2; exit 1; }
+if [ "$action" = finish ]; then
+  [ -f "$state" ] || { printf 'branch_action=no_managed_branch\n'; exit 0; }
+  base=$(jq -er '.base' "$state")
+  [ "$current" = "$base" ] && git merge-base --is-ancestor "$branch" HEAD || {
+    printf 'Error: finish requires the merged milestone on its original target\n' >&2
+    exit 1
+  }
+  git branch -d "$branch"
+  rm -f "$state"
+  printf 'branch_action=finished\n'
+  exit 0
+fi
 if [ "$current" = "$branch" ] && [ -f "$state" ]; then
   printf 'branch_action=already_started\nbranch=%s\n' "$branch"
   exit 0
+fi
+planning_path=$(CDPATH='' cd -- "$planning_dir" && pwd)
+repo_root=$(git rev-parse --show-toplevel)
+case "$planning_path" in
+  "$repo_root"/*) planning_relative="${planning_path#"$repo_root"/}" ;;
+  *) printf 'Error: planning directory must be inside the repository\n' >&2; exit 1 ;;
+esac
+if [ -n "$(git -C "$repo_root" status --porcelain --untracked-files=all -- . ":(top,literal,exclude)$planning_relative")" ]; then
+  printf 'Error: milestone branch requires a clean working tree outside planning\n' >&2
+  exit 1
 fi
 if git show-ref --verify --quiet "refs/heads/$branch"; then
   printf 'Error: milestone branch already exists without matching active state\n' >&2
