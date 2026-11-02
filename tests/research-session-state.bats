@@ -2,7 +2,7 @@
 
 load test_helper
 load gate_case_helper
-load state_case_helper
+load isolated_case_helper
 
 setup() {
   setup_temp_dir
@@ -227,14 +227,8 @@ CASES
 }
 
 @test "research session state preserves creation, migration, selection and completion contracts" {
-  run_state_case research_start
-  run_state_case research_complete
-  run_state_case research_get
-  run_state_case research_rejects_bad_input
-  run_state_case research_list
-  run_state_case research_latest
-  run_state_case research_migrate
-  assert_no_case_failures
+  run_scenario_cases research_start research_complete research_get research_rejects_bad_input \
+    research_list research_latest research_migrate
 }
 
 research_migrate() {

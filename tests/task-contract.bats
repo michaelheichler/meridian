@@ -1,7 +1,8 @@
 #!/usr/bin/env bats
 
+load test_helper
 load gate_case_helper
-load state_case_helper
+load isolated_case_helper
 
 setup() {
   ROOT="$(mktemp -d)"
@@ -342,14 +343,9 @@ contract_open_typed_capabilities() {
 }
 
 @test "task contracts preserve plan, command, capability, transition and snapshot constraints" {
-  run_state_case contract_open_plan
-  run_state_case contract_state_transitions
-  run_state_case contract_verify_drift
-  run_state_case contract_issue_exact_allowances
-  run_state_case contract_issue_typed_capabilities
-  run_state_case contract_open_typed_capabilities
-  run_state_case contract_assert_snapshot
-  assert_no_case_failures
+  run_scenario_cases contract_open_plan contract_state_transitions contract_verify_drift \
+    contract_issue_exact_allowances contract_issue_typed_capabilities \
+    contract_open_typed_capabilities contract_assert_snapshot
 }
 
 contract_assert_snapshot() {
