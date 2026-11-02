@@ -1,5 +1,6 @@
 ---
 category: supporting
+model: haiku
 disable-model-invocation: true
 description: Run health checks on LBWC installation and project setup.
 argument-hint: "[--cleanup] [--verbose]"
@@ -64,7 +65,7 @@ WARN if missing: "Install gh for GitHub CLI integration (used by maintainer rele
 ### 10. sort -V support
 
 `echo -e "1.0.2\n1.0.10" | sort -V 2>/dev/null | tail -1`
-PASS if result is "1.0.10". WARN if sort -V unavailable (fallback will be used).
+PASS if result is "1.0.10". WARN if sort -V is unavailable (use the fallback).
 
 ### Runtime Health
 
@@ -90,7 +91,7 @@ PASS if 0. WARN if any, list which markers.
 
 ### 15. Watchdog status
 
-If $TMUX is set, check if .lbwc-planning/.watchdog-pid exists and process is alive via kill -0.
+If the environment defines $TMUX, check if .lbwc-planning/.watchdog-pid exists and process is alive via kill -0.
 PASS if alive or not in tmux. WARN if dead watchdog in tmux.
 
 ### 16. CLAUDE.md sections
@@ -103,7 +104,7 @@ If `.lbwc-planning/` exists (project initialized):
 - WARN if `stale` is true, show missing sections and/or version mismatch detail
 - SKIP if no `.lbwc-planning/` directory (not bootstrapped)
 
-If user invoked with `--cleanup`: run `bash "{LINK}/scripts/check-claude-md-staleness.sh" --fix 2>&1` and report result. The fix must refresh only LBWC-owned sections in place, preserve all other `CLAUDE.md` content verbatim, and add `## Code Intelligence` only when no Code Intelligence heading/guidance already exists.
+If user invoked with `--cleanup`, run `bash "{LINK}/scripts/check-claude-md-staleness.sh" --fix 2>&1` and report result. The fix must refresh only LBWC-owned sections in place, preserve all other `CLAUDE.md` content verbatim, and add `## Code Intelligence` only when no Code Intelligence heading/guidance already exists.
 
 ### 17. State consistency
 
@@ -121,14 +122,14 @@ Run `bash "{LINK}/scripts/rtk-manager.sh" doctor-json 2>/dev/null`.
 
 - Parse JSON output: `doctor_status`, `doctor_detail`, `compatibility`, `compatibility_basis`, `updated_input_risk`, `proof_source`, `diagnostic_caveat`, `upstream_issue`
 - SKIP only when RTK is absent and helper JSON reports no local/global RTK artifacts, no LBWC RTK receipt, and no partial install evidence
-- WARN when binary-only, hook-active-unverified, artifact-only, missing/error config, settings are unreadable, or a cached explicit update check says RTK is outdated
+- WARN when binary-only, hook-active-unverified, artifact-only, missing/error config, settings are unreadable, or a cached explicit update check reports an outdated RTK version
 - PASS when `compatibility` is `"verified"` with a concrete `proof_source`, even if `updated_input_risk=true`, the runtime proof verifies this local RTK/LBWC hook setup
 - In normal output, do not warn solely because anthropics/claude-code#15897 still exists after proof. When invoked with `--verbose`, include `diagnostic_caveat`/`upstream_issue` as detail so the upstream caveat remains visible without downgrading health.
 - Doctor must not query the network, run RTK history/stats, or run runtime smoke, runtime smoke requires explicit Claude Code Bash-tool orchestration and belongs in `/lbwc:rtk verify`. Update availability may only come from cached explicit `/lbwc:rtk status --check-updates` or `/lbwc:rtk update` data.
 
 ### 19. Agent routing evidence
 
-If `.lbwc-planning/.agent-routing-evidence.jsonl` exists, run `bash "{LINK}/scripts/agent-routing-evidence.sh" check` and report its compact summary. PASS when no model mismatches are recorded. WARN when any model mismatch or stale running entry is reported. SKIP when the evidence file is absent.
+If `.lbwc-planning/.agent-routing-evidence.jsonl` exists, run `bash "{LINK}/scripts/agent-routing-evidence.sh" check` and report its compact summary. PASS when the report records no model mismatches. WARN when the report contains any model mismatch or stale running entry. SKIP when the evidence file is absent.
 
 ### 20. Temporary agent runs
 
@@ -189,12 +190,12 @@ If user invoked with `--cleanup` (check for this in the command arguments):
 
 - Run `bash "{LINK}/scripts/doctor-cleanup.sh" cleanup 2>&1` for runtime findings
 - Run `bash "{LINK}/scripts/check-claude-md-staleness.sh" --fix 2>&1` for stale CLAUDE.md (non-destructive in-place refresh of LBWC-owned sections only)
-- Report what was cleaned
+- Report what you cleaned
 - Show updated counts
 
 ## Guard
 
-All checks are read-only unless `--cleanup` is explicit. Cleanup is limited to LBWC-owned stale state. Never modify project source or remote state.
+All checks are read-only unless `--cleanup` is explicit. Clean up only LBWC-owned stale state. Never modify project source or remote state.
 
 ## Next Up
 

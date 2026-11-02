@@ -1,5 +1,6 @@
 ---
 category: supporting
+model: haiku
 disable-model-invocation: true
 description: Switch between work profiles or create custom ones. Profiles change effort, autonomy, and verification in one go.
 argument-hint: "[profile-name | save | delete <name>]"
@@ -19,7 +20,7 @@ Config:
 
 ## Guard
 
-If no .lbwc-planning/ dir: STOP "Run /lbwc:init first." (check `.lbwc-planning/config.json`)
+If the .lbwc-planning/ directory does not exist, STOP "Run /lbwc:init first." (check `.lbwc-planning/config.json`)
 
 ## Built-in Profiles
 
@@ -32,30 +33,29 @@ If no .lbwc-planning/ dir: STOP "Run /lbwc:init first." (check `.lbwc-planning/c
 
 ## Behavior
 
-### No arguments: List and switch
+### List and switch with no arguments
 
 1. Read config.json for `active_profile` (default: "default") + `custom_profiles`. Display table with * on active. If active_profile is "custom": show "Active: custom (modified from {last_profile})".
-2. AskUserQuestion: "Which profile?" Options: all profiles + "Create new profile". Mark current "(active)".
-3. Apply: update effort/autonomy/verification_tier in config.json, set active_profile. Display changed values with ➜. If already matching: "✓ Already on {name}". If "Create new profile": go to Save flow.
+2. AskUserQuestion "Which profile?" Offer all profiles + "Create new profile" as options. Mark current "(active)".
+3. Apply by updating effort/autonomy/verification_tier in config.json and setting active_profile. Display changed values with ➜. If already matching, show "✓ Already on {name}". If "Create new profile", go to Save flow.
 
-### `save`: Create custom profile
+### `save` creates a custom profile
 
 **S1.** AskUserQuestion: "From current settings" (use current values) | "From scratch" (pick each)
-**S2.** If "From scratch", 3 AskUserQuestions:
-- Effort: thorough | balanced | fast | turbo
-- Autonomy: cautious | standard | confident | pure-vibe
-- Verification: quick | standard | deep | skip
+**S2.** If "From scratch", ask 3 AskUserQuestions in this order.
 
-**S3.** AskUserQuestion for name: suggest 2-3 contextual names + user can type own.
-**S4.** Validate: no built-in clash, no spaces (suggest hyphens), 1-30 chars. Add to `custom_profiles` in config.json. Ask "Switch to {name} now?" Apply if yes.
+Ask for effort (thorough | balanced | fast | turbo), then autonomy (cautious | standard | confident | pure-vibe). Finally ask for verification (quick | standard | deep | skip).
 
-### Direct name: `profile <name>`
+**S3.** AskUserQuestion for a name, suggest 2-3 contextual names and allow the user to type their own.
+**S4.** Validate with no built-in clash, no spaces (suggest hyphens), and 1-30 chars. Add to `custom_profiles` in config.json. Ask "Switch to {name} now?" Apply if yes.
 
-If $ARGUMENTS matches a profile: apply immediately (no listing). If unknown: "⚠ Unknown profile: {name}" + list available.
+### Direct name via `profile <name>`
+
+If $ARGUMENTS matches a profile, apply immediately (no listing). If unknown, show "⚠ Unknown profile: {name}" + list available.
 
 ### `delete <name>`
 
-Built-in: "⚠ Cannot delete built-in profile." Not found: "⚠ Profile not found." Otherwise: remove from custom_profiles. If active, reset to "default".
+For a built-in profile, show "⚠ Cannot delete built-in profile." If not found, show "⚠ Profile not found." Otherwise, remove from custom_profiles. If active, reset to "default".
 
 ## Output Format
 

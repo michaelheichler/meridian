@@ -1,5 +1,6 @@
 ---
 category: supporting
+model: haiku
 description: Inspect and configure detected Claude Code models through lbwc-model.
 argument-hint: '[--json] <refresh|show|activate|set|copy|validate|catalog> [arguments]'
 allowed-tools: Bash, AskUserQuestion
@@ -29,7 +30,7 @@ When `$ARGUMENTS` is empty, run the interactive main-session flow in this order:
    - `bash "${CLAUDE_PLUGIN_ROOT}/scripts/lbwc-model" copy .lbwc-planning <source-profile> <destination-profile>`
 5. Run `bash "${CLAUDE_PLUGIN_ROOT}/scripts/lbwc-model" validate .lbwc-planning`, then show the updated table.
 
-For reasoning, pass JSON `null` for the Claude Code default. A detected value named `default` is distinct and must be passed as JSON string `"default"`. Encode every other detected reasoning value as a JSON string without changing its spelling.
+For reasoning, pass JSON `null` for the Claude Code default. A detected value named `default` is distinct, pass it as JSON string `"default"`. Encode every other detected reasoning value as a JSON string without changing its spelling.
 
 When `$ARGUMENTS` is present, do not ask questions. Treat it as a deterministic operation and insert `.lbwc-planning` immediately after the operation name. Supported forms are:
 
@@ -45,7 +46,7 @@ Pass `--json` before the CLI operation. Return its output unchanged in machine m
 
 ## Failure and recovery
 
-On refresh, show, activate, set, copy, validate, or catalog failure, show the exact `lbwc-model` error and stop. Do not edit state files, retry through another interface, infer a replacement value, or treat a failed validation as success. After the cause is fixed, rerun the same `lbwc-model` operation.
+On refresh, show, activate, set, copy, validate, or catalog failure, show the exact `lbwc-model` error and stop. Do not edit state files, retry through another interface, infer a replacement value, or treat a failed validation as success. After fixing the cause, rerun the same `lbwc-model` operation.
 
 ## Output Format
 

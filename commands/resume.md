@@ -1,5 +1,6 @@
 ---
 category: supporting
+model: sonnet
 disable-model-invocation: true
 description: Restore project context from .lbwc-planning/ state.
 argument-hint: "[session-or-phase]"
@@ -90,7 +91,7 @@ fi`
    Execution evidence:
    - Canonical PLAN and SUMMARY files under `.lbwc-planning/phases/`
    - The most recent terminal SUMMARY
-   - Task contracts and generated-agent manifest state when a build may be interrupted
+   - Task contracts and generated-agent manifest state when a build may have stopped before completion
 
    Skip missing optional files. A missing required PLAN, contract, or terminal summary remains a blocker.
 2. **Compute progress from phase-detect.sh output:** Use the pre-computed `phase_count`, `next_phase`, `next_phase_state`, `next_phase_plans`, `next_phase_summaries`, `uat_issues_phase`, `uat_issues_slug`, `uat_issues_phases`, and `uat_issues_count` values. Map `next_phase_state` to display: `needs_uat_remediation` → "⚠ Needs remediation", `needs_verification` → "⏳ Needs UAT verification", `needs_plan_and_execute` → "not started", `needs_execute` → "in progress", `all_done` → "complete". **Per-phase status:** any phase whose number appears in the comma-separated `uat_issues_phases` list has unresolved UAT issues, mark it "⚠ Needs remediation". Only mark a phase as "✓ Done" if its number is NOT in `uat_issues_phases` and it has completed execution (SUMMARY count ≥ PLAN count). Phases not yet executed are "not started".
@@ -99,9 +100,9 @@ fi`
    bash "/tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/track-known-issues.sh" promote-todos "{phase-dir}" 2>/dev/null || true
    bash "/tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/track-known-issues.sh" status "{phase-dir}" 2>/dev/null
    ```
-   Parse `known_issues_count` from the status output. For each phase with `known_issues_count > 0`, include in the dashboard after the phase table: `⚠ Phase {NN}: N known issue(s) deferred, run /lbwc:list-todos to review`. Omit for phases with zero known issues. The `promote-todos` call is a backfill, it ensures any known issues not yet in `STATE.md ## Todos` are promoted on resume.
+   Parse `known_issues_count` from the status output. For each phase with `known_issues_count > 0`, include in the dashboard after the phase table: `⚠ Phase {NN}: N known issue(s) deferred, run /lbwc:list-todos to review`. Omit for phases with zero known issues. The `promote-todos` call is a backfill, it promotes any known issues not yet in `STATE.md ## Todos` on resume.
 3. **Detect interrupted builds:** Query task contracts and the generated-agent manifest. A contract in `dispatched`, `running`, `awaiting_review`, or `blocked`, or a generated member still `registered` or `running`, means the build is incomplete. Confirm the corresponding PLAN, commits, verify results, and terminal SUMMARY before choosing recovery.
-4. **Present dashboard:** Phase Banner "Context Restored / {project name}" with: core value, phase/progress, overall progress bar, key decisions, todos, blockers (⚠), last completed, build status (✓ completed / ⚠ interrupted), session notes. Run `bash /tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/suggest-next.sh resume`.
+4. **Present dashboard:** Phase Banner "Context Restored / {project name}" with core value, phase/progress, overall progress bar, key decisions, todos, blockers (⚠), last completed, build status (✓ completed / ⚠ interrupted), session notes. Run `bash /tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/suggest-next.sh resume`.
 
 ## Output Format
 
