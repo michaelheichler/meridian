@@ -27,7 +27,7 @@ Store the plugin root path output above as `{plugin-root}` for use in script inv
 
 @${CLAUDE_PLUGIN_ROOT}/references/agent-spawn-protocol.md
 
-Every QA spawn follows `{plugin-root}/references/agent-spawn-protocol.md`: issue a solo read-only QA contract with `scripts/task-contract.sh`, run generic `scripts/agent-generator.sh qa`, then advance that exact contract to `dispatched`. The main session owns mutable planning state, verification persistence, Git, and user questions.
+Every QA spawn follows `{plugin-root}/references/agent-spawn-protocol.md`. Issue a solo read-only QA contract with `scripts/task-contract.sh`, run generic `scripts/agent-generator.sh qa`, then advance that exact contract to `dispatched`. The main session owns mutable planning state, verification persistence, Git, and user questions.
 
 Current state:
 
@@ -35,7 +35,7 @@ Current state:
 !`head -40 .lbwc-planning/STATE.md 2>/dev/null || echo "No state found"`
 ```
 
-Config: Pre-injected by SessionStart hook. Override with --effort flag.
+The SessionStart hook injects config. Override with the --effort flag.
 
 Phase directories:
 
@@ -93,7 +93,7 @@ Refresh the saved Claude capability catalog before any QA contract or spawn:
 bash "{plugin-root}/scripts/lbwc-model" refresh .lbwc-planning
 ```
 
-This persists workflow-backend availability as `.workflow` on `.lbwc-planning/claude-capabilities.json`, the authority the execution-mode choice in Step 3 reads before offering or resolving `workflow`. A non-zero exit here does not stop QA. It leaves `RESOLVED_BACKEND` at `in_process`, so QA proceeds on whatever catalog already exists. Only a run that goes on to request or choose `workflow` can still be blocked, by step 0 of `workflow-spawn-protocol.md` and by `workflow-generator.sh`'s own live re-validation at generation time. Skip this gate when `.lbwc-planning/` is missing. Do not create a planning directory here.
+This persists workflow-backend availability as `.workflow` on `.lbwc-planning/claude-capabilities.json`, the authority the execution-mode choice in Step 3 reads before offering or resolving `workflow`. A non-zero exit here does not stop QA. It leaves `RESOLVED_BACKEND` at `in_process`, so QA proceeds on whatever catalog already exists. Step 0 of `workflow-spawn-protocol.md` and live re-validation by `workflow-generator.sh` can still block a run that requests or chooses `workflow`. Skip this gate when `.lbwc-planning/` is missing. Do not create a planning directory here.
 
 ## Guard
 
@@ -128,10 +128,10 @@ This persists workflow-backend availability as `.workflow` on `.lbwc-planning/cl
   Use the refreshed phase-detect output for all subsequent guard checks and steps.
 - **Auto-detect phase** (no explicit number): Phase detection is pre-computed in Context above. Use `next_phase` and `next_phase_slug` for the target phase.
   - If `next_phase_state=needs_qa_remediation`, target that phase directly.
-    - If the remediation stage is `plan` or `execute`, STOP and tell the user to run `/lbwc:vibe` to continue QA remediation first, standalone QA must not mint a round VERIFICATION before re-verification is actually ready.
+    - If the remediation stage is `plan` or `execute`, STOP and tell the user to run `/lbwc:vibe` to continue QA remediation first, standalone QA must not mint a round VERIFICATION before re-verification is ready.
     - If the remediation stage is `verify` or `done`, standalone QA re-verifies the authoritative round artifact rather than overwriting the frozen phase-level VERIFICATION.
-  - If `first_qa_attention_phase` is set and `qa_attention_status` is `pending`, `failed`, or `verify`, target that phase directly, existing QA artifacts may be stale or failed even when a file already exists, and verify-stage remediation rounds remain directly re-runnable even if an earlier phase is unfinished.
-  - Otherwise, to find the first phase needing QA: scan phase dirs for first with completed `*-SUMMARY.md` files but no authoritative QA verification artifact (no numbered final VERIFICATION, no brownfield plain `VERIFICATION.md`, no wave fallback). Found: announce "Auto-detected Phase {NN} ({slug})". All verified: STOP "All phases verified."
+  - If the detector supplies `first_qa_attention_phase` and `qa_attention_status` is `pending`, `failed`, or `verify`, target that phase directly. Existing QA artifacts may be stale or failed even when a file exists, and verify-stage remediation rounds remain re-runnable even if an earlier phase has incomplete work.
+  - Otherwise scan phase dirs for the first with completed `*-SUMMARY.md` files but no authoritative QA verification artifact (no numbered final VERIFICATION, no brownfield plain `VERIFICATION.md`, no wave fallback). Announce "Auto-detected Phase {NN} ({slug})" when found. If all phases have verification, STOP with "All phases verified."
 - Phase not built (no SUMMARYs): STOP "Phase {NN} has no completed plans. Run /lbwc:vibe first."
 
 ## Debug Session Routing
@@ -168,7 +168,7 @@ When routed here, skip the standard phase-resolution Steps entirely. Instead:
   eval "$(bash "{plugin-root}/scripts/debug-session-state.sh" increment-qa .lbwc-planning)"
    ```
 
-1. Resolve tier: same logic as Step 1 below (--tier flag > --effort flag > config default > Standard).
+1. Resolve the tier with the same logic as Step 1 below (--tier flag > --effort flag > config default > Standard).
 
 2. Issue a read-only QA contract and generate the agent:
 
@@ -185,11 +185,11 @@ When routed here, skip the standard phase-resolution Steps entirely. Instead:
 
     Before composing the QA task description, evaluate installed skills visible in your system context. Read each selected skill description. Select every materially helpful skill for this verification pass. Include supporting domain skills surfaced by the prompt, logs, error text, related files, or stack context.
 
-    The QA prompt MUST begin with exactly one skill outcome block. Use `<skill_activation>{For each selected skill: "Call Skill({skill-name})"}</skill_activation>` when skills are preselected. Otherwise use `<skill_no_activation>Evaluated installed skills for this task. No skills were preselected at orchestration time. Reason: {brief task-specific reason}.</skill_no_activation>`. Do not omit both blocks.
+    The QA prompt MUST begin with exactly one skill outcome block. Use `<skill_activation>{For each selected skill: "Call Skill({skill-name})"}</skill_activation>` when you preselect skills. Otherwise use `<skill_no_activation>Evaluated installed skills for this task. The orchestrator preselected no skills. Reason: {brief task-specific reason}.</skill_no_activation>`. Do not omit both blocks.
 
-    State the skill outcome in your response before spawning the agent. For example, write "Skills: activating {skill-name}" or "Skills: none preselected, {reason}". This is exactly one explicit skill outcome block. Select the single most direct skill, plus materially helpful adjacent skills. If the prompt or error mentions SwiftData, include `swiftdata` with relevant test, build, and debug skills. After calling `Skill(...)`, if the loaded skill's instructions reference additional files, sibling docs, or follow-up read steps relevant to the active task, read those specific files before reasoning or acting. Do not scan entire skill folders or read unrelated references.
+    State the skill outcome in your response before spawning the agent. For example, write "Skills: activating {skill-name}" or "Skills: none preselected, {reason}". This is exactly one explicit skill outcome block. Select the single most direct skill, plus materially helpful adjacent skills. If the prompt or error mentions SwiftData, include `swiftdata` with relevant testing skills and any build or debug skills the task needs. After calling `Skill(...)`, if the loaded skill's instructions reference additional files, sibling docs, or follow-up read steps relevant to the active task, read those specific files before reasoning or acting. Do not scan entire skill folders or read unrelated references.
 
-  If one or more skills were preselected, run `bash "{plugin-root}/scripts/extract-skill-follow-up-files.sh" "{all preselected skill names from the activation block}" 2>/dev/null || true` before spawning the debug-session QA agent. If the helper prints a `<skill_follow_up_files>` block, paste it immediately after the follow-up-read sentence in the spawned payload. Otherwise omit that block.
+  If you preselected one or more skills, run `bash "{plugin-root}/scripts/extract-skill-follow-up-files.sh" "{all preselected skill names from the activation block}" 2>/dev/null || true` before spawning the debug-session QA agent. If the helper prints a `<skill_follow_up_files>` block, paste it immediately after the follow-up-read sentence in the spawned payload. Otherwise omit that block.
 
   Render the prompt prefix from `{plugin-root}/references/skill-activation-payload.md` with the local `skill_calls`, task-specific `no_skill_reason`, and optional helper-emitted `follow_up_files_block`. Prepend the rendered bytes to the child prompt so the rendered skill outcome tag is its first line. Do not paste the template path, variables, or an unresolved `@` include into the child prompt.
 
@@ -243,19 +243,19 @@ When routed here, skip the standard phase-resolution Steps entirely. Instead:
    STOP after presenting. Do not continue to the standard phase QA steps.
 </debug_session_qa>
 
-Note: Continuous verification handled by hooks. This command is for deep, on-demand verification only.
+Hooks handle continuous verification. This command is for deep, on-demand verification only.
 
 ## Steps
 
-1. **Resolve tier:** Priority order: `--tier` flag > `--effort` flag > config
+1. **Resolve tier:** Use priority order `--tier` flag > `--effort` flag > config
   default > Standard.
   Keep effort profile as `QA_EFFORT_PROFILE` (thorough|balanced|fast|turbo).
-  Effort mapping: turbo=skip (exit "QA skipped in turbo mode"), fast=quick,
-  balanced=standard, thorough=deep.
+  Map turbo to skip (exit "QA skipped in turbo mode"), fast to quick,
+  balanced to standard, and thorough to deep.
   Read `{plugin-root}/references/effort-profile-{profile}.md`.
   Context overrides: >15 requirements or last phase before ship → Deep.
 
-2. **Resolve phase:** Use `.lbwc-planning/phases/` for phase directories.
+2. **Resolve phase:** Use `.lbwc-planning/phases/` for phase directories. Before any standard phase QA contract or spawn, read the QA ownership routing and Explicit skip guard sections of `{plugin-root}/references/execute-post-build-qa.md` and follow them, binding `PLUGIN_ROOT` to `{plugin-root}`. Keep skip reasons in main-session verification evidence. This task ownership rule does not apply to debug-session QA.
 
 3. **Spawn QA:**
     - **Choose the execution backend.** Follow step 0 of `{plugin-root}/references/workflow-spawn-protocol.md`, with `<control-root>` bound to `.lbwc-planning`. Use these literal `AskUserQuestion` fields when that step's `ask` branch applies:
@@ -339,13 +339,13 @@ Note: Continuous verification handled by hooks. This command is for deep, on-dem
 
     - Before composing the QA task description, evaluate installed skills visible in your system context. Read each selected skill description and select every materially helpful skill for this verification pass, including supporting domain skills surfaced by the prompt, logs, error text, related files, or stack context.
 
-      The QA prompt MUST begin with exactly one skill outcome block. Use `<skill_activation>{For each selected skill: "Call Skill({skill-name})"}</skill_activation>` when skills are preselected. Otherwise use `<skill_no_activation>Evaluated installed skills for this task. No skills were preselected at orchestration time. Reason: {brief task-specific reason}.</skill_no_activation>`. Do not omit both blocks.
+      The QA prompt MUST begin with exactly one skill outcome block. Use `<skill_activation>{For each selected skill: "Call Skill({skill-name})"}</skill_activation>` when you preselect skills. Otherwise use `<skill_no_activation>Evaluated installed skills for this task. The orchestrator preselected no skills. Reason: {brief task-specific reason}.</skill_no_activation>`. Do not omit both blocks.
 
       State the skill outcome in your response before spawning the agent. This is exactly one explicit skill outcome block. Select the single most direct skill, plus materially helpful adjacent skills. After calling `Skill(...)`, if the loaded skill's instructions reference additional files, sibling docs, or follow-up read steps relevant to the active task, read those specific files before reasoning or acting. Do not scan entire skill folders or read unrelated references.
 
-      If the prompt or error mentions SwiftData, include `swiftdata` with relevant test, build, and debug skills.
+      If the prompt or error mentions SwiftData, include `swiftdata` with relevant testing skills and any build or debug skills the task needs.
 
-      If one or more skills were preselected, run `bash "{plugin-root}/scripts/extract-skill-follow-up-files.sh" "{all preselected skill names from the activation block}" 2>/dev/null || true` before spawning the phase QA agent. If the helper prints a `<skill_follow_up_files>` block, paste it immediately after the follow-up-read sentence in the spawned payload. Otherwise omit that block.
+      If you preselected one or more skills, run `bash "{plugin-root}/scripts/extract-skill-follow-up-files.sh" "{all preselected skill names from the activation block}" 2>/dev/null || true` before spawning the phase QA agent. If the helper prints a `<skill_follow_up_files>` block, paste it immediately after the follow-up-read sentence in the spawned payload. Otherwise omit that block.
 
       Render the prompt prefix from `{plugin-root}/references/skill-activation-payload.md` with the local `skill_calls`, task-specific `no_skill_reason`, and optional helper-emitted `follow_up_files_block`. Prepend the rendered bytes to the child prompt so the rendered skill outcome tag is its first line. Do not paste the template path, variables, or an unresolved `@` include into the child prompt.
 
@@ -387,7 +387,7 @@ Note: Continuous verification handled by hooks. This command is for deep, on-dem
       bash "{plugin-root}/scripts/track-known-issues.sh" promote-todos "{phase-dir}" 2>/dev/null || true
       ```
 
-      Phase-level `VERIFICATION.md` merges newly found pre-existing issues into `{phase-dir}/known-issues.json` without clearing the execution-time backlog. Round-scoped `R{RR}-VERIFICATION.md` is authoritative for unresolved known issues and prunes/clears the registry when issues are fixed.
+      Phase-level `VERIFICATION.md` merges newly found pre-existing issues into `{phase-dir}/known-issues.json` without clearing the execution-time backlog. Round-scoped `R{RR}-VERIFICATION.md` is authoritative for unresolved known issues and prunes/clears the registry when QA confirms the fixes.
 
     - Then run:
 
@@ -396,7 +396,7 @@ Note: Continuous verification handled by hooks. This command is for deep, on-dem
       QA_GATE_ROUTING=$(printf '%s\n' "$QA_GATE" | awk -F= '/^qa_gate_routing=/{print $2; exit}')
       ```
 
-    - Follow `QA_GATE_ROUTING` literally:
+    - Use the exact `QA_GATE_ROUTING` value:
       - `PROCEED_TO_UAT` → if `VERIF_PATH` is round-scoped (`remediation/qa/round-*/R*-VERIFICATION.md`), persist the remediation transition first:
 
         ```bash
@@ -417,8 +417,8 @@ Note: Continuous verification handled by hooks. This command is for deep, on-dem
         bash "{plugin-root}/scripts/qa-remediation-state.sh" init "{phase-dir}" 2>/dev/null || true
         ```
 
-        Then display that the phase-level QA result was written, but the deterministic gate still requires remediation, tell the user to continue via `/lbwc:vibe`. Do **not** continue to the generic verified presentation. If `qa_gate_process_exception_evidence_missing=true`, say the round has a clean verification result but lacks recorded remediation-artifact evidence, and the next round should record an existing remediation `RNN-PLAN.md`/`RNN-SUMMARY.md` or valid original phase `PLAN.md`. If `qa_gate_known_issues_override=true`, note that the contract checks passed but `{qa_gate_known_issue_count}` tracked known issues remain unresolved in `{phase-dir}/known-issues.json`.
-      - `QA_RERUN_REQUIRED` → display that the persisted verification artifact is invalid or incomplete and must be re-run before it can be trusted. Do **not** present it as authoritative.
+        Then display that the main session wrote the phase-level QA result, but the deterministic gate still requires remediation, tell the user to continue via `/lbwc:vibe`. Do **not** continue to the generic verified presentation. If `qa_gate_process_exception_evidence_missing=true`, say the round has a clean verification result but lacks recorded remediation-artifact evidence, and the next round should record an existing remediation `RNN-PLAN.md`/`RNN-SUMMARY.md` or valid original phase `PLAN.md`. If `qa_gate_known_issues_override=true`, note that the contract checks passed but `{qa_gate_known_issue_count}` tracked known issues remain unresolved in `{phase-dir}/known-issues.json`.
+      - `QA_RERUN_REQUIRED` → display that the persisted verification artifact is invalid or incomplete and requires a QA re-run before the main session can trust it. Do **not** present it as authoritative.
 
 5. **Present:** Per @${CLAUDE_PLUGIN_ROOT}/references/lbwc-brand-essentials.md:
 
@@ -436,7 +436,7 @@ Note: Continuous verification handled by hooks. This command is for deep, on-dem
 
     ```
 
-**Discovered Issues:** Collect pre-existing failures, out-of-scope bugs, and unrelated issues. De-duplicate by test name and file. Keep the first message for duplicate pairs. Append the list after the result box. Show at most 20 entries. If more exist, append `... and {N} more`:
+**Discovered Issues:** Collect pre-existing failures, out-of-scope bugs, and unrelated issues. De-duplicate by test name and file. Keep the first message for duplicate pairs, then append the list after the result box with at most 20 entries. If more exist, append `... and {N} more`:
 
 ```text
   Discovered Issues:
@@ -445,7 +445,7 @@ Note: Continuous verification handled by hooks. This command is for deep, on-dem
   Registry: {phase-dir}/known-issues.json
 ```
 
-This display is supplemental to the phase registry. After `VERIFICATION.md` is written, the orchestrator must sync these issues into `{phase-dir}/known-issues.json` before reading the deterministic gate. Do NOT create todos automatically or enter an interactive loop here. If no discovered issues: omit the section entirely. Cap the list at 20 entries. After displaying discovered issues, STOP. Do not take further action.
+This display supplements the phase registry. After writing `VERIFICATION.md`, the orchestrator must sync these issues into `{phase-dir}/known-issues.json` before reading the deterministic gate. Do NOT create todos automatically or enter an interactive loop here. Omit the section when no issues exist, and cap it at 20 entries otherwise. After displaying discovered issues, STOP without taking further action.
 
 Run:
 
@@ -458,7 +458,7 @@ Then display the output.
 ## Failure and recovery
 
 - If a contract, generator, spawn, qa_verdict validation, or writer step fails, stop and report the error verbatim. Do not create an uncontracted QA fallback.
-- If the workflow generator fails or the `Workflow` call is denied, leave the contract `planned` and report the failure verbatim. Do not fall back to `in_process`.
+- If the workflow generator fails or the runtime denies the `Workflow` call, leave the contract `planned` and report the failure verbatim. Do not fall back to `in_process`.
 - Preserve phase and debug-session state until the main-session write succeeds.
 
 ## Output Format
