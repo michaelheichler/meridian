@@ -35,7 +35,7 @@ latest_matching_file() {
 }
 
 read_native_fields() {
-  jq -r '[
+  jq -er 'if type != "object" then error("expected object") else [
     (.model.display_name // .model.id // "Claude"),
     (.effort // .model.effort // .model.reasoning_effort // "default"),
     (.workspace.project_dir // .workspace.current_dir // .cwd // ""),
@@ -51,8 +51,18 @@ read_native_fields() {
     (.rate_limits.five_hour.used_percentage // ""),
     (.rate_limits.five_hour.resets_at // ""),
     (.rate_limits.seven_day.used_percentage // ""),
-    (.rate_limits.seven_day.resets_at // "")
-  ] | map(tostring) | join("\u001f")' <<< "$STATUS_INPUT"
+    (.rate_limits.seven_day.resets_at // ""),
+    (if (.session_id | type) == "string"
+        and (.session_id | test("^[A-Za-z0-9][A-Za-z0-9._-]*$"))
+        and (.context_window.used_percentage | type) == "number"
+        and .context_window.used_percentage >= 0 and .context_window.used_percentage <= 100
+        and (.context_window.context_window_size | type) == "number"
+        and .context_window.context_window_size > 0
+        and (.context_window.context_window_size | floor) == .context_window.context_window_size
+      then [.session_id, .context_window.used_percentage, .context_window.context_window_size, "statusline"]
+        | map(tostring) | join("|")
+      else "" end)
+  ] | map(tostring) | join("\u001f") end' <<< "$STATUS_INPUT"
 }
 
 read_manifest_state() {

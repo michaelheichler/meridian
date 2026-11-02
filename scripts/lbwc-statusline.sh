@@ -7,10 +7,6 @@ command -v jq >/dev/null 2>&1 || {
 }
 
 STATUS_INPUT=$(cat 2>/dev/null) || STATUS_INPUT=""
-if ! jq -e 'type == "object"' >/dev/null 2>&1 <<< "$STATUS_INPUT"; then
-  printf 'LBWC status unavailable: invalid Claude Code input\n'
-  exit 0
-fi
 
 CYAN='\033[36m'
 GREEN='\033[32m'
@@ -27,7 +23,11 @@ SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname "$0")" && pwd -P)
 . "$SCRIPT_DIR/lib/lbwc-statusline-state.sh"
 . "$SCRIPT_DIR/lib/lbwc-statusline-tmux.sh"
 
-IFS=$'\x1f' read -r MODEL EFFORT PROJECT_ROOT CONTEXT_PERCENT INPUT_TOKENS OUTPUT_TOKENS CACHE_CREATE CACHE_READ COST DURATION_MS LINES_ADDED LINES_REMOVED FIVE_PERCENT FIVE_RESET SEVEN_PERCENT SEVEN_RESET <<< "$(read_native_fields)"
+NATIVE_FIELDS=$(read_native_fields 2>/dev/null) || {
+  printf 'LBWC status unavailable: invalid Claude Code input\n'
+  exit 0
+}
+IFS=$'\x1f' read -r MODEL EFFORT PROJECT_ROOT CONTEXT_PERCENT INPUT_TOKENS OUTPUT_TOKENS CACHE_CREATE CACHE_READ COST DURATION_MS LINES_ADDED LINES_REMOVED FIVE_PERCENT FIVE_RESET SEVEN_PERCENT SEVEN_RESET CONTEXT_RECORD <<< "$NATIVE_FIELDS"
 PROJECT_ROOT=${PROJECT_ROOT:-$PWD}
 [ -d "$PROJECT_ROOT" ] || PROJECT_ROOT="$PWD"
 PROJECT_NAME=$(sanitize_label "$(basename "$PROJECT_ROOT")")
@@ -44,6 +44,12 @@ else
 fi
 
 PLANNING_DIR="$PROJECT_ROOT/.lbwc-planning"
+if [ -d "$PLANNING_DIR" ] && [ -n "$CONTEXT_RECORD" ]; then
+  CONTEXT_TMP="$PLANNING_DIR/.context-usage.statusline.$$"
+  if printf '%s\n' "$CONTEXT_RECORD" > "$CONTEXT_TMP" 2>/dev/null; then
+    mv -f -- "$CONTEXT_TMP" "$PLANNING_DIR/.context-usage" 2>/dev/null || true
+  fi
+fi
 read_orchestration_state
 IN_TMUX='false'
 [ -n "${TMUX:-}" ] && IN_TMUX='true'

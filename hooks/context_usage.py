@@ -1,17 +1,13 @@
-"""PostToolUse hook: sample session context occupancy into .lbwc-planning/.context-usage.
-
-Writes the pipe-delimited record `session_id|used_pct|ctx_size_tokens` that
-scripts/lib/resolve-caveman-level.sh parses to drive caveman auto mode.
-Estimate is transcript bytes / chars-per-token / context window. Fail-open:
-any error exits 0 silently, a usage tracker never gates work.
-"""
+"""Keep native context measurements because transcript size only approximates occupancy."""
 import json
 import os
 import sys
+import tempfile
 
 CHARS_PER_TOKEN = 4
 DEFAULT_CONTEXT_WINDOW = 200000
 USAGE_FILENAME = ".context-usage"
+RESET_FILENAME = ".context-usage-reset"
 
 
 def _find_planning_dir(start):
@@ -31,50 +27,95 @@ def _context_window(planning_dir):
     try:
         with open(config_path) as config_file:
             value = json.load(config_file).get("context_window_tokens")
-        if isinstance(value, int) and value > 0:
+        if isinstance(value, int) and not isinstance(value, bool) and value > 0:
             return value
-    except (OSError, ValueError):
+    except (OSError, ValueError, AttributeError):
         pass
     return DEFAULT_CONTEXT_WINDOW
 
 
-def main():
+def _read_record(path):
+    try:
+        with open(path) as record_file:
+            return record_file.read().strip().split("|")
+    except OSError:
+        return []
+
+
+def _native_record(path, session_id):
+    fields = _read_record(path)
+    if len(fields) != 4 or fields[0] != session_id or fields[3] != "statusline":
+        return False
+    try:
+        return 0 <= float(fields[1]) <= 100 and int(fields[2]) > 0
+    except ValueError:
+        return False
+
+
+def _write_record(path, record):
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", dir=os.path.dirname(path), delete=False) as output:
+            temporary = output.name
+            output.write(record + "\n")
+        os.replace(temporary, path)
+    finally:
+        if temporary and os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+def _reset_usage(planning_dir, data):
+    session_id = str(data.get("session_id") or "unknown")
+    transcript = data.get("transcript_path") or ""
+    try:
+        baseline = os.path.getsize(transcript)
+    except OSError:
+        baseline = -1
+    _write_record(os.path.join(planning_dir, RESET_FILENAME), f"{session_id}|{baseline}")
+    usage_path = os.path.join(planning_dir, USAGE_FILENAME)
+    if os.path.exists(usage_path):
+        os.unlink(usage_path)
+
+
+def _transcript_bytes(planning_dir, data):
+    size = os.path.getsize(data.get("transcript_path") or "")
+    reset = _read_record(os.path.join(planning_dir, RESET_FILENAME))
+    if len(reset) == 2 and reset[0] == str(data.get("session_id") or "unknown"):
+        baseline = int(reset[1])
+        if baseline < 0:
+            return None
+        return size if size < baseline else size - baseline
+    return size
+
+
+def _update_usage(planning_dir, data):
+    session_id = str(data.get("session_id") or "unknown")
+    usage_path = os.path.join(planning_dir, USAGE_FILENAME)
+    if _native_record(usage_path, session_id):
+        return
+    size = _transcript_bytes(planning_dir, data)
+    if size is None:
+        return
+    ctx_size = _context_window(planning_dir)
+    used_pct = min(100, max(0, (size // CHARS_PER_TOKEN) * 100 // ctx_size))
+    if not _native_record(usage_path, session_id):
+        _write_record(usage_path, f"{session_id}|{used_pct}|{ctx_size}")
+
+
+def main() -> None:
     try:
         data = json.loads(sys.stdin.read())
-    except (json.JSONDecodeError, ValueError):
-        sys.exit(0)
-
-    transcript = data.get("transcript_path") or ""
-    if not transcript or not os.path.isfile(transcript):
-        sys.exit(0)
-
-    planning_dir = _find_planning_dir(data.get("cwd"))
-    if not planning_dir:
-        sys.exit(0)
-
-    session_id = str(data.get("session_id") or "unknown")
-    ctx_size = _context_window(planning_dir)
-
-    try:
-        used_tokens = os.path.getsize(transcript) // CHARS_PER_TOKEN
-    except OSError:
-        sys.exit(0)
-
-    used_pct = min(100, max(0, used_tokens * 100 // ctx_size))
-
-    usage_path = os.path.join(planning_dir, USAGE_FILENAME)
-    tmp_path = usage_path + ".tmp"
-    try:
-        with open(tmp_path, "w") as usage_file:
-            usage_file.write("{}|{}|{}\n".format(session_id, used_pct, ctx_size))
-        os.replace(tmp_path, usage_path)
-    except OSError:
-        try:
-            os.unlink(tmp_path)
-        except OSError:
-            pass
-
-    sys.exit(0)
+        if not isinstance(data, dict):
+            return
+        planning_dir = os.environ.get("LBWC_PLANNING_DIR") or _find_planning_dir(data.get("cwd"))
+        if not planning_dir or not os.path.isdir(planning_dir):
+            return
+        if "--reset" in sys.argv[1:] or data.get("source") == "compact":
+            _reset_usage(planning_dir, data)
+        else:
+            _update_usage(planning_dir, data)
+    except (OSError, ValueError, TypeError):
+        return
 
 
 if __name__ == "__main__":
