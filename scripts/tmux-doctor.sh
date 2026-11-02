@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -u
+set -eo pipefail
 set -E
 umask 077
 
 SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 source "$SCRIPT_DIR/lib/lbwc-control-root.sh"
 source "$SCRIPT_DIR/lib/tmux-runtime.sh"
+source "$SCRIPT_DIR/lib/lbwc-config-files.sh"
+source "$SCRIPT_DIR/lib/tmux-heartbeat-settings.sh"
 
 usage() {
   printf '%s\n' 'Usage: tmux-doctor.sh --project-root PATH --control-root PATH' >&2
@@ -15,6 +18,10 @@ usage() {
 emit() {
   jq -n --arg status "$1" --arg detail "$2" '{status: $status, detail: $detail}'
   exit 0
+}
+
+fail() {
+  emit FAIL "$1"
 }
 
 require_option_value() {
@@ -147,10 +154,8 @@ if [ "$routing_ok" = true ] && [ -n "$session" ]; then
   fi
 fi
 
-config_path="$control_root/config.json"
-threshold_seconds=$(jq -r '.tmux_execution.heartbeat_stale_seconds // 120' "$config_path" 2>/dev/null || printf 120)
-[[ "$threshold_seconds" =~ ^[1-9][0-9]*$ ]] || threshold_seconds=120
-threshold_ms=$((threshold_seconds * 1000))
+tmux_heartbeat_settings "$control_root" || emit FAIL 'heartbeat settings are invalid'
+threshold_ms="$TMUX_HEARTBEAT_STALE_MS"
 now=$(tmux_runtime_now_ms)
 
 while IFS= read -r agent_id; do
@@ -167,7 +172,7 @@ if [ "${#findings[@]}" -gt 0 ]; then
   emit "$worst" "${detail%; }"
 fi
 
-backend=$(jq -r '.agent_execution_mode // "in_process"' "$config_path" 2>/dev/null || printf 'in_process')
+backend="$TMUX_HEARTBEAT_BACKEND"
 case "$backend" in
   in_process|tmux|workflow|ask) ;;
   *) backend=in_process ;;
