@@ -3,7 +3,7 @@
 load test_helper
 load gate_case_helper
 load gate_case_files
-load state_case_helper
+load isolated_case_helper
 
 setup() {
   setup_temp_dir
@@ -597,18 +597,9 @@ suggest_map_staleness() {
 }
 
 @test "suggest-next routes each command from project, verification and debug state" {
-  run_state_case suggest_debug_without_phases
-  run_state_case suggest_after_vibe
-  run_state_case suggest_after_plan
-  run_state_case suggest_after_qa
-  run_state_case suggest_after_fix
-  run_state_case suggest_after_verify
-  run_state_case suggest_after_debug
-  run_state_case suggest_after_setup
-  run_state_case suggest_after_status
-  run_state_case suggest_map_staleness
-  run_state_case suggest_after_resume
-  assert_no_case_failures
+  run_scenario_cases suggest_debug_without_phases suggest_after_vibe suggest_after_plan \
+    suggest_after_qa suggest_after_fix suggest_after_verify suggest_after_debug \
+    suggest_after_setup suggest_after_status suggest_map_staleness suggest_after_resume
 }
 
 suggest_after_resume() {

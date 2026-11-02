@@ -1,7 +1,8 @@
 #!/usr/bin/env bats
 
 load script_contract_helper
-load state_case_helper
+load gate_case_helper
+load isolated_case_helper
 
 create_source() {
   printf -v ARCHIVE '%s' "$PLANNING/milestones/$1/phases/$2"
@@ -71,12 +72,8 @@ recovery_distinguishes_long_identities() {
 }
 
 @test "milestone recovery allocates or repairs the matching phase without losing user progress" {
-  run_state_case recovery_allocates_after_maximum
-  run_state_case recovery_reuses_source_metadata
-  run_state_case recovery_restores_projections
-  run_state_case recovery_distinguishes_long_identities
-  run_state_case recovery_reclaims_abandoned_lock
-  assert_no_case_failures
+  run_scenario_cases recovery_allocates_after_maximum recovery_reuses_source_metadata \
+    recovery_restores_projections recovery_distinguishes_long_identities recovery_reclaims_abandoned_lock
 }
 
 recovery_reclaims_abandoned_lock() {

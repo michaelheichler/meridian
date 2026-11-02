@@ -2,8 +2,11 @@ run_isolated_case() (
   set -e
   local scenario=$1
   BATS_TEST_TMPDIR="$BATS_TEST_TMPDIR/$scenario"
-  mkdir -p "$BATS_TEST_TMPDIR"
+  export BATS_TEST_TMPDIR
+  mkdir -p "$BATS_TEST_TMPDIR/repo"
   trap teardown EXIT
+  cd "$BATS_TEST_TMPDIR/repo"
+  git init -q
   setup
   "$scenario"
 )

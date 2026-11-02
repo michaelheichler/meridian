@@ -4,7 +4,7 @@ bats_require_minimum_version 1.5.0
 
 load gate_case_helper
 load gate_case_files
-load state_case_helper
+load isolated_case_helper
 
 setup() {
   REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/.." && pwd)"
@@ -359,12 +359,8 @@ known_issues_lookup_and_suppress() {
 }
 
 @test "known issues preserve registry synchronization, promotion, resolution and suppression contracts" {
-  run_state_case known_issues_sync
-  run_state_case known_issues_promote_todos
-  run_state_case known_issues_rejects_bad_input
-  run_state_case known_issues_status_resolve_and_clear
-  run_state_case known_issues_lookup_and_suppress
-  assert_no_case_failures
+  run_scenario_cases known_issues_sync known_issues_promote_todos known_issues_rejects_bad_input \
+    known_issues_status_resolve_and_clear known_issues_lookup_and_suppress
 }
 
 @test "track-known-issues suppress: reports suppression_write_failed and keeps the registry when the phase dir is read-only" {

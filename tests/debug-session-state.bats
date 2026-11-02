@@ -1,7 +1,8 @@
 #!/usr/bin/env bats
 
 load test_helper
-load state_case_helper
+load gate_case_helper
+load isolated_case_helper
 
 SKIPPED="skipped_no_fix_required"
 
@@ -546,16 +547,9 @@ CASES
 }
 
 @test "debug session state preserves lifecycle, selection, todo rollback and migration contracts" {
-  reset_case_failures
-  run_state_case debug_start_and_clear
-  run_state_case debug_rejects_bad_input
-  run_state_case debug_start_from_todo
-  run_state_case debug_get_and_select
-  run_state_case debug_resume
-  run_state_case debug_set_status_and_increment
-  run_state_case debug_migrate_and_normalize
-  run_state_case debug_list
-  assert_no_case_failures
+  run_scenario_cases debug_start_and_clear debug_rejects_bad_input debug_start_from_todo \
+    debug_get_and_select debug_resume debug_set_status_and_increment \
+    debug_migrate_and_normalize debug_list
 }
 
 debug_list() {
