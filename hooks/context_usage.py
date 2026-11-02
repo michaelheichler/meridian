@@ -102,20 +102,24 @@ def _update_usage(planning_dir, data):
         _write_record(usage_path, f"{session_id}|{used_pct}|{ctx_size}")
 
 
-def main() -> None:
+def run(stdin_text, reset=False) -> None:
     try:
-        data = json.loads(sys.stdin.read())
+        data = json.loads(stdin_text)
         if not isinstance(data, dict):
             return
         planning_dir = os.environ.get("LBWC_PLANNING_DIR") or _find_planning_dir(data.get("cwd"))
         if not planning_dir or not os.path.isdir(planning_dir):
             return
-        if "--reset" in sys.argv[1:] or data.get("source") == "compact":
+        if reset or data.get("source") == "compact":
             _reset_usage(planning_dir, data)
         else:
             _update_usage(planning_dir, data)
     except (OSError, ValueError, TypeError):
         return
+
+
+def main() -> None:
+    run(sys.stdin.read(), reset="--reset" in sys.argv[1:])
 
 
 if __name__ == "__main__":
