@@ -3,20 +3,31 @@
 load test_helper
 load gate_case_helper
 load gate_case_files
+load isolated_case_helper
+load rtk_integration_cases
 
 setup() {
+  RTK_ORIGINAL_PATH="$PATH"
   setup_temp_dir
   mkdir -p "$TEST_TEMP_DIR/project/scripts"
   export RTK_TEST_ROOT="$(cd "$TEST_TEMP_DIR/project" && pwd -P)"
-  cp "$SCRIPTS_DIR/rtk-manager.sh" "$RTK_TEST_ROOT/scripts/rtk-manager.sh"
+  copy_script_with_libs "$SCRIPTS_DIR/rtk-manager.sh" "$RTK_TEST_ROOT/scripts/rtk-manager.sh"
   chmod +x "$RTK_TEST_ROOT/scripts/rtk-manager.sh"
   export LBWC_RTK_DIR="$RTK_TEST_ROOT/.lbwc-planning/tools/rtk"
   export LBWC_RTK_BINARY="$LBWC_RTK_DIR/rtk"
   export LBWC_RTK_RECEIPT="$LBWC_RTK_DIR/rtk-install.json"
   export LBWC_RTK_BACKUPS="$LBWC_RTK_DIR/backups"
   export RTK_REPO_API='https://fixture.invalid/release.json'
-  export PATH="$TEST_TEMP_DIR/bin:$PATH"
+  export CLAUDE_CONFIG_DIR="$TEST_TEMP_DIR/claude config"
+  export XDG_CONFIG_HOME="$TEST_TEMP_DIR/xdg"
+  unset CLAUDE_SESSION_ID
+  git -C "$RTK_TEST_ROOT" init -q
   mkdir -p "$TEST_TEMP_DIR/bin" "$TEST_TEMP_DIR/release/payload"
+  local tool
+  for tool in bash env jq git dirname basename uname mktemp mkdir rm cp chmod wc tr tail awk shasum tar cat find head sort sed grep python3 date mv touch cut ln install cmp gzip; do
+    ln -s "$(command -v "$tool")" "$TEST_TEMP_DIR/bin/$tool"
+  done
+  export PATH="$TEST_TEMP_DIR/bin"
   write_fake_claude
   write_fake_curl
   prepare_release
@@ -25,12 +36,15 @@ setup() {
 }
 
 teardown() {
+  export PATH="$RTK_ORIGINAL_PATH"
+  hash -r
+  await_git_ai
   cd "$PROJECT_ROOT"
   teardown_temp_dir
 }
 
 manager() {
-  bash "$RTK_TEST_ROOT/scripts/rtk-manager.sh" "$@"
+  "${RTK_TEST_BASH:-bash}" "$RTK_TEST_ROOT/scripts/rtk-manager.sh" "$@"
 }
 
 reset_rtk() {
@@ -263,6 +277,17 @@ expect_needs_yes() {
   expect_same_digest smoke-failure "$LBWC_RTK_RECEIPT" "$before_receipt"
 
   assert_no_case_failures
+}
+
+@test "RTK integration preserves user settings and never treats offline smoke as runtime proof" {
+  run_scenario_cases integration_doctor_absent integration_doctor_artifacts \
+    integration_doctor_malformed integration_doctor_project_binary \
+    integration_init_dry_run integration_init_publish integration_init_preserve \
+    integration_init_malformed integration_init_symlink \
+    integration_smoke_json integration_smoke_text integration_smoke_failure \
+    integration_finish_requires_start integration_finish_without_transcript \
+    integration_finish_tracks_new_requests integration_finish_invalid_marker \
+    integration_finish_outside_projects
 }
 
 @test "rtk-manager uninstall: a dry run keeps the install and a confirmed run keeps a backup" {
