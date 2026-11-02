@@ -14,13 +14,26 @@ prepare_agent_pane() {
     tmux kill-pane -t "$pane_id" >/dev/null 2>&1 || true
     return 1
   fi
+  if ! focus_split_pane "$orchestrator_target" "$pane_id"; then
+    tmux kill-pane -t "$pane_id" >/dev/null 2>&1 || true
+    return 1
+  fi
   jq -n --arg pane_id "$pane_id" --arg target "$target" '{pane_id: $pane_id, target: $target}'
+}
+
+focus_split_pane() {
+  local orchestrator_target="$1" agent_target="$2"
+  if [ "$TMUX_ATTACH_POLICY" = visible_grid ]; then
+    apply_tmux_layout "$agent_target" "$TMUX_LAYOUT" && tmux select-pane -t "$agent_target"
+  else
+    tmux select-pane -t "$orchestrator_target"
+  fi
 }
 
 launch_agent() {
   local orchestrator_target="$1" target="$2" generated_name="$3" command
   printf -v command 'exec claude --agent %q' "$generated_name"
-  tmux send-keys -t "$target" "$command" C-m && tmux select-pane -t "$orchestrator_target"
+  tmux send-keys -t "$target" "$command" C-m && focus_split_pane "$orchestrator_target" "$target"
 }
 
 rollback_split_group() {
