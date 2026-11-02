@@ -270,7 +270,7 @@ Note that `auto_commit` controls source-task commits during Execute mode, while 
 | tmux_execution.max_agents | integer | 1-4 | 3 |
 | tmux_execution.attach_policy | string | orchestrator_only/visible_grid | orchestrator_only |
 | tmux_execution.heartbeat_interval_seconds | integer | positive seconds | 30 |
-| tmux_execution.heartbeat_stale_seconds | integer | positive seconds | 120 |
+| tmux_execution.heartbeat_stale_seconds | integer | positive seconds, can only tighten the threshold to min(3 × heartbeat_interval_seconds, configured value) | 90 effective seconds at the default interval |
 | tmux_execution.comms_latency_tolerance_ms | integer | positive milliseconds | 5000 |
 | tmux_execution.comms_fallback | string | bus_only/fall_back_to_in_process | bus_only |
 | tmux_execution.cleanup_policy | string | kill_on_complete/keep_panes | kill_on_complete |
