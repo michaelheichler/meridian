@@ -57,14 +57,10 @@ fi
 CAVEMAN_CFG="$PLANNING_DIR/config.json"
 if [ -f "$CAVEMAN_CFG" ] && command -v jq >/dev/null 2>&1; then
   CAVEMAN_STYLE=$(jq -r '.caveman_style // "none"' "$CAVEMAN_CFG" 2>/dev/null || echo "none")
-  if [ "$CAVEMAN_STYLE" != "none" ] && [ "$CAVEMAN_STYLE" != "false" ]; then
-    CAVEMAN_LEVEL="$CAVEMAN_STYLE"
-    if [ "$CAVEMAN_LEVEL" = "auto" ] && [ -f "$SCRIPT_DIR/lib/resolve-caveman-level.sh" ]; then
-      . "$SCRIPT_DIR/lib/resolve-caveman-level.sh"
-      resolve_caveman_level "auto" "$PLANNING_DIR"
-      CAVEMAN_LEVEL="$RESOLVED_CAVEMAN_LEVEL"
-    fi
-    [ "$CAVEMAN_LEVEL" != "none" ] && PRIORITIES="$PRIORITIES CAVEMAN MODE (${CAVEMAN_LEVEL}): respond in ${CAVEMAN_LEVEL} caveman style after compaction."
+  if [ "$CAVEMAN_STYLE" = "auto" ]; then
+    PRIORITIES="$PRIORITIES CAVEMAN AUTO MODE: discard the pre-compaction level and recompute from fresh context usage after compaction."
+  elif [ "$CAVEMAN_STYLE" != "none" ] && [ "$CAVEMAN_STYLE" != "false" ]; then
+    PRIORITIES="$PRIORITIES CAVEMAN MODE (${CAVEMAN_STYLE}): respond in ${CAVEMAN_STYLE} caveman style after compaction."
   fi
 fi
 
