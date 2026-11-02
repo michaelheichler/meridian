@@ -9,6 +9,9 @@ allowed-tools: Read, Write, Edit, Bash, Glob, Grep, AskUserQuestion, LSP
 
 # LBWC Verify: $ARGUMENTS
 
+Store the plugin root path from Context at the end of this command as `{plugin-root}` for script invocations. Replace `{plugin-root}` with that literal path whenever a step references a script or reference file.
+
+@${CLAUDE_PLUGIN_ROOT}/references/ask-user-question.md
 
 ## Guard
 
@@ -20,11 +23,11 @@ allowed-tools: Read, Write, Edit, Bash, Glob, Grep, AskUserQuestion, LSP
   The helper exports `active_session`, `session_id`, `session_file`, and `session_status`, use `session_status` for lifecycle checks after `eval`.
   If `active_session != none` AND exported `session_status` is `uat_pending` or `uat_failed` AND (`phase_count=0` OR `$ARGUMENTS` contains `--session`) → skip ALL remaining guards and jump directly to `<debug_session_uat>` below.
   If phases exist (`phase_count > 0`) AND `$ARGUMENTS` does NOT contain `--session`, skip this override, standard phase UAT takes priority.
-- **Phase-detect error guard (NON-NEGOTIABLE):** If Phase state (from Context above) contains `phase_detect_error=true`, display: "⚠ Phase detection failed. Run `bash \"{plugin-root}/scripts/phase-detect.sh\"` manually to debug." STOP. Do NOT fall back to phase-dir scanning or ad-hoc `VERIFICATION.md` checks when phase-detect failed.
+- **Phase-detect error guard (NON-NEGOTIABLE):** If Phase state (from Context at the end of this command) contains `phase_detect_error=true`, display: "⚠ Phase detection failed. Run `bash \"{plugin-root}/scripts/phase-detect.sh\"` manually to debug." STOP. Do NOT fall back to phase-dir scanning or ad-hoc `VERIFICATION.md` checks when phase-detect failed.
 - **Verify-context error guard (NON-NEGOTIABLE):** Apply this guard only after Step 2 resolves and compiles the final target. If the active verify context contains `verify_context_error=true` or `verify_context=unavailable`, display: "⚠ Verify context compilation failed. Run `bash "{plugin-root}/scripts/compile-verify-context.sh" .lbwc-planning/phases/{NN}-{slug}` manually to debug." STOP. Do NOT improvise by reading individual PLAN/SUMMARY files.
 When Phase state contains `misnamed_plans=true`, Read `{plugin-root}/references/commands/verify-brownfield-normalization.md` before continuing guards.
 
-- **Auto-detect phase** (no explicit number): Phase detection is pre-computed in Context above (or refreshed by normalization above). Use `next_phase` and `next_phase_slug` for the target phase.
+- **Auto-detect phase** (no explicit number): Phase detection is pre-computed in Context at the end of this command (or refreshed by normalization above). Use `next_phase` and `next_phase_slug` for the target phase.
   - If `next_phase_state=needs_reverification`, use `next_phase` directly, this is the phase that completed remediation and needs re-verification.
   - If `next_phase_state=needs_verification`, use `next_phase` directly, this is either the first fully-built phase that needs UAT verification (auto_uat routing) or an active current-round UAT that should resume Verify mode.
   - If Phase state defines `first_unverified_phase`, use that phase directly, this is the first fully-built phase without a terminal UAT.
@@ -71,7 +74,7 @@ When routed to debug-session UAT mode, Read `{plugin-root}/references/commands/v
 ### 2. Handle optional re-verification, then compile once
 
 **Re-verification state:** Determine it for `PDIR` without compiling context.
-  - For auto-detected routing, use `next_phase_state=needs_reverification` from Context above.
+  - For auto-detected routing, use `next_phase_state=needs_reverification` from Context at the end of this command.
   - For an explicit target, ignore the auto-detected `next_phase_state`. Prepare re-verification only when that target's own current UAT status is `issues_found` and its UAT remediation stage is `done` or `verify`.
 If the active target needs re-verification, Read `{plugin-root}/references/commands/verify-reverification.md` before compiling context.
 
@@ -102,7 +105,7 @@ If the active target needs re-verification, Read `{plugin-root}/references/comma
 
 ### 3. Check for existing UAT session (resume support)
 
-When Step 2 returns existing UAT metadata or a resume sentinel, Read `{plugin-root}/references/commands/verify-resume.md` before generating tests or entering the checkpoint loop.
+Read `{plugin-root}/references/commands/verify-resume.md` at Step 3 for every Step 2 UAT metadata value, including `uat_resume=none` and all resume sentinels, before generating tests or entering the checkpoint loop.
 
 ### 4. Generate test scenarios from the active verify context
 
@@ -205,8 +208,6 @@ Plugin root:
 !`SESSION_KEY="${CLAUDE_SESSION_ID:-default}"; L="/tmp/.lbwc-plugin-root-link-${SESSION_KEY}"; R="$L/scripts/resolve-plugin-root.sh"; [ -f "$R" ] || R="${CLAUDE_PLUGIN_ROOT:-}/scripts/resolve-plugin-root.sh"; [ -f "$R" ] || { echo "LBWC: plugin root unavailable. Restart this session to recreate $L." >&2; exit 1; }; bash "$R" >/dev/null || exit 1; bash "$L/scripts/phase-detect.sh" > "/tmp/.lbwc-phase-detect-${SESSION_KEY}.txt" 2>/dev/null || echo "phase_detect_error=true" > "/tmp/.lbwc-phase-detect-${SESSION_KEY}.txt"; echo "$L"`
 ```
 
-Store the plugin root path output above as `{plugin-root}` for use in script invocations below. Replace `{plugin-root}` with the literal `Plugin root` value from Context whenever a step below references a script or reference file.
-
 Current state:
 ```bash
 !`bash "/tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/verify-load-context.sh" state`
@@ -224,7 +225,7 @@ Phase state:
 !`bash "/tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/verify-load-context.sh" phase-state`
 ```
 
-!`bash "/tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/verify-load-context.sh" compact`
+!`bash "/tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/verify-load-context.sh" compact || true`
 
 Pre-computed verify context (PLAN/SUMMARY aggregation):
 ```
@@ -239,7 +240,5 @@ Pre-computed UAT resume metadata:
 
 QA verification summary (pre-extracted from VERIFICATION.md):
 ```
-!`bash "/tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/verify-load-context.sh" qa-summary`
+!`bash "/tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/verify-load-context.sh" qa-summary || true`
 ```
-
-@${CLAUDE_PLUGIN_ROOT}/references/ask-user-question.md
