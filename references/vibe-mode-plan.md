@@ -23,7 +23,7 @@ generator protocol.
 **Milestone path guard:** Check whether `{phases_dir}` contains `.lbwc-planning/milestones/`. If it does, STOP "Cannot plan inside archived milestones." Archived milestones are read-only.
 
 **Steps:**
-1. **Parse args:** Phase number (optional, auto-detected), --effort (optional, falls back to the configured value).
+1. **Parse args:** Phase number (optional, auto-detected), --effort (optional, falls back to the configured value). Before planning, the main session runs `bash "{LINK}/scripts/milestone-branch.sh" start .lbwc-planning` to cover milestones that bootstrap created. Stop on failure and never delegate Git actions.
 2. **Phase context:** Resolve CONTEXT path:
    ```bash
    CONTEXT_NAME=$(bash /tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/resolve-artifact-path.sh context "{phase-dir}")

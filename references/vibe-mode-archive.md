@@ -78,11 +78,11 @@ FAIL -> STOP with remediation suggestions. WARN -> proceed with warnings.
    fi
    ```
    Run this BEFORE branch merge/tag so a commit records the shipped planning state.
-7. Git branch merge. If `milestone/{SLUG}` branch exists, merge --no-ff. Conflict -> abort, warn. No branch -> skip.
+7. The main session runs `bash "{LINK}/scripts/milestone-branch.sh" complete .lbwc-planning "{SLUG}"`. On `branch_action=offer_merge`, offer the human a merge from the emitted `branch` into `merge_target`. Only after approval, require a clean tree, switch to that target and merge the milestone branch with `--no-ff`. Abort and report a conflict. Disabled or unmanaged output skips this offer, and helper failure stops archive. Never delegate Git actions.
 8. Git tag. Unless --no-tag, `git tag -a {tag} -m "Shipped milestone: {name}"`. Default: `milestone/{SLUG}`.
 9. Regenerate CLAUDE.md. Follow `references/agent-spawn-protocol.md`. Issue a solo `docs` command contract for job `regenerate CLAUDE.md for milestone {SLUG} ship` with `CLAUDE.md` as its exact write allowance. Run the generic `scripts/agent-generator.sh docs` call, advance the contract to `dispatched`, and capture its `SPAWN_READY` name. Render the prompt prefix from `references/skill-activation-payload.md`.
    Task it: "Update root CLAUDE.md's `## Active Context` section for the milestone {SLUG} that shipped. Remove references to now-shipped work. Preserve all non-LBWC content verbatim. Only replace canonical LBWC-managed sections already present in the file."
-   Use the generated name and Agent-call parameters exactly as printed. Omit team and worktree fields. Do not re-resolve or override the model, effort, and turns.
+   Use the generated name and Agent-call parameters exactly as printed. Omit team and worktree fields. Do not re-resolve or override the model. Keep the generated effort and turns unchanged.
    Wait for completion before continuing to step 9b.
 9b. Post-archive hook (non-blocking): after successful archive completion, run:
    ```bash
