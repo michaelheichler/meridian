@@ -174,7 +174,7 @@ Do not proceed to QA or mark a plan terminal until its exact root or remediation
 1. Require the canonical summary path emitted by the artifact or remediation helper.
 2. Require terminal frontmatter status `complete`, `partial`, or `failed`. A root summary cannot use a placeholder state.
 3. Require commit hashes, task results, files modified, and deviations. If the PLAN defines must-haves, also require `ac_results`.
-4. The main session writes the summary from accepted worker evidence after owning the commits. Generated agents do not write or commit it.
+4. The main session writes the summary from accepted worker evidence after owning the commits. For each phase SUMMARY.md, pass two to four short human-readable sentences from that evidence on stdin to `bash "${PLUGIN_ROOT}/scripts/plain-summary.sh" "$PROJECT_ROOT/.lbwc-planning"`. Insert its output at the top of the body, immediately after YAML frontmatter and before other headings. Empty output means omit the entire `In plain words` section, including any template placeholder. Stop on helper failure. Generated agents do not write or commit the summary.
 5. Run `scripts/validate-summary.sh` on the exact path. A missing or invalid summary blocks the task contract and dependent work.
 6. Only `complete` and `partial` satisfy Execute dependencies. `failed` is terminal but does not unlock dependents.
 
