@@ -1,6 +1,7 @@
 #!/usr/bin/env bats
 
 load script_contract_helper
+load state_case_helper
 
 create_source() {
   printf -v ARCHIVE '%s' "$PLANNING/milestones/$1/phases/$2"
@@ -9,7 +10,7 @@ create_source() {
     '### P7: Checkout' '- **Result:** issue' '- **Issue:** Checkout error' > "$ARCHIVE/03-UAT.md"
 }
 
-@test "milestone recovery preserves an active roadmap while allocating after the largest phase number" {
+recovery_allocates_after_maximum() {
   create_source release-1 03-checkout
   mkdir -p "$PLANNING/phases/12-shipping" "$PLANNING/phases/scratch"
   printf '%s\n' 'User roadmap' > "$PLANNING/ROADMAP.md"
@@ -22,7 +23,7 @@ create_source() {
   [ "$(cat "$ARCHIVE/.remediated")" = "$PLANNING/phases/13-remediate-release-1-checkout" ]
 }
 
-@test "milestone recovery repairs a missing acknowledgement by reusing matching source metadata" {
+recovery_reuses_source_metadata() {
   create_source release-1 03-checkout
   local target="$PLANNING/phases/05-remediate-release-1-checkout"
   mkdir -p "$target"
@@ -34,7 +35,7 @@ create_source() {
   cmp -s "$ARCHIVE/03-UAT.md" "$target/05-SOURCE-UAT.md"
 }
 
-@test "milestone recovery restores missing projections without losing saved progress or current phase" {
+recovery_restores_projections() {
   rm -rf "$PHASE"
   create_source release-1 03-checkout
   local target="$PLANNING/phases/01-remediate-release-1-checkout"
@@ -50,7 +51,7 @@ create_source() {
   [[ "$output" == *'source_uat=none'* ]]
 }
 
-@test "milestone recovery keeps long source identities distinct even when their directory slugs share a prefix" {
+recovery_distinguishes_long_identities() {
   rm -rf "$PHASE"
   create_source release-with-a-long-name 03-checkout-with-many-shared-words-that-describe-the-same-feature-alpha
   local first_archive="$ARCHIVE" first_target
@@ -69,7 +70,16 @@ create_source() {
   cmp -s "$ARCHIVE/03-UAT.md" "$second_target/02-SOURCE-UAT.md"
 }
 
-@test "milestone recovery reclaims an abandoned allocation lock before creating the next phase" {
+@test "milestone recovery allocates or repairs the matching phase without losing user progress" {
+  run_state_case recovery_allocates_after_maximum
+  run_state_case recovery_reuses_source_metadata
+  run_state_case recovery_restores_projections
+  run_state_case recovery_distinguishes_long_identities
+  run_state_case recovery_reclaims_abandoned_lock
+  assert_no_case_failures
+}
+
+recovery_reclaims_abandoned_lock() {
   create_source release-1 03-checkout
   mkdir "$PLANNING/.create-remediation-phase.lock"
   bash -c 'printf "%s\n" "$$"' > "$PLANNING/.create-remediation-phase.lock/pid"

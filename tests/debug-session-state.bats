@@ -1,6 +1,7 @@
 #!/usr/bin/env bats
 
 load test_helper
+load state_case_helper
 
 SKIPPED="skipped_no_fix_required"
 
@@ -184,7 +185,7 @@ expect_selection() {
   esac
 }
 
-@test "start creates the session file, pointer and frontmatter, sanitizes the slug, and clear-active keeps the file" {
+debug_start_and_clear() {
   local long60 long50 label input expected
 
   run dss start test-bug
@@ -223,7 +224,7 @@ truncated-to-fifty|$long60|$long50
 CASES
 }
 
-@test "commands reject missing arguments, bad session names, a missing active session, unknown commands and invalid statuses" {
+debug_rejects_bad_input() {
   local label command usage name reason argument
 
   while IFS='|' read -r label command usage; do
@@ -277,7 +278,7 @@ CASES
   expect_file_grep invalid-status-unchanged "$session_file" '^status: investigating$'
 }
 
-@test "start-with-source-todo and start-with-selected-todo write Source Todo and roll back on writer failure" {
+debug_start_from_todo() {
   local first_session_name
 
   run_piped '{"mode":"source-todo","text":"Investigate parser crash","raw_line":"- Investigate parser crash (ref:abcd1234)","ref":"abcd1234","detail_status":"ok","related_files":["src/parser.sh"],"detail_context":"Persisted detail"}' \
@@ -335,7 +336,7 @@ CASES
   expect_file_grep selected-with-detail "$session_file" 'Persisted detail context'
 }
 
-@test "get, get-or-latest and resume print session_status metadata and get-or-latest selects the latest unresolved session" {
+debug_get_and_select() {
   local label command expected_active drop_pointer sid pointer specs expected_id
 
   while IFS='|' read -r label command; do
@@ -410,7 +411,7 @@ only-completed-sessions|-|completed:20240101-120000-done:complete|none|-
 CASES
 }
 
-@test "resume reconciles the session location and only re-activates unresolved sessions" {
+debug_resume() {
   local id="20240101-120000-resumed"
   while IFS='|' read -r label loc state pointer expected_status expected_dir absent_dir expected_get; do
     [ -n "$label" ] || continue
@@ -435,7 +436,7 @@ unresolved-in-active-becomes-active|active|investigating|no|investigating|active
 CASES
 }
 
-@test "set-status writes statuses and completes sessions, and increment bumps only its own round and result" {
+debug_set_status_and_increment() {
   local id="20240101-120000-status-case" complete_id="20240101-120000-complete-case" bump_id="20240101-120000-bump-case"
   local target label qa_round qa_result uat_round uat_result expected_qa expected_uat kind other
 
@@ -492,7 +493,7 @@ uat|qa
 CASES
 }
 
-@test "legacy sessions migrate with collisions resolved or reported, and completed sessions normalize through every entry command" {
+debug_migrate_and_normalize() {
   local id="20250101-120000-legacy-case" norm_id="20240101-120000-norm-case"
   local label entry pointer specs expected_out warn legacy_remains expected_files expected_round expected_qa expected_uat
 
@@ -544,7 +545,20 @@ stranded-in-active-via-resume|resume|yes|active:@:complete|session_status=comple
 CASES
 }
 
-@test "list reports each session once with its status and reconciled location" {
+@test "debug session state preserves lifecycle, selection, todo rollback and migration contracts" {
+  reset_case_failures
+  run_state_case debug_start_and_clear
+  run_state_case debug_rejects_bad_input
+  run_state_case debug_start_from_todo
+  run_state_case debug_get_and_select
+  run_state_case debug_resume
+  run_state_case debug_set_status_and_increment
+  run_state_case debug_migrate_and_normalize
+  run_state_case debug_list
+  assert_no_case_failures
+}
+
+debug_list() {
   while IFS=';' read -r label specs expected_count fragments expected_files; do
     [ -n "$label" ] || continue
     reset_planning

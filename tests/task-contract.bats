@@ -1,6 +1,7 @@
 #!/usr/bin/env bats
 
 load gate_case_helper
+load state_case_helper
 
 setup() {
   ROOT="$(mktemp -d)"
@@ -85,7 +86,7 @@ expect_tamper_rejected() {
   mv "$file.orig" "$file"
 }
 
-@test "open writes and rereads a schema 2 plan contract, binds groupings, and rejects bad plans, options and drift" {
+contract_open_plan() {
   mkdir -p "$ROOT/real-tasks" "$ROOT/.lbwc-planning"
   ln -s "$ROOT/real-tasks" "$ROOT/.lbwc-planning/.contracts"
   expect_rejected symlinked-contracts "symlink" open_plan
@@ -146,7 +147,7 @@ expect_tamper_rejected() {
   assert_no_case_failures
 }
 
-@test "state persists legal transitions and rejects illegal transitions and tampered contracts" {
+contract_state_transitions() {
   open_plan
   expect_rejected skipped-step "illegal state transition" bash "$SCRIPT" state "$ROOT" "$PLAN_ID" verified
   expect_rejected unknown-state "invalid state" bash "$SCRIPT" state "$ROOT" "$PLAN_ID" bogus
@@ -169,7 +170,7 @@ expect_tamper_rejected() {
   assert_no_case_failures
 }
 
-@test "verify rejects job drift and tampered command and backend contracts" {
+contract_verify_drift() {
   local debug_contract team_contract
   debug_contract=$(bash "$SCRIPT" issue "$ROOT" "debug-one" \
     --command debug --role debugger --team solo --job "Find root cause")
@@ -188,7 +189,7 @@ expect_tamper_rejected() {
   assert_no_case_failures
 }
 
-@test "issue writes schema 2 command contracts with exact allowances and rejects bad allowances before writing" {
+contract_issue_exact_allowances() {
   local protected first second
   expect_rejected role-outside-team "allowance role is not in contract team" \
     bash "$SCRIPT" issue "$ROOT" "bad-team" \
@@ -241,7 +242,7 @@ expect_tamper_rejected() {
   assert_no_case_failures
 }
 
-@test "issue writes schema 3 typed capabilities in the control root and rejects invalid capability declarations" {
+contract_issue_typed_capabilities() {
   local contract backend=(--requested-backend workflow --resolved-backend workflow)
   make_control_root team-state
   contract=$(issue_team team-state --control-root "$CONTROL_ROOT" --write-capability directory:src/web)
@@ -311,7 +312,7 @@ expect_tamper_rejected() {
   assert_no_case_failures
 }
 
-@test "open writes schema 3 only when backend and control-root flags are all set" {
+contract_open_typed_capabilities() {
   make_control_root plan-partial
   expect_rejected backends-without-control-root "schema 3 open requires" open_plan --requested-backend tmux --resolved-backend tmux
   expect_rejected control-root-without-backends "schema 3 open requires" open_plan --control-root "$CONTROL_ROOT"
@@ -340,7 +341,18 @@ expect_tamper_rejected() {
   assert_no_case_failures
 }
 
-@test "assert-snapshot accepts a matching snapshot and rejects a mismatch without writing" {
+@test "task contracts preserve plan, command, capability, transition and snapshot constraints" {
+  run_state_case contract_open_plan
+  run_state_case contract_state_transitions
+  run_state_case contract_verify_drift
+  run_state_case contract_issue_exact_allowances
+  run_state_case contract_issue_typed_capabilities
+  run_state_case contract_open_typed_capabilities
+  run_state_case contract_assert_snapshot
+  assert_no_case_failures
+}
+
+contract_assert_snapshot() {
   make_control_root snapshot-assert
   local full="$ROOT/full-snapshot.json" freeze="$ROOT/freeze-snapshot.json"
   jq -n --arg root "$CONTROL_ROOT" '{requested_backend:"tmux",resolved_backend:"tmux",control_root:$root}' > "$full"

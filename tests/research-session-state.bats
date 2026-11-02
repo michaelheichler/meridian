@@ -2,6 +2,7 @@
 
 load test_helper
 load gate_case_helper
+load state_case_helper
 
 setup() {
   setup_temp_dir
@@ -68,7 +69,7 @@ write_session() {
   printf -- '---\ntitle: %s\nstatus: %s\n---\n' "$2" "$3" > "$LBWC_PLANNING_DIR/research/$1.md"
 }
 
-@test "start migrates legacy files, stamps an active session with HEAD, and sanitizes the slug" {
+research_start() {
   local head_commit label input expected slug_part
   printf '# Legacy Research\nOld findings.\n' > "$LBWC_PLANNING_DIR/RESEARCH-legacy.md"
   start_session "new-session"
@@ -106,7 +107,7 @@ CASES
   assert_no_case_failures
 }
 
-@test "complete marks the session complete" {
+research_complete() {
   start_session "complete-test"
 
   run rss complete "$LBWC_PLANNING_DIR" "$research_id"
@@ -117,7 +118,7 @@ CASES
   assert_no_case_failures
 }
 
-@test "get returns session metadata for a started session and non-blank values for a migrated file" {
+research_get() {
   local migrated_file session_id
   start_session "get-test"
   run rss get "$LBWC_PLANNING_DIR" "$research_id"
@@ -143,7 +144,7 @@ CASES
   assert_no_case_failures
 }
 
-@test "commands reject bad input with status 1 and a message" {
+research_rejects_bad_input() {
   local label args fragment
   start_session "reject-fixture"
   while IFS='|' read -r label args fragment; do
@@ -170,7 +171,7 @@ CASES
   assert_no_case_failures
 }
 
-@test "list prints one JSON line per session and honours the status filter" {
+research_list() {
   local label setup_kind args want_lines present absent
   while IFS='|' read -r label setup_kind args want_lines present absent; do
     [ -n "$label" ] || continue
@@ -198,7 +199,7 @@ CASES
   assert_no_case_failures
 }
 
-@test "latest prints blank fields without a session file and otherwise the session that sorts last" {
+research_latest() {
   local label prepare field
   while IFS='|' read -r label prepare; do
     [ -n "$label" ] || continue
@@ -225,7 +226,18 @@ CASES
   assert_no_case_failures
 }
 
-@test "migrate skips non-research files, wraps bare files, and keeps or backfills frontmatter fields" {
+@test "research session state preserves creation, migration, selection and completion contracts" {
+  run_state_case research_start
+  run_state_case research_complete
+  run_state_case research_get
+  run_state_case research_rejects_bad_input
+  run_state_case research_list
+  run_state_case research_latest
+  run_state_case research_migrate
+  assert_no_case_failures
+}
+
+research_migrate() {
   local label files file migrated_file slug content expectations pair field want got
   while IFS='|' read -r label files; do
     [ -n "$label" ] || continue
