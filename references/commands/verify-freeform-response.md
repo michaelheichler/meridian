@@ -1,0 +1,33 @@
+**Freeform text (via "Other"):** Apply case-insensitive matching in this order after normalization.
+
+**Normalization (required first):**
+- Trim surrounding whitespace.
+- Lowercase.
+- Treat curly apostrophes as straight apostrophes (`can’t` == `can't`).
+- Treat em/en dashes as dash separators.
+- Canonicalize common contraction forms before intent matching: `can't`/`cant` → `cannot`, `don't`/`dont` → `do not`, and `won't`/`wont` → `will not`.
+
+**Word-boundary rule:** Match intent keywords as whole words only, a keyword matches when whitespace, punctuation, or string boundaries surround it (equivalent to regex `\b`). Examples: "pass" matches in "pass, but..." and "Pass." but NOT in "passport", "works" matches in "it works" but NOT in "worksmanship", "good" matches in "looks good" but NOT in "goodness".
+
+**Idiomatic-positive exceptions:** These should count as pass-intent (not issues): `not bad`, `can't complain`, `cant complain`, `cannot complain`.
+
+**Uncertainty exclusion (NON-NEGOTIABLE):** Hedging/uncertainty phrases are NOT pass-intent, they indicate the user is unsure and needs investigation, not rubber-stamping. If the response contains any of these phrases WITHOUT a clear pass-intent keyword (pass, passed, looks good, works, correct, confirmed, yes, good, fine, ok, okay), fall through to "anything else" → issue. Uncertainty phrases: `I think`, `I think so`, `I guess`, `maybe`, `not sure`, `possibly`, `I believe so`, `probably`, `hard to tell`, `I suppose`. Examples: "I think so? ORCX still shows cost basis" → issue (no pass keyword, uncertainty + observation), "pass, I think it works" → passed (explicit pass keyword present). When uncertainty is present, the agent MUST investigate before recording, never assume the user means pass.
+
+**Negation guard (expanded scope):** Before classifying as pass-intent, detect negation in the same clause even when not immediately adjacent. If a negation term appears up to a few words before pass-intent (or in patterns like "I don't think it works"), treat as issue (Step 6), unless the text matches an idiomatic-positive exception above. Negation terms include not, don't, doesn't, didn't, isn't, wasn't, no, never, neither, nor, hardly, barely, cannot, can't, won't, wouldn't, shouldn't. Examples: "not good, still broken" → issue, "I don't think it works" → issue, "it works" → pass.
+
+**Summary-deviation todo intent:** Before generic skip/pass matching, apply this shortcut only for a prefilled summary-deviation `D{NN}` checkpoint. Use marker-first ordering after normalization and contraction canonicalization. If the text contains explicit rejection/blocking/acceptance-refusal markers (`unacceptable`, `reject`, `blocking`, `blocker`, `do not continue`, `cannot continue`, `will not continue`, `do not proceed`, `cannot proceed`, `not ok`, `not okay`, `cannot accept`, `do not accept`, `will not accept`, `unable to accept`, `refuse to accept`, or `not acceptable`), record `**Result:** issue` with `**Disposition:** rejected-by-user` even when todo words are also present. Treat `not ok` and `not okay` as equivalent rejection markers because `ok` and `okay` are equivalent pass-intent words elsewhere. For example, `can't continue, track this` canonicalizes to `cannot continue, track this`, `not ok, track this` remains rejected, `can't accept this, track this` and `can’t accept this, track this` canonicalize to `cannot accept this, track this`, and `not acceptable, add to todo` remains a rejected UAT issue. Only when no rejection/blocking/acceptance-refusal marker is present should high-confidence follow-up intent (`/lbwc:todo`, `todo`, `to-do`, `add to todo`, `add to to-do`, `track this`, `track it`, `backlog`, or `follow up later`) record `**Result:** pass`, `**Disposition:** accepted-process-exception`, preserve deviation metadata, and mark the checkpoint as accepted-and-tracked for Step 8.
+
+**Observation extraction guard:** Create a discovered issue only when text after a separator has a defect signal. Signals include broken, bug, error, wrong, missing, not working, fails, crash, exception, regression, problem, and still. In UAT, `still` normally signals an unapplied fix. But `still` followed by a positive word is temporal, not a defect signal. Positive words include works, fine, good, correct, loads, runs, okay, passes, and functions. For example, "pass, it still works fine" has no discovered issue. "pass, but it still shows the old value" is a pass plus a discovered issue. Do not create an issue from neutral or positive trailing text.
+
+**Dual-intent tie-break (pass + skip in one response):**
+- If the response explicitly defers the **current checkpoint** (e.g., "skip this checkpoint", "skip for now", "can't test right now"), classify checkpoint outcome as **skip**.
+- Otherwise, use the first intent word left-to-right as fallback.
+
+Evaluate in this order:
+- **Skip-intent with issue observation:** If the text contains a skip-intent whole word (skip, skipped, next, n/a, na, later, defer) AND contains post-separator text with an issue signal, then record the test as **skipped** AND capture the post-separator observation text as a discovered issue (Step 7a). Separators include but, however, also, although, though, comma, semicolon, period, dash, colon, em dash, and newline. For example, "skip, but the sidebar is completely broken" → skipped + discovered issue.
+- **Skip-intent only:** If skip-intent is present but no issue observation in post-separator text → record as skipped.
+- **Pass-intent with issue observation:** If the text contains pass-intent as whole words/phrases (pass, passed, looks good, works, correct, confirmed, yes, good, fine, ok, okay, not bad, can't complain, cant complain, cannot complain), is not negated by the expanded negation guard, and has post-separator issue text, then record the test as **passed** AND capture the post-separator observation text as a discovered issue (Step 7a). For example, "pass, but I noticed the stats section still shows for positions with no covered calls" → passed + discovered issue.
+- **Pass-intent only:** Pass-intent present, not negated, and no issue observation in post-separator text → record as passed.
+- **Anything else:** classify the response as an issue. Use the issue capture rules in Step 7 to synthesize the persisted `Description`, do not treat the raw response text as the final artifact text.
+
+For a prefilled summary-deviation `D{NN}` checkpoint, "anything else" means the user rejected or challenged the deviation. Record it as `**Result:** issue`, synthesize the issue `Description` from the user's challenge plus the deviation metadata, infer severity as usual, and write `**Disposition:** rejected-by-user`.
