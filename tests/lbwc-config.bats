@@ -58,7 +58,7 @@ initialize_defaults_and_migrate_legacy_settings() {
     and .active_profile == "default"
     and .custom_profiles == {}
     and .agent_max_turns == {}
-    and .qa_skip_agents == []
+    and .qa_skip_agents == ["docs"]
     and .token_budgets == true
     and .two_phase_completion == true
     and .smart_routing == true
