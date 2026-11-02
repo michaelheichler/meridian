@@ -53,13 +53,10 @@ class BraceExpansionTest(unittest.TestCase):
     def test_a_range_of_exactly_the_cap_expands(self) -> None:
         self.assertEqual(len(expand_braces(f"f{{1..{BRACE_CAP}}}")), BRACE_CAP)
 
-    def test_a_range_one_past_the_cap_is_rejected(self) -> None:
-        with self.assertRaises(ExpansionTooComplex):
-            expand_braces(f"f{{1..{BRACE_CAP + 1}}}")
-
-    def test_nested_groups_that_multiply_past_the_cap_are_rejected(self) -> None:
-        with self.assertRaises(ExpansionTooComplex):
-            expand_braces("{1..20}{1..20}")
+    def test_expansions_that_exceed_the_budget_are_rejected(self) -> None:
+        for word in (f"f{{1..{BRACE_CAP + 1}}}", "{1..20}{1..20}"):
+            with self.subTest(word=word), self.assertRaises(ExpansionTooComplex):
+                expand_braces(word)
 
 
 class GlobExpansionTest(unittest.TestCase):
@@ -85,15 +82,9 @@ class GlobExpansionTest(unittest.TestCase):
 
 
 class ModuleWriteProtectionTest(unittest.TestCase):
-    def test_writes_to_guard_modules_through_globs_are_denied(self) -> None:
+    def test_expanded_module_write_operands_are_denied(self) -> None:
         space = build_workspace(self)
-        for command in GLOBBED_MODULE_WRITES:
-            with self.subTest(command=command):
-                self.assertIsNotNone(bash_reason(command, space.root))
-
-    def test_writes_to_guard_modules_through_braces_are_denied(self) -> None:
-        space = build_workspace(self)
-        for command in BRACED_MODULE_WRITES:
+        for command in (*GLOBBED_MODULE_WRITES, *BRACED_MODULE_WRITES):
             with self.subTest(command=command):
                 self.assertIsNotNone(bash_reason(command, space.root))
 

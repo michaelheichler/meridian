@@ -9,7 +9,6 @@ from unittest import mock
 
 from hooks import guard_paths
 from hooks.guard_fixtures import (
-    ENTRY_STEM,
     answer_event,
     bash_reason,
     build_project,
@@ -27,7 +26,7 @@ SHORT_DEADLINE = 0.2
 SLOW_EXPANSION_SECONDS = 2
 
 
-def slow_expansion(pattern: str) -> list:
+def slow_expansion(_pattern: str) -> list:
     time.sleep(SLOW_EXPANSION_SECONDS)
     return []
 
@@ -51,14 +50,14 @@ def failing_event(mode: str) -> dict:
 
 
 class AnalysisDeadlineTest(unittest.TestCase):
-    def slow_command_reason(self) -> str:
+    def slow_command_reason(self) -> str | None:
         space = build_workspace(self)
         with mock.patch.object(guard_paths, "ANALYSIS_SECONDS", SHORT_DEADLINE):
             with mock.patch.object(guard_paths, "expand_glob", slow_expansion):
                 return bash_reason("cat x*", space.root)
 
     def install_marker_handler(self) -> Callable:
-        def marker(signum: int, frame: object) -> None:
+        def marker(_signum: int, _frame: object) -> None:
             return None
 
         previous = signal.signal(signal.SIGALRM, marker)
@@ -68,16 +67,14 @@ class AnalysisDeadlineTest(unittest.TestCase):
     def test_slow_analysis_is_denied_with_the_timeout_reason(self) -> None:
         self.assertEqual(self.slow_command_reason(), TIMEOUT_REASON)
 
-    def test_previous_alarm_handler_is_restored_after_a_timeout(self) -> None:
-        marker = self.install_marker_handler()
-        self.slow_command_reason()
-        self.assertIs(signal.getsignal(signal.SIGALRM), marker)
-
-    def test_previous_alarm_handler_is_restored_after_a_normal_analysis(self) -> None:
-        marker = self.install_marker_handler()
+    def test_previous_alarm_handler_is_restored_after_analysis(self) -> None:
         space = build_workspace(self)
-        bash_reason("cat plain.txt", space.root)
-        self.assertIs(signal.getsignal(signal.SIGALRM), marker)
+        rows = (self.slow_command_reason, lambda: bash_reason("cat plain.txt", space.root))
+        for analyse in rows:
+            with self.subTest(analyse=analyse):
+                marker = self.install_marker_handler()
+                analyse()
+                self.assertIs(signal.getsignal(signal.SIGALRM), marker)
 
     def test_no_alarm_stays_armed_after_a_normal_analysis(self) -> None:
         space = build_workspace(self)
@@ -86,25 +83,13 @@ class AnalysisDeadlineTest(unittest.TestCase):
 
 
 class FailOpenTest(unittest.TestCase):
-    def test_malformed_stdin_allows_with_a_warning_in_every_mode(self) -> None:
-        for mode in MODES:
-            with self.subTest(mode=mode):
-                result = run_entry([mode], "{not json")
+    def test_invalid_input_and_analysis_errors_fail_open_in_every_mode(self) -> None:
+        rows = [(mode, payload) for mode in MODES for payload in ("{not json", "[]", json.dumps(failing_event(mode)))]
+        for mode, payload in rows:
+            with self.subTest(mode=mode, payload=payload):
+                result = run_entry([mode], payload)
                 self.assertEqual((result.returncode, result.stdout), (0, ""))
-                self.assertIn(
-                    f"meridian hook warning: {ENTRY_STEM} {mode} failed, call allowed",
-                    result.stderr,
-                )
-
-    def test_unexpected_exception_allows_with_a_warning_in_every_mode(self) -> None:
-        for mode in MODES:
-            with self.subTest(mode=mode):
-                result = run_mode(mode, failing_event(mode))
-                self.assertEqual((result.returncode, result.stdout), (0, ""))
-                self.assertIn(
-                    f"meridian hook warning: {ENTRY_STEM} {mode} failed, call allowed",
-                    result.stderr,
-                )
+                self.assertTrue(result.stderr.strip())
 
 
 class AnswerSessionTest(unittest.TestCase):

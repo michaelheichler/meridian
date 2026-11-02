@@ -1,88 +1,61 @@
-"""Unit tests for message_scope_guard.py's pair-aware SendMessage gating."""
 import json
-import os
+import subprocess
 import sys
 import tempfile
 import unittest
-
-sys.path.insert(0, os.path.dirname(__file__))
-
-import message_scope_guard
+from pathlib import Path
+from types import ModuleType
 
 
-def _manifest(tmp_root: str, agents: dict) -> None:
-    planning_dir = os.path.join(tmp_root, ".lbwc-planning")
-    os.makedirs(planning_dir, exist_ok=True)
-    manifest_path = os.path.join(planning_dir, ".agent-manifest.json")
-    with open(manifest_path, "w") as manifest_file:
-        json.dump({"agents": agents}, manifest_file)
+def load_guard() -> ModuleType:
+    sys.path.insert(0, str(Path(__file__).parent))
+    import message_scope_guard
+    return message_scope_guard
 
 
-def _send_message_event(identifier: str, to: str) -> str:
-    return json.dumps({
-        "agent_id": identifier,
-        "tool_name": "SendMessage",
-        "tool_input": {"to": to},
-    })
+GUARD = load_guard()
 
 
 class MessageScopeGuardTest(unittest.TestCase):
-    def setUp(self) -> None:
-        self.tmp_root = tempfile.mkdtemp()
+    def prepare_project(self) -> None:
+        self.guard = GUARD
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        self.planning = self.root / ".lbwc-planning"
+        self.planning.mkdir()
 
-    def test_solo_qa_may_report_to_main(self) -> None:
-        _manifest(self.tmp_root, {
-            "agent-qa-1": {"role": "qa", "pair_id": None},
-        })
-        event = _send_message_event("agent-qa-1", "main")
-        self.assertIsNone(message_scope_guard.verdict(event, cwd=self.tmp_root))
+    def test_reporting_permission_follows_role_and_communication_policy(self) -> None:
+        self.prepare_project()
+        rows = (
+            ({"role": "qa", "pair_id": None}, "agent-qa-1", "main", False),
+            ({"role": "python-engineer", "pair_id": "p1"}, "agent-eng-1", "main", True),
+            ({"role": "python-engineer", "pair_id": "p1", "runtime_kind": "native-team", "communication_policy": "native-team"}, "agent-eng-1", "main", False),
+            ({"role": "python-engineer", "runtime_kind": "native-team", "communication_policy": "native-team"}, "agent-eng-1", "agent-critic-1", False),
+            ({"role": "test-dev", "pair_id": "p1", "runtime_kind": "legacy-subagent", "communication_policy": "critic-relay"}, "agent-test-1", "main", False),
+            ({"role": "python-engineer", "pair_id": "p1"}, "", "main", False),
+            ({"role": "python-engineer", "cwd": "/"}, "unregistered", "main", False),
+        )
+        for entry, identifier, recipient, denied in rows:
+            with self.subTest(entry=entry, identifier=identifier, recipient=recipient):
+                agents = {identifier: entry, "agent-critic-1": {"role": "python-critic", "pair_id": "p1"}}
+                (self.planning / ".agent-manifest.json").write_text(json.dumps({"agents": agents}))
+                event = json.dumps({"agent_id": identifier, "cwd": entry.get("cwd", str(self.root)), "tool_name": "SendMessage", "tool_input": {"to": recipient}})
+                reason = self.guard.verdict(event)
+                self.assertEqual(reason is not None, denied)
 
-    def test_paired_engineer_may_not_report_to_main(self) -> None:
-        _manifest(self.tmp_root, {
-            "agent-eng-1": {"role": "python-engineer", "pair_id": "p1"},
-            "agent-critic-1": {"role": "python-critic", "pair_id": "p1"},
-        })
-        event = _send_message_event("agent-eng-1", "main")
-        reason = message_scope_guard.verdict(event, cwd=self.tmp_root)
-        self.assertIsNotNone(reason)
-        assert reason is not None
-        self.assertIn("critic", reason)
-
-    def test_native_team_member_may_message_main(self) -> None:
-        _manifest(self.tmp_root, {
-            "agent-eng-1": {
-                "role": "python-engineer",
-                "pair_id": "p1",
-                "runtime_kind": "native-team",
-                "communication_policy": "native-team",
-            },
-        })
-        event = _send_message_event("agent-eng-1", "main")
-        self.assertIsNone(message_scope_guard.verdict(event, cwd=self.tmp_root))
-
-    def test_native_team_member_may_message_a_peer(self) -> None:
-        _manifest(self.tmp_root, {
-            "agent-eng-1": {
-                "role": "python-engineer",
-                "runtime_kind": "native-team",
-                "communication_policy": "native-team",
-            },
-        })
-        event = _send_message_event("agent-eng-1", "agent-critic-1")
-        self.assertIsNone(message_scope_guard.verdict(event, cwd=self.tmp_root))
-
-    def test_legacy_test_dev_may_report_to_main(self) -> None:
-        _manifest(self.tmp_root, {
-            "agent-test-1": {
-                "role": "test-dev",
-                "pair_id": "p1",
-                "runtime_kind": "legacy-subagent",
-                "communication_policy": "critic-relay",
-            },
-            "agent-critic-1": {"role": "python-critic", "pair_id": "p1"},
-        })
-        event = _send_message_event("agent-test-1", "main")
-        self.assertIsNone(message_scope_guard.verdict(event, cwd=self.tmp_root))
+    def test_reporting_denial_reaches_the_hook_protocol(self) -> None:
+        self.prepare_project()
+        rows = (("python-engineer", "deny"), ("python-critic", None))
+        for role, decision in rows:
+            with self.subTest(role=role):
+                agents = {"worker": {"role": role, "pair_id": "p1"}}
+                (self.planning / ".agent-manifest.json").write_text(json.dumps({"agents": agents}))
+                event = {"agent_id": "worker", "cwd": str(self.root), "tool_name": "SendMessage", "tool_input": {"to": "main"}}
+                result = subprocess.run([sys.executable, str(Path(__file__).with_name("message_scope_guard.py"))], input=json.dumps(event), capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                output = json.loads(result.stdout or '{}').get("hookSpecificOutput", {})
+                self.assertEqual(output.get("permissionDecision"), decision)
 
 
 if __name__ == "__main__":

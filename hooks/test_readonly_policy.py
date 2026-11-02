@@ -66,13 +66,13 @@ FILES0_LOOKALIKES = ("rm --force plain.txt", "rg --files", "cat --number plain.t
 class SourceReadAllowlistTest(unittest.TestCase):
     def test_plain_read_forms_of_a_guard_source_file_are_allowed(self) -> None:
         space = build_workspace(self)
-        for command in ALLOWED_READS:
+        for command in (*ALLOWED_READS, "cat -n plain.txt"):
             with self.subTest(command=command):
                 self.assertIsNone(bash_reason(command, space.root))
 
     def test_flags_and_shapes_outside_the_allowlist_are_denied(self) -> None:
         space = build_workspace(self)
-        for command in DENIED_SOURCE_ACCESS:
+        for command in (*DENIED_SOURCE_ACCESS, f"cat -n {SOURCE} link.txt"):
             with self.subTest(command=command):
                 self.assertIsNotNone(bash_reason(command, space.root))
 
@@ -81,15 +81,6 @@ class SourceReadAllowlistTest(unittest.TestCase):
         for token in DROPPED_EXEMPTION_TOKENS:
             with self.subTest(token=token):
                 self.assertIsNotNone(bash_reason(f"cat -n {SOURCE} {token}", space.root))
-
-    def test_read_exemption_does_not_cover_a_runtime_operand(self) -> None:
-        space = build_workspace(self)
-        reason = bash_reason(f"cat -n {SOURCE} link.txt", space.root)
-        self.assertIsNotNone(reason)
-
-    def test_reading_an_unprotected_file_is_allowed(self) -> None:
-        space = build_workspace(self)
-        self.assertIsNone(bash_reason("cat -n plain.txt", space.root))
 
 
 class Files0OptionTest(unittest.TestCase):
