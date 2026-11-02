@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 
+load test_helper
 load gate_case_helper
 load gate_case_files
 
@@ -29,10 +30,14 @@ esac
 EOF
   chmod +x "$BIN/git"
   unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN
+  cd "$PROJECT"
+  git init -q
   reset_case_failures
 }
 
 teardown() {
+  cd "$REPO_ROOT"
+  await_git_ai
   rm -rf "$TEST_ROOT"
 }
 
@@ -81,8 +86,52 @@ clear_tmux_runtime() {
 }
 
 reset_project() {
+  cd "$TEST_ROOT"
   rm -rf "$PROJECT" "$BIN/tmux"
   mkdir -p "$PROJECT/.lbwc-planning/.contracts/tasks"
+  cd "$PROJECT"
+}
+
+native_usage_input() {
+  jq -cn --arg project "$PROJECT" \
+    '{session_id:"s1",workspace:{project_dir:$project},context_window:{used_percentage:72.5,context_window_size:1000000}}'
+}
+
+statusline_usage_row() {
+  local label=$1 input=$2 expected=$3 record
+  printf '%s\n' 'previous|33|200000|statusline' > "$PROJECT/.lbwc-planning/.context-usage"
+  run_statusline "$input"
+  expect_case "$label" 0
+  record=$(cat "$PROJECT/.lbwc-planning/.context-usage")
+  [ "$record" = "$expected" ] || record_case_failure "$label" "record=$record expected=$expected"
+  [ -z "$(find "$PROJECT/.lbwc-planning" -name '.context-usage.statusline.*' -print)" ] \
+    || record_case_failure "$label" 'unfinished usage record remains'
+}
+
+statusline_invalid_row() {
+  local label=$1 input=$2 expected=$3
+  statusline_usage_row "$label" "$input" 'previous|33|200000|statusline'
+  [ "$output" = "$expected" ] || record_case_failure "$label" 'unavailable output differs across invalid inputs'
+  [ -n "$output" ] || record_case_failure "$label" 'unavailable output missing'
+}
+
+@test "statusline publishes valid native usage and preserves the last record when input cannot supply usage" {
+  local input unavailable
+  input=$(native_usage_input)
+  statusline_usage_row native-record "$input" 's1|72.5|1000000|statusline'
+  statusline_usage_row missing-percentage "$(jq 'del(.context_window.used_percentage)' <<< "$input")" 'previous|33|200000|statusline'
+  statusline_usage_row null-percentage "$(jq '.context_window.used_percentage = null' <<< "$input")" 'previous|33|200000|statusline'
+  statusline_usage_row negative-percentage "$(jq '.context_window.used_percentage = -1' <<< "$input")" 'previous|33|200000|statusline'
+  statusline_usage_row missing-window "$(jq 'del(.context_window.context_window_size)' <<< "$input")" 'previous|33|200000|statusline'
+  run_statusline 'not json'
+  unavailable=$output
+  statusline_invalid_row malformed-json '{' "$unavailable"
+  statusline_invalid_row array-input '[]' "$unavailable"
+  statusline_invalid_row null-input 'null' "$unavailable"
+  statusline_invalid_row number-input '7' "$unavailable"
+  statusline_invalid_row string-input '"hello"' "$unavailable"
+  statusline_invalid_row empty-input '' "$unavailable"
+  assert_no_case_failures
 }
 
 @test "statusline: renders every line without writes and hides the Quota line only for true hide-limits switches" {

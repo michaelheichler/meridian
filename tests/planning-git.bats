@@ -158,6 +158,16 @@ sync_tracking_mode_ignores() {
   expect_case manual-default 0 "planning-ignored=no"
   expect_case manual-default 0 "transient-ignored=yes"
 
+  fresh_repo context-transients
+  tracking_config commit never
+  planning_git sync-ignore
+  run git check-ignore -q .lbwc-planning/.context-usage-reset
+  expect_case baseline-transient 0
+  run git check-ignore -q .lbwc-planning/.context-usage.statusline.12345
+  expect_case statusline-temp-transient 0
+  run git check-ignore -q .lbwc-planning/STATE.md
+  expect_case project-state-still-tracked 1
+
   assert_no_case_failures
 }
 

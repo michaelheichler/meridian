@@ -9,11 +9,13 @@ setup() {
   build_plugin
   build_planning active
   cd "$TEST_TEMP_DIR"
+  git init -q
   reset_case_failures
 }
 
 teardown() {
   cd "$PROJECT_ROOT"
+  await_git_ai
   teardown_temp_dir
 }
 
@@ -58,6 +60,14 @@ guard() {
     CLAUDE_CONFIG_DIR="$TEST_TEMP_DIR/claude-config" bash "$SCRIPTS_DIR/suggest-compact.sh" "$@"
 }
 
+native_guard_row() {
+  local label=$1 native=$2 legacy=$3 expected
+  expected=$(guard active "$legacy" '{"compaction_threshold":700000}' s1 execute)
+  run guard active "$native" '{"compaction_threshold":700000}' s1 execute
+  expect_case_exact "$label" 0 "$expected"
+  [ -n "$output" ] || record_case_failure "$label" 'compact suggestion missing'
+}
+
 @test "context guard stays silent unless this session's usage leaves too little headroom" {
   run env LBWC_PLANNING_DIR="$TEST_TEMP_DIR/active" CLAUDE_PLUGIN_ROOT="$PLUGIN" bash "$SCRIPTS_DIR/suggest-compact.sh" execute
   expect_case_silent no-usage-file 0
@@ -93,6 +103,8 @@ guard() {
 }
 
 @test "context guard estimates each workflow's token cost from its fixed and project files" {
+  native_guard_row native-fractional-window 's1|72.5|1000000|statusline' 's1|72|1000000'
+  native_guard_row native-tight-headroom 's1|99.5|100000|statusline' 's1|99|100000'
   build_planning finished
   rm "$TEST_TEMP_DIR/finished/phases/01-active/01-01-PLAN.md"
   sized_file "$TEST_TEMP_DIR/finished/phases/01-active/01-01-SUMMARY.md" 2000 $'---\nstatus: complete\n---\n'
