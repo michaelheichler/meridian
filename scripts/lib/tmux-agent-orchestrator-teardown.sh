@@ -19,6 +19,19 @@ clear_teardown_intent() {
   rm -f "$(teardown_intent_path "$1")"
 }
 
+stop_heartbeat_sender() {
+  local agent_id="$1" record sender_pid started current_started command_line
+  record=$(tmux_runtime_helper read-json --root "$TMUX_RUNTIME_BUS_ROOT" --source "inboxes/$agent_id/heartbeat-sender.json" 2>/dev/null) || return 0
+  sender_pid=$(jq -er '.pid | select(type == "number" and floor == . and . > 1)' <<<"$record") || return 0
+  started=$(jq -er '.started | select(type == "string" and length > 0)' <<<"$record") || return 0
+  current_started=$(ps -p "$sender_pid" -o lstart=) || return 0
+  [ "$current_started" = "$started" ] || return 0
+  command_line=$(ps -p "$sender_pid" -o command=) || return 0
+  case "$command_line" in
+    *"/tmux-agent-heartbeat.sh $TMUX_RUNTIME_CONTROL_ROOT $agent_id "*) kill -TERM "$sender_pid" 2>/dev/null || true ;;
+  esac
+}
+
 persist_shutdown_agents() {
   local registry="$1" agent_ids="$2" updated agent_id
   updated=$(jq --argjson agent_ids "$agent_ids" '
@@ -29,6 +42,7 @@ persist_shutdown_agents() {
   tmux_runtime_write_registry_route_bundle "$updated" || return 1
   while IFS= read -r agent_id; do
     [ -n "$agent_id" ] || continue
+    stop_heartbeat_sender "$agent_id"
     rm -rf "$(tmux_runtime_inbox "$agent_id")" || return 1
   done < <(jq -r '.[]' <<<"$agent_ids")
 }
