@@ -216,11 +216,11 @@ if [ ! -f "$USAGE_FILE" ]; then
   exit 0
 fi
 
-IFS='|' read -r FIELD1 FIELD2 FIELD3 < "$USAGE_FILE" 2>/dev/null || exit 0
+IFS='|' read -r FIELD1 FIELD2 FIELD3 USAGE_SOURCE < "$USAGE_FILE" 2>/dev/null || exit 0
 
-if [ -n "${FIELD3:-}" ] && [[ "${FIELD2:-}" =~ ^[0-9]+$ ]] && [[ "${FIELD3:-}" =~ ^[0-9]+$ ]]; then
+if [ -n "${FIELD3:-}" ] && [[ "${FIELD2:-}" =~ ^[0-9]+([.][0-9]+)?$ ]] && [[ "${FIELD3:-}" =~ ^[0-9]+$ ]]; then
   FILE_SID="$FIELD1"
-  USED_PCT="$FIELD2"
+  USED_PCT="${FIELD2%.*}"
   CTX_SIZE="$FIELD3"
   CURRENT_SID="${CLAUDE_SESSION_ID:-}"
   authoritative_session_id "$FILE_SID" || exit 0

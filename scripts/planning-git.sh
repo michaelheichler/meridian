@@ -31,6 +31,8 @@ ${MD_HASH} LBWC transient runtime artifacts
 .execution-state.json.tmp
 .context-*.md
 .context-usage
+.context-usage-reset
+.context-usage.statusline.*
 .contracts/
 .locks/
 .token-state/
