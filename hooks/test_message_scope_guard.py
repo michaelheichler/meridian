@@ -28,21 +28,21 @@ class MessageScopeGuardTest(unittest.TestCase):
     def test_reporting_permission_follows_role_and_communication_policy(self) -> None:
         self.prepare_project()
         rows = (
-            ({"role": "qa", "pair_id": None}, "agent-qa-1", "main", False),
-            ({"role": "python-engineer", "pair_id": "p1"}, "agent-eng-1", "main", True),
-            ({"role": "python-engineer", "pair_id": "p1", "runtime_kind": "native-team", "communication_policy": "native-team"}, "agent-eng-1", "main", False),
-            ({"role": "python-engineer", "runtime_kind": "native-team", "communication_policy": "native-team"}, "agent-eng-1", "agent-critic-1", False),
-            ({"role": "test-dev", "pair_id": "p1", "runtime_kind": "legacy-subagent", "communication_policy": "critic-relay"}, "agent-test-1", "main", False),
-            ({"role": "python-engineer", "pair_id": "p1"}, "", "main", False),
-            ({"role": "python-engineer", "cwd": "/"}, "unregistered", "main", False),
+            ({"role": "qa", "pair_id": None}, "agent-qa-1", "main", None),
+            ({"role": "python-engineer", "pair_id": "p1"}, "agent-eng-1", "main", self.guard.blocked()),
+            ({"role": "python-engineer", "pair_id": "p1", "runtime_kind": "native-team", "communication_policy": "native-team"}, "agent-eng-1", "main", None),
+            ({"role": "python-engineer", "runtime_kind": "native-team", "communication_policy": "native-team"}, "agent-eng-1", "agent-critic-1", None),
+            ({"role": "test-dev", "pair_id": "p1", "runtime_kind": "legacy-subagent", "communication_policy": "critic-relay"}, "agent-test-1", "main", None),
+            ({"role": "python-engineer", "pair_id": "p1"}, "", "main", None),
+            ({"role": "python-engineer", "cwd": "/"}, "unregistered", "main", None),
         )
-        for entry, identifier, recipient, denied in rows:
+        for entry, identifier, recipient, expected_reason in rows:
             with self.subTest(entry=entry, identifier=identifier, recipient=recipient):
                 agents = {identifier: entry, "agent-critic-1": {"role": "python-critic", "pair_id": "p1"}}
                 (self.planning / ".agent-manifest.json").write_text(json.dumps({"agents": agents}))
                 event = json.dumps({"agent_id": identifier, "cwd": entry.get("cwd", str(self.root)), "tool_name": "SendMessage", "tool_input": {"to": recipient}})
                 reason = self.guard.verdict(event)
-                self.assertEqual(reason is not None, denied)
+                self.assertEqual(reason, expected_reason)
 
     def test_reporting_denial_reaches_the_hook_protocol(self) -> None:
         self.prepare_project()

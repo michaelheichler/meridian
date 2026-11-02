@@ -7,11 +7,20 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
-from hooks import user_question_guard
+from hooks import decision_common, user_question_guard
+from hooks.question_validation import validate_question
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+
+def rejected_reason(operation: Callable[[], object]) -> str:
+    try:
+        operation()
+    except user_question_guard.DecisionStateError as error:
+        return str(error)
+    raise AssertionError("The fixture operation must reject its input.")
 
 
 def question_event(session_id: str, cwd: Path) -> dict[str, Any]:
@@ -93,7 +102,7 @@ class QuestionLifecycleTest(QuestionFixture):
         saved = self.store().record(self.session_id)
         self.assertEqual(saved["status"], "pending")
         self.assertEqual(saved["command"], "AskUserQuestion")
-        self.assertIsNotNone(self.hook(self.event("Write", {"file_path": "src/app.py", "content": "x"}), "pretool"))
+        self.assertEqual(self.hook(self.event("Write", {"file_path": "src/app.py", "content": "x"}), "pretool"), user_question_guard.PENDING_ORCHESTRATION_REASON)
         self.assertIsNone(self.hook(self.event("Read", {"file_path": "src/app.py"}), "pretool"))
 
     def test_bounded_answer_resolves_the_pending_record(self) -> None:
@@ -120,7 +129,7 @@ class QuestionLifecycleTest(QuestionFixture):
         self.prepare_project()
         self.open_question()
         event = self.event("Bash", {"command": "sed -i '' 's/old/new/' config.json"})
-        self.assertIsNotNone(self.hook(event, "pretool"))
+        self.assertEqual(self.hook(event, "pretool"), user_question_guard.PENDING_ORCHESTRATION_REASON)
 
     def test_stale_state_blocks_answer_and_stop(self) -> None:
         self.prepare_project()
@@ -150,7 +159,9 @@ class QuestionLifecycleTest(QuestionFixture):
     def test_unchanged_state_cannot_replace_a_pending_question(self) -> None:
         self.prepare_project()
         self.open_question()
-        self.assertIsNotNone(self.hook(question_event(self.session_id, self.root), "pretool"))
+        event = question_event(self.session_id, self.root)
+        expected_reason = rejected_reason(lambda: self.store().open(self.session_id, validate_question(event["tool_input"])))
+        self.assertEqual(self.hook(event, "pretool"), expected_reason)
 
     def test_registered_hooks_enforce_the_decision_lifecycle(self) -> None:
         rows = (
@@ -218,7 +229,12 @@ class QuestionValidationTest(QuestionFixture):
         self.prepare_project()
         event = question_event(self.session_id, self.root)
         event["agent_id"] = "lbwc-worker"
-        self.assertIsNotNone(self.hook(event, "pretool"))
+        missing_session = {key: value for key, value in event.items() if key not in {"agent_id", "session_id"}}
+        other_reasons = (None, self.hook(missing_session, "pretool"), user_question_guard.RESERVED_RUNTIME,
+                         user_question_guard.PENDING_ORCHESTRATION_REASON, decision_common.INVALID_RECORD,
+                         decision_common.INVALID_STATE, decision_common.INTEGRITY_FAILED, user_question_guard.MALFORMED_INPUT)
+        self.assertNotIn(self.hook(event, "pretool"), other_reasons)
+        self.assertEqual(self.store().state(self.session_id), "none")
 
     def test_technical_questions_and_options_do_not_create_a_record(self) -> None:
         rows = (
@@ -234,7 +250,8 @@ class QuestionValidationTest(QuestionFixture):
                 self.prepare_project()
                 event = question_event(self.session_id, self.root)
                 event["tool_input"] = {"questions": [question]}
-                self.assertIsNotNone(self.hook(event, "pretool"))
+                expected_reason = rejected_reason(lambda: validate_question(event["tool_input"]))
+                self.assertEqual(self.hook(event, "pretool"), expected_reason)
                 self.assertEqual(self.store().state(self.session_id), "none")
 
     def test_state_lookup_and_inapplicable_events_do_not_create_runtime_state(self) -> None:
@@ -262,7 +279,7 @@ class QuestionValidationTest(QuestionFixture):
         self.open_question()
         path = self.planning_dir / ".runtime" / "decisions" / f"{self.session_id}.json"
         path.write_text(path.read_text().replace("AskUserQuestion", "AskUserQuestionX"))
-        self.assertIsNotNone(self.hook(self.event("", {}), "stop"))
+        self.assertIn(decision_common.INTEGRITY_FAILED, self.hook(self.event("", {}), "stop") or "")
 
     def test_recomputed_record_checksum_without_hook_transition_is_invalid(self) -> None:
         self.prepare_project()
@@ -274,18 +291,28 @@ class QuestionValidationTest(QuestionFixture):
         encoded = json.dumps(unsigned, sort_keys=True, separators=(",", ":")).encode("utf-8")
         record["record_digest"] = hashlib.sha256(encoded).hexdigest()
         path.write_text(json.dumps(record, separators=(",", ":")))
-        with self.assertRaises(user_question_guard.DecisionStateError):
+        with self.assertRaises(user_question_guard.DecisionStateError) as failure:
             self.store().state(self.session_id)
+        self.assertEqual(str(failure.exception), decision_common.INTEGRITY_FAILED)
 
     def test_missing_session_blocks_mutation_stop_and_questions(self) -> None:
         self.prepare_project()
         question = question_event(self.session_id, self.root)
         del question["session_id"]
-        rows = (("pretool", {"cwd": str(self.root), "tool_name": "Write", "tool_input": {"file_path": "src/app.py", "content": "x"}}),
-                ("stop", {"cwd": str(self.root)}), ("pretool", question))
-        for mode, event in rows:
+        mutation = {"cwd": str(self.root), "tool_name": "Write", "tool_input": {"file_path": "src/app.py", "content": "x"}}
+        mutation_reason = self.hook(mutation, "pretool")
+        stop_reason = self.hook({"cwd": str(self.root)}, "stop")
+        generated_question = {**question, "session_id": self.session_id, "agent_id": "lbwc-worker"}
+        other_reasons = (None, user_question_guard.RESERVED_RUNTIME, user_question_guard.PENDING_ORCHESTRATION_REASON,
+                         decision_common.INVALID_RECORD, decision_common.INVALID_STATE, decision_common.INTEGRITY_FAILED,
+                         user_question_guard.MALFORMED_INPUT, self.hook(generated_question, "pretool"))
+        self.assertNotIn(mutation_reason, other_reasons)
+        self.assertNotIn(stop_reason, (*other_reasons, mutation_reason))
+        rows = (("pretool", mutation, mutation_reason), ("stop", {"cwd": str(self.root)}, stop_reason),
+                ("pretool", question, mutation_reason))
+        for mode, event, expected_reason in rows:
             with self.subTest(mode=mode, event=event):
-                self.assertIsNotNone(self.hook(event, mode))
+                self.assertEqual(self.hook(event, mode), expected_reason)
                 self.assertFalse((self.planning_dir / ".runtime").exists())
 
     def test_symlinked_planning_state_blocks_mutation_and_stop(self) -> None:
@@ -295,8 +322,8 @@ class QuestionValidationTest(QuestionFixture):
         linked_root = Path(temporary.name)
         (linked_root / ".lbwc-planning").symlink_to(self.planning_dir, target_is_directory=True)
         mutation = {"session_id": self.session_id, "cwd": str(linked_root), "tool_name": "Write", "tool_input": {"file_path": "src/app.py", "content": "x"}}
-        self.assertIsNotNone(self.hook(mutation, "pretool"))
-        self.assertIsNotNone(self.hook({"session_id": self.session_id, "cwd": str(linked_root)}, "stop"))
+        self.assertEqual(self.hook(mutation, "pretool"), decision_common.INVALID_STATE)
+        self.assertIn(decision_common.INVALID_STATE, self.hook({"session_id": self.session_id, "cwd": str(linked_root)}, "stop") or "")
 
     def test_visible_other_option_is_rejected(self) -> None:
         self.prepare_project()
@@ -306,32 +333,43 @@ class QuestionValidationTest(QuestionFixture):
             "options": [{"label": "Fast", "description": "Finish the review sooner."},
                         {"label": "Other", "description": "Something else entirely."}],
         }]}
-        self.assertIsNotNone(self.hook(event, "pretool"))
+        expected_reason = rejected_reason(lambda: validate_question(event["tool_input"]))
+        self.assertEqual(self.hook(event, "pretool"), expected_reason)
 
     def test_runtime_paths_are_reserved_without_a_pending_record(self) -> None:
         self.prepare_project()
-        self.assertIsNotNone(self.hook(self.event("Bash", {"command": "mkdir -p .lbwc-planning/.runtime/decisions"}), "pretool"))
-        self.assertIsNotNone(self.hook(self.event("Bash", {"command": "bash scripts/pending-decision.sh create .lbwc-planning session-1"}), "pretool"))
-        self.assertIsNotNone(self.hook(self.event("Write", {"file_path": ".lbwc-planning/.runtime/decisions/forged.json", "content": "{}"}), "pretool"))
+        rows = (
+            (self.event("Bash", {"command": "mkdir -p .lbwc-planning/.runtime/decisions"}), user_question_guard.RESERVED_RUNTIME),
+            (self.event("Bash", {"command": "bash scripts/pending-decision.sh create .lbwc-planning session-1"}), user_question_guard.RESERVED_RUNTIME),
+            (self.event("Write", {"file_path": ".lbwc-planning/.runtime/decisions/forged.json", "content": "{}"}), user_question_guard.RESERVED_RUNTIME),
+        )
+        for event, expected_reason in rows:
+            with self.subTest(event=event):
+                self.assertEqual(self.hook(event, "pretool"), expected_reason)
 
     def test_symlink_and_traversal_aliases_to_protected_paths_are_reserved(self) -> None:
         self.prepare_project()
         script_alias = self.root / "decision-alias"
         script_alias.symlink_to(PROJECT_ROOT / "scripts" / "pending-decision.sh")
-        self.assertIsNotNone(self.hook(self.event("Bash", {"command": f"bash {script_alias} create .lbwc-planning session-1"}), "pretool"))
         runtime = self.planning_dir / ".runtime"
         runtime.mkdir()
         runtime_alias = self.root / "runtime-alias"
         runtime_alias.symlink_to(runtime, target_is_directory=True)
-        self.assertIsNotNone(self.hook(self.event("Bash", {"command": f"mkdir -p {runtime_alias}/decisions"}), "pretool"))
-        self.assertIsNotNone(self.hook(self.event("Bash", {"command": "mkdir -p .lbwc-planning/cache/../.runtime/decisions"}), "pretool"))
+        rows = (
+            (f"bash {script_alias} create .lbwc-planning session-1", user_question_guard.RESERVED_RUNTIME),
+            (f"mkdir -p {runtime_alias}/decisions", user_question_guard.RESERVED_RUNTIME),
+            ("mkdir -p .lbwc-planning/cache/../.runtime/decisions", user_question_guard.RESERVED_RUNTIME),
+        )
+        for command, expected_reason in rows:
+            with self.subTest(command=command):
+                self.assertEqual(self.hook(self.event("Bash", {"command": command}), "pretool"), expected_reason)
 
     def test_indirect_runtime_tampering_fails_closed_for_later_tools(self) -> None:
         self.prepare_project()
         decisions = self.planning_dir / ".runtime" / "decisions"
         decisions.mkdir(parents=True)
         (decisions / f"{self.session_id}.json").write_text("{}")
-        self.assertIsNotNone(self.hook(self.event("Write", {"file_path": "src/app.py", "content": "x"}), "pretool"))
+        self.assertEqual(self.hook(self.event("Write", {"file_path": "src/app.py", "content": "x"}), "pretool"), decision_common.INVALID_RECORD)
 
 
 if __name__ == "__main__":

@@ -6,6 +6,8 @@ import unittest
 from itertools import product
 from pathlib import Path
 
+from hooks import skill_gate
+
 HOOK_FILES = ("skill_gate.py", "message_scope_guard.py", "test_scope_guard.py")
 
 
@@ -42,7 +44,7 @@ class PretoolInputContractTest(unittest.TestCase):
                 result = run_hook(filename, event)
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertNotIn("permissionDecision", result.stdout)
-                self.assertTrue(result.stderr.strip())
+                self.assertEqual(result.stderr.strip(), skill_gate.MALFORMED_PRETOOL_INPUT)
 
     def test_non_applicable_events_remain_allowed(self) -> None:
         rows = (
