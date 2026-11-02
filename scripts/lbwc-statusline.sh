@@ -45,9 +45,13 @@ fi
 
 PLANNING_DIR="$PROJECT_ROOT/.lbwc-planning"
 if [ -d "$PLANNING_DIR" ] && [ -n "$CONTEXT_RECORD" ]; then
-  CONTEXT_TMP="$PLANNING_DIR/.context-usage.statusline.$$"
-  if printf '%s\n' "$CONTEXT_RECORD" > "$CONTEXT_TMP" 2>/dev/null; then
-    mv -f -- "$CONTEXT_TMP" "$PLANNING_DIR/.context-usage" 2>/dev/null || true
+  CURRENT_CONTEXT_RECORD=''
+  IFS= read -r CURRENT_CONTEXT_RECORD 2>/dev/null < "$PLANNING_DIR/.context-usage" || true
+  if [ "$CURRENT_CONTEXT_RECORD" != "$CONTEXT_RECORD" ]; then
+    CONTEXT_TMP="$PLANNING_DIR/.context-usage.statusline.$$"
+    if printf '%s\n' "$CONTEXT_RECORD" > "$CONTEXT_TMP" 2>/dev/null; then
+      mv -f -- "$CONTEXT_TMP" "$PLANNING_DIR/.context-usage" 2>/dev/null || true
+    fi
   fi
 fi
 read_orchestration_state
