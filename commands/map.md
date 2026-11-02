@@ -1,5 +1,6 @@
 ---
 category: advanced
+model: sonnet
 disable-model-invocation: true
 description: Produce a structured codebase map from inline analysis and Scout evidence.
 argument-hint: "[--incremental] [--package=name] [--tier=solo|duo|quad]"

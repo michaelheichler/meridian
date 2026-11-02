@@ -1,5 +1,6 @@
 ---
 category: supporting
+model: haiku
 disable-model-invocation: true
 description: List pending todos from STATE.md with action hints.
 argument-hint: "[priority filter]"
@@ -10,7 +11,7 @@ allowed-tools: Read, Edit, Bash
 
 ## Context
 
-- Working directory: current workspace root.
+- Use the current workspace root as the working directory.
 - Plugin cache root: `"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/cache/lbwc-marketplace/lbwc"` (respects non-default `CLAUDE_CONFIG_DIR`, always quote, path may contain spaces).
 - Session startup creates a symlink at `/tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID:-default}` pointing to the plugin root. The cache-based tiers are authoritative, symlinks are a fallback. See Step 1 for full resolution order.
 
@@ -33,7 +34,7 @@ allowed-tools: Read, Edit, Bash
    ```bash
    bash "${PLUGIN_ROOT}/scripts/todo-lifecycle.sh" list-with-snapshot {priority-filter}
    ```
-   Omit the filter arg if none is provided. Parse the JSON output. This helper owns both the fresh `list-todos.sh` lookup and the exact last-view snapshot write. If snapshot persistence fails, it returns the helper error JSON instead of a partial success.
+   Omit the filter arg if the user provides none. Parse the JSON output. This helper owns both the fresh `list-todos.sh` lookup and the exact last-view snapshot write. If snapshot persistence fails, it returns the helper error JSON instead of a partial success.
 
 3. **Handle status:**
    - `"error"`: STOP with the `message` value.

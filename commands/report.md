@@ -1,5 +1,6 @@
 ---
 category: supporting
+model: sonnet
 disable-model-invocation: true
 description: Collect redacted local diagnostics, classify a bug or feature, and prepare a GitHub issue.
 argument-hint: "[problem description]"
@@ -51,9 +52,9 @@ This command may collect redacted diagnostics, write session-scoped temporary fi
 
 3. **Classify.** Use `bug` for broken, unexpected, crashing, regressed, or ambiguous behavior. Use `enhancement` for a requested new capability or intentional workflow change.
 
-4. **Compose the preview.** Derive a concise title of about ten words. Compose the literal body structure matching the issue fields below; keep every bold header on its own line, put content on the following line, and leave a blank line between sections. Source diagnostics from the temp file, not memory.
+4. **Compose the preview.** Derive a concise title of about ten words. Compose the literal body structure matching the issue fields below. Keep every bold header on its own line, put content on the following line, and leave a blank line between sections. Source diagnostics from the temp file, not memory.
 
-   **Classification: bug**
+   **Bug classification**
 
    ```markdown
    **Command**
@@ -78,7 +79,7 @@ This command may collect redacted diagnostics, write session-scoped temporary fi
    {diagnostic report in a fenced block, sourced from the temp file}
    ```
 
-   **Classification: enhancement**
+   **Enhancement classification**
 
    ```markdown
    **Problem**
@@ -103,13 +104,13 @@ This command may collect redacted diagnostics, write session-scoped temporary fi
 
    **Method 1, `gh` CLI (if installed and authenticated):** Check `gh auth status 2>/dev/null`. If it succeeds, create a mode-600 body file and call `gh issue create --repo michaelheichler/lbwc --title <title> --label <bug|enhancement> --body-file <file>`. The body file must contain the literal template sections above and the complete diagnostic report from the temp file under `**Additional context**`. Delete both temporary files after success or failure.
 
-   **Method 2, GitHub MCP equivalent (if available):** If `gh` is unavailable or unauthenticated, check whether `mcp__plugin_gitkraken_gitkraken__issues_create` is available in the tool list. If it is, re-derive `DIAG_FILE="/tmp/lbwc-diag-report-${CLAUDE_SESSION_ID:-default}.txt"`, read its diagnostics, and compose the complete confirmed body with the same literal template and fenced `**Additional context**`. Call the tool with `provider: github`, `repository_organization: michaelheichler`, `repository_name: lbwc`, the confirmed `title`, the complete `body`, `labels: ["bug"]` or `["enhancement"]`, and `assignees: []`; leave Jira-only `issue_type` empty. Delete the diagnostic temp file after the MCP call succeeds or fails. Never invoke an unavailable MCP tool or silently replace this method with a different mutation.
+   **Method 2, GitHub MCP equivalent (if available):** If `gh` is unavailable or unauthenticated, check whether `mcp__plugin_gitkraken_gitkraken__issues_create` is available in the tool list. If it is, re-derive `DIAG_FILE="/tmp/lbwc-diag-report-${CLAUDE_SESSION_ID:-default}.txt"`, read its diagnostics, and compose the complete confirmed body with the same literal template and fenced `**Additional context**`. Call the tool with `provider: github`, `repository_organization: michaelheichler`, `repository_name: lbwc`, the confirmed `title`, the complete `body`, `labels: ["bug"]` or `["enhancement"]`, and `assignees: []`. Leave Jira-only `issue_type` empty. Delete the diagnostic temp file after the MCP call succeeds or fails. Never invoke an unavailable MCP tool or silently replace this method with a different mutation.
 
    **Method 3, manual last resort:** If neither automatic method is available or either method fails, re-derive `DIAG_FILE="/tmp/lbwc-diag-report-${CLAUDE_SESSION_ID:-default}.txt"`, read the diagnostics into the confirmed body, delete the temp file, and display the title, body, and `https://github.com/michaelheichler/lbwc/issues/new?template=bug_report.md` for bugs or `https://github.com/michaelheichler/lbwc/issues/new?template=feature_request.md` for enhancements. Do not install software or start interactive login automatically. If the user wants interactive authentication in this session, tell them to run `! gh auth login --web` and re-run `/lbwc:report`.
 
 ## Failure and recovery
 
-A missing root resolver, unreadable diagnostic file, failed redaction boundary, changed payload after confirmation, or failed issue creation stops the command. State whether no issue was created or whether the successful filing method returned a URL. Never claim success without the URL from `gh issue create` or the GitHub MCP result.
+A missing root resolver, unreadable diagnostic file, failed redaction boundary, changed payload after confirmation, or failed issue creation stops the command. State whether you created no issue or whether the successful filing method returned a URL. Never claim success without the URL from `gh issue create` or the GitHub MCP result.
 
 ## Output Format
 

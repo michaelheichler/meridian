@@ -1,5 +1,6 @@
 ---
 category: monitoring
+model: haiku
 disable-model-invocation: true
 description: Display project progress dashboard with phase status, velocity metrics, and next action.
 argument-hint: "[--verbose] [--metrics]"
@@ -29,7 +30,7 @@ Roadmap:
 !`head -50 .lbwc-planning/ROADMAP.md 2>/dev/null || echo "No roadmap found"`
 ```
 
-Config: Pre-injected by SessionStart hook. Read .lbwc-planning/config.json only if --verbose.
+The SessionStart hook pre-injects config. Read .lbwc-planning/config.json only if --verbose.
 
 Phase directories:
 ```
@@ -96,21 +97,28 @@ Shipped milestones:
   bash "/tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/phase-detect.sh" > "/tmp/.lbwc-phase-detect-${CLAUDE_SESSION_ID:-default}.txt"
   ```
   Use the refreshed phase-detect output for all subsequent steps.
-- No ROADMAP.md or has template placeholders: STOP "No roadmap found. Run /lbwc:vibe to set up your project."
+- If ROADMAP.md is missing or has template placeholders, STOP "No roadmap found. Run /lbwc:vibe to set up your project."
 
 ## Steps
 
 1. **Parse args:** --verbose shows per-plan detail within each phase
 2. **Resolve paths:** Use `.lbwc-planning/phases/` for phase directories. Gather milestone list from `.lbwc-planning/milestones/` (dirs with SHIPPED.md).
-3. **Read data:** (STATE.md and ROADMAP.md use compact format -- flat fields, no verbose prose)
-   - STATE.md: project name, current phase (flat `Phase:`, `Plans:`, `Progress:` lines), velocity
-   - ROADMAP.md: phases, status markers, plan counts (compact per-phase fields, Progress table)
-   - SessionStart injection: effort, autonomy. If --verbose, read config.json
-   - Phase dirs: glob `*-PLAN.md` and `*-SUMMARY.md` per phase for completion data
-   - If Agent Teams build active: read shared task list for teammate status
-   - Cost ledger: if `.lbwc-planning/.cost-ledger.json` exists, read with jq. Extract per-agent costs. Compute total. Only display economy if total > 0.
-4. **Compute progress:** Per phase: count PLANs (total) vs SUMMARYs (done). Pct = done/total * 100. Status: ✓ (100%), ◆ (1-99%), ○ (0%).
-5. **Compute velocity:** Total plans done, avg duration, total time. If --verbose: per-phase breakdown.
+3. **Read data:** STATE.md and ROADMAP.md use compact format with flat fields and no verbose prose.
+
+   **Planning data**
+
+   - Read project name, current phase (flat `Phase:`, `Plans:`, `Progress:` lines), and velocity from STATE.md.
+   - Read phases, status markers, and plan counts (compact per-phase fields, Progress table) from ROADMAP.md.
+   - Read effort and autonomy from the SessionStart injection. If --verbose, read config.json.
+
+   **Execution data**
+
+   - Glob `*-PLAN.md` and `*-SUMMARY.md` per phase directory for completion data.
+   - If an Agent Teams build is active, read the shared task list for teammate status.
+   - If `.lbwc-planning/.cost-ledger.json` exists, read it with jq. Extract per-agent costs and compute the total. Only display economy if total > 0.
+
+4. **Compute progress:** Per phase, count PLANs (total) vs SUMMARYs (done). Pct = done/total * 100. Use status ✓ (100%), ◆ (1-99%), ○ (0%).
+5. **Compute velocity:** Total plans done, avg duration, total time. If --verbose, show the per-phase breakdown.
 6. **Next action:** Find first incomplete phase. Has plans but not all summaries: `/lbwc:vibe` (auto-executes). Complete + next unplanned: `/lbwc:vibe` (auto-plans). All complete: `/lbwc:vibe --archive`. No plans anywhere: `/lbwc:vibe`.
 
 ## Display

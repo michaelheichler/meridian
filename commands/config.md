@@ -1,5 +1,6 @@
 ---
 category: supporting
+model: sonnet
 disable-model-invocation: true
 description: View and modify LBWC configuration including execution mode, effort profile, verification tier, and skill-hook wiring.
 argument-hint: "[setting value]"

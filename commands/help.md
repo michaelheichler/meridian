@@ -1,5 +1,6 @@
 ---
 category: supporting
+model: haiku
 disable-model-invocation: true
 description: Display all available LBWC commands with descriptions and usage examples.
 argument-hint: "[command-name]"
@@ -20,7 +21,7 @@ Store the plugin root path output above as `{plugin-root}` for use in command lo
 
 ## Behavior
 
-### No args: Display all commands
+### Display all commands with no args
 
 Run the help output script and display the result exactly as-is (pre-formatted terminal output):
 
@@ -28,9 +29,9 @@ Run the help output script and display the result exactly as-is (pre-formatted t
 !`L="/tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID:-default}"; i=0; while [ ! -L "$L" ] && [ $i -lt 20 ]; do sleep 0.1; i=$((i+1)); done; bash "$L/scripts/help-output.sh" || echo "LBWC: help-output.sh failed , run /lbwc:doctor for diagnostics"`
 ```
 
-Display the output above verbatim. Do not reformat, summarize, or add commentary. The script dynamically reads all command files and generates grouped output.
+Display the output above verbatim, without reformatting or summarizing it. Do not add commentary. The script dynamically reads all command files and generates grouped output.
 
-### With arg: Display specific command details
+### Display specific command details with an arg
 
 Strip the `lbwc:` prefix from `{name}` if present, validate the remainder as a command slug, then read `{plugin-root}/commands/{name}.md`. Display:
 
@@ -44,11 +45,11 @@ If command not found: "⚠ Unknown command: {name}. Run /lbwc:help for all comma
 
 ## Guard
 
-Read only shipped command metadata. Do not execute the command being described.
+Read only shipped command metadata. Do not execute the command you describe.
 
 ## Output Format
 
-Show the matching LBWC command, one-line purpose, arguments, and one example.
+Show the matching LBWC command and its one-line purpose. Include arguments and one example.
 
 ## Next Up
 
