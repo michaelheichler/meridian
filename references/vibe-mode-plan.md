@@ -29,8 +29,8 @@ generator protocol.
    CONTEXT_NAME=$(bash /tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/resolve-artifact-path.sh context "{phase-dir}")
    ```
    If `{phase-dir}/${CONTEXT_NAME}` exists, include it in Lead agent context. If not, proceed without it. Users who want context run `/lbwc:discuss {NN}` first.
-3. **Research persistence (REQ-08, graduated):** For effort != turbo:
-   - Research runs for every non-`turbo` workflow effort. The detected catalog route resolves only at Scout generation time. If that route is unavailable, generation fails clearly. Do not skip research silently or choose a route by judgment.
+3. **Research routing:** Run `bash "{LINK}/scripts/pipeline-research.sh" .lbwc-planning "{phase-dir}"` before planning, including turbo. Stop on helper failure. If `research_required=true`, complete the research step below before planning and require the emitted artifact to exist. Otherwise research stays optional, and existing research remains available to Lead.
+   - The detected catalog route resolves only at Scout generation time. If that route is unavailable, generation fails clearly. Never skip required research silently.
    - Determine the next plan number `{MM}` and resolve artifact paths:
      ```bash
      RESOLVE_SCRIPT="/tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/resolve-artifact-path.sh"
@@ -46,9 +46,9 @@ generator protocol.
      - For either path, do not resolve or override model, effort, or turns. Stop and report any contract or generator failure verbatim. Evaluate relevant skills and MCP tools before composing each prompt. Render the prefix from `references/skill-activation-payload.md`. Include any available helper-emitted follow-up files.
 
     - **If exists (phase-wide or legacy single-file brownfield):** Record the RESEARCH.md path (phase-wide `${RESEARCH_NAME}` or brownfield `${BROWNFIELD_RESEARCH}`) for inclusion in the Lead prompt. The Lead prompt MUST include the directive `Read {research-path} for full research findings before planning.` Do NOT inline a summary of the research as a substitute. The Lead must read the file itself to get the complete, unabridged findings. Multiple per-plan research files are not phase-wide research. If no real phase-wide file exists, Scout must create `${RESEARCH_NAME}`. If new information emerges, Lead can update the phase-wide RESEARCH.md.
-   - **On failure:** Log warning, continue planning without research. Do not block.
+   - **On failure:** Stop when `research_required=true`. Otherwise warn and continue planning without optional research.
     - **Authenticated live validation policy:** Scout can check authenticated/private read-only APIs with proven-safe Bash helper scripts or curl wrappers after preflight. Public/anonymous HTTP validation uses WebFetch. Do not route authenticated API validation through WebFetch. If a check is unsafe or mutating, or if Scout cannot prove it read-only, Scout must flag it with `⚠ REQUIRES AUTHENTICATED LIVE VALIDATION` for Dev/Debugger. Research that runs or defers live validation must include `## Live Validation Evidence` with `command_shape`, `exit_status`, `redacted_evidence`, `expected_shape`, `confidence`, and `limitations_or_deferred_reason`.
-   - If effort=turbo, skip research entirely.
+   - For turbo, skip optional research only. Required research still runs before the turbo planning shortcut.
 4. **Research commit boundary (conditional):** Run this step only after a step 3 Scout spawn (new RESEARCH.md written):
    ```bash
   PG_SCRIPT="/tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/planning-git.sh"
@@ -58,7 +58,7 @@ generator protocol.
      echo "⚠ LBWC: planning-git.sh unavailable. Skipping research git boundary commit." >&2
    fi
    ```
-   With `planning_tracking=commit`, the helper commits a changed RESEARCH.md. This step does not run for pre-existing research or effort=turbo.
+   With `planning_tracking=commit`, the helper commits a changed RESEARCH.md. This step does not run for pre-existing research or when no Scout ran.
 5. **Context compilation:** With `config_context_compiler=true`, run `bash /tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/compile-context.sh {phase} lead {phases_dir}`. If the compiler produced `.context-lead.md`, include it in Lead agent context. When including it in the Lead prompt, describe its contents: "Read `.context-lead.md` for compiled context. It includes milestone scope decisions (decomposition rationale, scope boundaries, cross-phase key decisions) and operational context (phase goal, success criteria, matched requirements, active decisions, research findings)."
 6. **Turbo shortcut:** For effort=turbo, skip Lead. Resolve the plan filename:
    ```bash
