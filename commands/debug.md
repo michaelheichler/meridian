@@ -47,6 +47,7 @@ When `--resume` applies without explicit `--session`, Read `{plugin-root}/refere
 When neither `--resume` nor `--session` applies, Read `{plugin-root}/references/commands/debug-new-session.md` and reuse selected-todo startup or create the manual session.
 
 Store the resolved `session_id` and `session_file` for use in Steps below.
+For metadata-read helper calls (`resume`, `get-or-latest`), use `active_session`, `session_id`, `session_file`, and `session_status` after `eval`. Use `session_status` for lifecycle checks after `eval`, do not rely on a bare `status` variable.
 
 If resuming a session with `session_status=qa_pending` or `session_status=fix_applied`, skip investigation, jump directly to `<debug_inline_qa>` below to run QA inline.
 If resuming `session_status=qa_failed`, Read `{plugin-root}/references/commands/debug-qa-failure.md` before continuing investigation.
@@ -116,7 +117,7 @@ Session-aware next step (only shown when the inline flow did not run):
 ## Failure and recovery
 
 - If a contract, generator, spawn, payload validation, implementation verification, or main-session commit fails, clear the delegation marker and report the failure verbatim. Do not create an uncontracted fallback.
-- If the workflow generator fails or the guard denies the implementation debugger's `Workflow` call, clear the delegation marker, leave the contract `planned`, and report the failure verbatim. Do not fall back to `in_process`.
+- If the workflow generator fails or a guard or the user denies the implementation debugger's `Workflow` call, clear the delegation marker, leave the contract `planned`, and report the failure verbatim. Do not fall back to `in_process`.
 - Preserve the debug session as `investigating` until a validated implementation has passed main-session verification.
 
 ## Output Format
