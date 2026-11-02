@@ -23,8 +23,31 @@ IFS= read -r capability || fail 'capability input is unavailable'
 tmux_runtime_configure_existing "$control_root"
 tmux_heartbeat_settings "$control_root" || fail 'heartbeat settings are invalid'
 
+sleep_pid=''
+cleanup_sender() {
+  if [ -n "$sleep_pid" ]; then
+    kill "$sleep_pid" 2>/dev/null || true
+    wait "$sleep_pid" 2>/dev/null || true
+  fi
+  tmux_runtime_cleanup_locks
+}
+trap cleanup_sender EXIT
+trap 'exit 0' TERM INT
+
+tmux_runtime_lock_acquire registry 5000 30000
+registry=$(tmux_runtime_registry_read)
+jq -e --arg agent "$agent_id" --arg session "$session_id" 'any(.agents[]; .agent_id == $agent and .claude_session_id == $session and (.state == "running" or .state == "idle"))' <<<"$registry" >/dev/null || { tmux_runtime_lock_release registry; exit 0; }
+sender_started=$(ps -p "$$" -o lstart=)
+sender_record=$(jq -cn --argjson pid "$$" --arg started "$sender_started" '{pid:$pid,started:$started}')
+tmux_runtime_atomic_json "$TMUX_RUNTIME_BUS_ROOT/inboxes/$agent_id/heartbeat-sender.json" "$sender_record"
+tmux_runtime_lock_release registry
+
 failures=0
-while sleep "$TMUX_HEARTBEAT_INTERVAL"; do
+while :; do
+  sleep "$TMUX_HEARTBEAT_INTERVAL" &
+  sleep_pid=$!
+  wait "$sleep_pid" || break
+  sleep_pid=''
   if ! registry=$(tmux_runtime_registry_read); then
     failures=$((failures + 1))
     [ "$failures" -lt 3 ] || exit 1
