@@ -2,6 +2,7 @@
 
 load test_helper
 load gate_case_helper
+load isolated_case_helper
 load gate_case_files
 
 setup() {
@@ -175,7 +176,7 @@ preflight_turns_row() {
   assert_no_case_failures
 }
 
-@test "preflight routing reports the seeded model, saved null profiles, and effort-scaled turn budgets with documented precedence" {
+resolve_preflight_routes_and_turn_budgets() {
   local binary="$TEST_ROOT/claude-seeded" label effort expected base engineer config defaults_filter want
 
   write_seeded_claude_fixture \
@@ -234,7 +235,7 @@ CASES
   assert_no_case_failures
 }
 
-@test "preflight is read-only, canonicalizes scopes, rejects protected scopes, and reads agent teams from project settings" {
+preflight_without_writes_and_reject_protected_scopes() {
   local expected_root label scope_args expected
   local -a scope_array
 
@@ -275,7 +276,7 @@ CASES
   assert_no_case_failures
 }
 
-@test "prepare issues one dispatched pair or trio contract with generated definitions and keeps an initialized control root" {
+prepare_pair_and_trio_contracts() {
   local contract_path manifest name
 
   prepare_run run-pair --scope src
@@ -345,7 +346,7 @@ CASES
   assert_no_case_failures
 }
 
-@test "spawn-payload emits name-only Agent calls for in-process, tmux and workflow runs and blocks contract drift" {
+emit_backend_spawn_payloads_and_block_contract_drift() {
   local backend name
 
   prepare_run run-spawn --scope src
@@ -381,7 +382,7 @@ CASES
   assert_no_case_failures
 }
 
-@test "record-spawn, task-payload and record-task gate each step on registered, running and bound teammates" {
+gate_task_steps_on_teammate_evidence() {
   local name first second
 
   prepare_run run-record --scope src
@@ -434,7 +435,7 @@ CASES
   assert_no_case_failures
 }
 
-@test "fail retains runfiles with diagnostics and summary reports the terminal status and records" {
+retain_terminal_runfiles_and_report_summary() {
   prepare_run run-fail --scope src
   run bash "$TRANSACTION" fail --project-root "$PROJECT" --run-root "$RUN_ROOT" --event "spawn rejected"
   expect_case fail 0
@@ -471,7 +472,7 @@ roster_rows() {
   assert_no_case_failures
 }
 
-@test "team rosters infer the paired critic and distinguish pairs from test-enabled trios" {
+infer_pair_and_trio_rosters() {
   roster_rows <<'CASES'
 inferred-critic|python-engineer|0|2|pair
 explicit-critic|python-critic python-engineer|0|2|pair
@@ -479,7 +480,14 @@ trio|test-dev python-critic python-engineer|0|3|trio
 CASES
 }
 
-@test "team rosters reject duplicate, mismatched and incomplete roles before producing a proposal" {
+@test "team transactions validate rosters and enforce the dispatch lifecycle" {
+  run_scenario_cases resolve_preflight_routes_and_turn_budgets \
+    preflight_without_writes_and_reject_protected_scopes prepare_pair_and_trio_contracts \
+    emit_backend_spawn_payloads_and_block_contract_drift gate_task_steps_on_teammate_evidence \
+    retain_terminal_runfiles_and_report_summary infer_pair_and_trio_rosters reject_invalid_rosters
+}
+
+reject_invalid_rosters() {
   roster_rows <<'CASES'
 unknown|not-a-role|1|0|
 duplicate-test|python-engineer test-dev test-dev|1|0|

@@ -2,6 +2,7 @@
 
 load test_helper
 load gate_case_helper
+load isolated_case_helper
 load gate_case_files
 load text_case_helper
 
@@ -32,7 +33,7 @@ write_decisions_claude_md() {
     "## Notes" "" "user notes"
 }
 
-@test "bootstrap-claude validates arguments and writes a new CLAUDE.md with every LBWC section" {
+bootstrap_new_claude_with_valid_arguments() {
   local out="$WORK/new/CLAUDE.md"
 
   run bash "$BOOT" "$out" "App"
@@ -57,7 +58,7 @@ write_decisions_claude_md() {
   assert_no_case_failures
 }
 
-@test "bootstrap-claude keeps user content and replaces managed sections in an existing CLAUDE.md" {
+bootstrap_preserving_user_content() {
   write_text "$WORK/strong/CLAUDE.md" "# My App" "" "Intro line." "" \
     "## Active Context" "" "stale context line" "" "## Build" "" "make build" "" \
     "## Codebase Intelligence" "" "gsd stuff" "" "## Context" "" "soft gsd context" "" \
@@ -98,7 +99,7 @@ write_decisions_claude_md() {
   assert_no_case_failures
 }
 
-@test "bootstrap-claude moves Key Decisions rows into STATE.md and archives leftover notes" {
+migrate_decisions_and_archive_notes() {
   write_decisions_claude_md "$WORK/boundary"
   printf '%s\n' "Note kept for later." "" >> "$WORK/boundary/CLAUDE.md"
   write_text "$WORK/boundary/.lbwc-planning/STATE.md" "# State" "" "## Key Decisions" "" \
@@ -147,7 +148,12 @@ write_decisions_claude_md() {
   assert_no_case_failures
 }
 
-@test "bootstrap-claude keeps the Key Decisions section when STATE.md cannot take its rows" {
+@test "bootstrap claude preserves user content through creation and decision migration" {
+  run_scenario_cases bootstrap_new_claude_with_valid_arguments bootstrap_preserving_user_content \
+    migrate_decisions_and_archive_notes retain_decisions_when_state_cannot_accept_them
+}
+
+retain_decisions_when_state_cannot_accept_them() {
   local before
   write_decisions_claude_md "$WORK/no-state"
   merge_existing "$WORK/no-state"

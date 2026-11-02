@@ -1,6 +1,7 @@
 #!/usr/bin/env bats
 
 load gate_case_helper
+load isolated_case_helper
 load rejection_case_helper
 load lbwc_config_helper
 
@@ -33,7 +34,7 @@ SHIM
   printf '%s\n' "$shim_dir"
 }
 
-@test "init creates a versioned configuration with routing, preference defaults and legacy migration" {
+initialize_defaults_and_migrate_legacy_settings() {
   local legacy_dir="$TEST_ROOT/legacy/.lbwc-planning"
 
   init_config "$PLANNING_DIR"
@@ -99,7 +100,7 @@ SHIM
   assert_no_case_failures
 }
 
-@test "the platform bash executes the shared configuration transaction" {
+initialize_with_platform_bash() {
   [ -x /bin/bash ] || skip '/bin/bash is unavailable'
 
   run /bin/bash "$SCRIPT" init "$PLANNING_DIR"
@@ -134,7 +135,7 @@ get_value_row() {
   [ "$output" = "$want" ] || record_case_failure "$label-get" "expected=[$want] got=[$output]"
 }
 
-@test "set persists every accepted setting domain and get returns the stored JSON value" {
+persist_and_read_accepted_settings() {
   init_config "$PLANNING_DIR"
 
   while IFS='|' read -r setting literal; do
@@ -227,7 +228,7 @@ config_row_dir() {
   printf '%s\n' "$TEST_ROOT/$1/.lbwc-planning"
 }
 
-@test "set, init and validate reject invalid values, invalid existing configurations and symbolic links without changing the saved configuration" {
+reject_invalid_configuration_without_changes() {
   local external="$TEST_ROOT/external" dir
 
   init_config "$PLANNING_DIR"
@@ -325,7 +326,13 @@ expected_effort_for_status() {
   esac
 }
 
-@test "set keeps the verified planning directory identity during final rename" {
+@test "configuration commands preserve valid settings and reject unsafe transactions" {
+  run_scenario_cases initialize_defaults_and_migrate_legacy_settings initialize_with_platform_bash \
+    persist_and_read_accepted_settings reject_invalid_configuration_without_changes \
+    preserve_directory_identity_during_rename
+}
+
+preserve_directory_identity_during_rename() {
   local external_dir="$TEST_ROOT/external" opened_dir="$TEST_ROOT/opened-planning"
   local external_before shim_dir command_status
   init_config "$PLANNING_DIR"

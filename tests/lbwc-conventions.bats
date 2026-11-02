@@ -1,6 +1,7 @@
 #!/usr/bin/env bats
 
 load gate_case_helper
+load isolated_case_helper
 
 setup() {
   REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/.." && pwd)"
@@ -68,7 +69,7 @@ add_rejected_row() {
   [ "$(artifact_digest)" = "$before" ] || record_case_failure "$label" "artifact changed"
 }
 
-@test "add records user conventions, honours conflict resolution, and rejects invalid input untouched" {
+add_conventions_and_resolve_conflicts() {
   local target="$TEST_ROOT/target.json"
 
   run_conventions --json add "$PLANNING_DIR" naming "Components use PascalCase"
@@ -137,7 +138,7 @@ add_rejected_row() {
   assert_no_case_failures
 }
 
-@test "remove requires confirmation and removes only the selected id" {
+remove_selected_convention_after_confirmation() {
   seed_convention testing "Run unit tests"
   seed_convention style "Format before commit"
 
@@ -153,7 +154,7 @@ add_rejected_row() {
   assert_no_case_failures
 }
 
-@test "list and group emit stable JSON, migrate legacy entries, and fail closed on bad artifacts and paths" {
+list_and_group_valid_conventions() {
   local physical_project="$TEST_ROOT/physical-project"
 
   run_conventions --json list "$PLANNING_DIR"
@@ -205,7 +206,12 @@ add_rejected_row() {
   assert_no_case_failures
 }
 
-@test "refresh and reconcile apply detected candidates without losing user conventions and reject malformed ones atomically" {
+@test "convention commands preserve user choices and reject invalid changes atomically" {
+  run_scenario_cases add_conventions_and_resolve_conflicts remove_selected_convention_after_confirmation \
+    list_and_group_valid_conventions refresh_candidates_without_losing_user_conventions
+}
+
+refresh_candidates_without_losing_user_conventions() {
   local candidates="$TEST_ROOT/candidates.json" before first second
 
   seed_convention naming "Components use PascalCase"

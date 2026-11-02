@@ -2,6 +2,7 @@
 
 load test_helper
 load gate_case_helper
+load isolated_case_helper
 load rejection_case_helper
 load routing_fixture
 
@@ -32,7 +33,7 @@ check_set_rejected() {
   expect_digest "$label" "$before" "$(config_digest)"
 }
 
-@test "set stores exact catalog routes and any global reasoning value and rejects invalid requests unchanged" {
+store_catalog_routes_and_reject_invalid_requests() {
   local external external_before
   snapshot_planning
 
@@ -91,7 +92,7 @@ check_host_enum_case() {
   expect_case "$label" "$expected_status" "$expected_text"
 }
 
-@test "check requires a host Agent id only when the catalog carries a host Agent enum" {
+check_host_agent_enum_when_present() {
   while IFS='|' read -r label enum_state selector expected_status expected_text; do
     [ -n "$label" ] || continue
     check_host_enum_case "$label" "$enum_state" "$selector" "$expected_status" "$expected_text"
@@ -112,7 +113,7 @@ check_migrate_unchanged_rejection() {
   expect_digest "$label" "$before" "$(config_digest)"
 }
 
-@test "copy, activate, resolve and validate accept a resolved routing table and reject invalid state unchanged" {
+manage_resolved_routes_without_mutating_invalid_state() {
   local before
   snapshot_planning
 
@@ -191,7 +192,7 @@ migrate_row() {
   expect_jq "$label" "$PLANNING/config.json" "$expected"
 }
 
-@test "migrate maps legacy routes into the three profiles and resolves each cell" {
+migrate_legacy_routes_and_reasoning() {
   local first second
   snapshot_planning
 
@@ -280,7 +281,7 @@ boundary_rejected_row() {
   expect_rejected "$label" "$fragment"
 }
 
-@test "every command rejects a directory outside the .lbwc-planning boundary" {
+reject_paths_outside_planning_boundary() {
   local other="$TEST_TEMP_DIR/not-planning"
   local target="$TEST_TEMP_DIR/real/.lbwc-planning"
   local linked="$TEST_TEMP_DIR/linked/.lbwc-planning" before
@@ -318,7 +319,14 @@ boundary_rejected_row() {
   [ "$status" -eq 0 ]
 }
 
-@test "configuration transactions fail closed when forged or failed and serialize concurrent route writers" {
+@test "routing commands preserve validated profiles and enforce transaction boundaries" {
+  run_scenario_cases store_catalog_routes_and_reject_invalid_requests \
+    check_host_agent_enum_when_present manage_resolved_routes_without_mutating_invalid_state \
+    migrate_legacy_routes_and_reasoning reject_paths_outside_planning_boundary \
+    serialize_route_writers_and_reject_forged_transactions
+}
+
+serialize_route_writers_and_reject_forged_transactions() {
   local first_pid second_pid first_rc second_rc sleep_mark="$TEST_TEMP_DIR/second-writer-waiting"
   local before planning
   planning=$(cd -P "$PLANNING" && pwd -P)

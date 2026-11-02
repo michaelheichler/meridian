@@ -2,6 +2,7 @@
 
 load test_helper
 load gate_case_helper
+load isolated_case_helper
 
 AGENT_PATTERN='.claude/agents/lbwc-*-*-*-*.md'
 
@@ -66,7 +67,7 @@ commit_state() {
   printf 'local-head=%s\n' "$(git rev-parse HEAD)"
 }
 
-@test "planning git rejects a missing command, an unknown command, and a boundary without an action" {
+reject_invalid_commands() {
   fresh_repo usage
 
   run planning_git
@@ -81,7 +82,7 @@ commit_state() {
   assert_no_case_failures
 }
 
-@test "planning git leaves a directory outside any repository untouched" {
+leave_non_repository_untouched() {
   mkdir -p "$TEST_TEMP_DIR/plain/.lbwc-planning"
   cd "$TEST_TEMP_DIR/plain"
   printf '{"planning_tracking":"commit","auto_push":"after_phase"}\n' > .lbwc-planning/config.json
@@ -103,7 +104,7 @@ commit_state() {
   assert_no_case_failures
 }
 
-@test "generated agent files become ignored exactly once" {
+ignore_generated_agents_once() {
   fresh_repo no-gitignore
   run ignore_state ensure-generated-agent-ignore
   expect_case no-gitignore 0 "agent-ignored=yes"
@@ -123,7 +124,7 @@ commit_state() {
   assert_no_case_failures
 }
 
-@test "sync-ignore applies the planning tracking mode to the root and planning gitignores" {
+sync_tracking_mode_ignores() {
   fresh_repo ignore-mode-new
   tracking_config ignore never
   run ignore_state sync-ignore
@@ -160,7 +161,7 @@ commit_state() {
   assert_no_case_failures
 }
 
-@test "commit-boundary commits planning state only in commit tracking mode and pushes when configured" {
+commit_and_push_configured_boundaries() {
   fresh_repo commit-tracking
   tracking_config commit never
   printf '# State\n' > .lbwc-planning/STATE.md
@@ -198,7 +199,13 @@ commit_state() {
   assert_no_case_failures
 }
 
-@test "push-after-phase pushes only when auto_push is after_phase and an upstream exists" {
+@test "planning git applies repository and tracking policy across command scenarios" {
+  run_scenario_cases reject_invalid_commands leave_non_repository_untouched \
+    ignore_generated_agents_once sync_tracking_mode_ignores \
+    commit_and_push_configured_boundaries push_after_phase_with_upstream
+}
+
+push_after_phase_with_upstream() {
   local pushed_head
 
   repo_with_remote after-phase
