@@ -24,11 +24,15 @@ setup() {
   cp "$REPO_ROOT/scripts/resolve-plugin-root.sh" "$PLUGIN_SCRIPTS/resolve-plugin-root.sh"
   cp "$REPO_ROOT/scripts/tmux-preflight.sh" "$PLUGIN_SCRIPTS/tmux-preflight.sh"
   cp "$REPO_ROOT/scripts/tmux-session-name.sh" "$PLUGIN_SCRIPTS/tmux-session-name.sh"
+  cp "$REPO_ROOT/scripts/lib/lbwc-config-files.sh" "$PLUGIN_SCRIPTS/lib/lbwc-config-files.sh"
   copy_script_with_libs "$REPO_ROOT/scripts/lib/lbwc-control-root.sh" "$PLUGIN_SCRIPTS/lib/lbwc-control-root.sh"
   cp "$REPO_ROOT/scripts/lib/lbwc-target-root.sh" "$PLUGIN_SCRIPTS/lib/lbwc-target-root.sh"
   cp "$REPO_ROOT/scripts/lib/tmux-private-fs.py" "$PLUGIN_SCRIPTS/lib/tmux-private-fs.py"
   write_default_fakes "$FAKE_BIN"
   rm -rf "$ROOT_LINK"
+  git init -q "$PROJECT_ROOT"
+  await_git_ai
+  cd "$PROJECT_ROOT"
 }
 
 teardown() {
@@ -213,6 +217,20 @@ FRAGMENTS
   after=$(runtime_checksums)
   [ "$after" = "$before" ] || record_case_failure "healthy-untouched" "runtime files changed"
 
+  new_tmux_row interval-caps-configured-staleness
+  plant_healthy_runtime
+  jq '.tmux_execution.heartbeat_interval_seconds = 1' "$CONTROL_ROOT/config.json" > "$CONTROL_ROOT/config.json.tmp"
+  mv "$CONTROL_ROOT/config.json.tmp" "$CONTROL_ROOT/config.json"
+  tmux_runtime_write_registry_route_bundle "$(jq --argjson now "$(date +%s)000" '
+    .agents[0].heartbeat_at_ms = ($now - 5000)
+  ' "$CONTROL_ROOT/.runtime/tmux-bus/registry.json")"
+  before=$(runtime_checksums)
+  run_tmux_doctor
+  expect_case interval-caps-configured-staleness 0
+  expect_jq_output interval-caps-configured-staleness '.status == "WARN"'
+  after=$(runtime_checksums)
+  [ "$after" = "$before" ] || record_case_failure interval-caps-configured-staleness "runtime files changed"
+
   new_tmux_row gone-pane
   plant_healthy_runtime
   printf '%s\n' '%1' > "$FAKE_BIN/gone-panes"
@@ -260,6 +278,8 @@ cleanup_world() {
   W_PLANNING="$W_PROJECT/.lbwc-planning"
   W_CLAUDE="$WORLD/claude"
   mkdir -p "$W_PLANNING" "$W_CLAUDE/teams" "$W_CLAUDE/tasks" "$WORLD/home"
+  git init -q "$W_PROJECT"
+  await_git_ai
 }
 
 run_cleanup() {
