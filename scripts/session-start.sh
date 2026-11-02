@@ -42,6 +42,7 @@ bind_tmux_bootstrap() {
   bash "$CANONICAL_ROOT/scripts/tmux-bus.sh" --control-root "$control_root" bind --agent-id "$agent_id" --session-id "$actual_session" --capability "$capability" --contract-id "$contract_id" || { echo 'LBWC: SessionStart tmux bind failed' >&2; return 1; }
   tmux_runtime_credential_delete "$agent_id" || { echo 'LBWC: SessionStart cannot consume the bound tmux credential' >&2; return 1; }
   bash "$CANONICAL_ROOT/scripts/tmux-bus.sh" --control-root "$control_root" heartbeat --agent-id "$agent_id" --session-id "$actual_session" --capability "$capability" --state running >/dev/null || { echo 'LBWC: SessionStart tmux heartbeat failed' >&2; return 1; }
+  printf '%s\n' "$capability" | nohup bash "$CANONICAL_ROOT/scripts/tmux-agent-heartbeat.sh" "$control_root" "$agent_id" "$actual_session" >/dev/null 2>&1 &
   TMUX_BIND_JSON=$(jq -cn --arg agent_id "$agent_id" --arg session_id "$actual_session" --arg control_root "$control_root" --arg capability "$capability" '{agent_id:$agent_id,session_id:$session_id,control_root:$control_root,capability:$capability,role:"agent"}')
   capability=''
 }
