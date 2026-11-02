@@ -9,6 +9,7 @@ from unittest import mock
 
 from hooks import guard_paths
 from hooks.guard_fixtures import (
+    ENTRY_STEM,
     answer_event,
     bash_reason,
     build_project,
@@ -89,7 +90,8 @@ class FailOpenTest(unittest.TestCase):
             with self.subTest(mode=mode, payload=payload):
                 result = run_entry([mode], payload)
                 self.assertEqual((result.returncode, result.stdout), (0, ""))
-                self.assertTrue(result.stderr.strip())
+                self.assertIn(ENTRY_STEM, result.stderr)
+                self.assertIn(mode, result.stderr)
 
 
 class AnswerSessionTest(unittest.TestCase):
