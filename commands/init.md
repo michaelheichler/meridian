@@ -121,6 +121,10 @@ If neither exists, continue without a prompt.
 
 If an external plan exists, Read `{plugin-root}/references/commands/init-external-plan.md` before any scaffold write.
 
+`/lbwc:import` is the only import authority.
+Init never copies `.planning`, creates a GSD archive, or generates an import index.
+It never infers GSD state or promotes imported artifacts.
+
 ### Step 1. Scaffold directory
 
 Read each template from `{plugin-root}/templates/` and write it to .lbwc-planning/.
@@ -183,7 +187,7 @@ It keeps `.lbwc-planning/.gitignore` current for transient runtime files in ever
 
 ### Step 1.5. Install git hooks
 
-For optional git-hook installation, Read `{plugin-root}/references/commands/init-git-hooks.md` and skip installation outside a git repository.
+At Step 1.5, Read `{plugin-root}/references/commands/init-git-hooks.md` to check for a git repository and install its hooks, skipping installation only outside a git repository.
 
 ### Step 1.8. Detect and initialize routing profiles
 
@@ -224,7 +228,8 @@ For Step 2c, Read `{plugin-root}/references/commands/init-codebase-mapping.md` t
 For Step 3a, if this is greenfield, proceed immediately.
 Otherwise, make sure that mapping completed and display `✓ Codebase mapped ({document-count} documents)`.
 
-When stack or pattern mapping files exist, Read `{plugin-root}/references/commands/init-stack-conventions.md` for Steps 3b and 3b2. For greenfield, follow its empty-conventions path.
+When stack or pattern mapping files exist, Read `{plugin-root}/references/commands/init-stack-conventions.md` for Steps 3b and 3b2.
+If this is greenfield, write `{"conventions": []}` and display `○ Conventions: none yet (add with /lbwc:teach)`.
 
 For Steps 3c and 3d, Read `{plugin-root}/references/commands/init-skill-search.md` and follow its registry-search or CLI-unavailable path.
 
@@ -235,7 +240,10 @@ LBWC needs its rules and state sections in a CLAUDE.md file.
 
 Read root `CLAUDE.md` with the Read tool.
 
-When root CLAUDE.md exists, Read `{plugin-root}/references/commands/init-existing-claude.md` before refreshing its owned sections. If absent, follow its Step 7f creation path.
+When root CLAUDE.md exists, Read `{plugin-root}/references/commands/init-existing-claude.md` before refreshing its owned sections.
+If the file does not exist, create a new `CLAUDE.md` through `bootstrap-claude.sh` during Step 7f.
+Do not compose the file by hand here.
+Do not append `## Project Conventions` or `## Commands` to `CLAUDE.md`.
 
 ### Step 4. Present summary
 
