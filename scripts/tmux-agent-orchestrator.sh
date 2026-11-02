@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -u
+set -eo pipefail
 umask 077
 
 SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname "$0")" && pwd -P)
 source "$SCRIPT_DIR/lib/lbwc-control-root.sh"
 source "$SCRIPT_DIR/lib/tmux-runtime.sh"
 source "$SCRIPT_DIR/lib/agent-manifest.sh"
+source "$SCRIPT_DIR/lib/lbwc-config-files.sh"
 
 fail() {
   printf 'tmux orchestrator error: %s\n' "$1" >&2
@@ -62,18 +64,25 @@ require_main_orchestrator() {
   [ "$orchestrator_id" = "$(jq -r '.main.agent_id' <<<"$registry")" ] || fail 'operation requires the main orchestrator'
 }
 
-tmux_layout_name() {
-  local layout_name
-  layout_name=$(jq -r '.tmux_execution.layout // .tmux.layout // "tiled"' "$TMUX_RUNTIME_CONTROL_ROOT/config.json")
+read_tmux_settings() {
+  local config settings layout_name agent_limit attach_policy
+  config=$(read_existing_config "$TMUX_RUNTIME_CONTROL_ROOT/config.json")
+  settings=$(jq -er '[.tmux_execution.layout // .tmux.layout // "tiled", .tmux_execution.max_agents // .tmux.max_agents // 3, .tmux_execution.attach_policy // "orchestrator_only"] | @tsv' <<<"$config") || fail 'cannot read tmux settings'
+  IFS=$'\t' read -r layout_name agent_limit attach_policy <<<"$settings"
   case "$layout_name" in tiled|even-horizontal|even-vertical|main-horizontal|main-vertical) ;; *) fail 'tmux layout is invalid' ;; esac
-  printf '%s\n' "$layout_name"
+  [[ "$agent_limit" =~ ^[1-4]$ ]] || fail 'tmux max_agents must be between 1 and 4'
+  case "$attach_policy" in orchestrator_only|visible_grid) ;; *) fail 'tmux attach_policy is invalid' ;; esac
+  printf -v TMUX_LAYOUT '%s' "$layout_name"
+  printf -v TMUX_AGENT_LIMIT '%s' "$agent_limit"
+  printf -v TMUX_ATTACH_POLICY '%s' "$attach_policy"
+}
+
+tmux_layout_name() {
+  printf '%s\n' "$TMUX_LAYOUT"
 }
 
 tmux_max_agents() {
-  local agent_limit
-  agent_limit=$(jq -r '.tmux_execution.max_agents // .tmux.max_agents // 3' "$TMUX_RUNTIME_CONTROL_ROOT/config.json")
-  [[ "$agent_limit" =~ ^[1-4]$ ]] || fail 'tmux max_agents must be between 1 and 4'
-  printf '%s\n' "$agent_limit"
+  printf '%s\n' "$TMUX_AGENT_LIMIT"
 }
 
 apply_tmux_layout() {
@@ -128,6 +137,7 @@ done
 case "$subcommand" in provision|split-agent|split-group|focus-orchestrator|kill-agent|kill-session|status|rollback) ;; *) usage ;; esac
 require_tmux
 resolve_context "$project_root" "$requested_control_root" PROJECT_ROOT
+read_tmux_settings
 trap tmux_runtime_cleanup_locks EXIT
 
 case "$subcommand" in
