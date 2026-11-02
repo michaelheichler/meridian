@@ -60,7 +60,7 @@ Require initialized active planning state, `phase_detect_complete=true`, a canon
 
 Group the plan's `<task>` entries into waves by `depends_on`, preserving PLAN order for tasks within each wave. Wave 1 has no unmet dependency, and later waves depend only on earlier waves.
 
-Within a dependency wave, process tasks in PLAN order and admit exactly one task team at a time. Each task team contains one or more sequential groupings. A grouping is either a solo red stage or an engineer grouping with a pair or trio. Independence within a wave means the tasks have no dependency edge between them. It does not permit parallel admission. Generate every build grouping with `--exclusive`, then wait until every member is `used` or `expired` before generating the next grouping. Do not pre-generate a later grouping.
+Within a dependency wave, process tasks in PLAN order and admit exactly one task team at a time. Each task team contains one or more sequential groupings. A grouping can be a solo red stage. Its other kinds are a pair or a trio. Independence within a wave means the tasks have no dependency edge between them. It does not permit parallel admission. Generate every build grouping with `--exclusive`, then wait until every member is `used` or `expired` before generating the next grouping. Do not pre-generate a later grouping.
 
 This admission rule is identical under every resolved backend, including `workflow`, but a workflow grouping's closure signal is not. `--exclusive` reads the one shared agent manifest, not a backend-specific one. A workflow-spawned member's `agent()` step fires the same `SubagentStart`/`SubagentStop` hooks a native member's `Agent` call fires, carrying the registered `lbwc-` name in `agent_type`, and `agent-lifecycle.sh` advances that name to `running` then `used` from those hooks exactly as it does for a native or TMUX member. The host confirms this behavior, see `references/workflow-probe-findings.md`, Unknown D. Do not treat it as an assumption. For a solo grouping that is the whole picture, one `agent()` call and one `used` transition, and the manifest closure check is sufficient on its own exactly as it is for native and TMUX.
 
@@ -214,13 +214,13 @@ Once every wave is done, write `.lbwc-planning/phases/{NN}-{slug}/SUMMARY.md` fr
 
 Report the commits made and the SUMMARY.md path. Tell the user to run `/lbwc:qa <phase>` next.
 
-`deviq-record.py` prints a stable id for every block or evidence record it writes. Keep that id. Later resolution references `--field id=<id>`. Do not generate a solo `deviq` advisor while a build grouping is `registered` or `running`. If a group has a blocker, close it first. Issue a new read-only `/lbwc:build` command contract for the advisor, then generate it with `--exclusive`. Apply its recommendation only through a newly contracted retry grouping.
+`deviq-record.py` prints a stable id for every block or evidence record it writes. Keep that id. Later resolution references `--field id=<id>`. Do not generate a solo `deviq` advisor while a build grouping is `registered` or `running`. If a group is in the blocked state, close it first. Issue a new read-only `/lbwc:build` command contract for the advisor, then generate it with `--exclusive`. Apply its recommendation only through a newly contracted retry grouping.
 
 ## Failure and recovery
 
 A failed contract, generator, tmux preflight, provision, split-group, bus publish/await/ack, worker verdict, verify command, commit, summary validation, or remediation transition blocks the task and its dependents. Preserve accepted predecessor commits and exact contract state. Report the failing task and recovery command. Never create a placeholder summary or bypass exclusive admission.
 
-If the workflow generator fails or the guard denies the `Workflow` call for a grouping, leave that grouping's contract `planned` and report the failure verbatim. Do not fall back to `in_process` or `tmux`.
+If the workflow generator fails or a guard or the user denies the `Workflow` call for a grouping, leave that grouping's contract `planned` and report the failure verbatim. Do not fall back to `in_process` or `tmux`.
 
 ## Output Format
 
