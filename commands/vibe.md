@@ -239,7 +239,7 @@ Pass `snapshot.resolved_backend` to every `agent-generator.sh --execution-backen
 
 If `snapshot.resolved_backend` is `in_process`, keep the native Agent path in `{LINK}/references/vibe-mode-execute.md`.
 
-If `snapshot.resolved_backend` is `tmux`, `{LINK}/references/vibe-mode-execute.md` follows `{LINK}/references/tmux-spawn-protocol.md` on this branch only. Do not call native Agent or follow execute-protocol Agent spawn on this branch, and never invent a second orchestrator.
+If `snapshot.resolved_backend` is `tmux`, `{LINK}/references/vibe-mode-execute.md` follows `{LINK}/references/tmux-spawn-protocol.md` on this branch only. Do not call native Agent. Keep this branch separate from execute-protocol Agent spawn, and never invent a second orchestrator.
 
 If `snapshot.resolved_backend` is `workflow`, `{LINK}/references/vibe-mode-execute.md` follows `{LINK}/references/workflow-spawn-protocol.md` on this branch only. Do not call native Agent and do not run the tmux spawn driver.
 
@@ -269,7 +269,7 @@ Read `{LINK}/references/vibe-mode-archive.md` and follow it. `{LINK}` is the fir
 
 After Execute mode completes, continue automatically only when the installed configuration resolves autonomy to `pure-vibe`. Before each iteration, require every task contract to be terminal, every generated manifest member to be `used` or `expired`, every main-session commit to exist, and the selected summary and verification artifacts to validate. Re-run `phase-detect.sh` instead of carrying forward a prior route.
 
-If the new detector output selects the next unbuilt phase, run its Plan mode and then Execute mode. Stop on `all_done` or any blocking remediation route. A required user decision also stops the loop, as do contract or manifest drift, gate failure, and missing evidence. Other autonomy levels stop after the current phase. LBWC solo, pair, and trio groups close through their manifest lifecycle. Do not invent a source team shutdown flow or a delegation-state marker.
+If the new detector output selects the next unbuilt phase, run its Plan mode and then Execute mode. Stop on `all_done` or any blocking remediation route. A required user decision also stops the loop. Stop when contracts or manifests drift, when a gate fails, or when evidence is missing. Other autonomy levels stop after the current phase. LBWC solo, pair, and trio groups close through their manifest lifecycle. Do not invent a source team shutdown flow or a delegation-state marker.
 
 ## Failure and recovery
 
