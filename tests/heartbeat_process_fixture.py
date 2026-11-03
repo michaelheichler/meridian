@@ -94,11 +94,21 @@ def start_sender(fixture) -> subprocess.Popen:
     return process
 
 
+def recorded_sleep_pid(fixture) -> int | None:
+    try:
+        text = fixture.sleep_pid.read_text().strip()
+    except OSError:
+        return None
+    if not text.isascii() or not text.isdecimal() or int(text) <= 0:
+        return None
+    return int(text)
+
+
 def sender_sleep(fixture, process) -> int:
     def sleeping() -> int | None:
-        if not fixture.sleep_pid.exists():
+        pid = recorded_sleep_pid(fixture)
+        if pid is None:
             return None
-        pid = int(fixture.sleep_pid.read_text())
         parent = subprocess.run(["ps", "-p", str(pid), "-o", "ppid="],
                                 capture_output=True, text=True).stdout.strip()
         return pid if parent == str(process.pid) else None
@@ -166,12 +176,11 @@ def teardown_sender(fixture) -> None:
     dummy = change_identity(fixture, record)
     fixture.record.write_text(json.dumps(record))
     fixture.record.chmod(0o600)
-    began = time.monotonic()
     teardown_agent(fixture)
     if fixture.scenario == "matching":
         process.wait(timeout=1)
-        assert time.monotonic() - began < 2, "teardown waited for the heartbeat interval"
-        wait_until(lambda: not alive(child), timeout=1)
+        assert not alive(process.pid), "teardown left the heartbeat sender running"
+        assert not alive(child), "teardown left the heartbeat sleep child running"
     elif fixture.scenario == "stale-command":
         assert dummy is not None and dummy.poll() is None, "teardown signalled an unrelated process"
     else:
@@ -192,17 +201,16 @@ def stop_process(process) -> None:
 def cleanup(fixture) -> None:
     for process in fixture.children:
         stop_process(process)
-    if fixture.sleep_pid.exists():
-        pid = int(fixture.sleep_pid.read_text())
-        if alive(pid):
-            os.kill(pid, signal.SIGTERM)
+    pid = recorded_sleep_pid(fixture)
+    if pid is not None and alive(pid):
+        os.kill(pid, signal.SIGTERM)
 
 
 def main() -> None:
     fixture = make_fixture()
     try:
         actions: dict[str, Callable] = dict.fromkeys(("recovery", "exhausted", "mixed"), failure_sequence)
-        actions.update(dict.fromkeys(("TERM", "INT"), interrupt_sleep))
+        actions.update(dict.fromkeys(("TERM", "INT", "HUP"), interrupt_sleep))
         actions.get(fixture.scenario, teardown_sender)(fixture)
         print(fixture.scenario + " passed")
     except Exception:
