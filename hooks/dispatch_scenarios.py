@@ -27,7 +27,7 @@ def arrange_aggregation(space, kind) -> tuple:
         space.shell_guard("file-guard.sh", shell_output(context("first"), 2))
         return space.event("Write"), (2, None)
     if kind == "json-deny-crash":
-        space.python_guard("test_scope_guard", "def verdict(*args): raise RuntimeError('injected')\n")
+        space.python_guard("scope_guard", "def verdict(*args): raise RuntimeError('injected')\n")
         space.python_guard("skill_gate", "import json\ndef verdict(*args): return 'policy denial'\n"
                            "def emit_pretool_denial(reason):\n print(json.dumps({'hookSpecificOutput': "
                            "{'permissionDecision': 'deny', 'permissionDecisionReason': reason}}))\n")
@@ -188,6 +188,6 @@ def nudge_oracle(space, event, recent) -> dict:
         (planning / "deviq").mkdir()
         (planning / "deviq/.nudge-last").write_text(str(int(time.time())))
     oracle = subprocess.run(["bash", str(space.plugin / "scripts/deviq-nudge.sh")], input=json.dumps(event),
-                            cwd=space.root, env={**space.environment, "LBWC_PLANNING_DIR": str(planning)},
+                            cwd=space.root, env={**space.environment, "MERIDIAN_PLANNING_DIR": str(planning)},
                             capture_output=True, text=True, check=True)
     return json.loads(oracle.stdout or "{}")

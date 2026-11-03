@@ -18,8 +18,8 @@ def read_json(path) -> dict:
 
 
 def agent_root() -> Path | None:
-    root = os.environ.get("LBWC_TMUX_CONTROL_ROOT")
-    if os.environ.get("LBWC_TMUX_AGENT") != "1" or not root:
+    root = os.environ.get("MERIDIAN_TMUX_CONTROL_ROOT")
+    if os.environ.get("MERIDIAN_TMUX_AGENT") != "1" or not root:
         return None
     if not os.environ.get("TMUX") or not os.environ.get("TMUX_PANE"):
         return None
@@ -70,7 +70,7 @@ def restriction(root, key, agent_id=None) -> bool:
 
 def question_allowed() -> bool:
     root = agent_root()
-    return root is not None and restriction(root, "allow_agent_ask_user", os.environ.get("LBWC_TMUX_AGENT_ID"))
+    return root is not None and restriction(root, "allow_agent_ask_user", os.environ.get("MERIDIAN_TMUX_AGENT_ID"))
 
 
 def git_action(data) -> bool:
@@ -98,7 +98,7 @@ def denial(data, key=None) -> str | None:
         key = key or tool_key(data)
         if key is None:
             return None
-        allowed = restriction(root, key, os.environ.get("LBWC_TMUX_AGENT_ID"))
+        allowed = restriction(root, key, os.environ.get("MERIDIAN_TMUX_AGENT_ID"))
     except (OSError, ValueError, KeyError, TypeError, AttributeError, json.JSONDecodeError) as error:
         label = f"{PREFIX}{key}" if key else PREFIX.rstrip(".")
         return f"{label} requires valid policy input and a readable frozen runtime snapshot ({error})."

@@ -38,7 +38,7 @@ GUARD_MODULES = (
     "path_identity.py",
 )
 SCRIPT_MARKERS = ("pending-decision.sh", "hook-batch.sh", *GUARD_MODULES)
-RUNTIME_MARKERS = (".lbwc-planning/.runtime", ".runtime/decisions", ".hook-transitions")
+RUNTIME_MARKERS = (".meridian/.runtime", ".runtime/decisions", ".hook-transitions")
 PROTECTED_MARKERS = (*SCRIPT_MARKERS, *RUNTIME_MARKERS)
 EXPANSION_CHARS = "$`*?[{"
 UNRESOLVED_CHARS = "$`"
@@ -72,7 +72,7 @@ class Scope(NamedTuple):
 
 
 def _planning_candidate(directory: Path) -> OptionalPath:
-    candidate = directory / ".lbwc-planning"
+    candidate = directory / ".meridian"
     if not (candidate.exists() or candidate.is_symlink()):
         return None
     require(candidate.is_dir() and not candidate.is_symlink(), INVALID_STATE)

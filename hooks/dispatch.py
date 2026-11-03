@@ -17,7 +17,7 @@ PRETOOL = (
     ("Agent Task TaskCreate", "agent-spawn-guard.sh", 15),
     ("Workflow", "workflow-spawn-guard.sh", 15),
     ("Write Edit NotebookEdit Read Glob", "skill_gate", 5),
-    ("Write Edit NotebookEdit", "test_scope_guard", 5),
+    ("Write Edit NotebookEdit", "scope_guard", 5),
     ("SendMessage", "message_scope_guard", 5),
     ("Bash", "bash-guard.sh", 5),
     ("Write Edit NotebookEdit", "file-guard.sh", 5),
@@ -208,6 +208,8 @@ def _dispatch_guards(runner, specs):
 
 
 def dispatch(text, event_hint="") -> tuple:
+    from rename_migration import migrate_environment
+    migrate_environment()
     try:
         data = json.loads(text)
     except ValueError:

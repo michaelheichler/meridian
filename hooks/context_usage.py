@@ -13,7 +13,7 @@ RESET_FILENAME = ".context-usage-reset"
 def _find_planning_dir(start):
     current = os.path.abspath(start or os.getcwd())
     while True:
-        candidate = os.path.join(current, ".lbwc-planning")
+        candidate = os.path.join(current, ".meridian")
         if os.path.isdir(candidate):
             return candidate
         parent = os.path.dirname(current)
@@ -104,11 +104,13 @@ def _update_usage(planning_dir, data):
 
 
 def run(stdin_text, reset=False) -> None:
+    from rename_migration import migrate_environment
+    migrate_environment()
     try:
         data = json.loads(stdin_text)
         if not isinstance(data, dict):
             return
-        planning_dir = os.environ.get("LBWC_PLANNING_DIR") or _find_planning_dir(data.get("cwd"))
+        planning_dir = os.environ.get("MERIDIAN_PLANNING_DIR") or _find_planning_dir(data.get("cwd"))
         if not planning_dir or not os.path.isdir(planning_dir):
             return
         if reset or data.get("source") == "compact":

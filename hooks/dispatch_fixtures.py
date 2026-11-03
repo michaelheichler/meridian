@@ -10,7 +10,7 @@ from pathlib import Path
 from hooks.test_user_question_guard import question_event
 
 SOURCE = Path(os.environ.get("DISPATCH_TEST_PLUGIN", Path(__file__).resolve().parent.parent))
-PYTHON_GUARDS = ("user_question_guard", "skill_gate", "test_scope_guard", "message_scope_guard", "context_usage")
+PYTHON_GUARDS = ("user_question_guard", "skill_gate", "scope_guard", "message_scope_guard", "context_usage")
 SHELL_GUARDS = ("agent-spawn-guard.sh", "workflow-spawn-guard.sh", "bash-guard.sh", "file-guard.sh",
                 "security-filter.sh", "validate-commit.sh", "validate-summary.sh", "validate-frontmatter.sh",
                 "state-updater.sh", "deviq-nudge.sh")
@@ -24,7 +24,7 @@ class DispatchProject:
         self.plugin = self.base / "plugin"
         self.root = self.base / "project"
         self.root.mkdir()
-        self.planning = self.root / ".lbwc-planning"
+        self.planning = self.root / ".meridian"
         self.planning.mkdir()
         self.home = self.base / "home"
         self.home.mkdir()
@@ -35,8 +35,8 @@ class DispatchProject:
         (self.plugin / "templates/agent-roles").mkdir(parents=True)
         shutil.copyfile(SOURCE / "templates/agent-roles/defaults.json", self.plugin / "templates/agent-roles/defaults.json")
         self.environment = {key: value for key, value in os.environ.items()
-                            if key not in {"CDPATH", "TMUX", "TMUX_PANE", "LBWC_CONTROL_ROOT"}}
-        self.environment.update(CLAUDE_PLUGIN_ROOT=str(self.plugin), LBWC_PLANNING_DIR=str(self.planning),
+                            if key not in {"CDPATH", "TMUX", "TMUX_PANE", "MERIDIAN_CONTROL_ROOT"}}
+        self.environment.update(CLAUDE_PLUGIN_ROOT=str(self.plugin), MERIDIAN_PLANNING_DIR=str(self.planning),
                                 HOME=str(self.home), TMPDIR=str(self.scratch), PYTHONDONTWRITEBYTECODE="1")
         subprocess.run(["git", "init", "-q", str(self.root)], check=True, env=self.environment)
 
