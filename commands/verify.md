@@ -7,7 +7,7 @@ argument-hint: "[phase-number] [--resume]"
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep, AskUserQuestion, LSP
 ---
 
-# LBWC Verify: $ARGUMENTS
+# MERIDIAN Verify: $ARGUMENTS
 
 Store the plugin root path from Context at the end of this command as `{plugin-root}` for script invocations. Replace `{plugin-root}` with that literal path whenever a step references a script or reference file.
 
@@ -15,16 +15,16 @@ Store the plugin root path from Context at the end of this command as `{plugin-r
 
 ## Guard
 
-- Not initialized (no .lbwc-planning/ dir): STOP "Run /lbwc:init first."
+- Not initialized (no .meridian/ dir): STOP "Run /meridian:init first."
 - **Debug session override:** If `$ARGUMENTS` does NOT contain an explicit phase number OR `$ARGUMENTS` contains `--session`, check for an active debug session before any phase-related guards:
   ```bash
-  eval "$(bash "{plugin-root}/scripts/debug-session-state.sh" get-or-latest .lbwc-planning 2>/dev/null)" 2>/dev/null || true
+  eval "$(bash "{plugin-root}/scripts/debug-session-state.sh" get-or-latest .meridian 2>/dev/null)" 2>/dev/null || true
   ```
   The helper exports `active_session`, `session_id`, `session_file`, and `session_status`, use `session_status` for lifecycle checks after `eval`.
   If `active_session != none` AND exported `session_status` is `uat_pending` or `uat_failed` AND (`phase_count=0` OR `$ARGUMENTS` contains `--session`) → skip ALL remaining guards and jump directly to `<debug_session_uat>` below.
   If phases exist (`phase_count > 0`) AND `$ARGUMENTS` does NOT contain `--session`, skip this override, standard phase UAT takes priority.
 - **Phase-detect error guard (NON-NEGOTIABLE):** If Phase state (from Context at the end of this command) contains `phase_detect_error=true`, display: "⚠ Phase detection failed. Run `bash \"{plugin-root}/scripts/phase-detect.sh\"` manually to debug." STOP. Do NOT fall back to phase-dir scanning or ad-hoc `VERIFICATION.md` checks when phase-detect failed.
-- **Verify-context error guard (NON-NEGOTIABLE):** Apply this guard only after Step 2 resolves and compiles the final target. If the active verify context contains `verify_context_error=true` or `verify_context=unavailable`, display: "⚠ Verify context compilation failed. Run `bash "{plugin-root}/scripts/compile-verify-context.sh" .lbwc-planning/phases/{NN}-{slug}` manually to debug." STOP. Do NOT improvise by reading individual PLAN/SUMMARY files.
+- **Verify-context error guard (NON-NEGOTIABLE):** Apply this guard only after Step 2 resolves and compiles the final target. If the active verify context contains `verify_context_error=true` or `verify_context=unavailable`, display: "⚠ Verify context compilation failed. Run `bash "{plugin-root}/scripts/compile-verify-context.sh" .meridian/phases/{NN}-{slug}` manually to debug." STOP. Do NOT improvise by reading individual PLAN/SUMMARY files.
 When Phase state contains `misnamed_plans=true`, Read `{plugin-root}/references/commands/verify-brownfield-normalization.md` before continuing guards.
 
 - **Auto-detect phase** (no explicit number): Phase detection is pre-computed in Context at the end of this command (or refreshed by normalization above). Use `next_phase` and `next_phase_slug` for the target phase.
@@ -32,17 +32,17 @@ When Phase state contains `misnamed_plans=true`, Read `{plugin-root}/references/
   - If `next_phase_state=needs_verification`, use `next_phase` directly, this is either the first fully-built phase that needs UAT verification (auto_uat routing) or an active current-round UAT that should resume Verify mode.
   - If Phase state defines `first_unverified_phase`, use that phase directly, this is the first fully-built phase without a terminal UAT.
   - As a fallback, scan phase dirs for the first with `*-SUMMARY.md` but no canonical `*-UAT.md` (exclude `*-SOURCE-UAT.md` copies).
-  - If found, announce "Auto-detected Phase {NN} ({slug})". If all phases have UAT results, STOP "All phases have UAT results. Specify: `/lbwc:verify {NN}`"
-- If the target phase directory has no SUMMARY.md, STOP "Phase {NN} has no completed plans. Run /lbwc:vibe first."
+  - If found, announce "Auto-detected Phase {NN} ({slug})". If all phases have UAT results, STOP "All phases have UAT results. Specify: `/meridian:verify {NN}`"
+- If the target phase directory has no SUMMARY.md, STOP "Phase {NN} has no completed plans. Run /meridian:transit first."
 For phase-scoped UAT, Read `{plugin-root}/references/commands/verify-qa-gate.md` and apply its QA gate before entering UAT, including its known-issue checks with `--skip-qa`.
 
 ## Debug Session Routing
 
 <debug_session_uat>
-**Before entering phase-scoped UAT**, check for an active debug session. This handles standalone debug fixes that went through `/lbwc:qa` and are now ready for user acceptance.
+**Before entering phase-scoped UAT**, check for an active debug session. This handles standalone debug fixes that went through `/meridian:qa` and are now ready for user acceptance.
 
 ```bash
-eval "$(bash "{plugin-root}/scripts/debug-session-state.sh" get-or-latest .lbwc-planning)"
+eval "$(bash "{plugin-root}/scripts/debug-session-state.sh" get-or-latest .meridian)"
 ```
 
 The helper exports `active_session`, `session_id`, `session_file`, and `session_status`, use `session_status` for routing after `eval`.
@@ -61,14 +61,14 @@ When routed to debug-session UAT mode, Read `{plugin-root}/references/commands/v
 ### 1. Resolve the final phase target
 
 - Parse an explicit phase number from $ARGUMENTS before selecting any target. When a number is present, it wins over all auto-detected phase state. Otherwise, use the auto-detected phase from the Guard section.
-- Resolve exactly one matching directory under `.lbwc-planning/phases/`. Store its slug as `TARGET_SLUG` and its path as `PDIR`. Apply the target phase's SUMMARY and QA guards above before continuing.
+- Resolve exactly one matching directory under `.meridian/phases/`. Store its slug as `TARGET_SLUG` and its path as `PDIR`. Apply the target phase's SUMMARY and QA guards above before continuing.
 - If initial Phase state contained `misnamed_plans=true`, use the normalized filenames and refreshed phase-detect output produced by the Guard section. Do not compile context during normalization.
 - If the user specified an explicit phase number that differs from `verify_target_slug`, ignore the pre-computed verify context, `next_phase_state`, `qa_status`, and UAT resume metadata from the auto-detected phase. Apply the QA gate above to the explicit target phase only. Do NOT force full scope. Step 2 lets `compile-verify-context-for-uat.sh` decide whether the explicit target is full-scope verification or remediation re-verification.
 - Check the explicit target's own remediation stage:
   ```bash
   bash "{plugin-root}/scripts/uat-remediation-state.sh" get "{phase-dir}"
   ```
-  If that stage is `research`, `plan`, `execute`, or `fix`, STOP: `Phase {NN} has active UAT remediation (stage {stage}). Run /lbwc:vibe to continue remediation before re-verification.`
+  If that stage is `research`, `plan`, `execute`, or `fix`, STOP: `Phase {NN} has active UAT remediation (stage {stage}). Run /meridian:transit to continue remediation before re-verification.`
 - Do not invoke `compile-verify-context-for-uat.sh` until target resolution and the optional Step 2 re-verification preparation are complete.
 
 ### 2. Handle optional re-verification, then compile once
@@ -117,7 +117,7 @@ When no existing UAT session resumes or completes in Step 3, Read `{plugin-root}
 
 > **CRITICAL BOUNDARY:** The UAT interviewer MUST NOT investigate, debug, or implement fixes during the UAT session, regardless of user tone, urgency, or explicit requests to fix issues. The interviewer's ONLY job is to record responses and advance to the next checkpoint. All user frustration, bug descriptions, and fix requests are recorded as issue text in the UAT report. Fixes happen in the remediation phase AFTER the UAT session is complete. If the user explicitly asks you to stop the UAT and fix something, respond: "Issue recorded. Let's finish the remaining checkpoints first, remediation will address this immediately after."
 
-Follow @${CLAUDE_PLUGIN_ROOT}/references/lbwc-brand-essentials.md for all output formatting (symbols, bars, AskUserQuestion spacing).
+Follow @${CLAUDE_PLUGIN_ROOT}/references/meridian-brand-essentials.md for all output formatting (symbols, bars, AskUserQuestion spacing).
 
 For the FIRST test without a result, display a CHECKPOINT followed by AskUserQuestion:
 
@@ -205,42 +205,42 @@ Working directory:
 ```
 Plugin root:
 ```bash
-!`SESSION_KEY="${CLAUDE_SESSION_ID:-default}"; L="/tmp/.lbwc-plugin-root-link-${SESSION_KEY}"; R="$L/scripts/resolve-plugin-root.sh"; [ -f "$R" ] || R="${CLAUDE_PLUGIN_ROOT:-}/scripts/resolve-plugin-root.sh"; [ -f "$R" ] || { echo "LBWC: plugin root unavailable. Restart this session to recreate $L." >&2; exit 1; }; bash "$R" >/dev/null || exit 1; bash "$L/scripts/phase-detect.sh" > "/tmp/.lbwc-phase-detect-${SESSION_KEY}.txt" 2>/dev/null || echo "phase_detect_error=true" > "/tmp/.lbwc-phase-detect-${SESSION_KEY}.txt"; echo "$L"`
+!`SESSION_KEY="${CLAUDE_SESSION_ID:-default}"; L="/tmp/.meridian-plugin-root-link-${SESSION_KEY}"; R="$L/scripts/resolve-plugin-root.sh"; [ -f "$R" ] || R="${CLAUDE_PLUGIN_ROOT:-}/scripts/resolve-plugin-root.sh"; [ -f "$R" ] || { echo "MERIDIAN: plugin root unavailable. Restart this session to recreate $L." >&2; exit 1; }; bash "$R" >/dev/null || exit 1; bash "$L/scripts/phase-detect.sh" > "/tmp/.meridian-phase-detect-${SESSION_KEY}.txt" 2>/dev/null || echo "phase_detect_error=true" > "/tmp/.meridian-phase-detect-${SESSION_KEY}.txt"; echo "$L"`
 ```
 
 Current state:
 ```bash
-!`bash "/tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/verify-load-context.sh" state`
+!`bash "/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/verify-load-context.sh" state`
 ```
 
 The SessionStart hook pre-injects config.
 
 Phase directories:
 ```bash
-!`bash "/tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/verify-load-context.sh" phases`
+!`bash "/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/verify-load-context.sh" phases`
 ```
 
 Phase state:
 ```bash
-!`bash "/tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/verify-load-context.sh" phase-state`
+!`bash "/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/verify-load-context.sh" phase-state`
 ```
 
-!`bash "/tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/verify-load-context.sh" compact || true`
+!`bash "/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/verify-load-context.sh" compact || true`
 
 Pre-computed verify context (PLAN/SUMMARY aggregation):
 ```
-!`bash "/tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/verify-load-context.sh" verify-context`
+!`bash "/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/verify-load-context.sh" verify-context`
 ```
 This lightweight block emits only the auto-detected target hint. It does not compile PLAN or SUMMARY aggregation. Step 1 resolves any explicit target before the single Step 2 compiler call.
 
 Pre-computed UAT resume metadata:
 ```
-!`bash "/tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/verify-load-context.sh" uat-resume`
+!`bash "/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/verify-load-context.sh" uat-resume`
 ```
 
 QA verification summary (pre-extracted from VERIFICATION.md):
 ```
-!`bash "/tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/verify-load-context.sh" qa-summary || true`
+!`bash "/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/verify-load-context.sh" qa-summary || true`
 ```
 
 ## Feedback card

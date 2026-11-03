@@ -6,7 +6,7 @@ argument-hint: <research-topic> [--parallel]
 allowed-tools: Read, Write, Bash, Glob, Grep, WebFetch, WebSearch, AskUserQuestion, Agent, Skill, LSP, Workflow
 ---
 
-# LBWC Research: $ARGUMENTS
+# MERIDIAN Research: $ARGUMENTS
 
 ## Shared interaction contract
 
@@ -25,7 +25,7 @@ Working directory:
 Plugin root:
 
 ```text
-!`L="/tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID:-default}"; R="$L/scripts/resolve-plugin-root.sh"; [ -f "$R" ] || R="${CLAUDE_PLUGIN_ROOT:-}/scripts/resolve-plugin-root.sh"; [ -f "$R" ] || { echo "LBWC: plugin root unavailable. Restart this session to recreate $L." >&2; exit 1; }; bash "$R" >/dev/null || exit 1; echo "$L"`
+!`L="/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}"; R="$L/scripts/resolve-plugin-root.sh"; [ -f "$R" ] || R="${CLAUDE_PLUGIN_ROOT:-}/scripts/resolve-plugin-root.sh"; [ -f "$R" ] || { echo "MERIDIAN: plugin root unavailable. Restart this session to recreate $L." >&2; exit 1; }; bash "$R" >/dev/null || exit 1; echo "$L"`
 ```
 
 Store that value as `{plugin-root}`. Read `{plugin-root}/references/agent-spawn-protocol.md` before any Scout spawn.
@@ -33,7 +33,7 @@ Store that value as `{plugin-root}`. Read `{plugin-root}/references/agent-spawn-
 Current project:
 
 ```text
-!`cat .lbwc-planning/PROJECT.md 2>/dev/null || echo "No project found"`
+!`cat .meridian/PROJECT.md 2>/dev/null || echo "No project found"`
 ```
 
 ## Workflow capability gate
@@ -41,23 +41,23 @@ Current project:
 Refresh the saved Claude capability catalog before any Scout contract or spawn:
 
 ```bash
-bash "{plugin-root}/scripts/lbwc-model" refresh .lbwc-planning
+bash "{plugin-root}/scripts/meridian-model" refresh .meridian
 ```
 
-This persists workflow-backend availability as `.workflow` on `.lbwc-planning/claude-capabilities.json`, the authority the execution-mode choice in Step 3 reads before offering or resolving `workflow`. A non-zero exit here does not stop research. It leaves `RESOLVED_BACKEND` at `in_process`, so research proceeds on whatever catalog already exists. Step 0 of `workflow-spawn-protocol.md` and the live re-validation in `workflow-generator.sh` can still block a run at generation time, but only when the run goes on to request or choose `workflow`. Skip this gate when `.lbwc-planning/` is missing. Do not create a planning directory here.
+This persists workflow-backend availability as `.workflow` on `.meridian/claude-capabilities.json`, the authority the execution-mode choice in Step 3 reads before offering or resolving `workflow`. A non-zero exit here does not stop research. It leaves `RESOLVED_BACKEND` at `in_process`, so research proceeds on whatever catalog already exists. Step 0 of `workflow-spawn-protocol.md` and the live re-validation in `workflow-generator.sh` can still block a run at generation time, but only when the run goes on to request or choose `workflow`. Skip this gate when `.meridian/` is missing. Do not create a planning directory here.
 
 ## Guard
 
-- If `$ARGUMENTS` is empty, STOP: `Usage: /lbwc:research <topic> [--parallel]`.
+- If `$ARGUMENTS` is empty, STOP: `Usage: /meridian:research <topic> [--parallel]`.
 - Strip `--parallel`. If the remaining topic is empty, STOP with the same usage text.
-- If the remaining topic is a bare integer, run `bash "{plugin-root}/scripts/resolve-todo-item.sh" <N> --session-snapshot --require-unfiltered --validate-live`. On `status: ok`, replace the topic with `command_text`, retain `ref`, and load its detail. On `status: error`, STOP with the helper `message`. If `state_path` is under `.lbwc-planning/milestones/`, STOP and require root `STATE.md` recovery before research.
+- If the remaining topic is a bare integer, run `bash "{plugin-root}/scripts/resolve-todo-item.sh" <N> --session-snapshot --require-unfiltered --validate-live`. On `status: ok`, replace the topic with `command_text`, retain `ref`, and load its detail. On `status: error`, STOP with the helper `message`. If `state_path` is under `.meridian/milestones/`, STOP and require root `STATE.md` recovery before research.
 - For a todo reference or a `(ref:HASH)` suffix, run `bash "{plugin-root}/scripts/todo-details.sh" get <hash>`. On `status: ok`, retain `detail.context` and `detail.files`. On `not_found` or `error`, run `bash "{plugin-root}/scripts/todo-lifecycle.sh" detail-warning <hash>`, warn, and continue without detail. A ref-only request continues only when detail loading succeeded.
 
 ## Steps
 
 1. **Parse:** Remove `--parallel`, resolve a numbered todo or optional `(ref:HASH)` suffix, and retain the topic, todo identity, detail context, and related files. Never include command flags or the ref tag in the Scout brief.
 2. **Scope:** Use one Scout for a narrow question. Use two to four independent facets only for `--parallel` or separable research. State each facet before dispatch.
-3. **Choose the execution backend:** Follow step 0 of `{plugin-root}/references/workflow-spawn-protocol.md`, with `<control-root>` bound to `.lbwc-planning`. Use these literal `AskUserQuestion` fields when that step's `ask` branch applies:
+3. **Choose the execution backend:** Follow step 0 of `{plugin-root}/references/workflow-spawn-protocol.md`, with `<control-root>` bound to `.meridian`. Use these literal `AskUserQuestion` fields when that step's `ask` branch applies:
 
    - header: `Research execution`
    - question: `Where should this research run? Workflow run orchestrates each Scout through a committed background script. Native spawn keeps the current Scout spawn.`
@@ -78,13 +78,13 @@ This persists workflow-backend availability as `.workflow` on `.lbwc-planning/cl
 
    Also evaluate available MCP tools in the system context before composing each brief. Note any relevant documentation, search, code-analysis, or domain-data MCP tools in that Scout's task context and instruct the Scout to prefer them for the matching lookup over generic WebFetch/WebSearch. Do not claim an MCP tool is available when it is not present.
 
-   When `RESOLVED_BACKEND` is `in_process`, for each facet, issue a shell-owned, read-only command contract using `scripts/task-contract.sh issue` with command `research`, role `scout`, team `solo`, and the exact brief. Pass the identical brief, contract path, and task id to generic `scripts/agent-generator.sh scout`, then advance the contract to `dispatched`. The generator uses detected `lbwc-model` routing. Read its `Agent-call parameters:` block and final `SPAWN_READY` line. Spawn only with the emitted `model` and final name as `subagent_type` and `name`.
+   When `RESOLVED_BACKEND` is `in_process`, for each facet, issue a shell-owned, read-only command contract using `scripts/task-contract.sh issue` with command `research`, role `scout`, team `solo`, and the exact brief. Pass the identical brief, contract path, and task id to generic `scripts/agent-generator.sh scout`, then advance the contract to `dispatched`. The generator uses detected `meridian-model` routing. Read its `Agent-call parameters:` block and final `SPAWN_READY` line. Spawn only with the emitted `model` and final name as `subagent_type` and `name`.
 
    When `RESOLVED_BACKEND` is `workflow`, follow `{plugin-root}/references/workflow-spawn-protocol.md` for one FACETS array holding each facet's exact question (one entry, the topic itself, for a non-`--parallel` run). Scout's default role permits `Write`, so a schema 3 contract for it requires either a granted write capability or an explicit `--read-only-role scout` declaration. No facet writes any file. Issue every contract read-only.
 
    ```bash
    PROJECT_ROOT=$(pwd)
-   CONTROL_ROOT="$PROJECT_ROOT/.lbwc-planning"
+   CONTROL_ROOT="$PROJECT_ROOT/.meridian"
    FACETS=("{exact question or facet text, one entry per facet}")
    CONTRACT_PATHS=(); TASK_IDS=(); SCRIPT_PATHS=()
    for FACET in "${FACETS[@]}"; do
@@ -137,7 +137,7 @@ This persists workflow-backend availability as `.workflow` on `.lbwc-planning/cl
 
    Each Scout is read-only. Require a report with sources, claims, confidence, limitations, and live-validation evidence when external facts matter. The live-validation evidence includes `command_shape`, `exit_status`, `redacted_evidence`, `expected_shape`, `confidence`, and `limitations_or_deferred_reason`. Public validation may use WebFetch. Defer authenticated or mutating validation unless a verified-safe read-only helper applies. Scouts return findings and evidence only, they do not create or edit research artifacts.
 5. **Synthesize:** The main session compares all reports, resolves or exposes contradictions, and presents conclusions ranked by confidence. Do not treat an uncited Scout claim as established fact.
-6. **Persist:** Ask `Save findings?` through AskUserQuestion with explicit bounded choices. On save, the main session writes the artifact. For an active phase use `.lbwc-planning/phases/{phase-dir}/RESEARCH.md`. Otherwise derive `RESEARCH_SLUG` from the topic, run `bash "{plugin-root}/scripts/research-session-state.sh" start .lbwc-planning "$RESEARCH_SLUG"`, and use its `research_file`. Preserve the YAML frontmatter between the opening and closing `---` markers, update `title` and `confidence`, write findings below it, then run `bash "{plugin-root}/scripts/research-session-state.sh" complete .lbwc-planning "$research_id"`. Do not delegate an artifact write.
+6. **Persist:** Ask `Save findings?` through AskUserQuestion with explicit bounded choices. On save, the main session writes the artifact. For an active phase use `.meridian/phases/{phase-dir}/RESEARCH.md`. Otherwise derive `RESEARCH_SLUG` from the topic, run `bash "{plugin-root}/scripts/research-session-state.sh" start .meridian "$RESEARCH_SLUG"`, and use its `research_file`. Preserve the YAML frontmatter between the opening and closing `---` markers, update `title` and `confidence`, write findings below it, then run `bash "{plugin-root}/scripts/research-session-state.sh" complete .meridian "$research_id"`. Do not delegate an artifact write.
 
 ## Failure and recovery
 
@@ -147,16 +147,16 @@ If the workflow generator fails or a guard or the user denies a `Workflow` call 
 
 ## Output Format
 
-Follow @${CLAUDE_PLUGIN_ROOT}/references/lbwc-brand-essentials.md. Use a findings banner, `✓` high confidence, `○` medium confidence, `⚠` low confidence, source links or paths, and no ANSI color codes.
+Follow @${CLAUDE_PLUGIN_ROOT}/references/meridian-brand-essentials.md. Use a findings banner, `✓` high confidence, `○` medium confidence, `⚠` low confidence, source links or paths, and no ANSI color codes.
 
 ## Next Up
 
 ```text
 ➜ Next Up
-  /lbwc:vibe --plan {NN} - plan using research findings
-  /lbwc:vibe --discuss {NN} - discuss the phase approach
-  /lbwc:debug "description mentioning {topic}" - investigate an implementation symptom
-  /lbwc:fix "description mentioning {topic}" - apply a focused fix when research identifies one
+  /meridian:transit --plan {NN} - plan using research findings
+  /meridian:transit --discuss {NN} - discuss the phase approach
+  /meridian:debug "description mentioning {topic}" - investigate an implementation symptom
+  /meridian:fix "description mentioning {topic}" - apply a focused fix when research identifies one
 ```
 
 ## Feedback card

@@ -1,24 +1,24 @@
 ---
 category: supporting
 disable-model-invocation: true
-description: View, add, remove, refresh, and reconcile project conventions through the LBWC trusted shell layer.
+description: View, add, remove, refresh, and reconcile project conventions through the MERIDIAN trusted shell layer.
 argument-hint: '["convention text" | remove <id> | refresh | list | group]'
 allowed-tools: Read, Bash, Glob, Grep, AskUserQuestion
 ---
 
-# LBWC Teach $ARGUMENTS
+# MERIDIAN Teach $ARGUMENTS
 
 ## Purpose
 
-Manage project conventions without letting the model write `.lbwc-planning/conventions.json` directly. The trusted entrypoint is:
+Manage project conventions without letting the model write `.meridian/conventions.json` directly. The trusted entrypoint is:
 
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/lbwc-conventions.sh"
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/meridian-conventions.sh"
 ```
 
 All saved entries keep the exact `tag` and `rule` fields consumed by `scripts/compile-context.sh`. Extra source, category, confidence, and detection metadata remain available for people and tools.
 
-The `category` frontmatter field is LBWC metadata. Claude Code does not define it as command behavior.
+The `category` frontmatter field is MERIDIAN metadata. Claude Code does not define it as command behavior.
 
 ## Main-session boundary
 
@@ -40,10 +40,10 @@ The main session presents that question with `AskUserQuestion` before another co
 
 ## Guard and state
 
-1. Confirm `.lbwc-planning/` exists. If it does not, stop with `Run /lbwc:init first.`
+1. Confirm `.meridian/` exists. If it does not, stop with `Run /meridian:init first.`
 2. Never use a legacy planning-state namespace.
-3. Never write, edit, redirect to, or replace `.lbwc-planning/conventions.json` directly.
-4. Use `lbwc-conventions.sh` for every list, group, add, remove, reconcile, and refresh operation.
+3. Never write, edit, redirect to, or replace `.meridian/conventions.json` directly.
+4. Use `meridian-conventions.sh` for every list, group, add, remove, reconcile, and refresh operation.
 5. If the trusted command rejects malformed state, a symbolic link, traversal, conflict, or redundant rule, show its exact error and stop.
 
 ## Convention structure
@@ -75,13 +75,13 @@ Sources are `auto-detected` and `user-defined`. Categories are `file-structure`,
 1. Run the trusted list operation:
 
    ```bash
-   bash "${CLAUDE_PLUGIN_ROOT}/scripts/lbwc-conventions.sh" list .lbwc-planning
+   bash "${CLAUDE_PLUGIN_ROOT}/scripts/meridian-conventions.sh" list .meridian
    ```
 
 2. For category-grouped output, run:
 
    ```bash
-   bash "${CLAUDE_PLUGIN_ROOT}/scripts/lbwc-conventions.sh" group .lbwc-planning
+   bash "${CLAUDE_PLUGIN_ROOT}/scripts/meridian-conventions.sh" group .meridian
    ```
 
 3. Preserve the readable table headings `ID`, `Category`, `Source`, `Confidence`, and `Rule`. Show totals. Do not replace the table with raw JSON for a person.
@@ -124,19 +124,19 @@ Each question covers one decision. Use clear, non-technical wording. Mandatory p
 For a new rule:
 
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/lbwc-conventions.sh" add .lbwc-planning "<category>" "<rule>"
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/meridian-conventions.sh" add .meridian "<category>" "<rule>"
 ```
 
 For `Replace existing` or `Replace with new version`:
 
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/lbwc-conventions.sh" add .lbwc-planning "<category>" "<rule>" --replace "<id>"
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/meridian-conventions.sh" add .meridian "<category>" "<rule>" --replace "<id>"
 ```
 
 For a semantic conflict where the user selects `Keep both`:
 
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/lbwc-conventions.sh" add .lbwc-planning "<category>" "<rule>" --conflicts-with "<id>" --keep-both
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/meridian-conventions.sh" add .meridian "<category>" "<rule>" --conflicts-with "<id>" --keep-both
 ```
 
 Show the exact success line from the CLI. Then run `list` and show the updated table. Do not add a Project Conventions section to `CLAUDE.md`.
@@ -159,7 +159,7 @@ Show the exact success line from the CLI. Then run `list` and show the updated t
 Only after `Remove convention`, run:
 
    ```bash
-   bash "${CLAUDE_PLUGIN_ROOT}/scripts/lbwc-conventions.sh" remove .lbwc-planning "<id>" --yes
+   bash "${CLAUDE_PLUGIN_ROOT}/scripts/meridian-conventions.sh" remove .meridian "<id>" --yes
    ```
 
 Show the success line and the updated list table.
@@ -168,7 +168,7 @@ Show the success line and the updated list table.
 
 ### Read the mapped evidence
 
-If `.lbwc-planning/codebase/` is absent, stop with `No codebase map found. Run /lbwc:map first.` Read only existing copies of `PATTERNS.md`, `ARCHITECTURE.md`, `STACK.md`, and `CONCERNS.md`.
+If `.meridian/codebase/` is absent, stop with `No codebase map found. Run /meridian:map first.` Read only existing copies of `PATTERNS.md`, `ARCHITECTURE.md`, `STACK.md`, and `CONCERNS.md`.
 
 Extract candidate rules using the full evidence contract:
 
@@ -187,7 +187,7 @@ Extract candidate rules using the full evidence contract:
 2. Preview the trusted reconciliation:
 
    ```bash
-   bash "${CLAUDE_PLUGIN_ROOT}/scripts/lbwc-conventions.sh" reconcile .lbwc-planning "<candidate-file>"
+   bash "${CLAUDE_PLUGIN_ROOT}/scripts/meridian-conventions.sh" reconcile .meridian "<candidate-file>"
    ```
 
 3. User-defined always win. The trusted reconciliation drops duplicate or conflicting auto detections, removes orphaned auto detections, preserves matching detection IDs, and never changes user-defined rows.
@@ -204,7 +204,7 @@ Extract candidate rules using the full evidence contract:
 4. If the user selects `Apply refresh`, run:
 
    ```bash
-   bash "${CLAUDE_PLUGIN_ROOT}/scripts/lbwc-conventions.sh" refresh .lbwc-planning "<candidate-file>"
+   bash "${CLAUDE_PLUGIN_ROOT}/scripts/meridian-conventions.sh" refresh .meridian "<candidate-file>"
    ```
 
 5. Show the final table and totals. Remove the temporary candidate file. On `Cancel`, remove the temporary file and leave state unchanged.
@@ -219,7 +219,7 @@ Extract candidate rules using the full evidence contract:
 
 ## Convention injection
 
-`scripts/compile-context.sh` reads `.lbwc-planning/conventions.json` and emits each exact `tag` and `rule`. QA checks user-defined and high-confidence auto-detected rules. Convention violations are reported as evidence-backed deviations in the phase summary.
+`scripts/compile-context.sh` reads `.meridian/conventions.json` and emits each exact `tag` and `rule`. QA checks user-defined and high-confidence auto-detected rules. Convention violations are reported as evidence-backed deviations in the phase summary.
 
 ## Failure and recovery
 
@@ -227,20 +227,20 @@ Extract candidate rules using the full evidence contract:
 |---|---|---|
 | Malformed current artifact | Command stops, state unchanged | Repair the artifact from a known-good copy, then run `--json list` |
 | Malformed candidate input | Refresh stops, state unchanged | Rebuild the temporary candidate file from mapped evidence |
-| Symbolic link or traversal | Command stops, state unchanged | Use the physical project `.lbwc-planning` directory |
+| Symbolic link or traversal | Command stops, state unchanged | Use the physical project `.meridian` directory |
 | Conflict or redundancy | No write occurs | Present the exact bounded choice with `AskUserQuestion` |
-| Existing conventions lock | Command stops, state unchanged | Confirm no LBWC convention process is active before removing a stale lock directory |
+| Existing conventions lock | Command stops, state unchanged | Confirm no MERIDIAN convention process is active before removing a stale lock directory |
 
 Never retry by writing the artifact directly. Re-run the same trusted CLI operation after the cause is fixed.
 
 ## Verification
 
-1. Run `bash "${CLAUDE_PLUGIN_ROOT}/scripts/lbwc-conventions.sh" --json list .lbwc-planning` and confirm the saved rows.
+1. Run `bash "${CLAUDE_PLUGIN_ROOT}/scripts/meridian-conventions.sh" --json list .meridian` and confirm the saved rows.
 2. Confirm each row has the intended exact `tag` and `rule` projection.
-3. Run the relevant LBWC context build that invokes `compile-context.sh`.
+3. Run the relevant MERIDIAN context build that invokes `compile-context.sh`.
 4. Confirm the generated context shows the same convention text.
 5. For refresh, compare the final added, updated, removed, and kept counts with the approved preview.
 
 ## Output style
 
-Use compact tables and one action per step. Use `Added`, `Removed`, `Refreshed`, `Warning`, and `No change` status labels. Do not use ANSI color. End each completed operation with `Next:` guidance and one concrete action, such as `Next: continue your current LBWC workflow.`
+Use compact tables and one action per step. Use `Added`, `Removed`, `Refreshed`, `Warning`, and `No change` status labels. Do not use ANSI color. End each completed operation with `Next:` guidance and one concrete action, such as `Next: continue your current MERIDIAN workflow.`

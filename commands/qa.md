@@ -7,7 +7,7 @@ argument-hint: "[phase-number] [--tier=quick|standard|deep] [--effort=thorough|b
 allowed-tools: Read, Write, Bash, Glob, Grep, Agent, Skill, LSP, AskUserQuestion, Workflow
 ---
 
-# LBWC QA: $ARGUMENTS
+# MERIDIAN QA: $ARGUMENTS
 
 ## Context
 
@@ -20,7 +20,7 @@ Working directory:
 Plugin root:
 
 ```
-!`SESSION_KEY="${CLAUDE_SESSION_ID:-default}"; L="/tmp/.lbwc-plugin-root-link-${SESSION_KEY}"; R="$L/scripts/resolve-plugin-root.sh"; [ -f "$R" ] || R="${CLAUDE_PLUGIN_ROOT:-}/scripts/resolve-plugin-root.sh"; [ -f "$R" ] || { echo "LBWC: plugin root unavailable. Restart this session to recreate $L." >&2; exit 1; }; bash "$R" >/dev/null || exit 1; bash "$L/scripts/phase-detect.sh" > "/tmp/.lbwc-phase-detect-${SESSION_KEY}.txt" 2>/dev/null || echo "phase_detect_error=true" > "/tmp/.lbwc-phase-detect-${SESSION_KEY}.txt"; echo "$L"`
+!`SESSION_KEY="${CLAUDE_SESSION_ID:-default}"; L="/tmp/.meridian-plugin-root-link-${SESSION_KEY}"; R="$L/scripts/resolve-plugin-root.sh"; [ -f "$R" ] || R="${CLAUDE_PLUGIN_ROOT:-}/scripts/resolve-plugin-root.sh"; [ -f "$R" ] || { echo "MERIDIAN: plugin root unavailable. Restart this session to recreate $L." >&2; exit 1; }; bash "$R" >/dev/null || exit 1; bash "$L/scripts/phase-detect.sh" > "/tmp/.meridian-phase-detect-${SESSION_KEY}.txt" 2>/dev/null || echo "phase_detect_error=true" > "/tmp/.meridian-phase-detect-${SESSION_KEY}.txt"; echo "$L"`
 ```
 
 Store the plugin root path output above as `{plugin-root}` for use in script invocations below. Replace `{plugin-root}` with the literal `Plugin root` value from Context whenever a step below references a script or reference file.
@@ -32,7 +32,7 @@ Every QA spawn follows `{plugin-root}/references/agent-spawn-protocol.md`. Issue
 Current state:
 
 ```text
-!`head -40 .lbwc-planning/STATE.md 2>/dev/null || echo "No state found"`
+!`head -40 .meridian/STATE.md 2>/dev/null || echo "No state found"`
 ```
 
 The SessionStart hook injects config. Override with the --effort flag.
@@ -40,15 +40,15 @@ The SessionStart hook injects config. Override with the --effort flag.
 Phase directories:
 
 ```text
-!`ls .lbwc-planning/phases/ 2>/dev/null || echo "No phases directory"`
+!`ls .meridian/phases/ 2>/dev/null || echo "No phases directory"`
 ```
 
 Phase state:
 
 ```text
 !`SESSION_KEY="${CLAUDE_SESSION_ID:-default}"
-L="/tmp/.lbwc-plugin-root-link-${SESSION_KEY}"
-P="/tmp/.lbwc-phase-detect-${SESSION_KEY}.txt"
+L="/tmp/.meridian-plugin-root-link-${SESSION_KEY}"
+P="/tmp/.meridian-phase-detect-${SESSION_KEY}.txt"
 PD=""
 _refresh_phase_detect() {
   local resolver root
@@ -82,7 +82,7 @@ fi`
 ```
 
 ```text
-!`bash "/tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/suggest-compact.sh" qa 2>/dev/null || true`
+!`bash "/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/suggest-compact.sh" qa 2>/dev/null || true`
 ```
 
 ## Workflow capability gate
@@ -90,18 +90,18 @@ fi`
 Refresh the saved Claude capability catalog before any QA contract or spawn:
 
 ```bash
-bash "{plugin-root}/scripts/lbwc-model" refresh .lbwc-planning
+bash "{plugin-root}/scripts/meridian-model" refresh .meridian
 ```
 
-This persists workflow-backend availability as `.workflow` on `.lbwc-planning/claude-capabilities.json`, the authority the execution-mode choice in Step 3 reads before offering or resolving `workflow`. A non-zero exit here does not stop QA. It leaves `RESOLVED_BACKEND` at `in_process`, so QA proceeds on whatever catalog already exists. Step 0 of `workflow-spawn-protocol.md` and live re-validation by `workflow-generator.sh` can still block a run that requests or chooses `workflow`. Skip this gate when `.lbwc-planning/` is missing. Do not create a planning directory here.
+This persists workflow-backend availability as `.workflow` on `.meridian/claude-capabilities.json`, the authority the execution-mode choice in Step 3 reads before offering or resolving `workflow`. A non-zero exit here does not stop QA. It leaves `RESOLVED_BACKEND` at `in_process`, so QA proceeds on whatever catalog already exists. Step 0 of `workflow-spawn-protocol.md` and live re-validation by `workflow-generator.sh` can still block a run that requests or chooses `workflow`. Skip this gate when `.meridian/` is missing. Do not create a planning directory here.
 
 ## Guard
 
-- Not initialized (no .lbwc-planning/ dir): STOP "Run /lbwc:init first."
+- Not initialized (no .meridian/ dir): STOP "Run /meridian:init first."
 - **Debug session override:** If `$ARGUMENTS` does NOT contain an explicit phase number OR `$ARGUMENTS` contains `--session`, check for an active debug session before any phase-related guards:
 
   ```bash
-  eval "$(bash "{plugin-root}/scripts/debug-session-state.sh" get-or-latest .lbwc-planning 2>/dev/null)" 2>/dev/null || true
+  eval "$(bash "{plugin-root}/scripts/debug-session-state.sh" get-or-latest .meridian 2>/dev/null)" 2>/dev/null || true
   ```
 
   The helper exports `active_session`, `session_id`, `session_file`, and `session_status`, use `session_status` for lifecycle checks after `eval`.
@@ -112,7 +112,7 @@ This persists workflow-backend availability as `.workflow` on `.lbwc-planning/cl
   ```bash
   NORM_SCRIPT="{plugin-root}/scripts/normalize-plan-filenames.sh"
   if [ -f "$NORM_SCRIPT" ]; then
-    for pdir in .lbwc-planning/phases/*/; do
+    for pdir in .meridian/phases/*/; do
       [ -d "$pdir" ] && bash "$NORM_SCRIPT" "$pdir"
     done
   fi
@@ -122,17 +122,17 @@ This persists workflow-backend availability as `.workflow` on `.lbwc-planning/cl
   Then re-run phase-detect.sh to refresh state (filenames changed):
 
   ```bash
-  bash "{plugin-root}/scripts/phase-detect.sh" > "/tmp/.lbwc-phase-detect-${CLAUDE_SESSION_ID:-default}.txt"
+  bash "{plugin-root}/scripts/phase-detect.sh" > "/tmp/.meridian-phase-detect-${CLAUDE_SESSION_ID:-default}.txt"
   ```
 
   Use the refreshed phase-detect output for all subsequent guard checks and steps.
 - **Auto-detect phase** (no explicit number): Phase detection is pre-computed in Context above. Use `next_phase` and `next_phase_slug` for the target phase.
   - If `next_phase_state=needs_qa_remediation`, target that phase directly.
-    - If the remediation stage is `plan` or `execute`, STOP and tell the user to run `/lbwc:vibe` to continue QA remediation first, standalone QA must not mint a round VERIFICATION before re-verification is ready.
+    - If the remediation stage is `plan` or `execute`, STOP and tell the user to run `/meridian:transit` to continue QA remediation first, standalone QA must not mint a round VERIFICATION before re-verification is ready.
     - If the remediation stage is `verify` or `done`, standalone QA re-verifies the authoritative round artifact rather than overwriting the frozen phase-level VERIFICATION.
   - If the detector supplies `first_qa_attention_phase` and `qa_attention_status` is `pending`, `failed`, or `verify`, target that phase directly. Existing QA artifacts may be stale or failed even when a file exists, and verify-stage remediation rounds remain re-runnable even if an earlier phase has incomplete work.
   - Otherwise scan phase dirs for the first with completed `*-SUMMARY.md` files but no authoritative QA verification artifact (no numbered final VERIFICATION, no brownfield plain `VERIFICATION.md`, no wave fallback). Announce "Auto-detected Phase {NN} ({slug})" when found. If all phases have verification, STOP with "All phases verified."
-- Phase not built (no SUMMARYs): STOP "Phase {NN} has no completed plans. Run /lbwc:vibe first."
+- Phase not built (no SUMMARYs): STOP "Phase {NN} has no completed plans. Run /meridian:transit first."
 
 ## Debug Session Routing
 
@@ -140,7 +140,7 @@ This persists workflow-backend availability as `.workflow` on `.lbwc-planning/cl
 **Before resolving phase target**, check for an active debug session. This handles the case where phase_count=0 but a debug session with `session_status=qa_pending` or `session_status=qa_failed` exists.
 
 ```bash
-eval "$(bash "{plugin-root}/scripts/debug-session-state.sh" get-or-latest .lbwc-planning)"
+eval "$(bash "{plugin-root}/scripts/debug-session-state.sh" get-or-latest .meridian)"
 ```
 
 The helper exports `active_session`, `session_id`, `session_file`, and `session_status`, use `session_status` for routing after `eval`.
@@ -165,7 +165,7 @@ When routed here, skip the standard phase-resolution Steps entirely. Instead:
 
 2. Increment the QA round:
    ```bash
-  eval "$(bash "{plugin-root}/scripts/debug-session-state.sh" increment-qa .lbwc-planning)"
+  eval "$(bash "{plugin-root}/scripts/debug-session-state.sh" increment-qa .meridian)"
    ```
 
 1. Resolve the tier with the same logic as Step 1 below (--tier flag > --effort flag > config default > Standard).
@@ -219,8 +219,8 @@ When routed here, skip the standard phase-resolution Steps entirely. Instead:
    - Parse the verdict (PASS/FAIL/PARTIAL) from the QA agent's response.
    - The main session validates the returned qa_verdict, advances the task contract through its observed states, and writes the QA round to the session file with `write-debug-session.sh`. Do not accept prose-only or malformed payloads.
    - Update session status based on result:
-     - PASS → `bash .../debug-session-state.sh set-status .lbwc-planning uat_pending`
-     - FAIL or PARTIAL → `bash .../debug-session-state.sh set-status .lbwc-planning qa_failed`
+     - PASS → `bash .../debug-session-state.sh set-status .meridian uat_pending`
+     - FAIL or PARTIAL → `bash .../debug-session-state.sh set-status .meridian qa_failed`
 
 2. Present debug-session QA result:
 
@@ -237,8 +237,8 @@ When routed here, skip the standard phase-resolution Steps entirely. Instead:
 
    ```
 
-   - If PASS: `➜ Next: /lbwc:verify --session -- Run UAT on the debug fix`
-   - If FAIL/PARTIAL: `➜ Next: /lbwc:debug --resume -- Address QA failures and re-investigate`
+   - If PASS: `➜ Next: /meridian:verify --session -- Run UAT on the debug fix`
+   - If FAIL/PARTIAL: `➜ Next: /meridian:debug --resume -- Address QA failures and re-investigate`
 
    STOP after presenting. Do not continue to the standard phase QA steps.
 </debug_session_qa>
@@ -255,10 +255,10 @@ Hooks handle continuous verification. This command is for deep, on-demand verifi
   Read `{plugin-root}/references/effort-profile-{profile}.md`.
   Context overrides: >15 requirements or last phase before ship → Deep.
 
-2. **Resolve phase:** Use `.lbwc-planning/phases/` for phase directories. Before any standard phase QA contract or spawn, read the QA ownership routing and Explicit skip guard sections of `{plugin-root}/references/execute-post-build-qa.md` and follow them, binding `PLUGIN_ROOT` to `{plugin-root}`. Keep skip reasons in main-session verification evidence. This task ownership rule does not apply to debug-session QA.
+2. **Resolve phase:** Use `.meridian/phases/` for phase directories. Before any standard phase QA contract or spawn, read the QA ownership routing and Explicit skip guard sections of `{plugin-root}/references/execute-post-build-qa.md` and follow them, binding `PLUGIN_ROOT` to `{plugin-root}`. Keep skip reasons in main-session verification evidence. This task ownership rule does not apply to debug-session QA.
 
 3. **Spawn QA:**
-    - **Choose the execution backend.** Follow step 0 of `{plugin-root}/references/workflow-spawn-protocol.md`, with `<control-root>` bound to `.lbwc-planning`. Use these literal `AskUserQuestion` fields when that step's `ask` branch applies:
+    - **Choose the execution backend.** Follow step 0 of `{plugin-root}/references/workflow-spawn-protocol.md`, with `<control-root>` bound to `.meridian`. Use these literal `AskUserQuestion` fields when that step's `ask` branch applies:
 
       - header: `QA execution`
       - question: `Where should this QA verification run? Workflow run orchestrates it through a committed background script. Native spawn keeps the current single-agent QA run.`
@@ -286,7 +286,7 @@ Hooks handle continuous verification. This command is for deep, on-demand verifi
 
         ```bash
         PROJECT_ROOT=$(pwd)
-        CONTROL_ROOT="$PROJECT_ROOT/.lbwc-planning"
+        CONTROL_ROOT="$PROJECT_ROOT/.meridian"
         QA_BRIEF="verify phase {NN}, tier {ACTIVE_TIER}"
         CONTRACT_PATH=$(bash "{plugin-root}/scripts/task-contract.sh" issue "$PROJECT_ROOT" "qa-{NN}-{task-slug}" --command qa --role qa --team solo --job "$QA_BRIEF" --control-root "$CONTROL_ROOT" --requested-backend workflow --resolved-backend workflow) || exit 1
         TASK_ID=$(basename "$CONTRACT_PATH" .json)
@@ -316,12 +316,12 @@ Hooks handle continuous verification. This command is for deep, on-demand verifi
             VERIF_PATH=$(bash "{plugin-root}/scripts/resolve-verification-path.sh" current "{phase-dir}" 2>/dev/null || true)
             [ -n "$VERIF_PATH" ] && [ ! -f "$VERIF_PATH" ] && VERIF_PATH=""
             if [ -z "$VERIF_PATH" ] || [ ! -f "$VERIF_PATH" ]; then
-              echo "Phase {NN} QA remediation is done, but the round-scoped VERIFICATION artifact is missing. Re-run /lbwc:vibe to restore the remediation artifact before standalone QA." >&2
+              echo "Phase {NN} QA remediation is done, but the round-scoped VERIFICATION artifact is missing. Re-run /meridian:transit to restore the remediation artifact before standalone QA." >&2
               exit 1
             fi
             ;;
           plan|execute)
-            echo "Phase {NN} has active QA remediation at stage ${QA_STAGE}. Run /lbwc:vibe to continue remediation before standalone QA." >&2
+            echo "Phase {NN} has active QA remediation at stage ${QA_STAGE}. Run /meridian:transit to continue remediation before standalone QA." >&2
             exit 1
             ;;
           *) VERIF_PATH="" ;;
@@ -365,7 +365,7 @@ Hooks handle continuous verification. This command is for deep, on-demand verifi
           - Summaries: {paths to phase SUMMARY.md files}
           - If `{phase-dir}/known-issues.json` exists, read it as the authoritative tracked phase backlog. Re-check those known issues during this QA run and return only the ones that still remain unresolved in `pre_existing_issues`.
         Phase success criteria: {section from ROADMAP.md}
-        If `.lbwc-planning/codebase/META.md` exists, read CONVENTIONS.md, TESTING.md, CONCERNS.md, and ARCHITECTURE.md (whichever exist) from `.lbwc-planning/codebase/` to bootstrap codebase understanding before verifying.
+        If `.meridian/codebase/META.md` exists, read CONVENTIONS.md, TESTING.md, CONCERNS.md, and ARCHITECTURE.md (whichever exist) from `.meridian/codebase/` to bootstrap codebase understanding before verifying.
         Verification protocol: `{plugin-root}/references/verification-protocol.md`
         Return findings using the qa_verdict schema (see `{plugin-root}/references/handoff-schemas.md`).
         If tests reveal pre-existing failures unrelated to this phase, list them in your response under a "Pre-existing Issues" heading and include them in the qa_verdict payload's pre_existing_issues array.
@@ -410,17 +410,17 @@ Hooks handle continuous verification. This command is for deep, on-demand verifi
         bash "{plugin-root}/scripts/qa-remediation-state.sh" needs-round "{phase-dir}"
         ```
 
-        Then display that standalone QA found a result, but the deterministic gate still requires remediation, tell the user to continue via `/lbwc:vibe`. Do **not** present the round as a shippable PASS. If `qa_gate_process_exception_evidence_missing=true`, say the round has a clean verification result but lacks recorded remediation-artifact evidence, and the next round should record an existing remediation `RNN-PLAN.md`/`RNN-SUMMARY.md` or valid original phase `PLAN.md`. If `qa_gate_known_issues_override=true`, note that the contract checks passed but `{qa_gate_known_issue_count}` tracked known issues remain unresolved in `{phase-dir}/known-issues.json`.
-      - `REMEDIATION_REQUIRED` → if `VERIF_PATH` is phase-level, initialize QA remediation state first so plain `/lbwc:vibe` has a deterministic resume target:
+        Then display that standalone QA found a result, but the deterministic gate still requires remediation, tell the user to continue via `/meridian:transit`. Do **not** present the round as a shippable PASS. If `qa_gate_process_exception_evidence_missing=true`, say the round has a clean verification result but lacks recorded remediation-artifact evidence, and the next round should record an existing remediation `RNN-PLAN.md`/`RNN-SUMMARY.md` or valid original phase `PLAN.md`. If `qa_gate_known_issues_override=true`, note that the contract checks passed but `{qa_gate_known_issue_count}` tracked known issues remain unresolved in `{phase-dir}/known-issues.json`.
+      - `REMEDIATION_REQUIRED` → if `VERIF_PATH` is phase-level, initialize QA remediation state first so plain `/meridian:transit` has a deterministic resume target:
 
         ```bash
         bash "{plugin-root}/scripts/qa-remediation-state.sh" init "{phase-dir}" 2>/dev/null || true
         ```
 
-        Then display that the main session wrote the phase-level QA result, but the deterministic gate still requires remediation, tell the user to continue via `/lbwc:vibe`. Do **not** continue to the generic verified presentation. If `qa_gate_process_exception_evidence_missing=true`, say the round has a clean verification result but lacks recorded remediation-artifact evidence, and the next round should record an existing remediation `RNN-PLAN.md`/`RNN-SUMMARY.md` or valid original phase `PLAN.md`. If `qa_gate_known_issues_override=true`, note that the contract checks passed but `{qa_gate_known_issue_count}` tracked known issues remain unresolved in `{phase-dir}/known-issues.json`.
+        Then display that the main session wrote the phase-level QA result, but the deterministic gate still requires remediation, tell the user to continue via `/meridian:transit`. Do **not** continue to the generic verified presentation. If `qa_gate_process_exception_evidence_missing=true`, say the round has a clean verification result but lacks recorded remediation-artifact evidence, and the next round should record an existing remediation `RNN-PLAN.md`/`RNN-SUMMARY.md` or valid original phase `PLAN.md`. If `qa_gate_known_issues_override=true`, note that the contract checks passed but `{qa_gate_known_issue_count}` tracked known issues remain unresolved in `{phase-dir}/known-issues.json`.
       - `QA_RERUN_REQUIRED` → display that the persisted verification artifact is invalid or incomplete and requires a QA re-run before the main session can trust it. Do **not** present it as authoritative.
 
-5. **Present:** Per @${CLAUDE_PLUGIN_ROOT}/references/lbwc-brand-essentials.md:
+5. **Present:** Per @${CLAUDE_PLUGIN_ROOT}/references/meridian-brand-essentials.md:
 
     ```text
     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

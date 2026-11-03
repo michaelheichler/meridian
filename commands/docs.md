@@ -27,7 +27,7 @@ Use this command for documentation work that stands alone, including READMEs, ch
 2. Add the codebase-map pointer to the exact brief when a map exists. Issue a solo `/docs` command contract named `docs-{slug}` with every target document as an exact `--write-allowance`. Pass the same brief, contract path, task id, and allowances to the generator. Advance the contract to `dispatched`, then spawn one `docs` agent per `@references/agent-spawn-protocol.md`. If the target paths are not exact, stop and ask one question before issuing the contract.
 3. When `docs` returns, you commit the changed documentation files yourself, one commit for the job, message format `docs: {summary}`. `docs` never runs git.
 4. If you scoped the job out of an active phase, record one `deviq-record.py decision --phase <phase> --role docs --field summary="..." --field rationale="..."` for any material documentation choice (a new doc structure, a renamed public term). Standalone jobs with no phase skip this.
-5. Report the outcome and commit hash. If the job came from a phase, tell the user to continue with `/vibe`.
+5. Report the outcome and commit hash. If the job came from a phase, tell the user to continue with `/transit`.
 
 ## Failure and recovery
 
@@ -39,4 +39,4 @@ Report the documentation scope, contracted `docs` role, changed files, main-sess
 
 ## Next Up
 
-For phase-scoped work, end with `Next Up: /lbwc:vibe`. For standalone work, end with one concrete continuation chosen from the completed scope.
+For phase-scoped work, end with `Next Up: /meridian:transit`. For standalone work, end with one concrete continuation chosen from the completed scope.

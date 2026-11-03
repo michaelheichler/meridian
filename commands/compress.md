@@ -6,15 +6,15 @@ argument-hint: "<filepath>"
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep
 ---
 
-# LBWC Compress: $ARGUMENTS
+# MERIDIAN Compress: $ARGUMENTS
 
 ## Context
 
-This command mutates exactly one user-supplied local markdown, text, or extensionless file. It creates a sibling backup before replacement. No generated agent or planning state is involved.
+This command updates one local file that the user supplies. It accepts markdown and text files, including extensionless files, and creates a sibling backup before replacement. It does not generate agents or change planning state.
 
 ## Guard
 
-- No $ARGUMENTS: STOP "Usage: /lbwc:compress path/to/file.{md|txt} (or extensionless file)"
+- If $ARGUMENTS is empty, stop and show `/meridian:compress path/to/file.{md|txt}` (or an extensionless file).
 
 ## Steps
 
@@ -59,8 +59,8 @@ echo "Backup: $BACKUP"
 
 ### Remove
 
-- Articles: a, an, the
-- Filler: just, really, basically, actually, simply, essentially, generally
+- Articles, including `a`, `an`, and `the`
+- Filler words, including `just`, `really`, `basically`, `actually`, `simply`, `essentially`, and `generally`
 - Pleasantries: "sure", "certainly", "of course", "happy to", "I'd recommend"
 - Hedging: "it might be worth", "you could consider", "it would be good to"
 - Redundant phrasing: "in order to" → "to", "make sure to" → "ensure", "the reason is because" → "because"
@@ -114,7 +114,7 @@ echo "Backup at: $BACKUP"
 
 ## Output Format
 
-Report the input path, output path, and whether code blocks and links were preserved.
+Report the input and output paths. State whether the compressed file keeps every code block and link unchanged.
 
 ## Next Up
 

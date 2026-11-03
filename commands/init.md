@@ -1,12 +1,12 @@
 ---
 category: lifecycle
 disable-model-invocation: true
-description: Set up environment, scaffold .lbwc-planning, detect project context, and bootstrap project-defining files.
+description: Set up environment, scaffold .meridian, detect project context, and bootstrap project-defining files.
 argument-hint: "none"
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep, AskUserQuestion, Agent, LSP, Workflow
 ---
 
-# LBWC Init
+# MERIDIAN Init
 
 <!-- Steps 0-4 establish the environment before project discovery. -->
 <!-- Steps 5-8 use discovery and user input to define the project. -->
@@ -40,21 +40,21 @@ If the helper exits non-zero, stop before the Guard.
 
 The Architect in Step 7c is the only agent that this command spawns.
 Step 7c follows the fail-closed sequence in Step 1 and the additional refresh in Step 1.8.
-Step 1 creates `.lbwc-planning/` and runs `lbwc-model refresh .lbwc-planning` before later bootstrap writes.
-The refresh saves workflow availability as `.workflow` in `.lbwc-planning/claude-capabilities.json`.
+Step 1 creates `.meridian/` and runs `meridian-model refresh .meridian` before later bootstrap writes.
+The refresh saves workflow availability as `.workflow` in `.meridian/claude-capabilities.json`.
 Step 7c reads that catalog before it offers or resolves `workflow`.
 If the refresh fails, Step 1 stops the command.
-Thus, Step 7c starts with `.lbwc-planning/` and a capability catalog.
-The Guard stops only when `.lbwc-planning/config.json` already exists.
-A partial `.lbwc-planning/` scaffold can exist at command start, but Step 1 completes it before any spawn.
+Thus, Step 7c starts with `.meridian/` and a capability catalog.
+The Guard stops only when `.meridian/config.json` already exists.
+A partial `.meridian/` scaffold can exist at command start, but Step 1 completes it before any spawn.
 
 The default configuration never enters the `ask` branch in Step 7c.
-Step 1 copies `config/settings.json` into `.lbwc-planning/config.json`.
+Step 1 copies `config/settings.json` into `.meridian/config.json`.
 That source sets `agent_execution_mode: "ask"` and `workflow_execution.enabled: false`.
 Step 0 of `workflow-spawn-protocol.md` asks only when `workflow_execution.enabled` is also `true`.
 Otherwise, it keeps `RESOLVED_BACKEND=in_process` without a prompt.
 The `ask` branch of a fresh bootstrap offers `Workflow run` only if an earlier change enables `workflow_execution.enabled`.
-That change can come from `/lbwc:config` or a non-default settings source before Step 7c.
+That change can come from `/meridian:config` or a non-default settings source before Step 7c.
 
 <!-- rename-migration:start -->
 ## State migration
@@ -79,17 +79,17 @@ The environment helper reads old overrides only when the environment lacks the c
 
 ## Guard
 
-1. If .lbwc-planning/config.json exists, stop and display "LBWC is already initialized. Use /lbwc:config to modify settings or /lbwc:vibe to start building."
-2. Run `command -v jq` via Bash. If jq is missing, stop and display "LBWC requires jq. Install: macOS `brew install jq`, Linux `apt install jq`, Manual: <https://jqlang.github.io/jq/download/>. Then re-run /lbwc:init." Do not proceed without jq.
+1. If .meridian/config.json exists, stop and display "MERIDIAN is already initialized. Use /meridian:config to modify settings or /meridian:transit to start building."
+2. Run `command -v jq` via Bash. If jq is missing, stop and display "MERIDIAN requires jq. Install: macOS `brew install jq`, Linux `apt install jq`, Manual: <https://jqlang.github.io/jq/download/>. Then re-run /meridian:init." Do not proceed without jq.
 3. Look for existing source files and stop at the first match.
    - For a git repository, run `git ls-files --error-unmatch . 2>/dev/null | head -5`. Any output means BROWNFIELD=true.
-   - Without git, use Glob `**/*.*` excluding `.lbwc-planning/`, `.claude/`, `node_modules/`, `.git/`. Any match means BROWNFIELD=true.
+   - Without git, use Glob `**/*.*` excluding `.meridian/`, `.claude/`, `node_modules/`, `.git/`. Any match means BROWNFIELD=true.
    - Count all file types, including shell, configuration, markdown, C++, Rust, and CSS.
 
 ## Steps
 
 Agent Teams remain available but default to disabled.
-The command `/lbwc:team` owns explicit consent and the restart flow for Agent Teams.
+The command `/meridian:team` owns explicit consent and the restart flow for Agent Teams.
 
 ### Step 0. Environment setup (settings.json)
 
@@ -107,7 +107,7 @@ Store the result as `CLAUDE_DIR` and use it for all configuration paths in this 
 Read `CLAUDE_DIR/settings.json` and create `{}` if the file is missing.
 
 For Step 0a, detect routing after the planning directory exists.
-Run `bash "{plugin-root}/scripts/lbwc-model" --json refresh .lbwc-planning`.
+Run `bash "{plugin-root}/scripts/meridian-model" --json refresh .meridian`.
 Until the directory exists, defer the routing refresh to Step 1.8.
 Do not enable experimental source teams or create static model settings.
 
@@ -116,12 +116,12 @@ The value can be a string or an object with a `command` field.
 
 | State | Condition | Action |
 | ------- | ----------- | -------- |
-| HAS_LBWC | Value contains `lbwc-statusline` | Display "✓ Statusline: installed", skip to 0c |
-| HAS_OTHER | Non-empty, no `lbwc-statusline` | AskUserQuestion (mention replacement) |
+| HAS_MERIDIAN | Value contains `meridian-statusline` | Display "✓ Statusline: installed", skip to 0c |
+| HAS_OTHER | Non-empty, no `meridian-statusline` | AskUserQuestion (mention replacement) |
 | EMPTY | Missing/null/empty | AskUserQuestion |
 
 Use this AskUserQuestion text.
-"○ LBWC includes a custom status line showing phase progress, context usage, cost, duration, and more. It updates after every response. Install it?"
+"○ MERIDIAN includes a custom status line showing phase progress, context usage, cost, duration, and more. It updates after every response. Install it?"
 If HAS_OTHER, explain that installation replaces the existing statusline.
 
 Read `{plugin-root}/references/commands/init-statusline-install.md` for the approved statusline installation or its decline output.
@@ -142,28 +142,28 @@ If neither exists, continue without a prompt.
 
 If an external plan exists, Read `{plugin-root}/references/commands/init-external-plan.md` before any scaffold write.
 
-`/lbwc:import` is the only import authority.
+`/meridian:import` is the only import authority.
 Init never copies `.planning`, creates a GSD archive, or generates an import index.
 It never infers GSD state or promotes imported artifacts.
 
 ### Step 1. Scaffold directory
 
-Read each template from `{plugin-root}/templates/` and write it to .lbwc-planning/.
+Read each template from `{plugin-root}/templates/` and write it to .meridian/.
 
 | Target | Source |
 | -------- | -------- |
-| .lbwc-planning/PROJECT.md | `{plugin-root}/templates/PROJECT.md` |
-| .lbwc-planning/REQUIREMENTS.md | `{plugin-root}/templates/REQUIREMENTS.md` |
-| .lbwc-planning/ROADMAP.md | `{plugin-root}/templates/ROADMAP.md` |
-| .lbwc-planning/STATE.md | `{plugin-root}/templates/STATE.md` |
+| .meridian/PROJECT.md | `{plugin-root}/templates/PROJECT.md` |
+| .meridian/REQUIREMENTS.md | `{plugin-root}/templates/REQUIREMENTS.md` |
+| .meridian/ROADMAP.md | `{plugin-root}/templates/ROADMAP.md` |
+| .meridian/STATE.md | `{plugin-root}/templates/STATE.md` |
 
-Create `.lbwc-planning/phases/`.
+Create `.meridian/phases/`.
 Then initialize configuration and detected routing as one fail-closed sequence.
 
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/lbwc-config.sh" init .lbwc-planning || exit 1
-if ! bash "${CLAUDE_PLUGIN_ROOT}/scripts/lbwc-model" refresh .lbwc-planning; then
-  printf '%s\n' 'LBWC model catalog and routing refresh failed.' >&2
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/meridian-config.sh" init .meridian || exit 1
+if ! bash "${CLAUDE_PLUGIN_ROOT}/scripts/meridian-model" refresh .meridian; then
+  printf '%s\n' 'MERIDIAN model catalog and routing refresh failed.' >&2
   exit 1
 fi
 ```
@@ -174,37 +174,37 @@ If the model refresh fails, keep the initialized configuration for explicit reco
 
 Ask this single-select AskUserQuestion.
 
-- "How should LBWC planning artifacts be tracked in git?"
-  - `manual` (default). Do not auto-ignore the whole `.lbwc-planning/` directory or auto-commit planning files.
-  - `ignore`. Keep the whole `.lbwc-planning/` directory ignored in root `.gitignore`.
-  - `commit`. Track `.lbwc-planning/` + `CLAUDE.md` at helper-backed planning boundaries, including bootstrap, planning checkpoints, todo adds, and archive.
+- "How should MERIDIAN planning artifacts be tracked in git?"
+  - `manual` (default). Do not auto-ignore the whole `.meridian/` directory or auto-commit planning files.
+  - `ignore`. Keep the whole `.meridian/` directory ignored in root `.gitignore`.
+  - `commit`. Track `.meridian/` + `CLAUDE.md` at helper-backed planning boundaries, including bootstrap, planning checkpoints, todo adds, and archive.
 
 Ask this single-select AskUserQuestion.
 
-- "When should LBWC push commits?"
+- "When should MERIDIAN push commits?"
   - `never` (default)
   - `after_phase` (push once after a phase completes)
   - `always` (push after each commit when upstream exists)
 
-Write the selected values to `.lbwc-planning/config.json`.
+Write the selected values to `.meridian/config.json`.
 
 ```bash
-jq '.planning_tracking = "'"$PLANNING_TRACKING"'" | .auto_push = "'"$AUTO_PUSH"'"' .lbwc-planning/config.json > .lbwc-planning/config.json.tmp && mv .lbwc-planning/config.json.tmp .lbwc-planning/config.json
+jq '.planning_tracking = "'"$PLANNING_TRACKING"'" | .auto_push = "'"$AUTO_PUSH"'"' .meridian/config.json > .meridian/config.json.tmp && mv .meridian/config.json.tmp .meridian/config.json
 ```
 
 Then align git ignore behavior with the configuration.
 
 ```bash
-PG_SCRIPT="/tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/planning-git.sh"
+PG_SCRIPT="/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/planning-git.sh"
 if [ -f "$PG_SCRIPT" ]; then
-  bash "$PG_SCRIPT" sync-ignore .lbwc-planning/config.json
+  bash "$PG_SCRIPT" sync-ignore .meridian/config.json
 else
-  echo "⚠ LBWC: planning-git.sh unavailable. Skipping .gitignore sync." >&2
+  echo "⚠ MERIDIAN: planning-git.sh unavailable. Skipping .gitignore sync." >&2
 fi
 ```
 
 This applies root `.gitignore` behavior for the selected mode.
-It keeps `.lbwc-planning/.gitignore` current for transient runtime files in every tracking mode.
+It keeps `.meridian/.gitignore` current for transient runtime files in every tracking mode.
 
 ### Step 1.5. Install git hooks
 
@@ -212,8 +212,8 @@ At Step 1.5, Read `{plugin-root}/references/commands/init-git-hooks.md` to check
 
 ### Step 1.8. Detect and initialize routing profiles
 
-Run `bash "{plugin-root}/scripts/lbwc-model" --json refresh .lbwc-planning`.
-Then run `bash "{plugin-root}/scripts/lbwc-model" --json show .lbwc-planning`.
+Run `bash "{plugin-root}/scripts/meridian-model" --json refresh .meridian`.
+Then run `bash "{plugin-root}/scripts/meridian-model" --json show .meridian`.
 These helpers detect the current Claude catalog and install valid built-in routing profiles.
 Do not read or create static model, price, alias, reasoning, or matrix files.
 
@@ -222,10 +222,10 @@ Ask one bounded question that offers the recommended active profile, another det
 Claude Code supplies native Other.
 Accept Other only when it exactly names a profile that `show` returned.
 
-When the user selects a profile, run `lbwc-model activate .lbwc-planning <profile>` and `lbwc-model validate .lbwc-planning`.
+When the user selects a profile, run `meridian-model activate .meridian <profile>` and `meridian-model validate .meridian`.
 On failure, preserve the prior active profile and stop with the helper error.
 If the user defers setup, leave the default installed profile active.
-Configure custom profiles later through `/lbwc:config` or `/lbwc:profile`.
+Configure custom profiles later through `/meridian:config` or `/meridian:profile`.
 Never hand-write them during init.
 
 ### Step 2. Brownfield detection and discovery
@@ -250,14 +250,14 @@ For Step 3a, if this is greenfield, proceed immediately.
 Otherwise, make sure that mapping completed and display `✓ Codebase mapped ({document-count} documents)`.
 
 When stack or pattern mapping files exist, Read `{plugin-root}/references/commands/init-stack-conventions.md` for Steps 3b and 3b2.
-If this is greenfield, write `{"conventions": []}` and display `○ Conventions: none yet (add with /lbwc:teach)`.
+If this is greenfield, write `{"conventions": []}` and display `○ Conventions: none yet (add with /meridian:teach)`.
 
 For Steps 3c and 3d, Read `{plugin-root}/references/commands/init-skill-search.md` and follow its registry-search or CLI-unavailable path.
 
 ### Step 3.5. Generate bootstrap CLAUDE.md
 
-LBWC needs its rules and state sections in a CLAUDE.md file.
-`/lbwc:vibe` regenerates that file later with project content.
+MERIDIAN needs its rules and state sections in a CLAUDE.md file.
+`/meridian:transit` regenerates that file later with project content.
 
 Read root `CLAUDE.md` with the Read tool.
 
@@ -277,13 +277,13 @@ After infrastructure setup, display `◆ Infrastructure complete. Defining proje
 Use the flags from earlier steps to detect the initialization scenario.
 
 1. For GREENFIELD, BROWNFIELD=false from the Guard. No existing codebase supplies context for inference.
-2. For BROWNFIELD, BROWNFIELD=true AND `.lbwc-planning/codebase/` exists from Step 2c. The mapped codebase supplies context for inference.
-3. For HYBRID, BROWNFIELD=true but `.lbwc-planning/codebase/` does not exist. Step 2c normally prevents this case. Handle it as GREENFIELD.
+2. For BROWNFIELD, BROWNFIELD=true AND `.meridian/codebase/` exists from Step 2c. The mapped codebase supplies context for inference.
+3. For HYBRID, BROWNFIELD=true but `.meridian/codebase/` does not exist. Step 2c normally prevents this case. Handle it as GREENFIELD.
 
 Check the conditions in this order.
 
 ```bash
-if [ "$BROWNFIELD" = "true" ] && [ -d .lbwc-planning/codebase ]; then SCENARIO=BROWNFIELD
+if [ "$BROWNFIELD" = "true" ] && [ -d .meridian/codebase ]; then SCENARIO=BROWNFIELD
 elif [ "$BROWNFIELD" = "true" ]; then SCENARIO=HYBRID
 else SCENARIO=GREENFIELD
 fi
@@ -346,11 +346,11 @@ For Step 7a with `SKIP_INFERENCE=false`, Read `{plugin-root}/references/commands
 
 For Step 7b, generate PROJECT.md.
 
-- Run `bash "{plugin-root}/scripts/bootstrap/bootstrap-project.sh" .lbwc-planning/PROJECT.md "$NAME" "$DESCRIPTION"`.
+- Run `bash "{plugin-root}/scripts/bootstrap/bootstrap-project.sh" .meridian/PROJECT.md "$NAME" "$DESCRIPTION"`.
 - Display `✓ PROJECT.md`.
 
 For Step 7c, generate discovery.json and phases.json through an Architect with a command contract.
-Follow step 0 of `{plugin-root}/references/workflow-spawn-protocol.md` and bind `<control-root>` to `.lbwc-planning`.
+Follow step 0 of `{plugin-root}/references/workflow-spawn-protocol.md` and bind `<control-root>` to `.meridian`.
 When that step enters the `ask` branch, use these literal `AskUserQuestion` fields.
 
 - Set header to `Bootstrap execution`.
@@ -364,7 +364,7 @@ On `Cancel bootstrap`, stop before the contract exists.
 Keep the Step 1 scaffold, configuration, routing, and any completed codebase mapping.
 Leave `REQUIREMENTS.md`, `ROADMAP.md`, and `STATE.md` at their unchanged template defaults.
 Report that bootstrap generated no project-defining content.
-Point to `/lbwc:vibe` to complete planning from those placeholders.
+Point to `/meridian:transit` to complete planning from those placeholders.
 
 Build one complete brief from the Step 7a project data.
 Reuse the brief across both branches below.
@@ -384,52 +384,52 @@ Apply the no-tool invariant from `references/subagent-contracts.md`.
 Validate both JSON values.
 Make sure that phase names are unique and that goals and success criteria contain content.
 Check requirement coverage and dependency order.
-Only after validation, write `.lbwc-planning/discovery.json` and `.lbwc-planning/phases.json` atomically from the main session.
+Only after validation, write `.meridian/discovery.json` and `.meridian/phases.json` atomically from the main session.
 If the Architect returns malformed or incomplete data, stop before Step 7d and leave existing artifacts unchanged.
 Only after validation and persistence, display `◆ Spawning Architect agent...` followed by `✓ Architect agent complete`.
 
 For Step 7d, generate REQUIREMENTS.md and ROADMAP.md.
 
-- Run `bash "{plugin-root}/scripts/bootstrap/bootstrap-requirements.sh" .lbwc-planning/REQUIREMENTS.md .lbwc-planning/discovery.json`.
+- Run `bash "{plugin-root}/scripts/bootstrap/bootstrap-requirements.sh" .meridian/REQUIREMENTS.md .meridian/discovery.json`.
 - Display `✓ REQUIREMENTS.md`.
-- Run `bash "{plugin-root}/scripts/bootstrap/bootstrap-roadmap.sh" .lbwc-planning/ROADMAP.md "$NAME" .lbwc-planning/phases.json`.
+- Run `bash "{plugin-root}/scripts/bootstrap/bootstrap-roadmap.sh" .meridian/ROADMAP.md "$NAME" .meridian/phases.json`.
 - Display `✓ ROADMAP.md`.
 
 For Step 7e, generate STATE.md.
 
 - Use NAME or the first milestone from GSD inference as MILESTONE_NAME.
 - Determine PHASE_COUNT from the phases.json length.
-- Run `bash "{plugin-root}/scripts/bootstrap/bootstrap-state.sh" .lbwc-planning/STATE.md "$NAME" "$MILESTONE_NAME" "$PHASE_COUNT"`.
+- Run `bash "{plugin-root}/scripts/bootstrap/bootstrap-state.sh" .meridian/STATE.md "$NAME" "$MILESTONE_NAME" "$PHASE_COUNT"`.
 - Display `✓ STATE.md`.
 
 For Step 7f, generate or update CLAUDE.md.
 
-- Extract `CORE_VALUE` from `.lbwc-planning/PROJECT.md` (`grep -m1 '^\*\*Core value:\*\*' .lbwc-planning/PROJECT.md | sed 's/^\*\*Core value:\*\* *//'`).
-- If root CLAUDE.md exists, pass it as EXISTING_PATH to preserve non-LBWC content.
+- Extract `CORE_VALUE` from `.meridian/PROJECT.md` (`grep -m1 '^\*\*Core value:\*\*' .meridian/PROJECT.md | sed 's/^\*\*Core value:\*\* *//'`).
+- If root CLAUDE.md exists, pass it as EXISTING_PATH to preserve non-MERIDIAN content.
 - Run `bash "{plugin-root}/scripts/bootstrap/bootstrap-claude.sh" CLAUDE.md "$NAME" "$CORE_VALUE" "CLAUDE.md"`.
   - If CLAUDE.md does not exist yet, omit the last argument.
 - Display `✓ CLAUDE.md`.
 
 For Step 7g, remove temporary files.
 
-- Remove `.lbwc-planning/discovery.json`, `.lbwc-planning/phases.json`, `.lbwc-planning/inference.json`, `.lbwc-planning/gsd-inference.json` if they exist.
+- Remove `.meridian/discovery.json`, `.meridian/phases.json`, `.meridian/inference.json`, `.meridian/gsd-inference.json` if they exist.
 - These files hold intermediate build artifacts, not project state.
 
 For Step 7h, apply the conditional planning commit boundary.
 Run this helper sequence.
 
   ```bash
-  PG_SCRIPT="/tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/planning-git.sh"
+  PG_SCRIPT="/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/planning-git.sh"
   if [ -f "$PG_SCRIPT" ]; then
-    bash "$PG_SCRIPT" commit-boundary "bootstrap project files" .lbwc-planning/config.json
+    bash "$PG_SCRIPT" commit-boundary "bootstrap project files" .meridian/config.json
   else
-    echo "⚠ LBWC: planning-git.sh unavailable. Skipping planning git boundary commit." >&2
+    echo "⚠ MERIDIAN: planning-git.sh unavailable. Skipping planning git boundary commit." >&2
   fi
   ```
 
 The helper follows these rules.
 
-- If `planning_tracking=commit` and changes exist, stage `.lbwc-planning/` + `CLAUDE.md` and commit.
+- If `planning_tracking=commit` and changes exist, stage `.meridian/` + `CLAUDE.md` and commit.
 - If `planning_tracking=manual|ignore`, do nothing.
 - If `auto_push=always` and the branch has an upstream, push.
 
@@ -439,7 +439,7 @@ After bootstrap succeeds, Read `{plugin-root}/references/commands/init-completio
 
 ## Failure and recovery
 
-If `lbwc-model`, task-contract, or agent-generator fails, stop and show its error verbatim.
+If `meridian-model`, task-contract, or agent-generator fails, stop and show its error verbatim.
 Do not substitute a static model file or role-specific generator.
 Do not use a source team or unsupported Agent field.
 If the Architect response fails validation, leave project-defining artifacts unchanged and report the rejected value.
@@ -453,13 +453,13 @@ Do not fall back to `in_process`.
 
 ```text
 ➜ Next Up
-  /lbwc:vibe - start planning the first milestone
-  /lbwc:status - review project state
+  /meridian:transit - start planning the first milestone
+  /meridian:status - review project state
 ```
 
 ## Output Format
 
-Follow @${CLAUDE_PLUGIN_ROOT}/references/lbwc-brand-essentials.md
+Follow @${CLAUDE_PLUGIN_ROOT}/references/meridian-brand-essentials.md
 
 Use a Phase Banner with a double-line box, a File Checklist (✓), ○ for pending, and a Next Up Block.
 Use no ANSI color codes.
@@ -476,7 +476,7 @@ Resolve the plugin root with this self-contained directive.
 Shell variables do not survive across directives.
 
 ```bash
-!`SESSION_KEY="${CLAUDE_SESSION_ID:-default}"; L="/tmp/.lbwc-plugin-root-link-${SESSION_KEY}"; R="$L/scripts/resolve-plugin-root.sh"; [ -f "$R" ] || R="${CLAUDE_PLUGIN_ROOT:-}/scripts/resolve-plugin-root.sh"; [ -f "$R" ] || { echo "LBWC: plugin root unavailable. Restart this session to recreate $L." >&2; exit 1; }; LINK=$(bash "$R" --require-script indexer-sync.sh) || exit 1; printf 'Plugin root: %s\n' "$LINK"`
+!`SESSION_KEY="${CLAUDE_SESSION_ID:-default}"; L="/tmp/.meridian-plugin-root-link-${SESSION_KEY}"; R="$L/scripts/resolve-plugin-root.sh"; [ -f "$R" ] || R="${CLAUDE_PLUGIN_ROOT:-}/scripts/resolve-plugin-root.sh"; [ -f "$R" ] || { echo "MERIDIAN: plugin root unavailable. Restart this session to recreate $L." >&2; exit 1; }; LINK=$(bash "$R" --require-script indexer-sync.sh) || exit 1; printf 'Plugin root: %s\n' "$LINK"`
 ```
 
 Store the returned `Plugin root` value as `{LINK}` and `{plugin-root}` for all later helper calls.
@@ -486,7 +486,7 @@ When a step references a script, template, command, or reference file, replace `
 Read the existing state.
 
 ```bash
-!`ls -la .lbwc-planning 2>/dev/null || echo "No .lbwc-planning directory"`
+!`ls -la .meridian 2>/dev/null || echo "No .meridian directory"`
 ```
 
 Find project files.

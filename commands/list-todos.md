@@ -7,26 +7,26 @@ argument-hint: "[priority filter]"
 allowed-tools: Read, Edit, Bash
 ---
 
-# LBWC List Todos $ARGUMENTS
+# MERIDIAN List Todos $ARGUMENTS
 
 ## Context
 
 - Use the current workspace root as the working directory.
-- Plugin cache root: `"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/cache/lbwc-marketplace/lbwc"` (respects non-default `CLAUDE_CONFIG_DIR`, always quote, path may contain spaces).
-- Session startup creates a symlink at `/tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID:-default}` pointing to the plugin root. The cache-based tiers are authoritative, symlinks are a fallback. See Step 1 for full resolution order.
+- Plugin cache root: `"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/cache/meridian-marketplace/meridian"` (respects non-default `CLAUDE_CONFIG_DIR`, always quote, path may contain spaces).
+- Session startup creates a symlink at `/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}` pointing to the plugin root. The cache-based tiers are authoritative, symlinks are a fallback. See Step 1 for full resolution order.
 
 ## Guard
 
-1. **Not initialized** (no .lbwc-planning/ dir): STOP "Run /lbwc:init first."
-2. **Restricted mode:** If the current permission mode does not allow Bash execution, STOP: "`/lbwc:list-todos` needs Bash access to run helper scripts. If you're in read-only or another restricted mode, switch to a write-enabled mode (for example bypass permissions) and rerun the command."
+1. **Not initialized** (no .meridian/ dir): STOP "Run /meridian:init first."
+2. **Restricted mode:** If the current permission mode does not allow Bash execution, STOP: "`/meridian:list-todos` needs Bash access to run helper scripts. If you're in read-only or another restricted mode, switch to a write-enabled mode (for example bypass permissions) and rerun the command."
 
 ## Steps
 
 1. **Resolve plugin root:** Determine the plugin root path. Always quote derived paths (they may contain spaces). Try in order:
-   (a) The `local/` subdirectory under the plugin cache root (i.e. `"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/cache/lbwc-marketplace/lbwc/local/"`), if it exists and contains `scripts/hook-wrapper.sh`.
+   (a) The `local/` subdirectory under the plugin cache root (i.e. `"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/cache/meridian-marketplace/meridian/local/"`), if it exists and contains `scripts/hook-wrapper.sh`.
    (b) The numerically highest versioned directory under the plugin cache root, list subdirectories matching a dotted-version pattern (e.g. `1.30.0`), sort by each numeric component (major, minor, patch), pick the highest, and accept it only if it contains `scripts/hook-wrapper.sh`.
    (c) Any other (non-versioned) subdirectory under the plugin cache root, pick the newest by name, accept only if it contains `scripts/hook-wrapper.sh`. This covers non-standard cache layouts.
-   (d) The session symlink `/tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID:-default}`, or any existing `/tmp/.lbwc-plugin-root-link-*` symlink whose target contains `scripts/hook-wrapper.sh`.
+   (d) The session symlink `/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}`, or any existing `/tmp/.meridian-plugin-root-link-*` symlink whose target contains `scripts/hook-wrapper.sh`.
    (e) Extract `--plugin-dir <path>` from the process tree (`ps axww`) and use that path if it contains `scripts/hook-wrapper.sh`.
    If none resolves to a valid directory, STOP: "Plugin root not found. The session startup hook may not have run. Try restarting your Claude session." Store the resolved path as `PLUGIN_ROOT` for subsequent steps.
 
@@ -49,10 +49,10 @@ allowed-tools: Read, Edit, Bash
     - **Unfiltered view (`filter=null`):**
        ```text
        ➜ To act on a todo:
-             /lbwc:vibe N, full lifecycle (plan → execute → verify)
-             /lbwc:fix N, quick fix, one commit
-             /lbwc:debug N, investigate with scientific method
-             /lbwc:research N, research context with Scout
+             /meridian:transit N, full lifecycle (plan → execute → verify)
+             /meridian:fix N, quick fix, one commit
+             /meridian:debug N, investigate with scientific method
+             /meridian:research N, research context with Scout
              remove N, delete from todo list
        ```
     - **Filtered view (`filter` is non-null):**
@@ -60,7 +60,7 @@ allowed-tools: Read, Edit, Bash
        ➜ Filtered view:
              remove N, delete from this displayed list
              delete N, same as remove N
-          /lbwc:list-todos, rerun unfiltered /lbwc:list-todos before using /lbwc:vibe N, /lbwc:fix N, /lbwc:debug N, or /lbwc:research N
+          /meridian:list-todos, rerun unfiltered /meridian:list-todos before using /meridian:transit N, /meridian:fix N, /meridian:debug N, or /meridian:research N
        ```
 
     If the user says **`remove N`** or **`delete N`** as a follow-up message (not via a slash command):
@@ -86,8 +86,8 @@ allowed-tools: Read, Edit, Bash
 
 ## Output Format
 
-Follow @${CLAUDE_PLUGIN_ROOT}/references/lbwc-brand-essentials.md, ✓ success, ➜ Next Up, no ANSI.
+Follow @${CLAUDE_PLUGIN_ROOT}/references/meridian-brand-essentials.md, ✓ success, ➜ Next Up, no ANSI.
 
 ## Next Up
 
-Show `/lbwc:debug <number>` for a defect todo, `/lbwc:todo` to add one, or no action when the list is empty.
+Show `/meridian:debug <number>` for a defect todo, `/meridian:todo` to add one, or no action when the list is empty.
