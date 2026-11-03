@@ -1,5 +1,7 @@
 #!/bin/bash
 set -u
+. "$(CDPATH='' cd -- "${BASH_SOURCE[0]%/*}" 2>/dev/null && pwd)/lib/debug-logging.sh" 2>/dev/null || true
+debug_logging_gate file-guard.sh PreToolUse 2>/dev/null || true
 SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd -P)"
 PLANNING_DIR_OVERRIDE="${LBWC_PLANNING_DIR:-}"
 

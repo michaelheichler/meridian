@@ -1,7 +1,7 @@
-"""PreToolUse hook: bars an engineer role from writing into the test directory, test-dev's territory."""
 import re
 import sys
 
+from debug_logging import trace_decision
 from skill_gate import (
     _agent_identifier,
     _parse_pretool_input,
@@ -28,6 +28,7 @@ def blocked() -> str:
             "yourself.")
 
 
+@trace_decision
 def verdict(stdin_text, cwd=None) -> "str | None":
     data, error = _parse_pretool_input(stdin_text)
     if error:

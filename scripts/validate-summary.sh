@@ -1,11 +1,12 @@
 #!/bin/bash
 set -u
+. "$(CDPATH='' cd -- "${BASH_SOURCE[0]%/*}" 2>/dev/null && pwd)/lib/debug-logging.sh" 2>/dev/null || true
+debug_logging_gate validate-summary.sh PostToolUse 2>/dev/null || true
 
 HOOK_EVENT="${1:-PostToolUse}"
 SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd)"
 HOOK_OUTPUT_GUARD="$SCRIPT_DIR/lib/hook-output-guard.sh"
 if [ -f "$HOOK_OUTPUT_GUARD" ]; then
-  # shellcheck source=/dev/null
   source "$HOOK_OUTPUT_GUARD"
 fi
 INPUT=$(cat)
@@ -24,6 +25,7 @@ emit_posttool_context() {
   local context="$1"
   [ "$HOOK_EVENT" = "PostToolUse" ] || return 0
   hook_event_allows_output "$HOOK_EVENT" || return 0
+  debug_logging_note warn summary_format 2>/dev/null || true
   jq -n --arg context "$context" '{
     "hookSpecificOutput": {
       "hookEventName": "PostToolUse",
@@ -88,7 +90,7 @@ if [ -f "$PLAN_PATH" ]; then
       MISSING="${MISSING}Missing 'ac_results' in frontmatter (plan has must_haves). "
     else
       _VS_VERDICTS=$(sed -n '/^---$/,/^---$/{ /^ *verdict:/{ s/^ *verdict:[[:space:]]*//; s/["'"'"']//g; p; }; }' "$FILE_PATH" 2>/dev/null)
-      for _VS_V in $_VS_VERDICTS; do  # unquoted intentional: verdicts are single-word enums
+      for _VS_V in $_VS_VERDICTS; do
         case "$_VS_V" in
           pass|fail|partial) ;;
           *) MISSING="${MISSING}Invalid ac_results verdict '${_VS_V}' (must be pass/fail/partial). " ;;

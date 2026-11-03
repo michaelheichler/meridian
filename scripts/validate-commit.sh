@@ -1,5 +1,7 @@
 #!/bin/bash
 set -u
+. "$(CDPATH='' cd -- "${BASH_SOURCE[0]%/*}" 2>/dev/null && pwd)/lib/debug-logging.sh" 2>/dev/null || true
+debug_logging_gate validate-commit.sh PostToolUse 2>/dev/null || true
 
 if ! command -v jq &>/dev/null; then
   exit 0
@@ -89,6 +91,7 @@ if [ -z "$MSG" ]; then
 fi
 
 if ! echo "$MSG" | grep -qE "^($VALID_TYPES)\(.+\): .+"; then
+  debug_logging_note warn commit_format 2>/dev/null || true
   jq -n --arg msg "$MSG" '{
     "hookSpecificOutput": {
       "hookEventName": "PostToolUse",

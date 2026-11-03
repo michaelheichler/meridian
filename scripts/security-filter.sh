@@ -1,5 +1,7 @@
 #!/bin/bash
 set -u
+. "$(CDPATH='' cd -- "${BASH_SOURCE[0]%/*}" 2>/dev/null && pwd)/lib/debug-logging.sh" 2>/dev/null || true
+debug_logging_gate security-filter.sh PreToolUse 2>/dev/null || true
 
 if ! command -v jq >/dev/null 2>&1; then
   echo "meridian hook warning: security-filter jq not available, call allowed" >&2

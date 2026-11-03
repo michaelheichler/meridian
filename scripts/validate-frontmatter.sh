@@ -1,5 +1,7 @@
 #!/bin/bash
 set -u
+. "$(CDPATH='' cd -- "${BASH_SOURCE[0]%/*}" 2>/dev/null && pwd)/lib/debug-logging.sh" 2>/dev/null || true
+debug_logging_gate validate-frontmatter.sh PostToolUse 2>/dev/null || true
 
 if ! command -v jq &>/dev/null; then
   exit 0
@@ -39,6 +41,7 @@ DESC_VALUE=$(echo "$DESC_LINE" | sed 's/^description:[[:space:]]*//')
 
 case "$DESC_VALUE" in
   "|"*|">"*)
+    debug_logging_note warn description_format 2>/dev/null || true
     jq -n --arg file "$FILE_PATH" '{
       "hookSpecificOutput": {
         "hookEventName": "PostToolUse",
@@ -52,6 +55,7 @@ esac
 if [ -z "$DESC_VALUE" ]; then
   AFTER_DESC=$(echo "$FRONTMATTER" | awk '/^description:/{found=1; next} found && /^[[:space:]]/{print; next} found{exit}')
   if [ -n "$AFTER_DESC" ]; then
+    debug_logging_note warn description_format 2>/dev/null || true
     jq -n --arg file "$FILE_PATH" '{
       "hookSpecificOutput": {
         "hookEventName": "PostToolUse",
@@ -59,6 +63,7 @@ if [ -z "$DESC_VALUE" ]; then
       }
     }'
   else
+    debug_logging_note warn description_format 2>/dev/null || true
     jq -n --arg file "$FILE_PATH" '{
       "hookSpecificOutput": {
         "hookEventName": "PostToolUse",
@@ -71,6 +76,7 @@ fi
 
 AFTER_DESC=$(echo "$FRONTMATTER" | awk '/^description:/{found=1; next} found && /^[[:space:]]/{print; next} found{exit}')
 if [ -n "$AFTER_DESC" ]; then
+  debug_logging_note warn description_format 2>/dev/null || true
   jq -n --arg file "$FILE_PATH" '{
     "hookSpecificOutput": {
       "hookEventName": "PostToolUse",
