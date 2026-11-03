@@ -57,7 +57,10 @@ def _python_call(name, text, event):
         return
     if name == "user_question_guard":
         mode = "pretool" if event == "PreToolUse" else "posttool"
-        reason = module.verdict(text, mode)
+        try:
+            reason = module._dispatch(text, mode)
+        except module.DecisionStateError as error:
+            reason = str(error)
         if reason is not None:
             print(module.EMITTERS[mode](reason))
         return
