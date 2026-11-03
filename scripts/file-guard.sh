@@ -58,7 +58,8 @@ resolve_agent_entry() {
 }
 
 canonical_directory() {
-  CDPATH='' cd -- "$1" 2>/dev/null && pwd -P
+  local CDPATH=''
+  cd -- "$1" 2>/dev/null && pwd -P
 }
 
 canonical_existing_parent() {
