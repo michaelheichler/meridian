@@ -62,6 +62,10 @@ config_policy_row() {
   fi
   provision_main
   SESSION=$(provisioned_session)
+  if [ "$outcome" = resolution ]; then
+    config_client_resolution
+    return
+  fi
   definitions=$(prepare_tmux_agents worker-a worker-b worker-c)
   definitions=$(jq --argjson count "$count" '.[:$count]' <<<"$definitions")
   before=$(bus_state_digest)
@@ -69,12 +73,25 @@ config_policy_row() {
     config_layout_rollback
     return
   fi
+  config_policy_split
+}
+
+config_policy_split() {
   export LBWC_TEST_FOCUS_LOG="$TEST_ROOT/focus.log"
   : > "$LBWC_TEST_FOCUS_LOG"
   split_group "$SESSION" "$definitions"
   [ "$status" -eq 0 ]
   config_policy_focus "$policy"
   unset LBWC_TEST_FOCUS_LOG
+}
+
+config_client_resolution() {
+  local pane command result="$TEST_ROOT/client-resolution"
+  pane=$(env TMUX_TMPDIR="$TMUX_TMPDIR" "$BIN_DIR/tmux" split-window -d -t "$SESSION" -P -F '#{pane_id}')
+  printf -v command 'command -v claude > %q' "$result"
+  tmux_on_test_server send-keys -t "$pane" "$command" C-m
+  wait_for_result "$result"
+  [ "$(cat "$result")" = "$BIN_DIR/claude" ]
 }
 
 config_layout_rollback() {
@@ -112,7 +129,8 @@ config_bound_agent() {
   source "$REPO_ROOT/scripts/lib/lbwc-control-root.sh"
   source "$REPO_ROOT/scripts/lib/tmux-runtime.sh"
   tmux_runtime_configure "$CONTROL_ROOT"
-  pane=$(tmux_on_test_server split-window -d -t "$SESSION" -P -F '#{pane_id}' 'tail -f /dev/null')
+  pane=$(tmux_on_test_server split-window -d -t "$SESSION" -P -F '#{pane_id}' \
+    /usr/bin/env "PATH=$LBWC_TEST_CHILD_PATH" "$LBWC_TEST_CHILD_SHELL" --noprofile --norc -c 'exec tail -f /dev/null')
   target=$(tmux_on_test_server display-message -p -t "$pane" '#{session_name}:#{window_index}.#{pane_index}')
   plant_bound_agent "$target" "$pane"
   printf '%s\n' "$AGENT_CAPABILITY" > "$TEST_ROOT/capability"

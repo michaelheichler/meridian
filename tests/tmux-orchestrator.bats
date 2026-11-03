@@ -51,7 +51,7 @@ if [ -n "${LBWC_TEST_FAST_CHILD_ENV:-}" ]; then
   printf '%s\n' released > "$LBWC_TEST_FAST_CHILD_EXIT"
   exit 0
 fi
-exec sleep 30
+exec sleep 600
 SCRIPT
   chmod +x "$BIN_DIR/claude"
   cp "$BATS_TEST_DIRNAME/tmux_orchestrator_proxy.bash" "$BIN_DIR/tmux"
@@ -190,7 +190,7 @@ provisioned_session() {
 }
 
 tmux_on_test_server() {
-  TMUX_TMPDIR="$TMUX_TMPDIR" tmux -L "$TMUX_SERVER" "$@"
+  TMUX_TMPDIR="$TMUX_TMPDIR" tmux -L "$TMUX_SERVER" -f /dev/null "$@"
 }
 
 pane_count() {
@@ -570,7 +570,8 @@ printf '%s\n' "\$?" > "$kill_result.status"
 SCRIPT
   chmod +x "$TEST_ROOT/provision.sh" "$TEST_ROOT/split.sh" "$TEST_ROOT/kill.sh"
 
-  run env PATH="$BIN_DIR:$PATH" TMUX_TMPDIR="$TMUX_TMPDIR" tmux -L "$TMUX_SERVER" new-session -d -s "$external_session" -n external -c "$PROJECT_ROOT" "bash '$TEST_ROOT/external-shell.sh'" 3>&-
+  run tmux_on_test_server new-session -d -s "$external_session" -n external -c "$PROJECT_ROOT" \
+    /usr/bin/env "PATH=$LBWC_TEST_CHILD_PATH" "$LBWC_TEST_CHILD_SHELL" --noprofile --norc "$TEST_ROOT/external-shell.sh" 3>&-
   [ "$status" -eq 0 ]
   wait_for_result "$shell_ready"
   external_pane_id="$(TMUX_TMPDIR="$TMUX_TMPDIR" tmux -L "$TMUX_SERVER" list-panes -t "$external_session" -F '#{pane_id}')"
@@ -678,6 +679,7 @@ ROWS
 @test "attach policies preserve the requested agent visibility and roll back failed splits" {
   config_test_repo
   run_config_rows policy <<'ROWS'
+fixture-client-resolution|missing;1;resolution
 visible-horizontal|visible_grid;1;success
 visible-final-agent|visible_grid;3;success
 default-focus|missing;2;success
