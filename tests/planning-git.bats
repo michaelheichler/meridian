@@ -167,6 +167,8 @@ sync_tracking_mode_ignores() {
   expect_case statusline-temp-transient 0
   run git check-ignore -q .lbwc-planning/STATE.md
   expect_case project-state-still-tracked 1
+  run git check-ignore -q .lbwc-planning/.runtime/worker-worktrees/worker-a/src/main.py
+  expect_case isolated-worktree-runtime-stays-untracked 0
 
   assert_no_case_failures
 }

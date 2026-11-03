@@ -164,7 +164,7 @@ config_heartbeat_row() {
     [ "$output" = '30 90000' ]
     return
   fi
-  jq -n --argjson interval "$interval" '{agent_execution_mode:"tmux",tmux_execution:{heartbeat_interval_seconds:$interval}}' > "$CONTROL_ROOT/config.json"
+  jq -n --argjson interval "$interval" --arg policy "$threshold" '{agent_execution_mode:"tmux",tmux_execution:{heartbeat_interval_seconds:$interval}} | if $policy == "keep" then .tmux_execution.cleanup_policy="keep_panes" else . end' > "$CONTROL_ROOT/config.json"
   if [ "$threshold" = configured ]; then
     jq '.tmux_execution.heartbeat_stale_seconds = 2' "$CONTROL_ROOT/config.json" > "$TEST_ROOT/config.json"
     mv "$TEST_ROOT/config.json" "$CONTROL_ROOT/config.json"
