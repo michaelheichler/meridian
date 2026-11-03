@@ -3,6 +3,7 @@
 load test_helper
 load gate_case_helper
 load isolated_case_helper
+load journal_writers_helper
 
 setup() {
   unset LBWC_CONTROL_ROOT LBWC_PROJECT_ROOT LBWC_PLANNING_DIR
@@ -216,6 +217,17 @@ unknown_flag() { reject_arguments append --trigger pause --unknown value; }
 missing_value() { reject_arguments append --trigger pause --request; }
 missing_trigger_value() { reject_arguments append --trigger; }
 extra_current_argument() { reject_arguments current unexpected; }
+
+@test "compaction and pause preserve recovery context without disrupting their caller" {
+  run_scenario_cases precompact_retains_context precompact_without_context \
+    precompact_waits_for_lock precompact_lock_timeout pause_empty_notes pause_literal_notes
+}
+
+@test "only a newly saved phase completion appends history and journal failure preserves completion" {
+  run_scenario_cases phase_completion_saves_before_journal phase_custom_directory \
+    phase_repeat_pass phase_plan phase_summary phase_fail phase_partial phase_unknown \
+    phase_other phase_save_failure phase_journal_failure_keeps_completion
+}
 
 @test "journal rotation and concurrent writers preserve complete ordered history" {
   run_scenario_cases rotation_preserves_order concurrent_rotation_preserves_requests \
