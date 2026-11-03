@@ -287,15 +287,15 @@ Note that `auto_commit` controls source-task commits during Execute mode, while 
 | qa_skip_agents | array | array of agent role names | ["docs"] |
 | context_compiler | boolean | true/false | true |
 | metrics | boolean | true/false | true |
-| token_budgets | boolean | true/false, validated and persisted as the token-budget flag | true |
-| two_phase_completion | boolean | true/false, validated and persisted as the two-phase completion flag | true |
-| smart_routing | boolean | true/false, validated and persisted as the smart-routing flag | true |
-| validation_gates | boolean | true/false, validated and persisted as the validation-gates flag | true |
-| snapshot_resume | boolean | true/false, validated and persisted as the snapshot/resume flag | true |
-| lease_locks | boolean | true/false, validated and persisted as the lease-lock flag | true |
-| event_recovery | boolean | true/false, validated and persisted as the event-recovery flag | true |
+| token_budgets | boolean | true/false, [persistence-only], validated and persisted as the token-budget flag | true |
+| two_phase_completion | boolean | true/false, [persistence-only], validated and persisted as the two-phase completion flag | true |
+| smart_routing | boolean | true/false, [persistence-only], validated and persisted as the smart-routing flag | true |
+| validation_gates | boolean | true/false, [persistence-only], validated and persisted as the validation-gates flag | true |
+| snapshot_resume | boolean | true/false, [persistence-only], validated and persisted as the snapshot/resume flag | true |
+| lease_locks | boolean | true/false, [persistence-only], validated and persisted as the lease-lock flag | true |
+| event_recovery | boolean | true/false, [persistence-only], validated and persisted as the event-recovery flag | true |
 | worktree_isolation | string | off/on | off |
-| monorepo_routing | boolean | true/false, validated and persisted as the monorepo-routing flag | true |
+| monorepo_routing | boolean | true/false, [persistence-only], validated and persisted as the monorepo-routing flag | true |
 | require_phase_discussion | boolean | true/false | false |
 | auto_uat | boolean | true/false | false |
 | max_uat_remediation_rounds | boolean/number | false, 0, or positive integer | false |
@@ -308,6 +308,35 @@ Note that `auto_commit` controls source-task commits during Execute mode, while 
 | caveman_style | string | none/lite/full/ultra/auto | none |
 | caveman_commit | boolean | true/false | false |
 | caveman_review | boolean | true/false | false |
+
+### Internal and legacy keys
+
+These rows describe existing readers, not new writable settings. `/config` cannot set `compaction_threshold`, `qa_commit_window_seconds`, or `hooks.post_archive` because the strict schema rejects them. The `[persistence-only]` marker means that schema validation and storage form the documented contract, not a runtime switch.
+
+| Setting | Type | Reader and behavior | Default |
+| ------- | ---- | ------------------- | ------- |
+| schema_version | integer | [persistence-only], the validator checks the configuration version in `scripts/lib/lbwc-config-defaults.sh:24` and `scripts/lib/lbwc-config-validate.jq:74` | 1 |
+| compaction_threshold | integer | `scripts/lib/phase-detect-environment-output.sh:40` reads a token threshold and `scripts/suggest-compact.sh:244` reads the projected-token threshold | 130000 in phase detection, unset disables the projected-token check |
+| qa_commit_window_seconds | integer | `scripts/qa-gate.sh:84` accepts positive seconds for recent QA commit evidence | 7200 |
+| hooks.post_archive | string | `scripts/post-archive-hook.sh:64` reads an optional script path after archive | empty string |
+| routing | object | `scripts/lib/team-command-transaction-routing.sh:13` checks routing before transaction preparation | generated routing object |
+| routing.active_profile | string | `scripts/runtime-snapshot.sh:74` freezes the active model routing profile | balanced |
+| routing.profiles | object | `scripts/runtime-snapshot.sh:68` reads the selected profile and its role cells | generated quality, balanced and turbo profiles |
+| routing.profiles.balanced.roles | object | `scripts/resolve-agent-settings.sh:83` reads balanced role cells for the workflow backend | generated role cells |
+| roles | object | `scripts/lib/turn-value.sh:67` reads legacy per-role turn limits and `scripts/lib/lbwc-routing-migrate.sh:6` migrates legacy roles | empty object |
+| model_profile | string | `scripts/lib/lbwc-routing-migrate.sh:11` reads the legacy profile and `scripts/lib/suggest-next-state.sh:138` checks its presence | balanced during routing migration, quality during suggest-next initialization |
+| max_remediation_rounds | boolean/number | `scripts/resolve-uat-remediation-round-limit.sh:123` reads the legacy alias after the canonical key | false |
+| v3_rolling_summary | boolean | `scripts/cache-context.sh:200` and `scripts/compile-context.sh:174` read the legacy alias after rolling_summary | false |
+| tmux.layout | string | `scripts/tmux-agent-orchestrator.sh:70` reads the legacy layout after tmux_execution.layout | tiled |
+| tmux.max_agents | integer | `scripts/tmux-agent-orchestrator.sh:70` reads the legacy agent limit after tmux_execution.max_agents | 3 |
+
+### Debug logging
+
+`debug_logging` defaults to `false`, which leaves hook output unchanged and creates no log file. Set it to `true` to append decision records from the dispatcher and guard scripts to `<planning dir>/.debug.log`. Each record holds a UTC timestamp, component, hook event, check name, decision, duration in milliseconds when known, and a short reason code. Shell durations use whole-second precision.
+
+Before an append would exceed 1,048,576 bytes, the writer moves the current file to `.debug.log.1` and replaces any older archive. Concurrent writers share a rotation lock and append each line with one write. Logging failures never change hook output or decisions.
+
+The log never holds payloads, tool input, file contents, command text, prompts, or environment values. Check names use component basenames, not full paths. The planning ignore list excludes `.debug.log*`.
 
 ### Execution Runtime Rules
 
