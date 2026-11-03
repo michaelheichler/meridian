@@ -15,15 +15,32 @@ command -v jq >/dev/null 2>&1 || {
 INPUT=$(cat 2>/dev/null) || { echo "Blocked: unable to read file guard input" >&2; exit 2; }
 [ -n "$INPUT" ] || exit 0
 
-TOOL_NAME=$(printf '%s' "$INPUT" | jq -r '.tool_name // ""' 2>/dev/null) || TOOL_NAME=""
-FILE_PATH=$(printf '%s' "$INPUT" | jq -r '.tool_input.file_path // .tool_input.notebook_path // ""' 2>/dev/null) || FILE_PATH=""
+json_fields() {
+  jq -j --arg source "$1" --arg identifier "${AGENT_IDENTIFIER:-}" \
+    --arg expected_root "${expected_root:-}" --argjson entry "${AGENT_ENTRY:-null}" \
+    -f "$SCRIPT_DIR/lib/file-guard-fields.jq" 2>/dev/null
+}
+
+read_field() {
+  local field_value=''
+  IFS= read -r -d '' field_value || true
+  while [[ "$field_value" = *$'\n' ]]; do field_value=${field_value%$'\n'}; done
+  printf -v "$1" '%s' "$field_value"
+}
+
+TOOL_NAME="" FILE_PATH="" HOOK_CWD="" AGENT_IDENTIFIER=""
+{
+  read_field TOOL_NAME
+  read_field FILE_PATH
+  read_field HOOK_CWD
+  read_field AGENT_IDENTIFIER
+} < <(printf '%s' "$INPUT" | json_fields hook)
 [ -n "$FILE_PATH" ] || exit 0
 case "$FILE_PATH" in
   *$'\n'*) echo "Blocked: newline in file path" >&2; exit 2 ;;
   ..|../*|*/..|*/../*) echo "Blocked: path traversal in file path ($FILE_PATH)" >&2; exit 2 ;;
 esac
 
-HOOK_CWD=$(printf '%s' "$INPUT" | jq -r '.cwd // ""' 2>/dev/null) || HOOK_CWD=""
 [ -n "$HOOK_CWD" ] || HOOK_CWD="$PWD"
 HOOK_CWD=$(CDPATH='' cd -- "$HOOK_CWD" 2>/dev/null && pwd -P || printf '%s' "$HOOK_CWD")
 case "$FILE_PATH" in
@@ -43,22 +60,9 @@ else
   MANIFEST=""
 fi
 
-resolve_agent_role() {
-  local identifier="$1"
-  [ -n "$identifier" ] || return 1
-  [ -f "$MANIFEST" ] || return 1
-  jq -r --arg id "$identifier" '.agents[$id].role // empty' "$MANIFEST" 2>/dev/null
-}
-
-resolve_agent_entry() {
-  local identifier="$1"
-  [ -n "$identifier" ] || return 1
-  [ -f "$MANIFEST" ] || return 1
-  jq -c --arg id "$identifier" '.agents[$id] // empty' "$MANIFEST" 2>/dev/null
-}
-
 canonical_directory() {
-  CDPATH='' cd -- "$1" 2>/dev/null && pwd -P
+  local CDPATH=''
+  cd -- "$1" 2>/dev/null && pwd -P
 }
 
 canonical_existing_parent() {
@@ -101,9 +105,9 @@ path_is_within_root() {
 }
 
 agent_write_capability_allows() {
-  local entry="$1" identifier="$2" expected_root actual_root candidate_path candidate_parent candidate_target allowance contract_path contract contract_root contract_task manifest_contract_id entry_role relative_path contract_state schema_version capability capability_kind capability_path capability_relative
-  schema_version=$(jq -r 'if .schema_version != null then .schema_version elif .capabilities != null then 3 else 2 end' <<< "$entry")
-  expected_root=$(jq -r '.project_root // empty' <<< "$entry") || return 1
+  local identifier="$2" expected_root actual_root candidate_path candidate_parent candidate_target allowance contract_path contract relative_path schema_version capability_index capability_kind capability_path capability_relative contract_valid
+  schema_version="$ENTRY_SCHEMA"
+  expected_root="$ENTRY_ROOT"
   [ -n "$expected_root" ] || return 1
   expected_root=$(canonical_directory "$expected_root") || return 1
   actual_root=$(canonical_directory "$HOOK_CWD") || return 1
@@ -117,33 +121,24 @@ agent_write_capability_allows() {
   case "$relative_path" in
     config/subagent-critical-execution.txt|config/destructive-commands.txt|scripts/*guard*|scripts/task-contract.sh|scripts/agent-lifecycle.sh|.lbwc-planning/.agent-manifest.json|.lbwc-planning/.contracts|.lbwc-planning/.contracts/*|.claude/agents|.claude/agents/*) return 7 ;;
   esac
-  contract_path=$(jq -r '.contract_path // empty' <<< "$entry")
+  contract_path="$ENTRY_CONTRACT"
   if [ -n "$contract_path" ] || [[ "$identifier" == lbwc-* ]]; then
     [ -n "$contract_path" ] || return 6
     contract=$(bash "$SCRIPT_DIR/task-contract.sh" verify "$contract_path" "$expected_root" 2>/dev/null) || return 6
-    [ "$(jq -r '.contract_digest // empty' <<< "$contract")" = "$(jq -r '.contract_digest // empty' <<< "$entry")" ] || return 6
-    manifest_contract_id=$(jq -r '.contract_id // empty' <<< "$entry")
-    [ -n "$manifest_contract_id" ] || return 6
-    [ "$manifest_contract_id" = "$(jq -r '.contract_id // empty' <<< "$contract")" ] || return 6
-    contract_root=$(jq -r '.project_root // empty' <<< "$contract")
-    [ "$contract_root" = "$expected_root" ] || return 6
-    entry_role=$(jq -r '.role // empty' <<< "$entry")
-    [ -n "$entry_role" ] || return 6
-    contract_task=$(jq -r '.task_identity // empty' <<< "$contract")
-    [ "$contract_task" = "$(jq -r '.task_identity // empty' <<< "$entry")" ] || return 6
-    contract_state=$(jq -r '.state // empty' <<< "$contract")
-    case "$contract_state" in dispatched|running) ;; *) return 6 ;; esac
-    jq -e --arg role "$entry_role" --argjson allowances "$(jq -c '.write_allowances' <<< "$entry")" '.allowances_by_role[$role] == $allowances' <<< "$contract" >/dev/null 2>&1 || return 6
-    schema_version=$(jq -r '.schema_version // 2' <<< "$contract")
-    if [ "$schema_version" = "3" ]; then
-      jq -e --arg role "$entry_role" --argjson capabilities "$(jq -c '.capabilities // []' <<< "$entry")" '.capabilities_by_role[$role] == $capabilities' <<< "$contract" >/dev/null 2>&1 || return 6
-    fi
+    contract_valid=false
+    {
+      read_field contract_valid
+      read_field schema_version
+    } < <(printf '%s' "$contract" | json_fields contract)
+    [ "$contract_valid" = true ] || return 6
   fi
   if [ "$schema_version" = "3" ]; then
-    jq -e '.capabilities | type == "array" and length > 0 and all(.[]; type == "object")' <<< "$entry" >/dev/null 2>&1 || return 3
-    while IFS= read -r capability; do
-      capability_kind=$(jq -r '.kind // empty' <<< "$capability")
-      capability_path=$(jq -r '.path // empty' <<< "$capability")
+    [ "$CAPABILITIES_VALID" = true ] || return 3
+    capability_index=0
+    while [ "$capability_index" -lt "$CAPABILITY_COUNT" ]; do
+      capability_kind="${CAPABILITY_KINDS[$capability_index]}"
+      capability_path="${CAPABILITY_PATHS[$capability_index]}"
+      capability_index=$((capability_index + 1))
       case "$capability_kind" in
         file)
           capability_relative="$relative_path"
@@ -171,11 +166,11 @@ agent_write_capability_allows() {
         .lbwc-planning|.lbwc-planning/*|.temporary-agent-runfiles|.temporary-agent-runfiles/*|.claude/agents|.claude/agents/*|.git|.git/*|.env|.env.*|*/.env|*/.env.*|*.pem|*.key|*.cert|*.p12|*.pfx|*/credentials.json|*/secrets.json|*/service-account.json|credentials.json|secrets.json|service-account.json|config/subagent-critical-execution.txt|config/destructive-commands.txt|scripts/*guard*|scripts/task-contract.sh|scripts/agent-lifecycle.sh) return 7 ;;
       esac
       return 0
-    done < <(jq -c '.capabilities[]' <<< "$entry")
+    done
     return 4
   fi
-  jq -e '.write_allowances | type == "array" and length > 0 and all(.[]; type == "string")' <<< "$entry" >/dev/null 2>&1 || return 3
-  while IFS= read -r allowance; do
+  [ "$ALLOWANCES_VALID" = true ] || return 3
+  for allowance in ${WRITE_ALLOWANCES[@]+"${WRITE_ALLOWANCES[@]}"}; do
     if [ "$candidate_path" = "$expected_root/$allowance" ]; then
       candidate_parent=$(canonical_existing_parent "$candidate_path") || return 5
       path_is_within_root "$candidate_parent" "$expected_root" || return 5
@@ -185,7 +180,7 @@ agent_write_capability_allows() {
       fi
       return 0
     fi
-  done < <(jq -r '.write_allowances[]' <<< "$entry")
+  done
   return 4
 }
 
@@ -232,11 +227,34 @@ path_is_test_file() {
   esac
 }
 
-AGENT_IDENTIFIER=$(printf '%s' "$INPUT" | jq -r '
-  .agent_id // .agentId // .agent_type // .agentType // .subagent_type // .subagentType // .name // empty
-' 2>/dev/null) || AGENT_IDENTIFIER=""
-AGENT_ENTRY=$(resolve_agent_entry "$AGENT_IDENTIFIER") || AGENT_ENTRY=""
-AGENT_ROLE=$(resolve_agent_role "$AGENT_IDENTIFIER")
+AGENT_ENTRY="" AGENT_ROLE="" OPEN_PAIR=0 ENTRY_SCHEMA=2 ENTRY_ROOT="" ENTRY_CONTRACT=""
+CAPABILITIES_VALID=false ALLOWANCES_VALID=false CAPABILITY_COUNT=0
+CAPABILITY_KINDS=() CAPABILITY_PATHS=() WRITE_ALLOWANCES=()
+if [ -f "$MANIFEST" ]; then
+  {
+    read_field AGENT_ENTRY
+    read_field AGENT_ROLE
+    read_field OPEN_PAIR
+    read_field ENTRY_SCHEMA
+    read_field ENTRY_ROOT
+    read_field ENTRY_CONTRACT
+    read_field CAPABILITIES_VALID
+    read_field ALLOWANCES_VALID
+    read_field CAPABILITY_COUNT
+    case "$CAPABILITY_COUNT" in ''|*[!0-9]*) CAPABILITY_COUNT=0 ;; esac
+    CAPABILITY_INDEX=0
+    while [ "$CAPABILITY_INDEX" -lt "$CAPABILITY_COUNT" ]; do
+      read_field CAPABILITY_KIND
+      read_field CAPABILITY_PATH
+      CAPABILITY_KINDS+=("$CAPABILITY_KIND")
+      CAPABILITY_PATHS+=("$CAPABILITY_PATH")
+      CAPABILITY_INDEX=$((CAPABILITY_INDEX + 1))
+    done
+    while IFS= read -r -d '' ALLOWANCE; do
+      WRITE_ALLOWANCES+=("$ALLOWANCE")
+    done
+  } < <(json_fields manifest < "$MANIFEST")
+fi
 
 if [ -n "$AGENT_ENTRY" ]; then
   agent_write_capability_allows "$AGENT_ENTRY" "$AGENT_IDENTIFIER"
@@ -295,7 +313,6 @@ case "$AGENT_ROLE" in
 esac
 
 if [ -z "$AGENT_ROLE" ] && [ "$TOOL_NAME" != "" ] && [ -f "$MANIFEST" ]; then
-  OPEN_PAIR=$(jq -r '[.agents[] | select(.state == "registered" or .state == "running")] | length' "$MANIFEST" 2>/dev/null) || OPEN_PAIR=0
   case "${OPEN_PAIR:-0}" in ''|*[!0-9]*) OPEN_PAIR=0 ;; esac
   if [ "$OPEN_PAIR" -gt 0 ] 2>/dev/null; then
     path_is_doc_file "$RESOLVED_PATH" || path_is_agent_definition "$RESOLVED_PATH" || {
