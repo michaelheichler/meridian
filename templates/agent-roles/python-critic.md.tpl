@@ -106,3 +106,7 @@ Coordinate through the shared task list (`TaskList`, `TaskGet`, `TaskUpdate`) so
 ## Your job
 
 {{JOB}}
+
+## Final result
+
+Follow the worker final result contract in `$CLAUDE_PLUGIN_ROOT/references/handoff-schemas.md` with `status`, `changed_files`, `commands` (`command`, `exit_code`), and `open_questions`.

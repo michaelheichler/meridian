@@ -2,6 +2,40 @@
 
 V2 inter-agent messages use strict JSON schemas. Every message includes a mandatory envelope.
 
+## Worker final result
+
+Every worker ends with one JSON object, not a prose completion claim. This final result supplements the typed progress messages below and does not use their envelope. Keep all existing role reports and transport duties, then return this object as the final message.
+
+```json
+{
+  "status": "done",
+  "changed_files": ["src/example.py"],
+  "commands": [{"command": "python3 -m unittest", "exit_code": 0}],
+  "open_questions": []
+}
+```
+
+- Require all four fields. Use `done`, `running`, `needs_you`, or `failed` for `status`.
+- Use arrays of nonempty strings for `changed_files` and `open_questions`. An empty array means none. Include every changed file, and never invent a change for read-only work.
+- Use an array of objects for `commands`. Each object requires a nonempty `command` string and an integer `exit_code` from 0 through 255. Record the actual command and observed exit code, including failures. Never invent proof or execute a command merely to fill the array.
+- A `done` result requires at least one proof command, all exit codes zero, and no open questions. Otherwise return `running`, `needs_you`, or `failed`, as appropriate. A read-only worker still provides a deterministic check of its deliverable.
+- The main session reviews commands for authorization and safety, re-runs each command in the intended repository and environment, and records its own exit codes. A worker claim never establishes main-session proof. Reject missing commands, missing exit codes, and malformed results before reporting done.
+- Keep the existing `user_decision_required` handoff when a human decision blocks work. The final result uses `needs_you` and includes the question in `open_questions`, without replacing the immediate handoff.
+
+## Feedback card input
+
+Resolve `PLUGIN_ROOT` through the command's existing plugin-root contract, then run `bash "$PLUGIN_ROOT/scripts/status-card.sh" "$PHASE_FILE" "$RESULT_FILE"`. `PHASE_FILE` holds fresh key-value output from `phase-detect.sh`, including a nonempty `next_phase`, `phase_detect_complete=true`, and no `phase_detect_error=true`. Missing `next_phase` produces a failure card and exit 1. Never source detector output or execute command strings from the result JSON.
+
+After reviewing the worker message and re-running its proof, the main session creates `RESULT_FILE` at a main-session-owned temporary path and writes the result JSON itself. Never pass a worker-written file to the renderer or trust a worker-supplied `main_session` flag. The file holds exactly one JSON object. jq uses last-key-wins for duplicate object keys, so the main session must write unique keys and must not copy unreviewed worker JSON bytes into its file.
+
+The main session enriches the worker result with nonempty string fields `product`, `step`, `plan`, and `tests`, an object `lines_changed` with nonnegative integer fields `added` and `deleted`, and an object `next` with nonempty string fields `command` and `step`. Use an explicit `none` where no plan applies. `tests` describes actual results or says tests did not run. Count files and changed lines from the actual diff. For each proof command that the main session re-runs, record its observed exit code and set `main_session` to `true`. Omit that flag or use `false` for worker-only proof. Never copy a worker assertion into that flag.
+
+Optional `cause` and `fix` strings and a `details` array of nonempty strings appear only on failure. The card rejects a `done` result without successful main-session proof or with open questions. A nonzero proof exit code prints a failure card and exits nonzero, whatever the claimed status. Malformed input also prints a failure card and exits nonzero. The renderer never runs proof commands itself.
+
+Preserve all command-specific final output and Next Up instructions, then run and show the card as the last output step on every terminal path, including a blocker, failure, or human decision. Keep this step after every Next Up and Context block, with no later output instruction. A missing renderer or a renderer failure blocks a completion claim, report the failure rather than hand-writing a success card.
+
+The table header names the result glyph, stage, and scope. The body holds facts, with one row per proof command or question and no row cap. Each cell retains at most 300 characters followed by `...` when the value continues. The renderer replaces ASCII control characters with spaces and escapes markdown metacharacters in every value. It renders all list rows in one jq pass. Closing paragraphs show `**Next.**` with the command and step, then `**You approve.**` with the action the user must take. Keep a blank line before each paragraph. On failure, name the required fix or recovery action. When nothing needs approval, say `Nothing, Meridian continues.`
+
 ## Envelope (mandatory on all messages)
 
 ```json
