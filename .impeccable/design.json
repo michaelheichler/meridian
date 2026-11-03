@@ -23,7 +23,7 @@
       "kind": "custom",
       "refersTo": "statusline-mark",
       "description": "Four-line terminal statusline in the unicode glyph set, colored per the frontmatter.",
-      "html": "<pre class=\"ds-statusline\"><span class=\"ds-t ds-b\">✦ meridian</span><span class=\"ds-m\"> · </span><span class=\"ds-s\">sonnet high</span><span class=\"ds-m\"> · </span>lbwc@refactor/meridian-2.0 <span class=\"ds-a\">●</span><span class=\"ds-m\"> · </span>2h 14m\n<span class=\"ds-t\">▮▮▮▮</span><span class=\"ds-m\">▯▯▯▯▯▯</span> 42% context<span class=\"ds-m\"> · </span><span class=\"ds-t\">+120</span> <span class=\"ds-o\">−40</span>\nFlow phase 03 build<span class=\"ds-m\"> · </span>QA <span class=\"ds-a\">◐</span><span class=\"ds-m\"> · </span>UAT <span class=\"ds-m\">○</span>\nQuota 5h <span class=\"ds-t\">▮▮▮</span><span class=\"ds-m\">▯▯</span> 38% resets 14:00</pre>",
+      "html": "<pre class=\"ds-statusline\"><span class=\"ds-t ds-b\">✦ meridian</span><span class=\"ds-m\"> · </span><span class=\"ds-s\">sonnet high</span><span class=\"ds-m\"> · </span>meridian@refactor/meridian-2.0 <span class=\"ds-a\">●</span><span class=\"ds-m\"> · </span>2h 14m\n<span class=\"ds-t\">▮▮▮▮</span><span class=\"ds-m\">▯▯▯▯▯▯</span> 42% context<span class=\"ds-m\"> · </span><span class=\"ds-t\">+120</span> <span class=\"ds-o\">−40</span>\nFlow phase 03 build<span class=\"ds-m\"> · </span>QA <span class=\"ds-a\">◐</span><span class=\"ds-m\"> · </span>UAT <span class=\"ds-m\">○</span>\nQuota 5h <span class=\"ds-t\">▮▮▮</span><span class=\"ds-m\">▯▯</span> 38% resets 14:00</pre>",
       "css": ".ds-statusline { background: #0b1416; color: #c9d1d9; border: 1px solid #1F5F66; border-radius: 8px; padding: 14px 16px; font: 14px/1.6 ui-monospace, Menlo, monospace; white-space: pre; } .ds-b { font-weight: 700; } .ds-t { color: #3FB8AF; } .ds-s { color: #3A9AD9; } .ds-a { color: #F2B233; } .ds-o { color: #EE8434; } .ds-m { color: #7A9497; }"
     },
     {
@@ -39,7 +39,7 @@
       "kind": "card",
       "refersTo": "status-card",
       "description": "Three-column phase table with glyph, word, and ten-cell bar, then four closing paragraphs.",
-      "html": "<div class=\"ds-card\"><table><thead><tr><th>✦ Meridian</th><th>lbwc, milestone 2.0</th><th></th></tr></thead><tbody><tr><td>02 Guards</td><td>✔ done</td><td>▮▮▮▮▮▮▮▮▮▮ 100%</td></tr><tr><td>03 Build loop</td><td>◐ build</td><td>▮▮▮▮▯▯▯▯▯▯ 40%</td></tr><tr><td>04 Handover</td><td>○ next</td><td>▯▯▯▯▯▯▯▯▯▯ 0%</td></tr></tbody></table><p><strong>Now.</strong> Plan 02 of phase 03.</p><p><strong>Next.</strong> QA for phase 03 after the last plan.</p><p><strong>Needs you.</strong> Nothing right now.</p></div>",
+      "html": "<div class=\"ds-card\"><table><thead><tr><th>✦ Meridian</th><th>meridian, milestone 2.0</th><th></th></tr></thead><tbody><tr><td>02 Guards</td><td>✔ done</td><td>▮▮▮▮▮▮▮▮▮▮ 100%</td></tr><tr><td>03 Build loop</td><td>◐ build</td><td>▮▮▮▮▯▯▯▯▯▯ 40%</td></tr><tr><td>04 Handover</td><td>○ next</td><td>▯▯▯▯▯▯▯▯▯▯ 0%</td></tr></tbody></table><p><strong>Now.</strong> Plan 02 of phase 03.</p><p><strong>Next.</strong> QA for phase 03 after the last plan.</p><p><strong>Needs you.</strong> Nothing right now.</p></div>",
       "css": ".ds-card { font: 16px/1.5 -apple-system, sans-serif; color: #e6edf3; background: #0d1117; padding: 16px; } .ds-card table { border-collapse: collapse; } .ds-card th, .ds-card td { border: 1px solid #30363d; padding: 6px 13px; text-align: left; } .ds-card th { font-weight: 600; } .ds-card p { margin: 12px 0 0; }"
     }
   ],
