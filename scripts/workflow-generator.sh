@@ -349,7 +349,7 @@ if grep -qE 'new[[:space:]]+Date[[:space:]]*\([[:space:]]*\)' <<< "$CODE_OUTSIDE
 fi
 
 if command -v node >/dev/null 2>&1; then
-  SYNTAX_CHECK_FILE=$(mktemp "${TMPDIR:-/tmp}/lbwc-workflow-syntax.XXXXXX.mjs")
+  SYNTAX_CHECK_FILE=$(mktemp "${TMPDIR:-/tmp}/lbwc-workflow-syntax.XXXXXX")
   { printf '(async () => {\n'; tail -n +2 "$TARGET"; printf '\n})\n'; } > "$SYNTAX_CHECK_FILE"
   SYNTAX_ERROR=$(node --check --input-type=module - < "$SYNTAX_CHECK_FILE" 2>&1) || {
     rm -f "$SYNTAX_CHECK_FILE"
