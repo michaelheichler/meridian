@@ -67,6 +67,9 @@ if [[ "$initial_prompt" != *'"type":"user_decision_required","question":"clear u
     keyed_set VALUES INITIAL_PROMPT "$question_handoff"
   fi
 fi
+worker_result='Follow the worker final result contract in $CLAUDE_PLUGIN_ROOT/references/handoff-schemas.md with status, changed_files, commands (command, exit_code), and open_questions.'
+keyed_get_into initial_prompt VALUES INITIAL_PROMPT
+keyed_set VALUES INITIAL_PROMPT "$initial_prompt"$'\n\n'"$worker_result"
 keyed_unset EMPTY_TOKENS INITIAL_PROMPT
 
 for required in NAME MODEL DESCRIPTION JOB; do

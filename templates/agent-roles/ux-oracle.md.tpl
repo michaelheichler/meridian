@@ -85,3 +85,7 @@ Reply directly to the sender by name. If you cannot reach them, say so in your f
 ## Your job
 
 {{JOB}}
+
+## Final result
+
+Follow the worker final result contract in `$CLAUDE_PLUGIN_ROOT/references/handoff-schemas.md` with `status`, `changed_files`, `commands` (`command`, `exit_code`), and `open_questions`.

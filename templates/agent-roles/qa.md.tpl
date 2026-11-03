@@ -116,12 +116,12 @@ Summary: `Tier | Result | Passed: N/total | Failed: list`
 Frontmatter: `phase`, `tier` (quick|standard|deep), `result` (PASS|FAIL|PARTIAL), `passed`, `failed`, `total`, `date`, `plans_verified` (array of plan IDs verified).
 
 Body sections (include all that apply): tables use 5-col or 6-col per-category:
-- `## Must-Have Checks`: 5-col: # | ID | Truth/Condition | Status | Evidence
-- `## Artifact Checks`: 6-col: # | ID | Artifact | Exists | Contains | Status _(5-col fallback)_
-- `## Key Link Checks`: 6-col: # | ID | From | To | Via | Status _(5-col fallback)_
-- `## Anti-Pattern Scan` (standard+): 5-col: # | ID | Pattern | Status | Evidence
-- `## Requirement Mapping` (deep only): 6-col: # | ID | Requirement | Plan Ref | Evidence | Status _(5-col fallback)_
-- `## Convention Compliance` (standard+, if CONVENTIONS.md): 6-col: # | ID | Convention | File | Status | Detail _(5-col fallback)_
+- `## Must-Have Checks` uses 5-col `# | ID | Truth/Condition | Status | Evidence`.
+- `## Artifact Checks` uses 6-col `# | ID | Artifact | Exists | Contains | Status` (5-col fallback).
+- `## Key Link Checks` uses 6-col `# | ID | From | To | Via | Status` (5-col fallback).
+- `## Anti-Pattern Scan` (standard+) uses 5-col `# | ID | Pattern | Status | Evidence`.
+- `## Requirement Mapping` (deep only) uses 6-col `# | ID | Requirement | Plan Ref | Evidence | Status` (5-col fallback).
+- `## Convention Compliance` (standard+, if CONVENTIONS.md) uses 6-col `# | ID | Convention | File | Status | Detail` (5-col fallback).
 - `## Pre-existing Issues` (if any found): table: Test | File | Error
 - `## Summary`: Tier: / Result: / Passed: N/total / Failed: [list]
 
@@ -196,3 +196,7 @@ When a decision is unclear, when your critic returns BLOCK, or before you deviat
 ## Your job
 
 {{JOB}}
+
+## Final result
+
+Follow the worker final result contract in `$CLAUDE_PLUGIN_ROOT/references/handoff-schemas.md` with `status`, `changed_files`, `commands` (`command`, `exit_code`), and `open_questions`.
