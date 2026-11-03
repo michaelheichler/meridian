@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-
 PLANNING_DIR="${LBWC_PLANNING_DIR:-.lbwc-planning}"
 REGISTRY_PATH="${PLANNING_DIR}/todo-details.json"
 MAX_CONTEXT_LENGTH=2000
@@ -53,40 +52,34 @@ write_registry() {
   mv "$tmp_file" "$REGISTRY_PATH"
 }
 
-
-cmd_add() {
-  local hash="${1:-}"
-  local detail_json="${2:-}"
-
-  if [ "$detail_json" = "-" ]; then
-    detail_json=$(cat)
-  fi
-
-  if [ -z "$hash" ] || [ -z "$detail_json" ]; then
-    error_json "Usage: todo-details.sh add <hash> <json-detail>"
-  fi
-
-  if ! [[ "$hash" =~ ^[a-f0-9]{8}$ ]]; then
-    error_json "Invalid hash format: expected 8 hex characters, got '$hash'"
-  fi
-
-  if ! printf '%s' "$detail_json" | jq empty 2>/dev/null; then
-    error_json "Invalid JSON in detail argument"
-  fi
-
-  ensure_registry
-
-  local context_len
+truncate_detail_context() {
+  local detail_json="$1" context_len
   context_len=$(printf '%s' "$detail_json" | jq -r 'if .context then (.context | tostring | length) else 0 end' 2>/dev/null) || context_len=0
   if [ "$context_len" -gt "$MAX_CONTEXT_LENGTH" ]; then
     detail_json=$(printf '%s' "$detail_json" | jq --argjson max "$MAX_CONTEXT_LENGTH" \
       '.context = (.context | tostring | .[:$max] + " (truncated)")' 2>/dev/null) || true
   fi
+  printf '%s' "$detail_json"
+}
 
-  local updated
+cmd_add() {
+  local hash="${1:-}" detail_json="${2:-}" updated
+  if [ "$detail_json" = "-" ]; then
+    detail_json=$(cat)
+  fi
+  if [ -z "$hash" ] || [ -z "$detail_json" ]; then
+    error_json "Usage: todo-details.sh add <hash> <json-detail>"
+  fi
+  if ! [[ "$hash" =~ ^[a-f0-9]{8}$ ]]; then
+    error_json "Invalid hash format: expected 8 hex characters, got '$hash'"
+  fi
+  if ! printf '%s' "$detail_json" | jq empty 2>/dev/null; then
+    error_json "Invalid JSON in detail argument"
+  fi
+  ensure_registry
+  detail_json=$(truncate_detail_context "$detail_json")
   updated=$(jq --arg h "$hash" --argjson d "$detail_json" \
     '.items[$h] = $d' "$REGISTRY_PATH")
-
   write_registry "$updated"
   printf '{"status":"ok","action":"upserted","hash":"%s"}\n' "$hash"
 }
@@ -122,67 +115,68 @@ cmd_get() {
   printf '{"status":"not_found","hash":"%s"}\n' "$hash"
 }
 
-cmd_remove() {
-  local hash="${1:-}"
-
-  if [ -z "$hash" ]; then
-    error_json "Usage: todo-details.sh remove <hash>"
-  fi
-
-  if ! [[ "$hash" =~ ^[a-f0-9]{8}$ ]]; then
-    jq -n --arg h "$hash" '{"status":"ok","action":"noop","hash":$h}'
+remove_canonical_detail() {
+  local remove_hash="$1" remove_had_key_out="$2" remove_warning_out="$3" remove_status_out="$4"
+  local remove_had_key remove_updated remove_status
+  registry_exists || return 0
+  if ! registry_is_valid; then
+    printf -v "$remove_status_out" '%s' malformed
+    printf -v "$remove_warning_out" '%s' 'Malformed todo-details.json; skipped canonical cleanup'
     return 0
   fi
-
-  local had_key="no"
-  local registry_warning=""
-  local canonical_status="missing"
-  if registry_exists; then
-    if registry_is_valid; then
-      had_key=$(jq --arg h "$hash" 'if .items[$h] then "yes" else "no" end' -r "$REGISTRY_PATH")
-
-      local updated
-      updated=$(jq --arg h "$hash" 'del(.items[$h])' "$REGISTRY_PATH")
-      write_registry "$updated"
-      if [ "$had_key" = "yes" ]; then
-        canonical_status="removed"
-      else
-        canonical_status="noop"
-      fi
-    else
-      canonical_status="malformed"
-      registry_warning="Malformed todo-details.json; skipped canonical cleanup"
-    fi
+  remove_had_key=$(jq --arg h "$remove_hash" 'if .items[$h] then "yes" else "no" end' -r "$REGISTRY_PATH")
+  remove_updated=$(jq --arg h "$remove_hash" 'del(.items[$h])' "$REGISTRY_PATH")
+  write_registry "$remove_updated"
+  if [ "$remove_had_key" = yes ]; then
+    remove_status=removed
+  else
+    remove_status=noop
   fi
+  printf -v "$remove_had_key_out" '%s' "$remove_had_key"
+  printf -v "$remove_status_out" '%s' "$remove_status"
+}
 
-  local had_legacy="no"
-  local legacy_path
-  legacy_path=$(legacy_detail_path "$hash")
-  if [ -f "$legacy_path" ]; then
-    rm -f "$legacy_path"
-    had_legacy="yes"
-  fi
+remove_legacy_detail() {
+  local remove_legacy_hash="$1" remove_legacy_out="$2" remove_legacy_path
+  remove_legacy_path=$(legacy_detail_path "$remove_legacy_hash")
+  [ -f "$remove_legacy_path" ] || return 0
+  rm -f "$remove_legacy_path"
+  printf -v "$remove_legacy_out" '%s' yes
+}
 
+print_remove_result() {
+  local hash="$1" had_key="$2" had_legacy="$3" registry_warning="$4" canonical_status="$5"
   local legacy_removed_json=false
-  if [ "$had_legacy" = "yes" ]; then
+  if [ "$had_legacy" = yes ]; then
     legacy_removed_json=true
   fi
-
-  if [ "$had_key" = "yes" ] || [ "$had_legacy" = "yes" ]; then
+  if [ "$had_key" = yes ] || [ "$had_legacy" = yes ]; then
     if [ -n "$registry_warning" ]; then
       printf '{"status":"ok","action":"removed","hash":"%s","warning":"%s","canonical_status":"%s","legacy_removed":%s}\n' \
         "$hash" "$registry_warning" "$canonical_status" "$legacy_removed_json"
     else
       printf '{"status":"ok","action":"removed","hash":"%s"}\n' "$hash"
     fi
+  elif [ -n "$registry_warning" ]; then
+    printf '{"status":"ok","action":"noop","hash":"%s","message":"Key not found","warning":"%s","canonical_status":"%s","legacy_removed":%s}\n' \
+      "$hash" "$registry_warning" "$canonical_status" "$legacy_removed_json"
   else
-    if [ -n "$registry_warning" ]; then
-      printf '{"status":"ok","action":"noop","hash":"%s","message":"Key not found","warning":"%s","canonical_status":"%s","legacy_removed":%s}\n' \
-        "$hash" "$registry_warning" "$canonical_status" "$legacy_removed_json"
-    else
-      printf '{"status":"ok","action":"noop","hash":"%s","message":"Key not found"}\n' "$hash"
-    fi
+    printf '{"status":"ok","action":"noop","hash":"%s","message":"Key not found"}\n' "$hash"
   fi
+}
+
+cmd_remove() {
+  local hash="${1:-}" had_key=no had_legacy=no registry_warning='' canonical_status=missing
+  if [ -z "$hash" ]; then
+    error_json "Usage: todo-details.sh remove <hash>"
+  fi
+  if ! [[ "$hash" =~ ^[a-f0-9]{8}$ ]]; then
+    jq -n --arg h "$hash" '{"status":"ok","action":"noop","hash":$h}'
+    return 0
+  fi
+  remove_canonical_detail "$hash" had_key registry_warning canonical_status
+  remove_legacy_detail "$hash" had_legacy
+  print_remove_result "$hash" "$had_key" "$had_legacy" "$registry_warning" "$canonical_status"
 }
 
 cmd_list() {
@@ -200,62 +194,54 @@ cmd_list() {
   jq --argjson c "$count" '{status:"ok", count:$c, items:.items}' "$REGISTRY_PATH"
 }
 
-cmd_gc() {
-  local state_path="${1:-}"
-
-  if [ -z "$state_path" ]; then
-    error_json "Usage: todo-details.sh gc <state-path>"
-  fi
-
-  if [ ! -f "$state_path" ]; then
-    error_json "STATE.md not found at $state_path"
-  fi
-
-  if ! registry_exists; then
-    printf '{"status":"ok","action":"noop","removed":0,"remaining":0}\n'
-    return 0
-  fi
-
-  if ! registry_is_valid; then
-    error_json "Malformed todo-details.json"
-  fi
-
-  local state_refs
-  state_refs=$(awk '
+todo_state_refs() {
+  awk '
     /^(##|###) (Pending )?Todos$/ { found=1; next }
     found && /^##[^#]/ { exit }
     found { print }
-  ' "$state_path" | grep -oE '\(ref:[a-f0-9]{8}\)' | sed 's/(ref://;s/)//' || true)
+  ' "$1" | grep -oE '\(ref:[a-f0-9]{8}\)' | sed 's/(ref://;s/)//' || true
+}
 
-  local registry_keys
-  registry_keys=$(jq -r '.items | keys[]' "$REGISTRY_PATH" 2>/dev/null || true)
-
+prune_orphaned_details() {
+  local state_refs="$1" registry_keys key updated remaining
   local orphaned=()
-  local key
+  registry_keys=$(jq -r '.items | keys[]' "$REGISTRY_PATH" 2>/dev/null || true)
   for key in $registry_keys; do
     if ! printf '%s\n' "$state_refs" | grep -qxF "$key"; then
       orphaned+=("$key")
     fi
   done
-
   if [ "${#orphaned[@]}" -eq 0 ]; then
-    local remaining
     remaining=$(jq '.items | length' "$REGISTRY_PATH")
     printf '{"status":"ok","action":"noop","removed":0,"remaining":%d}\n' "$remaining"
     return 0
   fi
-
-  local updated
   updated=$(cat "$REGISTRY_PATH")
-  for key in "${orphaned[@]}"; do
+  for key in ${orphaned[@]+"${orphaned[@]}"}; do
     updated=$(printf '%s' "$updated" | jq --arg h "$key" 'del(.items[$h])')
   done
-
   write_registry "$updated"
-
-  local remaining
   remaining=$(printf '%s' "$updated" | jq '.items | length')
   printf '{"status":"ok","action":"gc","removed":%d,"remaining":%d}\n' "${#orphaned[@]}" "$remaining"
+}
+
+cmd_gc() {
+  local state_path="${1:-}" state_refs
+  if [ -z "$state_path" ]; then
+    error_json "Usage: todo-details.sh gc <state-path>"
+  fi
+  if [ ! -f "$state_path" ]; then
+    error_json "STATE.md not found at $state_path"
+  fi
+  if ! registry_exists; then
+    printf '{"status":"ok","action":"noop","removed":0,"remaining":0}\n'
+    return 0
+  fi
+  if ! registry_is_valid; then
+    error_json "Malformed todo-details.json"
+  fi
+  state_refs=$(todo_state_refs "$state_path")
+  prune_orphaned_details "$state_refs"
 }
 
 CMD="${1:-}"
