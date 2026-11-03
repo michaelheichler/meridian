@@ -120,6 +120,10 @@ restriction_scope_rows() {
       AskUserQuestion) guard=question ;;
     esac
     payload=$(restriction_input "$tool" 'echo safe')
+    case "$tool" in
+      Task) payload=$(jq '.tool_input.subagent_type="lbwc-unregistered"' <<< "$payload") ;;
+      Write) payload=$(jq '.tool_input.file_path=".runtime-snapshot.json"' <<< "$payload") ;;
+    esac
     run restriction_scope_call ordinary "$guard" "$payload"
     baseline_status=$status baseline_output=$output
     for kind in orchestrator ordinary no-tmux disabled; do
