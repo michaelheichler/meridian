@@ -58,7 +58,7 @@ execution_setting_is_frozen() {
     tmux_execution.cleanup_policy|statusline_hide_agent_in_tmux|statusline_collapse_agent_in_tmux)
       return 1
       ;;
-    tmux_execution|tmux_execution.*|workflow_execution|workflow_execution.*|effort|routing.active_profile)
+    worktree_isolation|tmux_execution|tmux_execution.*|workflow_execution|workflow_execution.*|effort|routing.active_profile)
       return 0
       ;;
     *)

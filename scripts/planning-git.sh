@@ -35,6 +35,7 @@ ${MD_HASH} LBWC transient runtime artifacts
 .context-usage.statusline.*
 .contracts/
 .locks/
+.runtime/
 .token-state/
 EOF
 }

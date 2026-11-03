@@ -48,7 +48,7 @@ Before spawning a worker, read `$PLUGIN_ROOT/references/subagent-contracts.md` a
 7. For an active QA or UAT remediation round, use its persisted `stage`, `round_dir`, `plan_path`, and `summary_path` as authoritative host paths. Use its persisted verification path and UAT path the same way. Do not rewrite those paths relative to a worker cwd.
 8. Write no mutable execution-state file. `phase-detect.sh`, task-contract state, the manifest, terminal summaries, remediation state, and commits replace a source execution-state record for recovery.
 
-**Worktree isolation:** Existing `worktree-create.sh`, `worktree-merge.sh`, `worktree-cleanup.sh`, and `worktree-agent-map.sh` are available only where a command explicitly invokes them. Do not create every remaining plan worktree in advance. A dependency target must see committed predecessor output. LBWC does not implement automatic per-plan worktree target construction or worker cwd handoff yet.
+**Worktree isolation** follows `references/agent-spawn-protocol.md`. With `worktree_isolation=on`, native code-writing workers require `isolation="worktree"`, tmux provisions a worker worktree at HEAD, and workflow admission fails because its API has no verified isolation option. Commit predecessor output before spawning dependent work. Do not prepare future plan worktrees in advance.
 
 **Correlation, event, snapshot, and schema state:** Task contracts and the generated-agent manifest own recoverable lifecycle state. `scripts/lib/session-telemetry.py` owns advisory events and metrics. LBWC no longer uses source execution JSON, snapshots, or schema-metric files. Do not create lookalike state files.
 
@@ -76,9 +76,9 @@ GENERATOR_OUTPUT=$(bash "${PLUGIN_ROOT}/scripts/agent-generator.sh" "${GENERATOR
 
 Read every emitted `Agent-call parameters:` block and every final `SPAWN_READY <name>`. Use the emitted name and model for each corresponding live spawn. Do not spawn a subset of a pair or trio.
 
-**No replacement team emulation:** Do not use background calls to imitate team parallelism. Do not attach `team_name`, `run_in_background`, `isolation`, or a worktree cwd to a non-team spawn. LBWC does not implement a true agent-team lifecycle, team marker, shutdown protocol, stale-team cleanup, or residual-team recovery yet. Until then, LBWC relies only on bounded task-contract admission and manifest closure.
+**No replacement team emulation:** Do not use background calls to imitate team parallelism. Do not attach `team_name`, `run_in_background`, or an unmanaged worktree cwd to a non-team spawn. Request native isolation only when `worktree_isolation=on` requires it. LBWC does not implement a true agent-team lifecycle, team marker, shutdown protocol, stale-team cleanup, or residual-team recovery yet. Until then, LBWC relies only on bounded task-contract admission and manifest closure.
 
-**Prepared worktree rule:** Hand a worker only its exact contract allowance, never an unmanaged worktree cwd or an isolation option. Current worktree helpers can prepare repository worktrees only for a command that explicitly supports them. LBWC does not implement automatic per-plan worktree creation, mapping, merge, or cleanup yet.
+**Prepared worktree rule** keeps each worker within its exact contract allowance even in isolation. The native host or tmux orchestrator owns worktree creation, not the worker. The main session integrates isolated changes before spawning dependent tasks and handles dirty worktrees that teardown retains.
 
 **Delegation directive:** The main session never implements a PLAN task. It creates task contracts, generates workers, verifies returned evidence, and commits verified contract-limited changes. It also persists planning artifacts and updates command state. A generated worker owns only the exact capability issued by its contract.
 
@@ -139,9 +139,9 @@ After evaluating, state the skill outcome in your response so the user has visib
 
 After calling `Skill(...)`, read any relevant files named by its instructions, but do not scan entire skill folders or read unrelated references. When preselected skills expose local follow-up docs, resolve them with `extract-skill-follow-up-files.sh`. Paste the emitted `<skill_follow_up_files>` block immediately after the follow-up-read sentence in the spawned payload.
 
-**Spawn-shape rule:** The generic generator and `references/agent-spawn-protocol.md` define every live call. Never pass `isolation:"worktree"`, `cwd`, `working_dir`, `workingDirectory`, or `workdir`. Do not use an unmanaged worker worktree or a task-management call to create a team.
+**Spawn-shape rule:** The generic generator and `references/agent-spawn-protocol.md` define every live call. Never pass `cwd`, `working_dir`, `workingDirectory`, or `workdir`. Pass `isolation="worktree"` for native code-writing workers only when the configured isolation policy requires it. Do not use an unmanaged worker worktree or a task-management call to create a team.
 
-For a non-team grouping, omit `team_name`, `run_in_background`, isolation, and worktree cwd fields. A generated `name` is label metadata and the manifest supplies lifecycle state. The main session forms a pair or trio only by spawning every generated member in the same turn under the one dispatched contract. LBWC does not implement a true source team marker, worktree-target handoff, or shutdown lifecycle yet.
+For a non-team grouping, omit `team_name`, `run_in_background`, and worktree cwd fields. The isolation policy still applies. A generated `name` is label metadata and the manifest supplies lifecycle state. The main session forms a pair or trio only by spawning every generated member in the same turn under the one dispatched contract. LBWC does not implement a true source team marker, worktree-target handoff, or shutdown lifecycle yet.
 
 **Task admission and prompt:** For each runnable PLAN task, build a brief from its name, action, verify, and done fields, plus its task contract. Add compiled context, relevant research, and the explicit skill outcome. The brief begins with exactly one skill outcome block. Use `references/skill-activation.md` for selection and follow-up reads. Include only the exact contract allowance. Do not hand a worker broad phase scope, an execution-state path, a worktree cwd, or an inferred routing decision.
 

@@ -8,6 +8,8 @@ source "$SCRIPT_DIR/lib/lbwc-control-root.sh"
 source "$SCRIPT_DIR/lib/tmux-runtime.sh"
 source "$SCRIPT_DIR/lib/agent-manifest.sh"
 source "$SCRIPT_DIR/lib/lbwc-config-files.sh"
+source "$SCRIPT_DIR/lib/worktree-isolation.sh"
+source "$SCRIPT_DIR/lib/tmux-worker-worktrees.sh"
 
 fail() {
   printf 'tmux orchestrator error: %s\n' "$1" >&2
