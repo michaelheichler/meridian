@@ -12,6 +12,17 @@ if ! command -v jq >/dev/null 2>&1; then
 fi
 
 INPUT=$(cat 2>/dev/null) || { echo "Blocked: unable to read bash guard input" >&2; exit 2; }
+tmux_agent_context() {
+  [ "${LBWC_TMUX_AGENT:-}" = 1 ] && [ -n "${LBWC_TMUX_CONTROL_ROOT:-}" ] && [ -n "${TMUX:-}" ] && [ -n "${TMUX_PANE:-}" ]
+}
+
+if tmux_agent_context; then
+  python3 -B "$PLUGIN_ROOT/hooks/tmux_restrictions.py" <<<"$INPUT" || {
+    printf '%s\n' 'Blocked: tmux_execution.restrictions.allow_agent_git policy check failed' >&2
+    exit 2
+  }
+fi
+
 [ -n "$INPUT" ] || exit 0
 
 COMMAND=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // ""' 2>/dev/null) || COMMAND=""
@@ -81,7 +92,8 @@ command_without_shell_syntax() {
 
 MASKED_COMMAND=$(command_without_quoted_text "$COMMAND")
 
-if [ "$ALLOW_DESTRUCTIVE" != "1" ]; then
+enforce_destructive_guard() {
+  [ "$ALLOW_DESTRUCTIVE" != 1 ] || return 0
   PATTERNS=""
   for PFILE in "$PLUGIN_ROOT/config/destructive-commands.txt" "$LBWC_PLANNING_DIR/destructive-commands.local.txt"; do
     [ -f "$PFILE" ] || continue
@@ -96,7 +108,7 @@ Hint: Use LBWC_ALLOW_DESTRUCTIVE=1 to override.
 See: config/destructive-commands.txt for the full blocklist." >&2
     exit 2
   fi
-fi
+}
 
 resolve_agent_role() {
   local identifier="$1" manifest_path
@@ -164,10 +176,10 @@ command_targets_protected_control_path() {
   local command="$1" normalized
   normalized=$(command_without_shell_syntax "$command")
   case "$command" in
-    *config/*|*.lbwc-planning/config.json*|*.lbwc-planning/.agent-manifest*|*.lbwc-planning/.contracts*|*.temporary-agent-runfiles*|*.claude/agents*|*.git/*|*scripts/agent-generator.sh*|*scripts/agent-lifecycle.sh*|*scripts/agent-spawn-guard.sh*|*scripts/bash-guard.sh*|*scripts/file-guard.sh*|*scripts/security-filter.sh*|*scripts/task-contract.sh*|*scripts/render-agent-template.sh*|*scripts/lib/agent-manifest.sh*) return 0 ;;
+    *.runtime-snapshot.json*|*config/*|*.lbwc-planning/config.json*|*.lbwc-planning/.agent-manifest*|*.lbwc-planning/.contracts*|*.temporary-agent-runfiles*|*.claude/agents*|*.git/*|*scripts/agent-generator.sh*|*scripts/agent-lifecycle.sh*|*scripts/agent-spawn-guard.sh*|*scripts/bash-guard.sh*|*scripts/file-guard.sh*|*scripts/security-filter.sh*|*scripts/task-contract.sh*|*scripts/render-agent-template.sh*|*scripts/lib/agent-manifest.sh*) return 0 ;;
   esac
   case "$normalized" in
-    *config/*|*.lbwc-planning/config.json*|*.lbwc-planning/.agent-manifest*|*.lbwc-planning/.contracts*|*.temporary-agent-runfiles*|*.claude/agents*|*.git/*|*scripts/agent-generator.sh*|*scripts/agent-lifecycle.sh*|*scripts/agent-spawn-guard.sh*|*scripts/bash-guard.sh*|*scripts/file-guard.sh*|*scripts/security-filter.sh*|*scripts/task-contract.sh*|*scripts/render-agent-template.sh*|*scripts/lib/agent-manifest.sh*) return 0 ;;
+    *.runtime-snapshot.json*|*config/*|*.lbwc-planning/config.json*|*.lbwc-planning/.agent-manifest*|*.lbwc-planning/.contracts*|*.temporary-agent-runfiles*|*.claude/agents*|*.git/*|*scripts/agent-generator.sh*|*scripts/agent-lifecycle.sh*|*scripts/agent-spawn-guard.sh*|*scripts/bash-guard.sh*|*scripts/file-guard.sh*|*scripts/security-filter.sh*|*scripts/task-contract.sh*|*scripts/render-agent-template.sh*|*scripts/lib/agent-manifest.sh*) return 0 ;;
   esac
   case "$normalized" in
     *python*-c*config*subagent-critical-execution.txt*|*python*-c*subagent-critical-execution.txt*config*) return 0 ;;
@@ -221,6 +233,13 @@ command_is_critical_execution() {
   printf '%s' "$command" | grep -qiE "$patterns"
 }
 
+if tmux_agent_context && command_targets_protected_control_path "$COMMAND"; then
+  printf '%s\n' 'Blocked: tmux agent cannot target a protected control path or frozen runtime snapshot' >&2
+  exit 2
+fi
+
+enforce_destructive_guard
+
 AGENT_IDENTIFIER=$(printf '%s' "$INPUT" | jq -r '
   .agent_id // .agentId // .agent_type // .agentType // .subagent_type // .subagentType // .name // empty
 ' 2>/dev/null) || AGENT_IDENTIFIER=""
@@ -236,7 +255,7 @@ if [ -n "$POLICY_STATE" ]; then
     echo "Blocked: generated agent cannot use a shell execution route" >&2
     exit 2
   fi
-  if command_invokes_git "$COMMAND"; then
+  if ! tmux_agent_context && command_invokes_git "$COMMAND"; then
     echo "Blocked: Git is reserved for the main session" >&2
     exit 2
   fi
