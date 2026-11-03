@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""DevIQ-lite append-only hash-chained JSONL recorder."""
 
 import argparse
 import fcntl
@@ -17,7 +16,6 @@ KIND_TO_FILE = {
     "block": "blocks.jsonl",
 }
 
-# ponytail: fixed cap, configurable only if a real project needs more than 8
 MAX_OPEN_BLOCKS_PER_PHASE = 8
 DEFAULT_LOCK_TIMEOUT_SECONDS = 0.25
 MAX_LOCK_TIMEOUT_SECONDS = 1.0
@@ -67,6 +65,10 @@ def _write_chained_line(fileobj, record: dict) -> str:
 
 
 def lock_timeout_seconds() -> float:
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "hooks"))
+    from rename_migration import migrate_environment
+    migrate_environment()
     raw_timeout = os.environ.get("MERIDIAN_DEVIQ_RECORD_LOCK_TIMEOUT")
     if raw_timeout is None:
         return DEFAULT_LOCK_TIMEOUT_SECONDS
@@ -253,7 +255,7 @@ def _write_record(args: argparse.Namespace, extra_fields: dict, target_path: str
     except RecordLockTimeoutError:
         sys.stderr.write("deviq-record: timed out waiting for record lock\n")
         return LOCK_TIMEOUT_EXIT_CODE
-    except Exception as error:  # noqa: BLE001 - fail-fast CLI, report and exit non-zero
+    except Exception as error:
         print(f"deviq-record: failed to write record: {error}", file=sys.stderr)
         return 1
     print(extra_fields.get("id", digest) if args.kind == "block" else digest)
