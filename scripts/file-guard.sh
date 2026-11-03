@@ -106,6 +106,37 @@ path_is_within_root() {
   [[ "$1" = "$2/"* ]]
 }
 
+worker_root_matches_project() {
+  local project_root="$1" worker_root="$2" project_common worker_common record listed_root control_project
+  [ "$worker_root" = "$project_root" ] && return 0
+  case "$worker_root" in
+    "$project_root/.claude/worktrees/"*/*) return 1 ;;
+    "$project_root/.claude/worktrees/"?*) ;;
+    "$CONTROL_ROOT/.runtime/worker-worktrees/$AGENT_IDENTIFIER")
+      case "$AGENT_IDENTIFIER" in ''|*/*) return 1 ;; esac
+      control_project=$(lbwc_control_root_project_root "$CONTROL_ROOT") || return 1
+      [ "$control_project" = "$project_root" ] || return 1
+      ;;
+    *) return 1 ;;
+  esac
+  project_common=$(git -C "$project_root" rev-parse --git-common-dir 2>/dev/null) || return 1
+  worker_common=$(git -C "$worker_root" rev-parse --git-common-dir 2>/dev/null) || return 1
+  [[ "$project_common" = /* ]] || project_common="$project_root/$project_common"
+  [[ "$worker_common" = /* ]] || worker_common="$worker_root/$worker_common"
+  project_common=$(canonical_directory "$project_common") || return 1
+  worker_common=$(canonical_directory "$worker_common") || return 1
+  [ "$worker_common" = "$project_common" ] || return 1
+  while IFS= read -r -d '' record; do
+    case "$record" in
+      'worktree '*)
+        listed_root=$(canonical_directory "${record#worktree }") || continue
+        [ "$listed_root" = "$worker_root" ] && return 0
+        ;;
+    esac
+  done < <(git -C "$project_root" worktree list --porcelain -z 2>/dev/null)
+  return 1
+}
+
 agent_write_capability_allows() {
   local identifier="$2" expected_root actual_root candidate_path candidate_parent candidate_target allowance contract_path contract relative_path schema_version capability_index capability_kind capability_path capability_relative contract_valid
   schema_version="$ENTRY_SCHEMA"
@@ -113,11 +144,11 @@ agent_write_capability_allows() {
   [ -n "$expected_root" ] || return 1
   expected_root=$(canonical_directory "$expected_root") || return 1
   actual_root=$(canonical_directory "$HOOK_CWD") || return 1
-  [ "$actual_root" = "$expected_root" ] || return 2
+  worker_root_matches_project "$expected_root" "$actual_root" || return 2
   candidate_path="$actual_root/$FILE_PATH"
   [[ "$FILE_PATH" == /* ]] && candidate_path="$FILE_PATH"
   case "$candidate_path" in
-    "$expected_root"/*) relative_path=${candidate_path#"$expected_root"/} ;;
+    "$actual_root"/*) relative_path=${candidate_path#"$actual_root"/} ;;
     *) return 5 ;;
   esac
   case "$relative_path" in
@@ -144,7 +175,7 @@ agent_write_capability_allows() {
       case "$capability_kind" in
         file)
           capability_relative="$relative_path"
-          [ "$candidate_path" = "$expected_root/$capability_path" ] || continue
+          [ "$candidate_path" = "$actual_root/$capability_path" ] || continue
           ;;
         directory)
           if [ "$capability_path" = "." ]; then
@@ -159,10 +190,10 @@ agent_write_capability_allows() {
         *) return 6 ;;
       esac
       candidate_parent=$(canonical_existing_parent "$candidate_path") || return 5
-      path_is_within_root "$candidate_parent" "$expected_root" || return 5
+      path_is_within_root "$candidate_parent" "$actual_root" || return 5
       if [ -L "$candidate_path" ]; then
         candidate_target=$(canonical_existing_path "$candidate_path") || return 5
-        path_is_within_root "$candidate_target" "$expected_root" || return 5
+        path_is_within_root "$candidate_target" "$actual_root" || return 5
       fi
       case "$capability_relative" in
         .lbwc-planning|.lbwc-planning/*|.temporary-agent-runfiles|.temporary-agent-runfiles/*|.claude/agents|.claude/agents/*|.git|.git/*|.env|.env.*|*/.env|*/.env.*|*.pem|*.key|*.cert|*.p12|*.pfx|*/credentials.json|*/secrets.json|*/service-account.json|credentials.json|secrets.json|service-account.json|config/subagent-critical-execution.txt|config/destructive-commands.txt|scripts/*guard*|scripts/task-contract.sh|scripts/agent-lifecycle.sh) return 7 ;;
@@ -173,12 +204,12 @@ agent_write_capability_allows() {
   fi
   [ "$ALLOWANCES_VALID" = true ] || return 3
   for allowance in ${WRITE_ALLOWANCES[@]+"${WRITE_ALLOWANCES[@]}"}; do
-    if [ "$candidate_path" = "$expected_root/$allowance" ]; then
+    if [ "$candidate_path" = "$actual_root/$allowance" ]; then
       candidate_parent=$(canonical_existing_parent "$candidate_path") || return 5
-      path_is_within_root "$candidate_parent" "$expected_root" || return 5
+      path_is_within_root "$candidate_parent" "$actual_root" || return 5
       if [ -L "$candidate_path" ]; then
         candidate_target=$(canonical_existing_path "$candidate_path") || return 5
-        path_is_within_root "$candidate_target" "$expected_root" || return 5
+        path_is_within_root "$candidate_target" "$actual_root" || return 5
       fi
       return 0
     fi
