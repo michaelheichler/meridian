@@ -56,6 +56,27 @@ Otherwise, it keeps `RESOLVED_BACKEND=in_process` without a prompt.
 The `ask` branch of a fresh bootstrap offers `Workflow run` only if an earlier change enables `workflow_execution.enabled`.
 That change can come from `/lbwc:config` or a non-default settings source before Step 7c.
 
+<!-- rename-migration:start -->
+## State migration
+
+Before the Guard and any scaffold write, source the migration helper in the project root and run both functions in the same Bash call.
+
+```bash
+source "{LINK}/scripts/lib/rename-migration.sh"
+meridian_migrate_environment
+meridian_migrate_planning "{PROJECT_ROOT}"
+```
+
+Stop if the helper exits non-zero.
+If both `.lbwc-planning/` and `.meridian/` exist, the helper prints one warning and leaves both unchanged.
+Stop after that warning, do not scaffold or choose either directory.
+If only the old directory exists, the helper moves it to `.meridian/` with one `mv` and prints one line.
+The move keeps dotfiles and the journal archive.
+If only `.meridian/` exists, or neither directory exists, the helper does nothing.
+If `.meridian/config.json` exists after this check, stop and display "Meridian is already initialized. Use /meridian:config to modify settings or /meridian:transit to start building."
+The environment helper reads old overrides only when the environment lacks the corresponding `MERIDIAN_*` name, and an explicitly empty new value still wins.
+<!-- rename-migration:end -->
+
 ## Guard
 
 1. If .lbwc-planning/config.json exists, stop and display "LBWC is already initialized. Use /lbwc:config to modify settings or /lbwc:vibe to start building."
