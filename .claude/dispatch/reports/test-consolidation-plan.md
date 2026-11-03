@@ -1,13 +1,13 @@
-# LBWC Test Suite Consolidation Plan
+# MERIDIAN Test Suite Consolidation Plan
 
-Analysis only. This step changed no test or production file. Repo path is `/Users/michael/Development/projects/lbwc`.
+Analysis only. This step changed no test or production file. Repo path is `/Users/michael/Development/projects/meridian`.
 
 ## Method
 
 - Test counts come from `grep -c '^@test' tests/*.bats`. Total 1589 across 106 files.
 - Production mapping comes from script references in each file, sampled test bodies, and the source tree.
 - Classification read every test name and sampled the bodies of the 40 largest files. Counts below are the design baseline, not a line-by-line audit of all 1589 bodies.
-- Raw run evidence is `/tmp/lbwc-bats.txt`, 1589 tests, 1526 ok, 63 not ok.
+- Raw run evidence is `/tmp/meridian-bats.txt`, 1589 tests, 1526 ok, 63 not ok.
 - The deterministic re-run used `env -u CDPATH bats tests/`. It completed all 1589 tests with 22 not ok and the process exited normally.
 
 ## 1. Inventory
@@ -25,23 +25,23 @@ Sorted by test count. K, M, B are keep, merge, delete. Target is the planned `@t
 | tests/qa-file-guard.bats | 34 | file-guard.sh | 20 | 14 | 0 | 8 |
 | tests/qa-workflow-spawn-guard.bats | 33 | workflow-spawn-guard.sh, command-contract.sh | 14 | 19 | 0 | 5 |
 | tests/task-contract.bats | 31 | task-contract.sh, task-admission/completion-guard | 18 | 13 | 0 | 10 |
-| tests/claude-capabilities.bats | 30 | claude-capabilities.sh, lbwc-config.sh | 20 | 10 | 0 | 8 |
+| tests/claude-capabilities.bats | 30 | claude-capabilities.sh, meridian-config.sh | 20 | 10 | 0 | 8 |
 | tests/research-session-state.bats | 30 | research-session-state.sh | 14 | 16 | 0 | 8 |
 | tests/context-cache.bats | 27 | cache-context.sh, compile-context.sh | 8 | 19 | 0 | 4 |
-| tests/lbwc-routing.bats | 26 | lbwc-routing.sh, lib/lbwc-settings.sh | 18 | 8 | 0 | 8 |
+| tests/meridian-routing.bats | 26 | meridian-routing.sh, lib/meridian-settings.sh | 18 | 8 | 0 | 8 |
 | tests/tmux-bus.bats | 26 | tmux-bus.sh, lib/tmux-runtime.sh | 18 | 8 | 0 | 8 |
 | tests/todo-lifecycle.bats | 26 | todo-lifecycle.sh, todo-details.sh | 16 | 10 | 0 | 8 |
 | tests/qa-bash-guard.bats | 25 | bash-guard.sh | 16 | 9 | 0 | 6 |
 | tests/resolve-agent-settings.bats | 25 | resolve-agent-settings.sh, render-agent-template.sh | 8 | 17 | 0 | 4 |
 | tests/tmux-orchestrator.bats | 25 | tmux-agent-orchestrator.sh | 15 | 10 | 0 | 7 |
 | tests/worktree.bats | 25 | worktree-create/merge/cleanup/status.sh | 12 | 13 | 0 | 5 |
-| tests/lbwc-conventions.bats | 24 | lbwc-conventions.sh | 17 | 7 | 0 | 8 |
-| tests/lbwc-model.bats | 23 | lbwc-model | 16 | 7 | 0 | 7 |
+| tests/meridian-conventions.bats | 24 | meridian-conventions.sh | 17 | 7 | 0 | 8 |
+| tests/meridian-model.bats | 23 | meridian-model | 16 | 7 | 0 | 7 |
 | tests/render-workflow-template.bats | 23 | render-workflow-template.sh, templates/workflows | 16 | 5 | 2 | 7 |
 | tests/todo-details.bats | 23 | todo-details.sh | 13 | 10 | 0 | 6 |
 | tests/write-verification.bats | 22 | write-verification.sh | 10 | 12 | 0 | 5 |
-| tests/lbwc-config.bats | 21 | lbwc-config.sh, lib/lbwc-settings.sh | 11 | 10 | 0 | 5 |
-| tests/lbwc-skills.bats | 21 | lbwc-skills.sh, detect-stack.sh | 15 | 6 | 0 | 6 |
+| tests/meridian-config.bats | 21 | meridian-config.sh, lib/meridian-settings.sh | 11 | 10 | 0 | 5 |
+| tests/meridian-skills.bats | 21 | meridian-skills.sh, detect-stack.sh | 15 | 6 | 0 | 6 |
 | tests/remediation-round.bats | 21 | remediation-round.sh, qa-remediation-state.sh | 13 | 8 | 0 | 6 |
 | tests/write-debug-session.bats | 21 | write-debug-session.sh | 12 | 9 | 0 | 6 |
 | tests/runtime-snapshot.bats | 20 | runtime-snapshot.sh | 15 | 5 | 0 | 6 |
@@ -51,8 +51,8 @@ Sorted by test count. K, M, B are keep, merge, delete. Target is the planned `@t
 | tests/indexer-sync.bats | 18 | indexer-sync.sh, probe-map-tools.sh | 11 | 7 | 0 | 5 |
 | tests/qa-result-gate.bats | 18 | qa-result-gate.sh | 11 | 7 | 0 | 5 |
 | tests/extract-skill-follow-up-files.bats | 17 | extract-skill-follow-up-files.sh | 12 | 5 | 0 | 5 |
-| tests/lbwc-execution-config.bats | 17 | lbwc-config.sh, migrate-config.sh | 10 | 7 | 0 | 5 |
-| tests/lbwc-routing-lock.bats | 17 | lbwc-routing.sh lock backend | 12 | 5 | 0 | 5 |
+| tests/meridian-execution-config.bats | 17 | meridian-config.sh, migrate-config.sh | 10 | 7 | 0 | 5 |
+| tests/meridian-routing-lock.bats | 17 | meridian-routing.sh lock backend | 12 | 5 | 0 | 5 |
 | tests/debug-start-selected-todo.bats | 15 | debug-start-selected-todo.sh, todo-lifecycle.sh | 10 | 5 | 0 | 5 |
 | tests/qa-gate.bats | 15 | qa-gate.sh, lib/qa-gate-decision.sh | 10 | 5 | 0 | 5 |
 | tests/rtk-manager.bats | 14 | rtk-manager.sh | 12 | 2 | 0 | 6 |
@@ -62,7 +62,7 @@ Sorted by test count. K, M, B are keep, merge, delete. Target is the planned `@t
 | tests/context-usage.bats | 12 | lib/resolve-caveman-level.sh (hook) | 6 | 6 | 0 | 3 |
 | tests/map-tiers.bats | 12 | lib/map-tiers.sh | 5 | 7 | 0 | 2 |
 | tests/qa-agent-spawn-guard.bats | 12 | agent-spawn-guard.sh | 9 | 3 | 0 | 4 |
-| tests/statusline.bats | 12 | lbwc-statusline.sh, statusline-install.sh | 9 | 3 | 0 | 5 |
+| tests/statusline.bats | 12 | meridian-statusline.sh, statusline-install.sh | 9 | 3 | 0 | 5 |
 | tests/delta-context.bats | 11 | delta-files.sh, compile-context.sh | 7 | 4 | 0 | 4 |
 | tests/phase-detect-output-contract.bats | 11 | phase-detect.sh (fixtures) | 11 | 0 | 0 | 0 |
 | tests/team-context-index.bats | 11 | team-context-index.sh | 8 | 3 | 0 | 4 |
@@ -71,12 +71,12 @@ Sorted by test count. K, M, B are keep, merge, delete. Target is the planned `@t
 | tests/security-filter.bats | 10 | security-filter.sh | 10 | 0 | 0 | 2 |
 | tests/doctor.bats | 9 | doctor-cleanup.sh, tmux-doctor.sh | 8 | 1 | 0 | 4 |
 | tests/render-workflow-template-gate-loop.bats | 9 | render-workflow-template.sh + gate loop | 9 | 0 | 0 | 4 |
-| tests/vibe-command.bats | 9 | commands/vibe.md (doc prose) | 0 | 0 | 9 | 0 |
+| tests/transit-command.bats | 9 | commands/transit.md (doc prose) | 0 | 0 | 9 | 0 |
 | tests/plan-task-count.bats | 8 | plan-task-count.sh | 5 | 3 | 0 | 3 |
 | tests/session-telemetry.bats | 8 | lib/session-telemetry.py | 8 | 0 | 0 | 4 |
 | tests/teach-command.bats | 8 | commands/teach.md (doc prose) | 0 | 0 | 8 | 0 |
 | tests/team-run-state.bats | 8 | team-run-state.sh, cleanup-temporary-agent-runfiles.sh | 6 | 2 | 0 | 3 |
-| tests/host-agent-enum.bats | 7 | claude-capabilities.sh, lbwc-routing.sh | 5 | 2 | 0 | 3 |
+| tests/host-agent-enum.bats | 7 | claude-capabilities.sh, meridian-routing.sh | 5 | 2 | 0 | 3 |
 | tests/init-command.bats | 7 | commands/init.md (doc prose) | 1 | 0 | 6 | 1 |
 | tests/map-command.bats | 7 | commands/map.md (doc prose) | 1 | 0 | 6 | 1 |
 | tests/probe-map-tools.bats | 7 | probe-map-tools.sh | 4 | 3 | 0 | 2 |
@@ -93,7 +93,7 @@ Sorted by test count. K, M, B are keep, merge, delete. Target is the planned `@t
 | tests/list-todos.bats | 6 | list-todos.sh | 5 | 1 | 0 | 2 |
 | tests/uat-remediation-helpers.bats | 6 | uat-remediation-state.sh, create-remediation-phase.sh | 6 | 0 | 0 | 3 |
 | tests/workflow-spawn-protocol.bats | 6 | references/workflow-spawn-protocol.md | 0 | 0 | 6 | 0 |
-| tests/control-root.bats | 5 | lib/lbwc-control-root.sh | 5 | 0 | 0 | 2 |
+| tests/control-root.bats | 5 | lib/meridian-control-root.sh | 5 | 0 | 0 | 2 |
 | tests/debug-command.bats | 5 | commands/debug.md (doc prose) | 0 | 0 | 5 | 0 |
 | tests/deviq-gate.bats | 5 | deviq-build-gate.sh | 5 | 0 | 0 | 2 |
 | tests/deviq-nudge.bats | 5 | deviq-nudge.sh, deviq-lookup.sh | 5 | 0 | 0 | 2 |
@@ -113,13 +113,13 @@ Sorted by test count. K, M, B are keep, merge, delete. Target is the planned `@t
 | tests/hook-wrapper.bats | 3 | hook-wrapper.sh | 3 | 0 | 0 | 2 |
 | tests/infer-project-context.bats | 3 | infer-project-context.sh | 3 | 0 | 0 | 2 |
 | tests/track-known-issues.bats | 3 | track-known-issues.sh | 3 | 0 | 0 | 2 |
-| tests/vibe-import-routing.bats | 3 | commands/vibe.md, references/vibe-input-parsing.md | 0 | 0 | 3 | 0 |
+| tests/transit-import-routing.bats | 3 | commands/transit.md, references/transit-input-parsing.md | 0 | 0 | 3 | 0 |
 | tests/agent-routing-evidence.bats | 2 | agent-routing-evidence.sh | 2 | 0 | 0 | 1 |
 | tests/compile-context.bats | 2 | compile-context.sh | 2 | 0 | 0 | 1 |
 | tests/init-import-routing.bats | 2 | commands/init.md (doc prose) | 0 | 0 | 2 | 0 |
 | tests/telemetry-report.bats | 2 | telemetry-report.sh | 2 | 0 | 0 | 1 |
 | tests/tmux-preflight.bats | 2 | tmux-preflight.sh | 2 | 0 | 0 | 1 |
-| tests/execution-backend-command.bats | 1 | commands/vibe, build, and team markdown (doc prose) | 0 | 0 | 1 | 0 |
+| tests/execution-backend-command.bats | 1 | commands/transit, build, and team markdown (doc prose) | 0 | 0 | 1 | 0 |
 | tests/help-output.bats | 1 | help-output.sh | 1 | 0 | 0 | 1 |
 | tests/marketplace.bats | 1 | .claude-plugin/marketplace.json (config) | 1 | 0 | 0 | 1 |
 | **Total** | **1589** | | **932** | **552** | **105** | **425** |
@@ -150,7 +150,7 @@ Same production branch, different literal. These become table rows, not separate
 These assert prose, test the fixture, pin implementation wording, or check only exit status.
 
 - `tests/build-command.bats:10-21` greps exact sentences out of `commands/build.md`.
-- `tests/execution-backend-command.bats:5-20` repeats the same prose grep across `vibe`, `build`, and `team` markdown.
+- `tests/execution-backend-command.bats:5-20` repeats the same prose grep across `transit`, `build`, and `team` markdown.
 - `tests/teach-command.bats:70-74` asserts one literal prose sentence exists in `commands/teach.md`.
 - `tests/zero-trust-contract.bats:5-10` greps role template markdown for phrases.
 - `tests/compile-context-skills.bats:57` asserts a removed feature stays absent and protects no current behavior.
@@ -232,12 +232,12 @@ brew install kcov
 Capture baseline before any test edit. Include both production trees.
 
 ```bash
-cd /Users/michael/Development/projects/lbwc
+cd /Users/michael/Development/projects/meridian
 env -u CDPATH kcov --bash-method=DEBUG \
   --include-path="$PWD/scripts" \
   --include-path="$PWD/hooks" \
   --include-pattern='\.(sh|py)$' \
-  /tmp/lbwc-kcov-before \
+  /tmp/meridian-kcov-before \
   bats tests/
 ```
 
@@ -245,14 +245,14 @@ Extract per-file line coverage.
 
 ```bash
 jq -r '.files[] | "\(.file)\t\(.percent_covered)"' \
-  /tmp/lbwc-kcov-before/coverage.json | sort > /tmp/kcov-before.tsv
+  /tmp/meridian-kcov-before/coverage.json | sort > /tmp/kcov-before.tsv
 ```
 
-Repeat after each consolidation batch into `/tmp/lbwc-kcov-after` and compare.
+Repeat after each consolidation batch into `/tmp/meridian-kcov-after` and compare.
 
 ```bash
 jq -r '.files[] | "\(.file)\t\(.percent_covered)"' \
-  /tmp/lbwc-kcov-after/coverage.json | sort > /tmp/kcov-after.tsv
+  /tmp/meridian-kcov-after/coverage.json | sort > /tmp/kcov-after.tsv
 diff -u /tmp/kcov-before.tsv /tmp/kcov-after.tsv
 ```
 
@@ -262,7 +262,7 @@ Caveats.
 
 - `kcov` supports bash through the DEBUG trap. If line data is empty, retry with `--bash-method=PS4`.
 - The full suite ends normally now, but a CDPATH-bearing shell can still hang it. Always run the coverage command with `env -u CDPATH`.
-- kcov covers Python hooks only if the Python coverage plugin is present. For hooks, install `coverage` and use `python -m coverage run -m pytest hooks/test_*.py` plus `python -m coverage report`. `hooks/test_scope_guard.py` is production code despite its `test_` prefix, so `python -m unittest discover hooks` picks it up and errors. Name the real hook test modules explicitly and do not rename that file.
+- kcov covers Python hooks only if the Python coverage plugin is present. For hooks, install `coverage` and use `python -m coverage run -m pytest hooks/test_*.py` plus `python -m coverage report`. `hooks/scope_guard.py` is production code despite its `test_` prefix, so `python -m unittest discover hooks` picks it up and errors. Name the real hook test modules explicitly and do not rename that file.
 - If kcov is unavailable, use `gem install bashcov simplecov` and `bashcov --root "$PWD" -- bats tests/` as the fallback. Its `.resultset.json` is harder to diff, so prefer kcov.
 
 ## 5. Failure triage
@@ -306,7 +306,7 @@ The only test that structurally leaves a detached process is `tests/tmux-orchest
 4. Ambient tmux state makes three tests environment-dependent. Clear `TMUX` and `TMUX_PANE` for non-tmux tests, and query `#{window_index}` instead of hardcoding `:0.0`.
 5. The plan cannot prove coverage until it installs kcov or bashcov. Without a baseline, a merge can silently drop a branch and no one will see it.
 6. The 22 genuine failures include at least two production bugs. Consolidation must not delete the failing tests before fixing the bugs, or the bugs become invisible.
-7. The working tree changed outside this analysis during measurement. The changed path count grew from 27 at 13:00 to 43 at 13:07, including `scripts/verification-freshness.sh`, `scripts/session-start.sh`, and `hooks/test_scope_guard.py`. Re-run failure counts after the tree stabilizes.
+7. The working tree changed outside this analysis during measurement. The changed path count grew from 27 at 13:00 to 43 at 13:07, including `scripts/verification-freshness.sh`, `scripts/session-start.sh`, and `hooks/scope_guard.py`. Re-run failure counts after the tree stabilizes.
 
 ## 8. Execution tasks
 
@@ -314,13 +314,13 @@ Each task touches at most three test files. Verification assumes `env -u CDPATH`
 
 | Task | Files | Tests | Keep | Merge | Delete | Target | Verification |
 |---|---|---:|---:|---:|---:|---:|---|
-| G0 baseline coverage | none | 0 | 0 | 0 | 0 | 0 | Run the kcov command in section 4, save `/tmp/lbwc-kcov-before` |
+| G0 baseline coverage | none | 0 | 0 | 0 | 0 | 0 | Run the kcov command in section 4, save `/tmp/meridian-kcov-before` |
 | G1 harness and statusline | test_helper.bash, statusline.bats | 12 | 9 | 3 | 0 | 5 | `env -u CDPATH bats tests/statusline.bats`, then one full-suite run |
 | G2 prose delete | build-command.bats, debug-command.bats, fix-command.bats | 21 | 1 | 0 | 20 | 0 | `bats tests/command-contract.bats` |
 | G3 prose delete | init-command.bats, map-command.bats, qa-command.bats | 19 | 2 | 0 | 17 | 2 | `bats tests/init-command.bats tests/map-command.bats` |
-| G4 prose delete | research-command.bats, vibe-command.bats, teach-command.bats | 24 | 1 | 0 | 23 | 1 | `bats tests/research-command.bats` |
+| G4 prose delete | research-command.bats, transit-command.bats, teach-command.bats | 24 | 1 | 0 | 23 | 1 | `bats tests/research-command.bats` |
 | G5 prose delete | model-config-commands.bats, import-command.bats, execution-backend-command.bats | 11 | 0 | 0 | 11 | 0 | `bats tests/command-contract.bats` |
-| G6 prose delete | init-import-routing.bats, vibe-import-routing.bats, workflow-spawn-protocol.bats | 11 | 0 | 0 | 11 | 0 | `bats tests/command-contract.bats` |
+| G6 prose delete | init-import-routing.bats, transit-import-routing.bats, workflow-spawn-protocol.bats | 11 | 0 | 0 | 11 | 0 | `bats tests/command-contract.bats` |
 | G7 doc contracts | zero-trust-contract.bats, compile-context-skills.bats, clean-stale-teams.bats | 15 | 4 | 0 | 11 | 2 | `bats tests/clean-stale-teams.bats` |
 | G8 phase detect | phase-detect.bats | 151 | 60 | 91 | 0 | 25 | `bats tests/phase-detect.bats`, tail reports `1..25` |
 | G9 cache | context-cache.bats, context-index.bats, context-usage.bats | 45 | 18 | 27 | 0 | 7 | `bats tests/context-cache.bats tests/context-usage.bats` |
@@ -334,12 +334,12 @@ Each task touches at most three test files. Verification assumes `env -u CDPATH`
 | G17 contract and gate | qa-workflow-spawn-guard.bats, command-contract.bats, qa-gate.bats | 66 | 42 | 24 | 0 | 18 | `bats tests/qa-workflow-spawn-guard.bats tests/command-contract.bats tests/qa-gate.bats` |
 | G18 task contract | task-contract.bats, task-hooks.bats, workflow-manifest.bats | 47 | 32 | 15 | 0 | 18 | `bats tests/task-contract.bats tests/task-hooks.bats tests/workflow-manifest.bats` |
 | G19 research | research-session-state.bats, compile-research-context.bats | 48 | 24 | 24 | 0 | 13 | `bats tests/research-session-state.bats tests/compile-research-context.bats` |
-| G20 models | claude-capabilities.bats, host-agent-enum.bats, lbwc-model.bats | 60 | 41 | 19 | 0 | 18 | `bats tests/claude-capabilities.bats tests/host-agent-enum.bats tests/lbwc-model.bats` |
+| G20 models | claude-capabilities.bats, host-agent-enum.bats, meridian-model.bats | 60 | 41 | 19 | 0 | 18 | `bats tests/claude-capabilities.bats tests/host-agent-enum.bats tests/meridian-model.bats` |
 | G21 todos | todo-lifecycle.bats, todo-details.bats, list-todos.bats | 55 | 34 | 21 | 0 | 16 | `bats tests/todo-lifecycle.bats tests/todo-details.bats tests/list-todos.bats` |
 | G22 tmux bus | tmux-bus.bats, tmux-bus-watchdog.bats, tmux-preflight.bats | 35 | 27 | 8 | 0 | 13 | `bats tests/tmux-bus.bats tests/tmux-bus-watchdog.bats tests/tmux-preflight.bats` |
 | G23 tmux orchestration | tmux-orchestrator.bats, tmux-spawn-group.bats, session-start.bats | 45 | 32 | 13 | 0 | 16 | `bats tests/tmux-orchestrator.bats tests/tmux-spawn-group.bats tests/session-start.bats` |
-| G24 routing | lbwc-routing.bats, lbwc-routing-lock.bats, lbwc-execution-config.bats | 60 | 40 | 20 | 0 | 18 | `bats tests/lbwc-routing.bats tests/lbwc-routing-lock.bats tests/lbwc-execution-config.bats` |
-| G25 config | lbwc-config.bats, lbwc-conventions.bats, lbwc-skills.bats | 66 | 43 | 23 | 0 | 19 | `bats tests/lbwc-config.bats tests/lbwc-conventions.bats tests/lbwc-skills.bats` |
+| G24 routing | meridian-routing.bats, meridian-routing-lock.bats, meridian-execution-config.bats | 60 | 40 | 20 | 0 | 18 | `bats tests/meridian-routing.bats tests/meridian-routing-lock.bats tests/meridian-execution-config.bats` |
+| G25 config | meridian-config.bats, meridian-conventions.bats, meridian-skills.bats | 66 | 43 | 23 | 0 | 19 | `bats tests/meridian-config.bats tests/meridian-conventions.bats tests/meridian-skills.bats` |
 | G26 settings and snapshot | resolve-agent-settings.bats, runtime-snapshot.bats | 45 | 23 | 22 | 0 | 10 | `bats tests/resolve-agent-settings.bats tests/runtime-snapshot.bats` |
 | G27 writers | write-verification.bats, write-debug-session.bats, session-telemetry.bats | 51 | 30 | 21 | 0 | 15 | `bats tests/write-verification.bats tests/write-debug-session.bats tests/session-telemetry.bats` |
 | G28 remediation | remediation-round.bats, uat-remediation-helpers.bats, verify-state-consistency.bats | 32 | 24 | 8 | 0 | 11 | `bats tests/remediation-round.bats tests/uat-remediation-helpers.bats tests/verify-state-consistency.bats` |

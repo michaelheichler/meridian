@@ -38,7 +38,7 @@ One shared table in `scripts/lib/` holds both glyph sets, and `visual_format` pi
 The statusline keeps every field it shows today in four lines. Each tmux and diagnostic field moves into line 3 and appears only when it has something to say, so the quiet case stays short.
 
 ```text
-L1  ✦ meridian · sonnet high · lbwc@refactor/meridian-2.0 ● · 2h 14m
+L1  ✦ meridian · sonnet high · meridian@refactor/meridian-2.0 ● · 2h 14m
 L2  ▮▮▮▮▯▯▯▯▯▯ 42% context · in 1.2M · out 88k · cache 900k/40k · $3.10 · +120 −40
 L3  Flow phase 03 build · task 2/5 · pair engineer+critic · QA ◐ · UAT ○ · tmux 3 agents (2 run, 1 idle)
 L4  Quota 5h ▮▮▮▯▯ 38% resets 14:00 · 7d ▮▯▯▯▯ 12% resets Fri
@@ -47,7 +47,7 @@ L4  Quota 5h ▮▮▮▯▯ 38% resets 14:00 · 7d ▮▯▯▯▯ 12% resets F
 The same lines with `visual_format: ascii` read as follows.
 
 ```text
-L1  * meridian | sonnet high | lbwc@refactor/meridian-2.0 ~ | 2h 14m
+L1  * meridian | sonnet high | meridian@refactor/meridian-2.0 ~ | 2h 14m
 L2  [####------] 42% context | in 1.2M | out 88k | cache 900k/40k | $3.10 | +120 -40
 L3  Flow phase 03 build | task 2/5 | pair engineer+critic | QA [..] | UAT - | tmux 3 agents (2 run, 1 idle)
 L4  Quota 5h [###--] 38% resets 14:00 | 7d [#----] 12% resets Fri
@@ -88,7 +88,7 @@ Each closing line is its own paragraph, because markdown joins lines without a b
 `/meridian:status` prints one card that a human reads in five seconds.
 
 ```markdown
-| ✦ Meridian | lbwc, milestone 2.0 | |
+| ✦ Meridian | meridian, milestone 2.0 | |
 | --- | --- | --- |
 | 01 Setup | ✔ done | ▮▮▮▮▮▮▮▮▮▮ 100% |
 | 02 Guards | ✔ done | ▮▮▮▮▮▮▮▮▮▮ 100% |
