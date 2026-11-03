@@ -6,6 +6,10 @@ load rejection_case_helper
 load test_helper
 load tmux_config_fixture
 load tmux_watchdog_fixture
+load tmux_isolation_cases
+load tmux_agent_fixture
+load tmux_external_isolation_cases
+load tmux_worktree_failure_cases
 
 setup() {
   unset TMUX TMUX_PANE
@@ -110,45 +114,6 @@ provision_main() {
   run_orchestrator provision --project-root "$PROJECT_ROOT" --control-root "$CONTROL_ROOT" --main-id main-session
   [ "$status" -eq 0 ]
   MAIN_CAPABILITY="$(jq -r '.main_capability' <<<"$output")"
-}
-
-prepare_tmux_agents() {
-  local name contract contract_id contract_digest definition_path definition_digest manifest entry definitions='[]' canonical_project_root canonical_control_root
-  mkdir -p "$PROJECT_ROOT/.claude/agents"
-  canonical_project_root="$(cd "$PROJECT_ROOT" && pwd -P)"
-  canonical_control_root="$(cd "$CONTROL_ROOT" && pwd -P)"
-  for name in "$@"; do
-    contract=$(bash "$REPO_ROOT/scripts/task-contract.sh" issue "$PROJECT_ROOT" "$name" \
-      --command team --role web-engineer --team solo --job "spawn $name" \
-      --control-root "$CONTROL_ROOT" --runtime-kind native-team \
-      --communication-policy native-team --requested-backend tmux --resolved-backend tmux \
-      --write-capability directory:.) || return 1
-    contract_id="$(basename "$contract" .json)"
-    bash "$REPO_ROOT/scripts/task-contract.sh" state "$PROJECT_ROOT" "$contract_id" dispatched >/dev/null || return 1
-    contract_digest="$(jq -r '.contract_digest' "$contract")"
-    definition_path="$canonical_project_root/.claude/agents/$name.md"
-    printf '%s\n' "generated definition for $name" > "$definition_path"
-    definition_digest="$(shasum -a 256 "$definition_path" | cut -d ' ' -f 1)"
-    manifest="${manifest:-$( [ -f "$CONTROL_ROOT/.agent-manifest.json" ] && cat "$CONTROL_ROOT/.agent-manifest.json" || printf '%s' '{"agents":{}}' )}"
-    entry=$(jq -cn \
-      --arg name "$name" --arg root "$canonical_project_root" --arg control_root "$canonical_control_root" \
-      --arg definition_path "$definition_path" --arg definition_digest "$definition_digest" \
-      --arg contract_path "$contract" --arg contract_id "$contract_id" --arg contract_digest "$contract_digest" '
-      {name:$name,role:"web-engineer",project_root:$root,control_root:$control_root,schema_version:3,
-       definition_path:$definition_path,definition_sha256:$definition_digest,definition_authority:"generated-definition",
-       state:"registered",model:"test-model",effort:"high",max_turns:1,contract_enabled:true,
-       contract_path:$contract_path,contract_id:$contract_id,contract_digest:$contract_digest,task_identity:$contract_id,
-       capabilities:[{access:"write",kind:"directory",path:"."}],write_allowances:["."],
-       runtime_kind:"native-team",communication_policy:"native-team",
-       execution:{role:"web-engineer",model:"test-model",effort:"high",max_turns:1,contract_id:$contract_id,
-         contract_digest:$contract_digest,task_identity:$contract_id,requested_backend:"tmux",resolved_backend:"tmux",
-         tmux_bootstrap:{child_identity:$name,contract_id:$contract_id,control_root:$control_root}}}') || return 1
-    manifest=$(jq -c --arg name "$name" --argjson entry "$entry" '.agents[$name] = $entry' <<<"$manifest") || return 1
-    definitions=$(jq -c --arg name "$name" --arg contract_id "$contract_id" --arg contract_digest "$contract_digest" \
-      '. + [{agent_id:$name,generated_name:$name,contract_id:$contract_id,contract_digest:$contract_digest}]' <<<"$definitions") || return 1
-  done
-  printf '%s\n' "$manifest" > "$CONTROL_ROOT/.agent-manifest.json"
-  printf '%s\n' "$definitions"
 }
 
 run_orchestrator_unauthenticated() {
@@ -689,6 +654,11 @@ visible-layout-rollback|visible_grid;1;rollback
 ROWS
 }
 
+@test "configured teardown preserves live panes and worker changes while finalizing only stopped workers" {
+  config_test_repo
+  run_config_rows isolation < "$BATS_TEST_DIRNAME/fixtures/tmux-isolation-rows.txt"
+}
+
 @test "heartbeat intervals preserve liveness without reviving obsolete agents" {
   config_test_repo
   run_config_rows heartbeat <<'ROWS'
@@ -700,6 +670,7 @@ registry-and-bus-failures-accumulate|process;1;none;mixed
 term-reaps-sleep|process;3;none;TERM
 int-reaps-sleep|process;3;none;INT
 teardown-stops-recorded-sender|process;3;none;matching
+kept-pane-stops-recorded-sender|process;3;keep;matching
 teardown-rejects-stale-start|process;3;none;stale-start
 teardown-rejects-unrelated-command|process;3;none;stale-command
 derived-stale-limit|stale;1;none;running

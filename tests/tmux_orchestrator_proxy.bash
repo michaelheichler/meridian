@@ -11,6 +11,24 @@ case "${1:-}" in
     [ -x "$LBWC_TEST_CHILD_SHELL" ] || exit 1
     ;;
 esac
+if [ "$1" = kill-pane ] && [ -n "${LBWC_TEST_PANE_DELAY:-}" ]; then
+  printf '%s\n' "$3" > "$LBWC_TEST_PANE_DELAY"
+  printf '%s\n' 0 > "$LBWC_TEST_PANE_DELAY.count"
+  exit 0
+fi
+if [ "$1" = display-message ] && [ -n "${LBWC_TEST_PANE_DELAY:-}" ] && [ -f "$LBWC_TEST_PANE_DELAY" ]; then
+  delayed_pane=$(cat "$LBWC_TEST_PANE_DELAY")
+  if [ "$4" = "$delayed_pane" ]; then
+    count=$(cat "$LBWC_TEST_PANE_DELAY.count")
+    count=$((count + 1))
+    printf '%s\n' "$count" > "$LBWC_TEST_PANE_DELAY.count"
+    if [ "$count" -ge "${LBWC_TEST_PANE_DELAY_PROBES:-3}" ]; then
+      "$LBWC_TEST_TMUX_BINARY" -L "$LBWC_TEST_TMUX_SERVER" -f /dev/null kill-pane -t "$delayed_pane"
+      rm -f "$LBWC_TEST_PANE_DELAY"
+      exit 1
+    fi
+  fi
+fi
 if [ "$1" = "split-window" ] && [ -n "${LBWC_TEST_SPLIT_COUNTER:-}" ]; then
   count=0
   [ -f "$LBWC_TEST_SPLIT_COUNTER" ] && count=$(cat "$LBWC_TEST_SPLIT_COUNTER")
