@@ -71,12 +71,17 @@ wait_for_pane_absence() {
   done
 }
 
+kill_pane_if_present() {
+  local pane_id="$1"
+  tmux kill-pane -t "$pane_id" 2>/dev/null || ! tmux_pane_exists "$pane_id"
+}
+
 stop_agent_pane() {
   local agent_id="$1" target="$2" pane_id="$3"
   [ "$TMUX_CLEANUP_POLICY" != keep_panes ] || return 0
   write_teardown_intent "$agent_id" "$target" prepared || fail 'cannot persist agent teardown intent'
   if tmux_pane_exists "$pane_id"; then
-    tmux kill-pane -t "$pane_id" || fail 'cannot kill owned agent pane'
+    kill_pane_if_present "$pane_id" || fail 'cannot kill owned agent pane'
     wait_for_pane_absence "$pane_id" || fail 'owned agent pane remains 3 seconds after kill request'
     write_teardown_intent "$agent_id" "$target" process_stopped || fail 'cannot persist stopped agent teardown intent'
   else
@@ -143,7 +148,7 @@ stop_external_agents() {
     agent_target=$(jq -r '.tmux_target' <<<"$snapshot_agent")
     agent_pane_id=$(jq -r '.pane_id' <<<"$snapshot_agent")
     if tmux_pane_exists "$agent_pane_id"; then
-      tmux kill-pane -t "$agent_pane_id" || fail 'cannot kill owned agent pane in external session'
+      kill_pane_if_present "$agent_pane_id" || fail 'cannot kill owned agent pane in external session'
       wait_for_pane_absence "$agent_pane_id" || fail 'owned agent pane remains in external session 3 seconds after kill request'
     fi
     write_teardown_intent "$agent_id" "$agent_target" process_stopped || fail 'cannot persist stopped external agent teardown intent'
