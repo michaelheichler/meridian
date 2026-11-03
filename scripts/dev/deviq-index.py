@@ -1,21 +1,21 @@
 #!/usr/bin/env python3
-"""Build references/deviq-corpus/index.json from the vendored DevIQ articles."""
 import json
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 CORPUS_DIR = REPO_ROOT / "references" / "deviq-corpus"
 
 
-def strip_quotes(value):
+def strip_quotes(value: str) -> str:
     value = value.strip()
     if len(value) >= 2 and value[0] == value[-1] and value[0] in ("'", '"'):
         return value[1:-1]
     return value
 
 
-def frontmatter_span(lines):
+def frontmatter_span(lines: list[str]) -> list[str] | None:
     if not lines or lines[0].strip() != "---":
         return None
     for i in range(1, len(lines)):
@@ -24,12 +24,12 @@ def frontmatter_span(lines):
     return None
 
 
-def parse_inline_aliases(rest):
+def parse_inline_aliases(rest: str) -> list[str]:
     inner = rest.strip("[]")
     return [strip_quotes(x) for x in inner.split(",") if x.strip()]
 
 
-def parse_block_aliases(fm_lines, start):
+def parse_block_aliases(fm_lines: list[str], start: int) -> tuple[list[str], int]:
     items = []
     j = start
     while j < len(fm_lines) and fm_lines[j].strip().startswith("-"):
@@ -38,39 +38,43 @@ def parse_block_aliases(fm_lines, start):
     return items, j
 
 
-def apply_key(result, key, rest, fm_lines, index):
-    if key == "title":
-        result["title"] = strip_quotes(rest)
-        return index
-    if key == "description":
-        result["description"] = strip_quotes(rest)
-        return index
-    if key == "aliases":
-        if rest.startswith("["):
-            result["aliases"] = parse_inline_aliases(rest)
+@dataclass
+class FrontmatterParser:
+    lines: list[str]
+    result: dict[str, str | list[str]]
+
+    def apply_key(self, index: int) -> int:
+        key, _, rest = self.lines[index].partition(":")
+        key, rest = key.strip(), rest.strip()
+        if key in ("title", "description"):
+            self.result[key] = strip_quotes(rest)
             return index
-        result["aliases"], next_index = parse_block_aliases(fm_lines, index + 1)
+        if key != "aliases":
+            return index
+        if rest.startswith("["):
+            self.result["aliases"] = parse_inline_aliases(rest)
+            return index
+        self.result["aliases"], next_index = parse_block_aliases(self.lines, index + 1)
         return next_index - 1
-    return index
 
 
-def parse_frontmatter(text):
-    result = {"title": "", "description": "", "aliases": []}
+def parse_frontmatter(text: str) -> dict[str, str | list[str]]:
+    result: dict[str, str | list[str]] = {"title": "", "description": "", "aliases": []}
     fm_lines = frontmatter_span(text.splitlines())
     if fm_lines is None:
         return result
 
+    parser = FrontmatterParser(fm_lines, result)
     i = 0
     while i < len(fm_lines):
         line = fm_lines[i]
         if line.strip() and not line.startswith((" ", "\t")) and ":" in line:
-            key, _, rest = line.partition(":")
-            i = apply_key(result, key.strip(), rest.strip(), fm_lines, i)
+            i = parser.apply_key(i)
         i += 1
     return result
 
 
-def build_index():
+def build_index() -> list[dict[str, str | list[str]]]:
     entries = []
     for md_path in sorted(CORPUS_DIR.glob("*/*.md")):
         category = md_path.parent.name
@@ -88,7 +92,7 @@ def build_index():
     return entries
 
 
-def main():
+def main() -> int:
     if not CORPUS_DIR.is_dir():
         print(f"deviq-index: corpus dir not found: {CORPUS_DIR}", file=sys.stderr)
         return 1
