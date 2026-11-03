@@ -6,9 +6,14 @@ add_agent_entry() {
 }
 
 prepare_agent_pane() {
-  local orchestrator_target="$1" agent_id="$2" contract_id="$3" pane_id target
-  pane_id=$(tmux split-window -e LBWC_TMUX_AGENT=1 -e "LBWC_TMUX_CONTROL_ROOT=$TMUX_RUNTIME_CONTROL_ROOT" -e "LBWC_TMUX_AGENT_ID=$agent_id" -e "LBWC_TMUX_CONTRACT_ID=$contract_id" -t "$orchestrator_target" -c "$PROJECT_ROOT" -P -F '#{pane_id}') || return 1
+  local orchestrator_target="$1" agent_id="$2" contract_id="$3" pane_id target worker_directory
+  worker_directory=$(tmux_worker_directory "$agent_id") || return 1
+  pane_id=$(tmux split-window -e LBWC_TMUX_AGENT=1 -e "LBWC_TMUX_CONTROL_ROOT=$TMUX_RUNTIME_CONTROL_ROOT" -e "LBWC_TMUX_AGENT_ID=$agent_id" -e "LBWC_TMUX_CONTRACT_ID=$contract_id" -t "$orchestrator_target" -c "$worker_directory" -P -F '#{pane_id}') || return 1
   [[ "$pane_id" =~ ^%[0-9]+$ ]] || return 1
+  if ! record_worker_pane "$agent_id" "$pane_id"; then
+    tmux kill-pane -t "$pane_id" >/dev/null 2>&1 || true
+    return 1
+  fi
   target=$(tmux display-message -p -t "$pane_id" '#{session_name}:#{window_index}.#{pane_index}') || { tmux kill-pane -t "$pane_id" >/dev/null 2>&1 || true; return 1; }
   if ! tmux select-pane -t "$pane_id" -T "$agent_id"; then
     tmux kill-pane -t "$pane_id" >/dev/null 2>&1 || true
@@ -46,6 +51,7 @@ rollback_split_group() {
   done <<<"$pane_ids"
   while IFS= read -r agent_id; do
     [ -n "$agent_id" ] || continue
+    cleanup_worker_worktree "$agent_id" false || printf 'tmux worktree cleanup failed for %s\n' "$agent_id" >&2
     rm -rf "$TMUX_RUNTIME_BUS_ROOT/inboxes/$agent_id"
     python3 "$TMUX_RUNTIME_HELPER" delete --root "$TMUX_RUNTIME_BUS_ROOT" --relative "credentials/$agent_id.json" >/dev/null 2>&1 || true
   done <<<"$agent_ids"

@@ -21,6 +21,8 @@ SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd)"
 . "$SCRIPT_DIR/lib/agent-manifest.sh" || fail "agent manifest library failed to load"
 [ -f "$SCRIPT_DIR/lib/lbwc-control-root.sh" ] || fail "control root library is unavailable"
 . "$SCRIPT_DIR/lib/lbwc-control-root.sh" || fail "control root library failed to load"
+. "$SCRIPT_DIR/lib/lbwc-config-files.sh" || fail "config library failed to load"
+. "$SCRIPT_DIR/lib/worktree-isolation.sh" || fail "worktree isolation library failed to load"
 
 TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // ""' 2>/dev/null) || fail "agent spawn guard could not parse tool call input"
 case "$TOOL_NAME" in
@@ -44,8 +46,6 @@ PROJECT_ROOT=$(lbwc_control_root_project_root "$CONTROL_ROOT" 2>/dev/null || tru
 [ -n "$PROJECT_ROOT" ] || block_unresolved_generated_identity
 PLANNING_DIR="$CONTROL_ROOT"
 MANIFEST_PATH=$(agent_manifest_path "$PLANNING_DIR" 2>/dev/null) || block_unresolved_generated_identity
-[ -f "$MANIFEST_PATH" ] || block_unresolved_generated_identity
-
 requested_cwd_values() {
   echo "$INPUT" | jq -r '[.tool_input.cwd? // empty, .tool_input.working_dir? // empty, .tool_input.workingDirectory? // empty, .tool_input.workdir? // empty] | map(select(type == "string")) | .[]' 2>/dev/null \
     || return 1
@@ -61,14 +61,34 @@ requested_worktree_isolation() {
   [ "$isolation" = "worktree" ]
 }
 
+enforce_worktree_isolation() {
+  local role="$SUBAGENT_TYPE"
+  [ ! -f "$MANIFEST_PATH" ] || role=$(jq -r --arg name "$SUBAGENT_TYPE" '.agents[$name].role // $name' "$MANIFEST_PATH") || fail 'cannot read worker role'
+  if worker_may_write_code "$role"; then
+    requested_worktree_isolation || fail 'worktree_isolation is on, code-writing workers require isolation="worktree"'
+    printf -v ISOLATED_CODE_WRITER '%s' true
+  fi
+}
+
+ISOLATED_CODE_WRITER=false
+ISOLATION_REQUIRED=false
+if worktree_isolation_enabled "$CONTROL_ROOT"; then
+  ISOLATION_REQUIRED=true
+  if [ -n "$SUBAGENT_TYPE" ] || [ "$TOOL_NAME" = Agent ]; then
+    enforce_worktree_isolation
+  fi
+fi
 STRIP_REASON=""
 STRIP_WARN=""
 STRIPPED_INPUT=""
-if requested_sidechain_cwd; then
+if [ "$ISOLATED_CODE_WRITER" = true ] || { [ "$ISOLATION_REQUIRED" = true ] && requested_sidechain_cwd; }; then
+  STRIPPED_INPUT=$(echo "$INPUT" | jq '.tool_input | del(.cwd, .working_dir, .workingDirectory, .workdir)' 2>/dev/null)
+  STRIP_REASON="lbwc stripped sidechain cwd fields and preserved required isolation"
+elif requested_sidechain_cwd; then
   STRIPPED_INPUT=$(echo "$INPUT" | jq '.tool_input | del(.cwd, .working_dir, .workingDirectory, .workdir, .isolation)' 2>/dev/null)
   STRIP_REASON="lbwc stripped sidechain cwd fields, worktree targeting is task metadata, not spawn cwd"
   STRIP_WARN="lbwc guard: stripped sidechain cwd fields from spawn (models add these spontaneously, blocking causes retry loops)"
-elif requested_worktree_isolation; then
+elif [ "$ISOLATION_REQUIRED" = false ] && requested_worktree_isolation; then
   STRIPPED_INPUT=$(echo "$INPUT" | jq '.tool_input | del(.isolation)' 2>/dev/null)
   STRIP_REASON="lbwc stripped isolation:worktree, worktree isolation is not managed via spawn params"
   STRIP_WARN="lbwc guard: stripped isolation:worktree from spawn (models add this spontaneously, blocking causes retry loops)"
@@ -88,6 +108,13 @@ allow_with_strip() {
   exit 0
 }
 
+if [ ! -f "$MANIFEST_PATH" ]; then
+  case "$SUBAGENT_TYPE" in
+    lbwc-*) block_unresolved_generated_identity ;;
+    *) [ "$ISOLATED_CODE_WRITER" != true ] || allow_with_strip ;;
+  esac
+  block_unresolved_generated_identity
+fi
 [ -n "$SUBAGENT_TYPE" ] || allow_with_strip
 
 find_blocking_open_pair() {
