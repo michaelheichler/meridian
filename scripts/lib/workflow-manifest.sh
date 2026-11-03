@@ -1,26 +1,26 @@
 WORKFLOW_MANIFEST_SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
-. "$WORKFLOW_MANIFEST_SCRIPT_DIR/lbwc-control-root.sh" 2>/dev/null || return 1
+. "$WORKFLOW_MANIFEST_SCRIPT_DIR/meridian-control-root.sh" 2>/dev/null || return 1
 . "$WORKFLOW_MANIFEST_SCRIPT_DIR/manifest-lock.sh" 2>/dev/null || return 1
 
 # Callers read this after a rejected claim, so they can report the current state.
 export WORKFLOW_MANIFEST_CLAIM_STATE=""
 
 workflow_manifest_control_root() {
-  local requested="${1:-.lbwc-planning}" resolved
-  resolved=$(lbwc_control_root_validate "$requested" 1 2>/dev/null) || return 1
+  local requested="${1:-.meridian}" resolved
+  resolved=$(meridian_control_root_validate "$requested" 1 2>/dev/null) || return 1
   printf '%s\n' "$resolved"
 }
 
 workflow_manifest_path() {
-  lbwc_control_root_workflow_manifest_path "${1:-.lbwc-planning}"
+  meridian_control_root_workflow_manifest_path "${1:-.meridian}"
 }
 
 workflow_manifest_lock_path() {
-  lbwc_control_root_workflow_manifest_lock_path "${1:-.lbwc-planning}"
+  meridian_control_root_workflow_manifest_lock_path "${1:-.meridian}"
 }
 
 workflow_manifest_acquire_lock() {
-  local planning_dir="${1:-.lbwc-planning}" lock_dir control_root
+  local planning_dir="${1:-.meridian}" lock_dir control_root
   control_root=$(workflow_manifest_control_root "$planning_dir") || return 1
   lock_dir=$(workflow_manifest_lock_path "$control_root")
   manifest_lock_acquire "$lock_dir" WORKFLOW_MANIFEST
@@ -28,13 +28,13 @@ workflow_manifest_acquire_lock() {
 
 workflow_manifest_release_lock() {
   local lock_dir control_root
-  control_root=$(workflow_manifest_control_root "${1:-.lbwc-planning}") || return 1
+  control_root=$(workflow_manifest_control_root "${1:-.meridian}") || return 1
   lock_dir=$(workflow_manifest_lock_path "$control_root")
   manifest_lock_release "$lock_dir"
 }
 
 workflow_manifest_with_lock() {
-  local planning_dir="${1:-.lbwc-planning}" callback="${2:-}" lock_dir control_root
+  local planning_dir="${1:-.meridian}" callback="${2:-}" lock_dir control_root
   shift 2 || return 1
   [ -n "$callback" ] || return 1
   control_root=$(workflow_manifest_control_root "$planning_dir") || return 1
@@ -43,7 +43,7 @@ workflow_manifest_with_lock() {
 }
 
 workflow_manifest_read() {
-  local planning_dir="${1:-.lbwc-planning}" path control_root
+  local planning_dir="${1:-.meridian}" path control_root
   control_root=$(workflow_manifest_control_root "$planning_dir") || return 1
   path=$(workflow_manifest_path "$control_root")
   manifest_read "$path" workflows

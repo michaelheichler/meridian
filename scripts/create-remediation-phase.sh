@@ -175,7 +175,7 @@ all_active_phases_are_remediation() {
 
 extract_project_name() {
   local project_file="$PLANNING_DIR/PROJECT.md"
-  local project_name="LBWC Project"
+  local project_name="MERIDIAN Project"
 
   if [ -f "$project_file" ]; then
     heading=$(awk '/^# / {sub(/^# /, "", $0); print; exit }' "$project_file" 2>/dev/null || true)

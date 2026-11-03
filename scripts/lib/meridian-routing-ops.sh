@@ -75,7 +75,7 @@ activate_profile() {
   validate_config_file "$config"
   validate_routing_shape "$config"
   profile_json=$(jq -cn --arg profile "$profile" '$profile') || fail 'could not encode routing profile'
-  bash "$SCRIPT_DIR/lbwc-config.sh" assert-execution-setting-writable \
+  bash "$SCRIPT_DIR/meridian-config.sh" assert-execution-setting-writable \
     "$planning_dir" routing.active_profile "$profile_json"
   updated=$(jq -c --arg profile "$profile" '.routing.active_profile = $profile' "$config") \
     || fail 'could not activate routing profile'

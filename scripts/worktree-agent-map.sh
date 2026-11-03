@@ -10,7 +10,7 @@ if [ -z "$CMD" ] || [ -z "$AGENT" ]; then
   exit 0
 fi
 
-PLANNING_DIR="${LBWC_PLANNING_DIR:-.lbwc-planning}"
+PLANNING_DIR="${MERIDIAN_PLANNING_DIR:-.meridian}"
 STORAGE_DIR="$PLANNING_DIR/.agent-worktrees"
 MAP_FILE="${STORAGE_DIR}/${AGENT}.json"
 

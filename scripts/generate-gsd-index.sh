@@ -5,7 +5,7 @@ SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd -P)"
 SOURCE="${1:-}"
 OUTPUT="${2:-}"
 if [ -z "$SOURCE" ]; then
-  for candidate in .planning .lbwc-planning/gsd-archive .lbwc-planning/archive; do
+  for candidate in .planning .meridian/gsd-archive .meridian/archive; do
     if [ -d "$candidate" ]; then
       SOURCE="$candidate"
       break
@@ -15,7 +15,7 @@ fi
 [ -n "$SOURCE" ] || exit 0
 
 SOURCE=$(CDPATH='' cd -P -- "$SOURCE" && pwd -P)
-temporary=$(mktemp "${TMPDIR:-/tmp}/lbwc-gsd-index.XXXXXX")
+temporary=$(mktemp "${TMPDIR:-/tmp}/meridian-gsd-index.XXXXXX")
 trap 'rm -f "$temporary"' EXIT
 bash "$SCRIPT_DIR/plan-import.sh" normalize --adapter gsd --source "$SOURCE" --output "$temporary"
 

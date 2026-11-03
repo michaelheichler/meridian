@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CAPABILITIES="$SCRIPT_DIR/claude-capabilities.sh"
-ROUTING="$SCRIPT_DIR/lbwc-routing.sh"
+ROUTING="$SCRIPT_DIR/meridian-routing.sh"
 ROLE_DEFAULTS="$SCRIPT_DIR/../templates/agent-roles/defaults.json"
 JSON_OUTPUT=0
 PREFLIGHT_ROOT=""
@@ -28,12 +28,12 @@ IDENTITY_STAT_STYLE=""
 IDENTITY_STAT_TOOL=""
 REFRESH_COMMITTED=0
 
-. "$SCRIPT_DIR/lib/lbwc-model-identity.sh"
-. "$SCRIPT_DIR/lib/lbwc-model-journal.sh"
-. "$SCRIPT_DIR/lib/lbwc-model-refresh.sh"
-. "$SCRIPT_DIR/lib/lbwc-model-restore.sh"
-. "$SCRIPT_DIR/lib/lbwc-model-commit.sh"
-. "$SCRIPT_DIR/lib/lbwc-model-show.sh"
+. "$SCRIPT_DIR/lib/meridian-model-identity.sh"
+. "$SCRIPT_DIR/lib/meridian-model-journal.sh"
+. "$SCRIPT_DIR/lib/meridian-model-refresh.sh"
+. "$SCRIPT_DIR/lib/meridian-model-restore.sh"
+. "$SCRIPT_DIR/lib/meridian-model-commit.sh"
+. "$SCRIPT_DIR/lib/meridian-model-show.sh"
 
 fail() {
   printf 'Error: %s\n' "$1" >&2
@@ -42,13 +42,13 @@ fail() {
 
 usage() {
   printf '%s\n' \
-    'Usage: lbwc-model [--json] refresh <planning-dir>' \
-    '       lbwc-model [--json] show <planning-dir>' \
-    '       lbwc-model [--json] activate <planning-dir> <profile>' \
-    '       lbwc-model [--json] set <planning-dir> <profile> <role> <selector> <reasoning-json>' \
-    '       lbwc-model [--json] copy <planning-dir> <source-profile> <destination-profile>' \
-    '       lbwc-model [--json] validate <planning-dir>' \
-    '       lbwc-model [--json] catalog <planning-dir>' >&2
+    'Usage: meridian-model [--json] refresh <planning-dir>' \
+    '       meridian-model [--json] show <planning-dir>' \
+    '       meridian-model [--json] activate <planning-dir> <profile>' \
+    '       meridian-model [--json] set <planning-dir> <profile> <role> <selector> <reasoning-json>' \
+    '       meridian-model [--json] copy <planning-dir> <source-profile> <destination-profile>' \
+    '       meridian-model [--json] validate <planning-dir>' \
+    '       meridian-model [--json] catalog <planning-dir>' >&2
 }
 
 require_files() {
@@ -164,11 +164,11 @@ main() {
   esac
   planning_dir="${1:-}"
   [ -n "$planning_dir" ] || { usage; exit 1; }
-  if [ "${LBWC_CONFIG_TRANSACTION_ACTIVE:-0}" != 1 ]; then
-    exec bash "$ROUTING" transaction "$planning_dir" bash "$SCRIPT_DIR/lbwc-model" "${original_args[@]}"
+  if [ "${MERIDIAN_CONFIG_TRANSACTION_ACTIVE:-0}" != 1 ]; then
+    exec bash "$ROUTING" transaction "$planning_dir" bash "$SCRIPT_DIR/meridian-model" "${original_args[@]}"
   fi
   bash "$ROUTING" assert-transaction "$planning_dir" >/dev/null
-  planning_dir="${LBWC_CONFIG_TRANSACTION_PLANNING_DIR}"
+  planning_dir="${MERIDIAN_CONFIG_TRANSACTION_PLANNING_DIR}"
   dispatch_command "$command" "$planning_dir" "$@"
 }
 

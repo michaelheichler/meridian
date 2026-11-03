@@ -57,17 +57,17 @@ artifact_phase_dir() {
   local path="$1" root suffix phase_slug
 
   case "$path" in
-    */.lbwc-planning/phases/*/*) ;;
+    */.meridian/phases/*/*) ;;
     *) return 1 ;;
   esac
 
-  root="${path%%/.lbwc-planning/phases/*}"
-  suffix="${path#*/.lbwc-planning/phases/}"
+  root="${path%%/.meridian/phases/*}"
+  suffix="${path#*/.meridian/phases/}"
   phase_slug="${suffix%%/*}"
 
   [ -n "$root" ] || return 1
   [ -n "$phase_slug" ] || return 1
-  printf '%s/.lbwc-planning/phases/%s\n' "$root" "$phase_slug"
+  printf '%s/.meridian/phases/%s\n' "$root" "$phase_slug"
 }
 
 phase_prefix_for_dir() {

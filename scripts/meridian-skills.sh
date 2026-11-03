@@ -15,10 +15,10 @@ fail() {
 
 usage() {
   printf '%s\n' \
-    'Usage: lbwc-skills.sh [--json] list <project-dir>' \
-    '       lbwc-skills.sh [--json] refresh <project-dir>' \
-    '       lbwc-skills.sh [--json] search <project-dir> <query>' \
-    '       lbwc-skills.sh [--json] install <project-dir> <exact-candidate>' >&2
+    'Usage: meridian-skills.sh [--json] list <project-dir>' \
+    '       meridian-skills.sh [--json] refresh <project-dir>' \
+    '       meridian-skills.sh [--json] search <project-dir> <query>' \
+    '       meridian-skills.sh [--json] install <project-dir> <exact-candidate>' >&2
 }
 
 require_tools() {
@@ -37,7 +37,7 @@ resolve_project_root() {
 
 read_config() {
   local project_root="$1" path value
-  path="$project_root/.lbwc-planning/config.json"
+  path="$project_root/.meridian/config.json"
   [ ! -L "$path" ] || fail "configuration must not be a symbolic link: $path"
   if [ ! -e "$path" ]; then
     printf '%s\n' '{"auto_install_skills":false,"discovery_questions":true,"skill_suggestions":true}'
@@ -73,7 +73,7 @@ read_detector() {
     and (.suggestions | type == "array" and all(.[]; type == "string"))
     and (.global_skills_dir | type == "string")
   ' <<< "$value" >/dev/null 2>&1 \
-    || fail 'detector output is not a valid LBWC stack result'
+    || fail 'detector output is not a valid MERIDIAN stack result'
   printf '%s\n' "$value"
 }
 
@@ -164,7 +164,7 @@ print_settings() {
   local result="$1" stack stack_json
   stack_json=$(jq -c '.detected_stack | if length == 0 then "None" else join(", ") end' <<< "$result")
   stack=$(safe_cell <<< "$stack_json")
-  printf '%s\n' 'LBWC Skills' ''
+  printf '%s\n' 'MERIDIAN Skills' ''
   printf '| Setting | Value |\n|---|---|\n'
   printf '| Operation | %s |\n' "$(jq -r '.operation' <<< "$result")"
   printf '| Skill suggestions | %s |\n' "$(jq -r '.config.skill_suggestions' <<< "$result")"
@@ -207,7 +207,7 @@ print_decision() {
     freeform) printf '%s\n' 'More than four candidates require a validated numbered selection in the main session.' ;;
   esac
   if [ "$auto" = true ]; then
-    printf '%s\n' 'Automatic installation is configured, but LBWC still requires explicit main-session consent.'
+    printf '%s\n' 'Automatic installation is configured, but MERIDIAN still requires explicit main-session consent.'
   fi
 }
 
@@ -244,12 +244,12 @@ emit_install_block() {
     printf '%s\n' "$result"
   else
     printf '%s\n' \
-      'LBWC Skills installation handoff' \
+      'MERIDIAN Skills installation handoff' \
       '' \
       "Candidate: $candidate" \
       'Status: blocked' \
       'Reason: installation needs an external registry or network mutation.' \
-      'LBWC validated the candidate but did not install it.'
+      'MERIDIAN validated the candidate but did not install it.'
   fi
   return 3
 }

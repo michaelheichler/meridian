@@ -2,10 +2,10 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd)"
-. "$SCRIPT_DIR/lib/lbwc-settings.sh"
+. "$SCRIPT_DIR/lib/meridian-settings.sh"
 
-planning_dir="${1:-.lbwc-planning}"
-config=$(lbwc_merged_config "$planning_dir/config.json")
+planning_dir="${1:-.meridian}"
+config=$(meridian_merged_config "$planning_dir/config.json")
 enabled=$(jq -r 'if .plain_summary == null then true else .plain_summary end' <<< "$config")
 text=$(cat)
 if [ "$enabled" = true ]; then

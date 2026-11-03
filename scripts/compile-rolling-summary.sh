@@ -2,8 +2,8 @@
 
 set -u
 
-PHASES_DIR="${1:-.lbwc-planning/phases}"
-OUTPUT_PATH="${2:-.lbwc-planning/ROLLING-CONTEXT.md}"
+PHASES_DIR="${1:-.meridian/phases}"
+OUTPUT_PATH="${2:-.meridian/ROLLING-CONTEXT.md}"
 
 
 SUMMARY_FILES=""

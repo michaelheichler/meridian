@@ -2,7 +2,7 @@
 set -euo pipefail
 
 
-PLANNING_DIR="${1:-.lbwc-planning}"
+PLANNING_DIR="${1:-.meridian}"
 SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd)"
 
 if [[ ! -d "$PLANNING_DIR" ]]; then

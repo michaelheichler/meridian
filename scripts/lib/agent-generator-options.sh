@@ -96,8 +96,8 @@ parse_options() {
 
 check_required_options() {
   [ -n "$JOB" ] || fail "--job is required"
-  [ -n "$CONTRACT_PATH" ] || fail "--contract is required for generated LBWC agents"
-  [ -n "$TASK_ID" ] || fail "--task-id is required for generated LBWC agents"
+  [ -n "$CONTRACT_PATH" ] || fail "--contract is required for generated MERIDIAN agents"
+  [ -n "$TASK_ID" ] || fail "--task-id is required for generated MERIDIAN agents"
   [ -z "$PAIR_ROLE_ARG" ] || [ -n "$PAIR_MODE" ] || fail "--pair-role is only valid with --pair"
   [ -z "$PAIR_ROLE_ARG" ] || [ -z "$TRIO_MODE" ] || fail "--pair-role is not valid with --trio"
 }

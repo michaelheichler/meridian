@@ -4,7 +4,7 @@ _pd_normal_exit=false
 _pd_output_file=
 _pd_error_reason=
 exec 3>&1
-if _pd_output_file=$(mktemp "${TMPDIR:-/tmp}/lbwc-phase-detect.XXXXXX" 2>/dev/null) &&
+if _pd_output_file=$(mktemp "${TMPDIR:-/tmp}/meridian-phase-detect.XXXXXX" 2>/dev/null) &&
    [ -n "$_pd_output_file" ] && [ -f "$_pd_output_file" ]; then
   if ! exec >"$_pd_output_file"; then
     rm -f "$_pd_output_file"
@@ -32,8 +32,8 @@ trap '
 ' EXIT
 
 _SCRIPT_DIR_PD="$(CDPATH='' cd -- "$(dirname "$0")" && pwd)"
-PLANNING_DIR="${LBWC_PLANNING_DIR:-.lbwc-planning}"
-if ! . "$_SCRIPT_DIR_PD/lib/lbwc-settings.sh"; then
+PLANNING_DIR="${MERIDIAN_PLANNING_DIR:-.meridian}"
+if ! . "$_SCRIPT_DIR_PD/lib/meridian-settings.sh"; then
   _pd_error_reason=setup_failed
   exit 1
 fi
@@ -238,7 +238,7 @@ CFG_REQUIRE_PHASE_DISCUSSION="false"
 CFG_AUTO_UAT_EARLY="false"
 CONFIG_FILE_EARLY="$PLANNING_DIR/config.json"
 if [ "$JQ_AVAILABLE" = true ]; then
-  MERGED_CONFIG_EARLY=$(lbwc_merged_config "$CONFIG_FILE_EARLY")
+  MERGED_CONFIG_EARLY=$(meridian_merged_config "$CONFIG_FILE_EARLY")
   _rpd=$(jq -r 'if .require_phase_discussion == null then false else .require_phase_discussion end' <<< "$MERGED_CONFIG_EARLY" 2>/dev/null) || true
   [ -n "${_rpd:-}" ] && CFG_REQUIRE_PHASE_DISCUSSION="$_rpd"
   _aue=$(jq -r 'if .auto_uat == null then false else .auto_uat end' <<< "$MERGED_CONFIG_EARLY" 2>/dev/null) || true

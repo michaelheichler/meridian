@@ -14,8 +14,8 @@ shift
 SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd)"
 . "$SCRIPT_DIR/lib/compile-research-emit.sh"
 . "$SCRIPT_DIR/lib/display-glyphs.sh"
-lbwc_glyphs_load "$PLANNING_DIR"
-lbwc_glyph GLYPH_WARNING warning
+meridian_glyphs_load "$PLANNING_DIR"
+meridian_glyph GLYPH_WARNING warning
 
 EXPLICIT_FILE=""
 DESCRIPTION=""
@@ -47,7 +47,7 @@ if [ -n "$EXPLICIT_FILE" ]; then
     exit 0
   fi
   echo "[research] Using explicitly specified research: $(basename "$EXPLICIT_FILE")" >&2
-  lbwc_glyph_file "$EXPLICIT_FILE"
+  meridian_glyph_file "$EXPLICIT_FILE"
   exit 0
 fi
 

@@ -76,10 +76,10 @@ case "$ACTION" in
     ;;
   open)
     CONFIG="$PHASE_DIR"
-    while [ "$CONFIG" != "/" ] && [ ! -f "$CONFIG/.lbwc-planning/config.json" ]; do
+    while [ "$CONFIG" != "/" ] && [ ! -f "$CONFIG/.meridian/config.json" ]; do
       CONFIG=$(dirname "$CONFIG")
     done
-    CONFIG_FILE="$CONFIG/.lbwc-planning/config.json"
+    CONFIG_FILE="$CONFIG/.meridian/config.json"
     if [ -f "$STATE_FILE" ]; then
       CURRENT_ROUND=$(state_get round)
       CURRENT_ROUND="${CURRENT_ROUND:-01}"

@@ -61,7 +61,7 @@ planning_root_from_phase_dir() {
     return 0
   fi
 
-  echo ".lbwc-planning"
+  echo ".meridian"
 }
 
 find_phase_dir_by_ref() {

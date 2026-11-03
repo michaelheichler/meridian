@@ -6,12 +6,12 @@ SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd -P)"
 
 TEAMS_DIR="$CLAUDE_DIR/teams"
 TASKS_DIR="$CLAUDE_DIR/tasks"
-PLANNING_DIR="${LBWC_PLANNING_DIR:-$(pwd -P)/.lbwc-planning}"
-STALE_SECONDS="${LBWC_STALE_TEAM_SECONDS:-7200}"
+PLANNING_DIR="${MERIDIAN_PLANNING_DIR:-$(pwd -P)/.meridian}"
+STALE_SECONDS="${MERIDIAN_STALE_TEAM_SECONDS:-7200}"
 LOG_FILE="$PLANNING_DIR/.hook-errors.log"
 
 case "$STALE_SECONDS" in
-  ''|*[!0-9]*) printf '%s\n' 'LBWC: invalid stale team threshold' >&2; exit 1 ;;
+  ''|*[!0-9]*) printf '%s\n' 'MERIDIAN: invalid stale team threshold' >&2; exit 1 ;;
 esac
 
 teams_cleaned=0
@@ -40,11 +40,11 @@ move_owned_path() {
   exit 0
 }
 
-cleanup_dir=$(mktemp -d "${TMPDIR:-/tmp}/lbwc-stale-teams.XXXXXX")
+cleanup_dir=$(mktemp -d "${TMPDIR:-/tmp}/meridian-stale-teams.XXXXXX")
 trap 'rm -rf "$cleanup_dir"' EXIT HUP INT TERM
 now=$(date +%s)
 
-for team_dir in "$TEAMS_DIR"/lbwc-*; do
+for team_dir in "$TEAMS_DIR"/meridian-*; do
   [ -d "$team_dir" ] || continue
   [ ! -L "$team_dir" ] || continue
   team_name=$(basename "$team_dir")

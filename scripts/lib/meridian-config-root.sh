@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 
-_walk_up_for_lbwc_root() {
+_walk_up_for_meridian_root() {
   local _cwd="$1" _prev
   while [ "$_cwd" != "/" ]; do
-    if [ -f "$_cwd/.lbwc-planning/config.json" ]; then
-      export LBWC_CONFIG_ROOT="$_cwd"
-      export LBWC_PLANNING_DIR="$_cwd/.lbwc-planning"
+    if [ -f "$_cwd/.meridian/config.json" ]; then
+      export MERIDIAN_CONFIG_ROOT="$_cwd"
+      export MERIDIAN_PLANNING_DIR="$_cwd/.meridian"
       return 0
     fi
     _prev="$_cwd"
@@ -26,11 +26,11 @@ _prefer_claude_sidechain_host_root() {
         _grandparent=$(dirname "$_parent")
         if [ "$(basename "$_parent")" = "worktrees" ] && [ "$(basename "$_grandparent")" = ".claude" ]; then
           _host=$(dirname "$_grandparent")
-          if [ -f "$_host/.lbwc-planning/config.json" ]; then
-            export LBWC_CONFIG_ROOT="$_host"
-            export LBWC_PLANNING_DIR="$_host/.lbwc-planning"
-            export LBWC_CLAUDE_SIDECHAIN_ROOT="$_probe"
-            export LBWC_CLAUDE_SIDECHAIN_HOST_ROOT="$_host"
+          if [ -f "$_host/.meridian/config.json" ]; then
+            export MERIDIAN_CONFIG_ROOT="$_host"
+            export MERIDIAN_PLANNING_DIR="$_host/.meridian"
+            export MERIDIAN_CLAUDE_SIDECHAIN_ROOT="$_probe"
+            export MERIDIAN_CLAUDE_SIDECHAIN_HOST_ROOT="$_host"
             return 0
           fi
         fi
@@ -45,10 +45,10 @@ _prefer_claude_sidechain_host_root() {
   return 1
 }
 
-find_lbwc_root() {
-  if [ -n "${LBWC_CONFIG_ROOT:-}" ]; then
-    export LBWC_CONFIG_ROOT
-    export LBWC_PLANNING_DIR="${LBWC_CONFIG_ROOT}/.lbwc-planning"
+find_meridian_root() {
+  if [ -n "${MERIDIAN_CONFIG_ROOT:-}" ]; then
+    export MERIDIAN_CONFIG_ROOT
+    export MERIDIAN_PLANNING_DIR="${MERIDIAN_CONFIG_ROOT}/.meridian"
     return 0
   fi
 
@@ -57,17 +57,17 @@ find_lbwc_root() {
 
   if [ -n "${1:-}" ]; then
     _prefer_claude_sidechain_host_root "$_cwd_dir" && return 0
-    _walk_up_for_lbwc_root "$_cwd_dir" && return 0
+    _walk_up_for_meridian_root "$_cwd_dir" && return 0
     if _start_dir=$(CDPATH='' cd -- "$1" 2>/dev/null && pwd -P 2>/dev/null); then
-      _walk_up_for_lbwc_root "$_start_dir" && return 0
+      _walk_up_for_meridian_root "$_start_dir" && return 0
     else
-      _walk_up_for_lbwc_root "$_cwd_dir" && return 0
+      _walk_up_for_meridian_root "$_cwd_dir" && return 0
     fi
   else
     _prefer_claude_sidechain_host_root "$_cwd_dir" && return 0
-    _walk_up_for_lbwc_root "$_cwd_dir" && return 0
+    _walk_up_for_meridian_root "$_cwd_dir" && return 0
   fi
 
-  export LBWC_CONFIG_ROOT="$_cwd_dir"
-  export LBWC_PLANNING_DIR="$_cwd_dir/.lbwc-planning"
+  export MERIDIAN_CONFIG_ROOT="$_cwd_dir"
+  export MERIDIAN_PLANNING_DIR="$_cwd_dir/.meridian"
 }

@@ -11,10 +11,10 @@ requirements_conflict_detail() {
 conflict_detail() {
   local ir="$1" relative="$2" project_root="$3"
   case "$relative" in
-    .lbwc-planning/REQUIREMENTS.md)
+    .meridian/REQUIREMENTS.md)
       requirements_conflict_detail "$ir" "$project_root/$relative"
       ;;
-    .lbwc-planning/ROADMAP.md)
+    .meridian/ROADMAP.md)
       jq -c '{imported_phases: [.phases[] | select(.number != null) | .number]}' "$ir" 2>/dev/null || printf '{}'
       ;;
   esac
@@ -51,7 +51,7 @@ preview_json() {
   conflicts=$(semantic_conflicts "$ir" "$tree" "$project_root")
   jq -n --argjson source "$(cat "$ir")" --arg id "$import_id" --arg tree "$tree" \
     --argjson additions "$additions" --argjson overlaps "$existing" --argjson conflicts "$conflicts" \
-    '{schema_version:1,import_id:$id,source:$source.source,proposed_destination:".lbwc-planning/",additions:$additions,overlaps:$overlaps,conflicts:$conflicts,unknowns:($source.warnings + [($source.plans[] | select(.status == null) | .source_path)]),skipped:($source.source.skipped_files // []),staged_tree:$tree}'
+    '{schema_version:1,import_id:$id,source:$source.source,proposed_destination:".meridian/",additions:$additions,overlaps:$overlaps,conflicts:$conflicts,unknowns:($source.warnings + [($source.plans[] | select(.status == null) | .source_path)]),skipped:($source.source.skipped_files // []),staged_tree:$tree}'
 }
 
 stage_import() {
@@ -77,9 +77,9 @@ stage_import() {
 check_staged_tree() {
   local tree="$1" expected path
   for expected in PROJECT.md REQUIREMENTS.md ROADMAP.md STATE.md config.json; do
-    [ -f "$tree/.lbwc-planning/$expected" ] || import_fail "staged canonical artifact is missing: $expected"
+    [ -f "$tree/.meridian/$expected" ] || import_fail "staged canonical artifact is missing: $expected"
   done
-  "$SCRIPT_DIR/lbwc-config.sh" validate-config-json < "$tree/.lbwc-planning/config.json" >/dev/null \
+  "$SCRIPT_DIR/meridian-config.sh" validate-config-json < "$tree/.meridian/config.json" >/dev/null \
     || import_fail 'staged canonical configuration is invalid'
   while IFS= read -r path; do
     [ ! -L "$path" ] || import_fail "staged tree contains a symbolic link: $path"
@@ -94,7 +94,7 @@ validate_stage() {
   ir_file="$stage/ir.json"
   [ "$stage" = "$project_root/.temporary-agent-runfiles/imports/$(basename "$stage")" ] || import_fail 'stage is outside the project import staging directory'
   [ -f "$ir_file" ] || import_fail 'staged IR is missing'
-  [ -d "$tree/.lbwc-planning" ] || import_fail 'staged canonical tree is missing'
+  [ -d "$tree/.meridian" ] || import_fail 'staged canonical tree is missing'
   validate_ir "$ir_file"
   check_staged_tree "$tree"
   jq -n --arg stage "$stage" --argjson additions "$(jq '.additions' "$stage/preview.json")" \
@@ -123,7 +123,7 @@ reimport_status() {
   project_root=$(canonical_directory "$project_root")
   source=$(canonical_source "$source")
   import_source_metadata "$source"
-  found=$(find_manifest_by_digest "$project_root/.lbwc-planning/imports")
+  found=$(find_manifest_by_digest "$project_root/.meridian/imports")
   if [ -z "$found" ]; then
     found=$(find_manifest_by_digest "$project_root/.temporary-agent-runfiles/imports")
   fi

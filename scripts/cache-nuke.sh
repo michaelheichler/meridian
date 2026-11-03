@@ -8,9 +8,9 @@ if [[ "${1:-}" == "--keep-latest" ]]; then
 fi
 
 . "$(dirname "$0")/resolve-claude-dir.sh"
-PLUGIN_CACHE_DIR="$CLAUDE_DIR/plugins/cache/lbwc-marketplace/lbwc"
+PLUGIN_CACHE_DIR="$CLAUDE_DIR/plugins/cache/meridian-marketplace/meridian"
 UID_TAG="$(id -u)"
-TMP_CACHE_ROOT="${LBWC_TMP_CACHE_ROOT:-/tmp}"
+TMP_CACHE_ROOT="${MERIDIAN_TMP_CACHE_ROOT:-/tmp}"
 
 wiped_plugin_cache=false
 wiped_temp_caches=false
@@ -66,7 +66,7 @@ if [[ -d "$PLUGIN_CACHE_DIR" ]]; then
   fi
 fi
 
-for temp_path in "$TMP_CACHE_ROOT"/lbwc-*-"${UID_TAG}"-* "$TMP_CACHE_ROOT"/lbwc-*-"${UID_TAG}"; do
+for temp_path in "$TMP_CACHE_ROOT"/meridian-*-"${UID_TAG}"-* "$TMP_CACHE_ROOT"/meridian-*-"${UID_TAG}"; do
   [ -e "$temp_path" ] || [ -L "$temp_path" ] || continue
   rm -rf "$temp_path" 2>/dev/null || true
   wiped_temp_caches=true

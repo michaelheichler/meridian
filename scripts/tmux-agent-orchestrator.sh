@@ -4,10 +4,10 @@ set -eo pipefail
 umask 077
 
 SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname "$0")" && pwd -P)
-source "$SCRIPT_DIR/lib/lbwc-control-root.sh"
+source "$SCRIPT_DIR/lib/meridian-control-root.sh"
 source "$SCRIPT_DIR/lib/tmux-runtime.sh"
 source "$SCRIPT_DIR/lib/agent-manifest.sh"
-source "$SCRIPT_DIR/lib/lbwc-config-files.sh"
+source "$SCRIPT_DIR/lib/meridian-config-files.sh"
 source "$SCRIPT_DIR/lib/worktree-isolation.sh"
 source "$SCRIPT_DIR/lib/tmux-worker-worktrees.sh"
 

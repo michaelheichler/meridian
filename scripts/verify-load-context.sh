@@ -3,15 +3,15 @@ set -u
 
 case "${1:-}" in
 state)
-head -40 .lbwc-planning/STATE.md 2>/dev/null || echo "No state found"
+head -40 .meridian/STATE.md 2>/dev/null || echo "No state found"
 ;;
 phases)
-ls .lbwc-planning/phases/ 2>/dev/null || echo "No phases directory"
+ls .meridian/phases/ 2>/dev/null || echo "No phases directory"
 ;;
 phase-state)
 SESSION_KEY="${CLAUDE_SESSION_ID:-default}"
-L="/tmp/.lbwc-plugin-root-link-${SESSION_KEY}"
-P="/tmp/.lbwc-phase-detect-${SESSION_KEY}.txt"
+L="/tmp/.meridian-plugin-root-link-${SESSION_KEY}"
+P="/tmp/.meridian-phase-detect-${SESSION_KEY}.txt"
 PD=""
 _refresh_phase_detect() {
   local resolver root
@@ -43,11 +43,11 @@ else
 fi
 ;;
 compact)
-bash "/tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/suggest-compact.sh" verify 2>/dev/null || true
+bash "/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/suggest-compact.sh" verify 2>/dev/null || true
 ;;
 verify-context)
 SESSION_KEY="${CLAUDE_SESSION_ID:-default}"
-P="/tmp/.lbwc-phase-detect-${SESSION_KEY}.txt"
+P="/tmp/.meridian-phase-detect-${SESSION_KEY}.txt"
 PD=""
 [ -f "$P" ] && PD=$(cat "$P")
 if [ -z "$(printf '%s' "$PD" | tr -d '[:space:]')" ] || [ "$PD" = "phase_detect_error=true" ]
@@ -69,8 +69,8 @@ echo "verify_context=deferred_until_target_resolution"
 ;;
 uat-resume)
 SESSION_KEY="${CLAUDE_SESSION_ID:-default}"
-L="/tmp/.lbwc-plugin-root-link-${SESSION_KEY}"
-P="/tmp/.lbwc-phase-detect-${SESSION_KEY}.txt"
+L="/tmp/.meridian-plugin-root-link-${SESSION_KEY}"
+P="/tmp/.meridian-phase-detect-${SESSION_KEY}.txt"
 PD=""
 _refresh_phase_detect() {
   local resolver root
@@ -102,7 +102,7 @@ else
   SLUG=$(printf '%s' "$PD" | grep '^next_phase_slug=' | head -1 | cut -d= -f2)
   FU_SLUG=$(printf '%s' "$PD" | grep '^first_unverified_slug=' | head -1 | cut -d= -f2)
   if [ "$STATE" = "needs_reverification" ] || [ "$STATE" = "needs_verification" ]; then TARGET="$SLUG"; else TARGET="${FU_SLUG:-$SLUG}"; fi
-  PDIR=".lbwc-planning/phases/$TARGET"
+  PDIR=".meridian/phases/$TARGET"
   if [ -n "$TARGET" ] && [ -d "$PDIR" ] && [ -L "$L" ] && [ -f "$L/scripts/extract-uat-resume.sh" ]; then
     echo "uat_resume_target_slug=$TARGET"
     bash "$L/scripts/extract-uat-resume.sh" "$PDIR" 2>/dev/null || echo "uat_resume=error"
@@ -112,7 +112,7 @@ else
 fi
 ;;
 qa-summary)
-bash "/tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/extract-verified-items.sh" .lbwc-planning/phases/*/ 2>/dev/null || true
+bash "/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/extract-verified-items.sh" .meridian/phases/*/ 2>/dev/null || true
 ;;
 *)
   printf "Usage: %s <state|phases|phase-state|compact|verify-context|uat-resume|qa-summary>\n" "$0" >&2

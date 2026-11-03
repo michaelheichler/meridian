@@ -5,7 +5,7 @@ empty_artifact() {
 normalize_artifact() {
   local value="$1" today
   today=$(date -u +%Y-%m-%d) || fail 'could not determine the current date'
-  jq -ceS --arg today "$today" -f "$SCRIPT_DIR/lib/lbwc-conventions-normalize.jq" \
+  jq -ceS --arg today "$today" -f "$SCRIPT_DIR/lib/meridian-conventions-normalize.jq" \
     <<< "$value" 2>/dev/null || fail 'invalid conventions artifact'
 }
 

@@ -3,10 +3,10 @@ set -euo pipefail
 
 SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 ROOT="$(CDPATH='' cd -- "$SCRIPT_DIR/.." && pwd -P)"
-STATE_DIR="${LBWC_RTK_DIR:-$ROOT/.lbwc-planning/tools/rtk}"
-RTK_BINARY="${LBWC_RTK_BINARY:-$STATE_DIR/rtk}"
-RECEIPT_FILE="${LBWC_RTK_RECEIPT:-$STATE_DIR/rtk-install.json}"
-BACKUP_DIR="${LBWC_RTK_BACKUPS:-$STATE_DIR/backups}"
+STATE_DIR="${MERIDIAN_RTK_DIR:-$ROOT/.meridian/tools/rtk}"
+RTK_BINARY="${MERIDIAN_RTK_BINARY:-$STATE_DIR/rtk}"
+RECEIPT_FILE="${MERIDIAN_RTK_RECEIPT:-$STATE_DIR/rtk-install.json}"
+BACKUP_DIR="${MERIDIAN_RTK_BACKUPS:-$STATE_DIR/backups}"
 RTK_REPO_API="${RTK_REPO_API:-https://api.github.com/repos/rtk-ai/rtk/releases/latest}"
 RTK_CURL_MAX_TIME="${RTK_CURL_MAX_TIME:-15}"
 CLAUDE_BINARY="${CLAUDE_BINARY:-claude}"
@@ -146,7 +146,7 @@ archive_paths_are_safe() {
 
 stage_release() {
   local metadata="$1" archive checksums asset_name asset_url checksums_url expected actual binary
-  TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/lbwc-rtk.XXXXXX")"
+  TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/meridian-rtk.XXXXXX")"
   archive="$TEMP_DIR/release.tar.gz"
   checksums="$TEMP_DIR/checksums.txt"
   asset_name="$(printf '%s' "$metadata" | jq -r '.asset_name')"
@@ -206,7 +206,7 @@ smoke() {
   local claude_state='not-found'
   [ -x "$RTK_BINARY" ] || return 1
   "$RTK_BINARY" --version >/dev/null 2>&1 || return 1
-  "$RTK_BINARY" proxy printf '%s' lbwc-rtk-smoke >/dev/null 2>&1 || return 1
+  "$RTK_BINARY" proxy printf '%s' meridian-rtk-smoke >/dev/null 2>&1 || return 1
   if command -v "$CLAUDE_BINARY" >/dev/null 2>&1; then
     "$CLAUDE_BINARY" --version >/dev/null 2>&1 || return 1
     claude_state='available'

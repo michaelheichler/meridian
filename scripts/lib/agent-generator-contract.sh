@@ -33,9 +33,9 @@ resolve_schema3_control_root() {
   local contract_control_root control_root
   contract_control_root=$(jq -r '.control_root // empty' "$CONTRACT_PATH" 2>/dev/null) || fail "invalid contract"
   [ -n "$CONTROL_ROOT_ARG" ] || printf -v CONTROL_ROOT_ARG '%s' "$contract_control_root"
-  control_root=$(lbwc_control_root_validate "$CONTROL_ROOT_ARG" 0) || fail "control root is unavailable or invalid"
+  control_root=$(meridian_control_root_validate "$CONTROL_ROOT_ARG" 0) || fail "control root is unavailable or invalid"
   printf -v CONTROL_ROOT '%s' "$control_root"
-  contract_control_root=$(lbwc_control_root_validate "$contract_control_root" 0) || fail "contract control root is unavailable"
+  contract_control_root=$(meridian_control_root_validate "$contract_control_root" 0) || fail "contract control root is unavailable"
   [ "$control_root" = "$contract_control_root" ] || fail "contract control root mismatch"
 }
 
@@ -47,7 +47,7 @@ resolve_control_root() {
   else
     [ "$schema_preview" = "2" ] || fail "unsupported contract schema"
     [ -z "$CONTROL_ROOT_ARG" ] || fail "schema 2 contract does not accept --control-root"
-    control_root=$(lbwc_control_root_validate "$PROJECT_ROOT/.lbwc-planning" 1) || fail "active planning control root is unavailable"
+    control_root=$(meridian_control_root_validate "$PROJECT_ROOT/.meridian" 1) || fail "active planning control root is unavailable"
     printf -v CONTROL_ROOT '%s' "$control_root"
   fi
 }
@@ -61,7 +61,7 @@ write_temporary_routing() {
 
 resolve_config_path() {
   printf -v PLANNING_DIR '%s' "$CONTROL_ROOT"
-  if [ "$(basename "$CONTROL_ROOT")" = ".lbwc-planning" ]; then
+  if [ "$(basename "$CONTROL_ROOT")" = ".meridian" ]; then
     printf -v CONFIG_PATH '%s' "$CONTROL_ROOT/config.json"
     return
   fi
@@ -126,7 +126,7 @@ check_contract_v3_fields() {
   local contract_control_root
   contract_control_root=$(jq -r '.control_root // empty' <<< "$CONTRACT_JSON")
   [ -n "$contract_control_root" ] || fail "contract control root is required"
-  contract_control_root=$(lbwc_control_root_validate "$contract_control_root" 0) || fail "contract control root is unavailable"
+  contract_control_root=$(meridian_control_root_validate "$contract_control_root" 0) || fail "contract control root is unavailable"
   [ "$contract_control_root" = "$CONTROL_ROOT" ] || fail "contract control root mismatch"
   CONTRACT_CAPABILITIES_JSON=$(jq -ce --arg role "$ROLE" '.capabilities_by_role[$role] | select(type == "array")' <<< "$CONTRACT_JSON") || fail "contract capabilities are invalid"
   CONTRACT_RUNTIME_KIND=$(jq -r '.runtime_kind // empty' <<< "$CONTRACT_JSON")

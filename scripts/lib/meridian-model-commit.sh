@@ -43,7 +43,7 @@ persist_commit_images() {
 commit_pending_refresh() {
   local planning_dir="$1"
   [ -n "$PENDING_REFRESH" ] \
-    && [ "$PENDING_REFRESH" = "$planning_dir/.lbwc-model-refresh.pending" ] \
+    && [ "$PENDING_REFRESH" = "$planning_dir/.meridian-model-refresh.pending" ] \
     || fail 'model refresh journal is unavailable'
   COMMIT_CONFIG_TMP=$(mktemp "$planning_dir/.config.json.model-refresh.XXXXXX") \
     || fail 'could not create refreshed configuration temporary file'
@@ -62,7 +62,7 @@ commit_pending_refresh() {
   verify_pending_after_images || fail 'published model refresh journal changed after commit'
   remove_refresh_directory \
     "$PENDING_REFRESH" \
-    '.lbwc-model-refresh.pending' \
+    '.meridian-model-refresh.pending' \
     "$PENDING_REFRESH_IDENTITY" \
     || fail 'could not remove completed model refresh journal'
   PENDING_REFRESH=""

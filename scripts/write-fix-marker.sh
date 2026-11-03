@@ -2,7 +2,7 @@
 
 set -u
 
-PLANNING_DIR="${1:-.lbwc-planning}"
+PLANNING_DIR="${1:-.meridian}"
 DESCRIPTION="${2:-}"
 
 if [ ! -d "$PLANNING_DIR" ]; then

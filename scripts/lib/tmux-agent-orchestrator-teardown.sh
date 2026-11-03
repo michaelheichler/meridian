@@ -134,7 +134,7 @@ kill_agent() {
 stop_owned_session() {
   local registry="$1" session_name="$2" intent_name="$3" ownership marker
   ownership=$(jq -r '.tmux.ownership_token' <<<"$registry")
-  marker=$(tmux show-options -v -t "$session_name" @lbwc_ownership_token 2>/dev/null || true)
+  marker=$(tmux show-options -v -t "$session_name" @meridian_ownership_token 2>/dev/null || true)
   [ "$marker" = "$ownership" ] || fail 'owned tmux session is missing its provisioning ownership marker'
   tmux kill-session -t "$session_name" || fail 'cannot kill owned tmux session'
   tmux_session_exists "$session_name" && fail 'owned tmux session remains after kill request'
@@ -191,9 +191,9 @@ keep_session_panes() {
   local registry="$1" managed="$2" agent_ids agent_id ownership marker
   if [ "$managed" = true ] && tmux_session_exists "$session"; then
     ownership=$(jq -r '.tmux.ownership_token' <<<"$registry")
-    marker=$(tmux show-options -v -t "$session" @lbwc_ownership_token 2>/dev/null || true)
+    marker=$(tmux show-options -v -t "$session" @meridian_ownership_token 2>/dev/null || true)
     [ "$marker" = "$ownership" ] || fail 'owned tmux session is missing its provisioning ownership marker'
-    tmux set-option -t "$session" @lbwc_kept_panes true || fail 'cannot mark kept tmux session'
+    tmux set-option -t "$session" @meridian_kept_panes true || fail 'cannot mark kept tmux session'
   fi
   agent_ids=$(jq -c '[.agents[].agent_id]' <<<"$registry")
   persist_shutdown_agents "$registry" "$agent_ids" || fail 'cannot clear kept session runtime state'

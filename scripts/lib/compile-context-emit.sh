@@ -41,7 +41,7 @@ emit_codebase_mapping_hint() {
 
   echo ""
   echo "### Codebase Map Available"
-  echo "Codebase mapping exists in \`.lbwc-planning/codebase/\`. Key files:"
+  echo "Codebase mapping exists in \`.meridian/codebase/\`. Key files:"
   for doc in $map_files; do
     echo "- \`${doc}.md\`"
   done
@@ -113,8 +113,8 @@ emit_delta_code_slices_section() {
   echo "### Code Slices"
   while IFS= read -r f; do
     [ -n "$f" ] || continue
-    lbwc_is_safe_relative_path "$f" || continue
-    source_path=$(lbwc_resolve_repo_path "$source_root" "$f") || continue
+    meridian_is_safe_relative_path "$f" || continue
+    source_path=$(meridian_resolve_repo_path "$source_root" "$f") || continue
     [ -f "$source_path" ] && emit_delta_code_slice "$f" "$source_path"
   done <<< "$delta_files"
   return 0

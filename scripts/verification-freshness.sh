@@ -6,7 +6,7 @@
 
 # Release bumps touch these, so they must not mark every phase stale.
 FRESHNESS_EXCLUDE_PATHSPEC=(
-  ':!.lbwc-planning' ':!CLAUDE.md' ':!VERSION'
+  ':!.meridian' ':!CLAUDE.md' ':!VERSION'
   ':!.claude-plugin/plugin.json' ':!.claude-plugin/marketplace.json' ':!marketplace.json'
 )
 VERIFICATION_FRESHNESS_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

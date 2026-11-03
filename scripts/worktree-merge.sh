@@ -8,7 +8,7 @@ if [ -z "$PHASE" ] || [ -z "$PLAN" ]; then
   exit 0
 fi
 
-BRANCH="lbwc/${PHASE}-${PLAN}"
+BRANCH="meridian/${PHASE}-${PLAN}"
 
 git merge --no-ff "$BRANCH" -m "merge: phase ${PHASE} plan ${PLAN}" 2>/dev/null
 MERGE_STATUS=$?

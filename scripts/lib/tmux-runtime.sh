@@ -54,7 +54,7 @@ tmux_runtime_existing_private_directory() {
 
 tmux_runtime_configure() {
   local requested_control_root="$1" control_root
-  control_root=$(lbwc_control_root_validate "$requested_control_root" 0) || { tmux_runtime_fail "invalid control root: $requested_control_root"; return 1; }
+  control_root=$(meridian_control_root_validate "$requested_control_root" 0) || { tmux_runtime_fail "invalid control root: $requested_control_root"; return 1; }
   TMUX_RUNTIME_CONTROL_ROOT="$control_root"
   TMUX_RUNTIME_ROOT="$control_root/.runtime"
   TMUX_RUNTIME_BUS_ROOT="$TMUX_RUNTIME_ROOT/tmux-bus"

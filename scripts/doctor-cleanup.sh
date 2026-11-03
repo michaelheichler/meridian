@@ -3,7 +3,7 @@ set -euo pipefail
 
 ACTION="${1:-scan}"
 SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd)"
-PLANNING_DIR="${LBWC_PLANNING_DIR:-.lbwc-planning}"
+PLANNING_DIR="${MERIDIAN_PLANNING_DIR:-.meridian}"
 LOG_FILE="$PLANNING_DIR/.hook-errors.log"
 
 if [ -f "$SCRIPT_DIR/resolve-claude-dir.sh" ]; then
@@ -52,14 +52,14 @@ _scan_team_dir() {
   team_name=$(basename "$team_dir")
 
   if [ ! -f "$team_dir/config.json" ]; then
-    case "$team_name" in lbwc-*)
+    case "$team_name" in meridian-*)
       echo "orphaned_team|$team_name|no config.json (ghost team residual)"
       [ -d "$TASKS_DIR/$team_name" ] && echo "orphaned_tasks|$team_name|paired tasks dir (will be removed with team)"
     ;; esac
     return 0
   fi
 
-  case "$team_name" in lbwc-*) ;; *) return 0 ;; esac
+  case "$team_name" in meridian-*) ;; *) return 0 ;; esac
 
   inbox_dir="$team_dir/inboxes"
   [ ! -d "$inbox_dir" ] && return 0
@@ -139,7 +139,7 @@ scan_stale_markers() {
 
 scan_stale_worktrees() {
   local worktrees_dir
-  worktrees_dir="$(pwd)/.lbwc-worktrees"
+  worktrees_dir="$(pwd)/.meridian-worktrees"
   [ ! -d "$worktrees_dir" ] && return 0
 
   local now
@@ -250,7 +250,7 @@ cleanup_one_worktree() {
   esac
   wt_phase="${_wt_name%-*}"
   wt_plan="${_wt_name#*-}"
-  if cleanup_output=$(LBWC_AUTOMATIC_CLEANUP=1 bash "$SCRIPT_DIR/worktree-cleanup.sh" "$wt_phase" "$wt_plan" 2>&1); then
+  if cleanup_output=$(MERIDIAN_AUTOMATIC_CLEANUP=1 bash "$SCRIPT_DIR/worktree-cleanup.sh" "$wt_phase" "$wt_plan" 2>&1); then
     case "$cleanup_output" in
       scan_only\|*) log_action "scan-only stale worktree: $cleanup_output" ;;
       *) log_action "cleaned stale worktree: $_wt_name ($_detail)" ;;
@@ -262,7 +262,7 @@ cleanup_one_worktree() {
 
 cleanup_stale_worktrees() {
   local worktrees_dir
-  worktrees_dir="$(pwd)/.lbwc-worktrees"
+  worktrees_dir="$(pwd)/.meridian-worktrees"
   [ ! -d "$worktrees_dir" ] && return 0
 
   local stale

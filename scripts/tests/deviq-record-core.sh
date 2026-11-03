@@ -98,7 +98,7 @@ for _ in {1..50}; do
   [ -f "$LOCK_READY" ] && break
   sleep 0.01
 done
-OUT=$(LBWC_DEVIQ_RECORD_LOCK_TIMEOUT=0.05 python3 "$RECORDER" decision --phase lock --role roleA --root "$LOCK_ROOT/deviq" --field summary=blocked 2>&1)
+OUT=$(MERIDIAN_DEVIQ_RECORD_LOCK_TIMEOUT=0.05 python3 "$RECORDER" decision --phase lock --role roleA --root "$LOCK_ROOT/deviq" --field summary=blocked 2>&1)
 RC=$?
 wait "$LOCK_PID"
 [ "$RC" -eq 2 ]; check "record lock timeout exits with its distinct status" "$?"
@@ -128,7 +128,7 @@ PY
     [ -f "$LOCK_READY" ] && break
     sleep 0.01
   done
-  OUT=$(LBWC_DEVIQ_RECORD_LOCK_TIMEOUT="$NONFINITE_TIMEOUT" python3 "$RECORDER" decision --phase lock --role roleA --root "$LOCK_ROOT/deviq" --field summary=blocked 2>&1)
+  OUT=$(MERIDIAN_DEVIQ_RECORD_LOCK_TIMEOUT="$NONFINITE_TIMEOUT" python3 "$RECORDER" decision --phase lock --role roleA --root "$LOCK_ROOT/deviq" --field summary=blocked 2>&1)
   RC=$?
   wait "$LOCK_PID"
   if [ "$RC" -eq 2 ]; then

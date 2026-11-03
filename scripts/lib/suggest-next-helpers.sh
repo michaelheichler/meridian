@@ -13,11 +13,11 @@ suggest() {
 suggest_milestone_recovery() {
   if [ "$milestone_uat_issues" = true ]; then
     if [ "$milestone_uat_slug" != "none" ] && [ "${milestone_uat_count:-0}" -gt 1 ] 2>/dev/null; then
-      suggest "/lbwc:vibe -- Milestone UAT recovery pending (${milestone_uat_slug}, ${milestone_uat_count} phase(s))"
+      suggest "/meridian:transit -- Milestone UAT recovery pending (${milestone_uat_slug}, ${milestone_uat_count} phase(s))"
     elif [ "$milestone_uat_slug" != "none" ] && [ "$milestone_uat_phase" != "none" ]; then
-      suggest "/lbwc:vibe -- Milestone UAT recovery pending (${milestone_uat_slug}, Phase ${milestone_uat_phase})"
+      suggest "/meridian:transit -- Milestone UAT recovery pending (${milestone_uat_slug}, Phase ${milestone_uat_phase})"
     else
-      suggest "/lbwc:vibe -- Milestone UAT recovery pending"
+      suggest "/meridian:transit -- Milestone UAT recovery pending"
     fi
     return 0
   fi
@@ -37,7 +37,7 @@ suggest_verify_unverified() {
     if [ -n "$first_unverified_slug" ]; then
       label="$first_unverified_phase ($(fmt_phase_name "${first_unverified_slug#*-}"))"
     fi
-    suggest "/lbwc:vibe -- Verify $label before continuing"
+    suggest "/meridian:transit -- Verify $label before continuing"
   else
     suggest "$fallback"
   fi
@@ -50,7 +50,7 @@ suggest_phase_line() {
     phase_number=$(basename "$dir" | sed 's/[^0-9].*//')
     if [ "$phase_number" = "$target" ]; then
       phase_name=$(basename "$dir" | sed 's/^[0-9]*-//')
-      suggest "/lbwc:vibe -- ${prefix} $target: $(fmt_phase_name "$phase_name")${suffix}"
+      suggest "/meridian:transit -- ${prefix} $target: $(fmt_phase_name "$phase_name")${suffix}"
       break
     fi
   done
@@ -61,26 +61,26 @@ suggest_fix_plan() {
   local detail="$1" fallback="$2" first_fail
   if [ -n "$failing_plan_ids" ]; then
     first_fail=$(echo "$failing_plan_ids" | awk '{print $1}')
-    suggest "/lbwc:fix -- Fix plan $first_fail ($detail)"
+    suggest "/meridian:fix -- Fix plan $first_fail ($detail)"
   else
-    suggest "/lbwc:fix -- $fallback"
+    suggest "/meridian:fix -- $fallback"
   fi
 }
 
 suggest_uat_remediation() {
   if [ "$current_uat_major_or_higher" = true ]; then
-    suggest "/lbwc:vibe -- Remediate UAT issues for $current_uat_issues_label"
+    suggest "/meridian:transit -- Remediate UAT issues for $current_uat_issues_label"
   else
-    suggest "/lbwc:fix -- Fix minor UAT issues in $current_uat_issues_label"
+    suggest "/meridian:fix -- Fix minor UAT issues in $current_uat_issues_label"
   fi
 }
 
 suggest_reverification() {
-  suggest "/lbwc:vibe -- Re-verify Phase ${pd_next_phase:-} after remediation"
+  suggest "/meridian:transit -- Re-verify Phase ${pd_next_phase:-} after remediation"
 }
 
 suggest_resume_verify() {
-  suggest "/lbwc:vibe -- Resume Verify for Phase ${pd_next_phase:-}"
+  suggest "/meridian:transit -- Resume Verify for Phase ${pd_next_phase:-}"
 }
 
 continue_target_available() {
@@ -90,7 +90,7 @@ continue_target_available() {
 suggest_continue_phase() {
   local target="${next_unbuilt:-$next_unplanned}"
   if [ -n "$next_undiscussed" ] && [ "$next_undiscussed" = "$target" ]; then
-    suggest "/lbwc:discuss $target -- Discuss phase before planning"
+    suggest "/meridian:discuss $target -- Discuss phase before planning"
   elif [ -n "$next_preseeded" ] && [ "$next_preseeded" = "$target" ]; then
     suggest_phase_line "$target" "Plan Phase" " (discussion pre-seeded from UAT)"
   else

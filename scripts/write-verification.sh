@@ -97,7 +97,7 @@ fi
 
 date_val=$(date -u +%Y-%m-%d)
 
-verified_at_commit=$(git log -1 --format='%H' -- . ':!.lbwc-planning' ':!CLAUDE.md' 2>/dev/null || echo "")
+verified_at_commit=$(git log -1 --format='%H' -- . ':!.meridian' ':!CLAUDE.md' 2>/dev/null || echo "")
 
 detail_type=$(echo "$payload" | jq -r '.checks_detail | type')
 if [[ "$detail_type" != "array" && "$detail_type" != "null" ]]; then

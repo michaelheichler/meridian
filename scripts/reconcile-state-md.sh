@@ -116,7 +116,7 @@ resolve_planning_root() {
     return 0
   fi
 
-  [ -n "$target" ] || target="${LBWC_PLANNING_DIR:-.lbwc-planning}"
+  [ -n "$target" ] || target="${MERIDIAN_PLANNING_DIR:-.meridian}"
   if [ -d "$target" ]; then
     physical_dir "$target"
   else

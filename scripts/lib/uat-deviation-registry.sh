@@ -124,8 +124,8 @@ record_from_uat() {
   registry=$(registry_path "$phase_dir")
   registry_dir=$(dirname "$registry")
   mkdir -p "$registry_dir"
-  tmp_records=$(mktemp "${TMPDIR:-/tmp}/lbwc-accepted-deviations.XXXXXX")
-  tmp_registry=$(mktemp "${TMPDIR:-/tmp}/lbwc-accepted-registry.XXXXXX")
+  tmp_records=$(mktemp "${TMPDIR:-/tmp}/meridian-accepted-deviations.XXXXXX")
+  tmp_registry=$(mktemp "${TMPDIR:-/tmp}/meridian-accepted-registry.XXXXXX")
   _TRACK_TMP_RECORDS="$tmp_records"
   _TRACK_TMP_REGISTRY="$tmp_registry"
   trap 'rm -f "${_TRACK_TMP_RECORDS:-}" "${_TRACK_TMP_REGISTRY:-}"' EXIT

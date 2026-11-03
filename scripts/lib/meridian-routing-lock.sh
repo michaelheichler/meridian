@@ -23,13 +23,13 @@ reclaim_stale_lock() {
 
 inherit_transaction_lock() {
   local planning_dir="$1" guard_inode fd_inode
-  LOCK_DIR="${LBWC_CONFIG_TRANSACTION_LOCK_DIR:-}"
-  LOCK_DIR_IDENTITY="${LBWC_CONFIG_TRANSACTION_LOCK_IDENTITY:-}"
-  LOCK_GUARD="${LBWC_CONFIG_TRANSACTION_GUARD:-}"
-  LOCK_FD="${LBWC_CONFIG_TRANSACTION_FD:-}"
-  LOCK_OWNER_RECORD="${LBWC_CONFIG_TRANSACTION_OWNER:-}"
+  LOCK_DIR="${MERIDIAN_CONFIG_TRANSACTION_LOCK_DIR:-}"
+  LOCK_DIR_IDENTITY="${MERIDIAN_CONFIG_TRANSACTION_LOCK_IDENTITY:-}"
+  LOCK_GUARD="${MERIDIAN_CONFIG_TRANSACTION_GUARD:-}"
+  LOCK_FD="${MERIDIAN_CONFIG_TRANSACTION_FD:-}"
+  LOCK_OWNER_RECORD="${MERIDIAN_CONFIG_TRANSACTION_OWNER:-}"
   [[ "$LOCK_FD" =~ ^[0-9]+$ ]] || fail 'inherited configuration transaction descriptor is invalid'
-  [ "${LBWC_CONFIG_TRANSACTION_PLANNING_DIR:-}" = "$planning_dir" ] \
+  [ "${MERIDIAN_CONFIG_TRANSACTION_PLANNING_DIR:-}" = "$planning_dir" ] \
     || fail 'inherited configuration transaction targets another planning directory'
   [ "$LOCK_DIR" = "$planning_dir/.routing.lock" ] \
     || fail 'inherited configuration transaction lock path is invalid'
@@ -44,7 +44,7 @@ inherit_transaction_lock() {
 
 create_lock_token() {
   local token token_status token_detail token_diag_file shell_detail
-  token_diag_file=$(mktemp "${TMPDIR:-/tmp}/lbwc-routing-lock-diag.XXXXXX") || fail 'could not create routing lock diagnostic file'
+  token_diag_file=$(mktemp "${TMPDIR:-/tmp}/meridian-routing-lock-diag.XXXXXX") || fail 'could not create routing lock diagnostic file'
   {
     if token=$(command "$ENV_TOOL" LC_ALL=C "$OD_TOOL" -An -N 16 -tx1 /dev/urandom); then
       token_status=0
@@ -135,7 +135,7 @@ acquire_config_lock() {
   fi
   LOCK_DIR="$planning_dir/.routing.lock"
   LOCK_GUARD="$planning_dir/.routing.lock.guard"
-  wait_attempts="${LBWC_ROUTING_LOCK_WAIT_ATTEMPTS:-$LOCK_WAIT_ATTEMPTS_DEFAULT}"
+  wait_attempts="${MERIDIAN_ROUTING_LOCK_WAIT_ATTEMPTS:-$LOCK_WAIT_ATTEMPTS_DEFAULT}"
   [[ "$wait_attempts" =~ ^[1-9][0-9]*$ ]] || fail 'routing lock wait attempts must be a positive integer'
   [ "$wait_attempts" -le 5000 ] || fail 'routing lock wait attempts exceed the safe bound'
   create_lock_token
@@ -147,17 +147,17 @@ acquire_config_lock() {
 export_config_transaction() {
   local planning_dir="$1"
   lock_is_owned || fail 'configuration transaction ownership is invalid'
-  export LBWC_CONFIG_TRANSACTION_ACTIVE=1
-  export LBWC_CONFIG_TRANSACTION_PLANNING_DIR="$planning_dir"
-  export LBWC_CONFIG_TRANSACTION_LOCK_DIR="$LOCK_DIR"
-  export LBWC_CONFIG_TRANSACTION_LOCK_IDENTITY="$LOCK_DIR_IDENTITY"
-  export LBWC_CONFIG_TRANSACTION_GUARD="$LOCK_GUARD"
-  export LBWC_CONFIG_TRANSACTION_FD="$LOCK_FD"
-  export LBWC_CONFIG_TRANSACTION_OWNER="$LOCK_OWNER_RECORD"
+  export MERIDIAN_CONFIG_TRANSACTION_ACTIVE=1
+  export MERIDIAN_CONFIG_TRANSACTION_PLANNING_DIR="$planning_dir"
+  export MERIDIAN_CONFIG_TRANSACTION_LOCK_DIR="$LOCK_DIR"
+  export MERIDIAN_CONFIG_TRANSACTION_LOCK_IDENTITY="$LOCK_DIR_IDENTITY"
+  export MERIDIAN_CONFIG_TRANSACTION_GUARD="$LOCK_GUARD"
+  export MERIDIAN_CONFIG_TRANSACTION_FD="$LOCK_FD"
+  export MERIDIAN_CONFIG_TRANSACTION_OWNER="$LOCK_OWNER_RECORD"
 }
 
 assert_no_pending_model_refresh() {
-  local planning_dir="$1" pending="$1/.lbwc-model-refresh.pending"
+  local planning_dir="$1" pending="$1/.meridian-model-refresh.pending"
   [ ! -e "$pending" ] && [ ! -L "$pending" ] \
     || fail "pending model refresh requires recovery: $pending"
 }

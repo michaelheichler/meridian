@@ -74,7 +74,7 @@ write_capabilities_fixture() {
         model_associations: {"nova-route": ["deliberate"]}
       }
     }
-  ' > "$dir/.lbwc-planning/claude-capabilities.json"
+  ' > "$dir/.meridian/claude-capabilities.json"
 }
 
 write_config_fixture() {
@@ -93,20 +93,20 @@ write_config_fixture() {
         }
       }
     }
-  ' "$PLUGIN_FIXTURE/config/settings.json" > "$dir/.lbwc-planning/config.json"
+  ' "$PLUGIN_FIXTURE/config/settings.json" > "$dir/.meridian/config.json"
 }
 
 new_project() {
   local dir
   dir=$(mktemp -d "$WORK_ROOT/project.XXXXXX")
-  mkdir -p "$dir/.lbwc-planning"
+  mkdir -p "$dir/.meridian"
   write_capabilities_fixture "$dir"
   write_config_fixture "$dir"
   printf '%s\n' "$dir"
 }
 
 manifest_of() {
-  jq -c '.' "$1/.lbwc-planning/.agent-manifest.json" 2>/dev/null || printf '{"agents":{}}\n'
+  jq -c '.' "$1/.meridian/.agent-manifest.json" 2>/dev/null || printf '{"agents":{}}\n'
 }
 
 run_generator() {
@@ -124,7 +124,7 @@ run_generator() {
   generator_args+=("$role" --job "$job" \
     --contract "$contract" --task-id "$(basename "$contract" .json)" "$@")
   RUN_OUTPUT=$(CDPATH='' cd -- "$project" && PATH="$(dirname "$GENERATOR_BASH"):$PATH" \
-    LBWC_AGENT_RANDOM_SEED="$CONTRACT_SEQUENCE" \
+    MERIDIAN_AGENT_RANDOM_SEED="$CONTRACT_SEQUENCE" \
     "$GENERATOR_BASH" "$GENERATOR" "${generator_args[@]}" 2>&1)
   RUN_RC=$?
 }
@@ -158,7 +158,7 @@ STALE_MANIFEST=$(jq -n --arg ts "$STALE_TS" '
     }) | add
   )}
 ')
-printf '%s\n' "$STALE_MANIFEST" > "$PROJECT_B/.lbwc-planning/.agent-manifest.json"
+printf '%s\n' "$STALE_MANIFEST" > "$PROJECT_B/.meridian/.agent-manifest.json"
 run_generator "$PROJECT_B" solo lead "write a phase plan"
 check "generation succeeds when only stale registered entries exist" "$RUN_RC"
 grep -q 'SPAWN_READY' <<< "$RUN_OUTPUT"; check "stale-entry case prints SPAWN_READY" "$?"
@@ -174,7 +174,7 @@ LIVE_MANIFEST=$(jq -n --arg ts "$FRESH_TS" '
     }) | add
   )}
 ')
-printf '%s\n' "$LIVE_MANIFEST" > "$PROJECT_B2/.lbwc-planning/.agent-manifest.json"
+printf '%s\n' "$LIVE_MANIFEST" > "$PROJECT_B2/.meridian/.agent-manifest.json"
 run_generator "$PROJECT_B2" solo lead "write a phase plan"
 check_test "generation is refused when 4 agents are already running" "$RUN_RC" -ne 0
 grep -qi 'cap' <<< "$RUN_OUTPUT"; check "cap-refusal message mentions the cap" "$?"
@@ -195,25 +195,25 @@ for selector in nova-route ember-path; do
   run_generator "$PROJECT_D" solo docs "check $selector" --model "$selector" --reasoning swift
   check_test "catalog selector '$selector' resolves cleanly" "$RUN_RC" -eq 0
   jq -e --arg model "$selector" '.agents[] | .model == $model and .effort == "swift"' \
-    "$PROJECT_D/.lbwc-planning/.agent-manifest.json" >/dev/null
+    "$PROJECT_D/.meridian/.agent-manifest.json" >/dev/null
   check "catalog selector '$selector' preserves exact reasoning" "$?"
 done
 
 PROJECT_E=$(new_project)
-rm "$PROJECT_E/.lbwc-planning/config.json"
+rm "$PROJECT_E/.meridian/config.json"
 run_generator "$PROJECT_E" solo docs "write without routing config"
 check_test "generation fails closed without routing config" "$RUN_RC" -ne 0
-check_test "agent-generator does not auto-create config.json" ! -f "$PROJECT_E/.lbwc-planning/config.json"
+check_test "agent-generator does not auto-create config.json" ! -f "$PROJECT_E/.meridian/config.json"
 
 PROJECT_F=$(new_project)
 jq '.routing.profiles.balanced.roles.architect = {model: "ember-path", reasoning: "swift", status: "resolved"}' \
-  "$PROJECT_F/.lbwc-planning/config.json" > "$PROJECT_F/.lbwc-planning/config.next"
-mv "$PROJECT_F/.lbwc-planning/config.next" "$PROJECT_F/.lbwc-planning/config.json"
+  "$PROJECT_F/.meridian/config.json" > "$PROJECT_F/.meridian/config.next"
+mv "$PROJECT_F/.meridian/config.next" "$PROJECT_F/.meridian/config.json"
 run_generator "$PROJECT_F" solo architect "preserve exact routing"
 check "catalog-backed generation succeeds for exact route" "$RUN_RC"
-NAME_F=$(jq -r '.agents | keys[0]' "$PROJECT_F/.lbwc-planning/.agent-manifest.json")
+NAME_F=$(jq -r '.agents | keys[0]' "$PROJECT_F/.meridian/.agent-manifest.json")
 jq -e --arg name "$NAME_F" '.agents[$name].model == "ember-path" and .agents[$name].effort == "swift"' \
-  "$PROJECT_F/.lbwc-planning/.agent-manifest.json" >/dev/null
+  "$PROJECT_F/.meridian/.agent-manifest.json" >/dev/null
 check "manifest preserves the exact selector and effort" "$?"
 grep -F 'model: "ember-path"' "$PROJECT_F/.claude/agents/$NAME_F.md" >/dev/null
 check "generated frontmatter preserves the exact selector" "$?"
@@ -222,15 +222,15 @@ check "generated frontmatter preserves the exact effort" "$?"
 
 PROJECT_G=$(new_project)
 jq '.routing.profiles.balanced.roles.docs.reasoning = null' \
-  "$PROJECT_G/.lbwc-planning/config.json" > "$PROJECT_G/.lbwc-planning/config.next"
-mv "$PROJECT_G/.lbwc-planning/config.next" "$PROJECT_G/.lbwc-planning/config.json"
+  "$PROJECT_G/.meridian/config.json" > "$PROJECT_G/.meridian/config.next"
+mv "$PROJECT_G/.meridian/config.next" "$PROJECT_G/.meridian/config.json"
 run_generator "$PROJECT_G" solo docs "omit structural default reasoning"
 check "catalog-backed generation accepts null reasoning" "$RUN_RC"
-NAME_G=$(jq -r '.agents | keys[0]' "$PROJECT_G/.lbwc-planning/.agent-manifest.json")
+NAME_G=$(jq -r '.agents | keys[0]' "$PROJECT_G/.meridian/.agent-manifest.json")
 ! grep -q '^effort:' "$PROJECT_G/.claude/agents/$NAME_G.md"
 check "generated frontmatter omits null effort" "$?"
 jq -e --arg name "$NAME_G" '.agents[$name].effort == null' \
-  "$PROJECT_G/.lbwc-planning/.agent-manifest.json" >/dev/null
+  "$PROJECT_G/.meridian/.agent-manifest.json" >/dev/null
 check "manifest stores structural default reasoning as null" "$?"
 
 PROJECT_H=$(new_project)
@@ -241,7 +241,7 @@ CONTRACT_H=$(bash "$TASK_CONTRACT" issue "$PROJECT_H" core-tmux-selection \
   --control-root "$CONTROL_ROOT_H" --requested-backend tmux --resolved-backend tmux \
   --write-capability directory:src/web)
 RUN_OUTPUT=$(CDPATH='' cd -- "$PROJECT_H" && PATH="$(dirname "$GENERATOR_BASH"):$PATH" \
-  LBWC_AGENT_RANDOM_SEED=42 \
+  MERIDIAN_AGENT_RANDOM_SEED=42 \
   "$GENERATOR_BASH" "$GENERATOR" web-engineer --job "run in tmux" \
     --contract "$CONTRACT_H" --task-id "$(basename "$CONTRACT_H" .json)" \
     --control-root "$CONTROL_ROOT_H" --write-capability directory:src/web \
@@ -275,7 +275,7 @@ CONTRACT_I=$(bash "$TASK_CONTRACT" issue "$PROJECT_I" core-workflow-selection \
   --control-root "$CONTROL_ROOT_I" --requested-backend workflow --resolved-backend workflow \
   --write-capability directory:src/web)
 RUN_OUTPUT=$(CDPATH='' cd -- "$PROJECT_I" && PATH="$(dirname "$GENERATOR_BASH"):$PATH" \
-  LBWC_AGENT_RANDOM_SEED=43 \
+  MERIDIAN_AGENT_RANDOM_SEED=43 \
   "$GENERATOR_BASH" "$GENERATOR" web-engineer --job "run in workflow" \
     --contract "$CONTRACT_I" --task-id "$(basename "$CONTRACT_I" .json)" \
     --control-root "$CONTROL_ROOT_I" --write-capability directory:src/web \

@@ -113,7 +113,7 @@ migrate_key_decisions_to_state() {
   local buffer="$1"
   local state_path data_rows row_count unique_rows unique_count
 
-  state_path="$(dirname "$OUTPUT_PATH")/.lbwc-planning/STATE.md"
+  state_path="$(dirname "$OUTPUT_PATH")/.meridian/STATE.md"
   data_rows=$(migration_collect_rows "$buffer")
   row_count=$(migration_count_rows "$data_rows")
   [[ "$row_count" -eq 0 ]] && return 0
@@ -160,8 +160,8 @@ flush_deprecated_buffer() {
     return 0
   fi
   if [[ "$DEPRECATED_HAS_USER_CONTENT" == true ]] && ! migrate_key_decisions_to_state "$DEPRECATED_SECTION_BUFFER"; then
-    NON_LBWC_CONTENT+="${DEPRECATED_SECTION_BUFFER}"
-    FOUND_NON_LBWC=true
+    NON_MERIDIAN_CONTENT+="${DEPRECATED_SECTION_BUFFER}"
+    FOUND_NON_MERIDIAN=true
     IN_DEPRECATED_SECTION=false
     DEPRECATED_SECTION_BUFFER=""
     DEPRECATED_HAS_USER_CONTENT=false
@@ -174,8 +174,8 @@ flush_deprecated_buffer() {
   preserved=$(migration_preserved_deprecated_notes "$DEPRECATED_SECTION_BUFFER")
   if [[ -n "${preserved//[[:space:]]/}" ]]; then
     preserved="$(echo "$preserved" | sed '/./,$!d' | sed -e :a -e '/^\n*$/{$d;N;ba' -e '}')"
-    NON_LBWC_CONTENT+="## ${section_label} (Archived Notes)"$'\n\n'"${preserved}"$'\n\n'
-    export FOUND_NON_LBWC=true
+    NON_MERIDIAN_CONTENT+="## ${section_label} (Archived Notes)"$'\n\n'"${preserved}"$'\n\n'
+    export FOUND_NON_MERIDIAN=true
   fi
 
   IN_DEPRECATED_SECTION=false

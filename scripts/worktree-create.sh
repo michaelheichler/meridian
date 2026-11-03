@@ -10,8 +10,8 @@ if [ -z "$PHASE" ] || [ -z "$PLAN" ]; then
   exit 0
 fi
 
-WORKTREE_DIR=".lbwc-worktrees/${PHASE}-${PLAN}"
-BRANCH="lbwc/${PHASE}-${PLAN}"
+WORKTREE_DIR=".meridian-worktrees/${PHASE}-${PLAN}"
+BRANCH="meridian/${PHASE}-${PLAN}"
 
 if [ -d "$WORKTREE_DIR" ]; then
   ABS_PATH=$(CDPATH='' cd -- "$WORKTREE_DIR" && pwd)
@@ -19,11 +19,11 @@ if [ -d "$WORKTREE_DIR" ]; then
   exit 0
 fi
 
-mkdir -p .lbwc-worktrees
+mkdir -p .meridian-worktrees
 
 GITIGNORE=".gitignore"
-if ! grep -qxF ".lbwc-worktrees/" "$GITIGNORE" 2>/dev/null; then
-  echo ".lbwc-worktrees/" >> "$GITIGNORE"
+if ! grep -qxF ".meridian-worktrees/" "$GITIGNORE" 2>/dev/null; then
+  echo ".meridian-worktrees/" >> "$GITIGNORE"
 fi
 
 if [ -n "$BASE" ]; then

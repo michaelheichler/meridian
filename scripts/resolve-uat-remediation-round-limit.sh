@@ -110,7 +110,7 @@ lookup_round_cap_key() {
 }
 
 resolve_from_config() {
-  local config_path="${1:-.lbwc-planning/config.json}"
+  local config_path="${1:-.meridian/config.json}"
 
   if ! command -v jq >/dev/null 2>&1; then
     return 0
@@ -183,6 +183,6 @@ case "${1:-}" in
     exit 0
     ;;
   *)
-    resolve_from_config "${1:-.lbwc-planning/config.json}"
+    resolve_from_config "${1:-.meridian/config.json}"
     ;;
 esac

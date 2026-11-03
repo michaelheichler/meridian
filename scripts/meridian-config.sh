@@ -4,16 +4,16 @@ set -euo pipefail
 SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEFAULTS_PATH="$SCRIPT_DIR/../config/settings.json"
 ROLE_DEFAULTS_PATH="$SCRIPT_DIR/../templates/agent-roles/defaults.json"
-ROUTING_PATH="$SCRIPT_DIR/lbwc-routing.sh"
+ROUTING_PATH="$SCRIPT_DIR/meridian-routing.sh"
 LOCK_ATTEMPTS=100
 LOCK_SLEEP_SECONDS=0.05
 LOCK_DIR=""
 
-. "$SCRIPT_DIR/lib/lbwc-config-agent-teams.sh"
-. "$SCRIPT_DIR/lib/lbwc-config-defaults.sh"
-. "$SCRIPT_DIR/lib/lbwc-config-files.sh"
-. "$SCRIPT_DIR/lib/lbwc-config-freeze.sh"
-. "$SCRIPT_DIR/lib/lbwc-config-ops.sh"
+. "$SCRIPT_DIR/lib/meridian-config-agent-teams.sh"
+. "$SCRIPT_DIR/lib/meridian-config-defaults.sh"
+. "$SCRIPT_DIR/lib/meridian-config-files.sh"
+. "$SCRIPT_DIR/lib/meridian-config-freeze.sh"
+. "$SCRIPT_DIR/lib/meridian-config-ops.sh"
 
 fail() {
   printf 'Error: %s\n' "$1" >&2
@@ -21,13 +21,13 @@ fail() {
 }
 
 usage() {
-  printf '%s\n' 'Usage: lbwc-config.sh <init|migrate|validate|get|set|set-json> <planning-dir> [setting] [json-value]' >&2
-  printf '%s\n' '       lbwc-config.sh default-config' >&2
-  printf '%s\n' '       lbwc-config.sh validate-config-json (reads JSON on stdin)' >&2
-  printf '%s\n' '       lbwc-config.sh validate-tmux-execution-json (reads JSON on stdin)' >&2
-  printf '%s\n' '       lbwc-config.sh agent-teams-status --settings PATH [--project-root PATH]' >&2
-  printf '%s\n' '       lbwc-config.sh agent-teams-check --settings PATH [--project-root PATH]' >&2
-  printf '%s\n' '       lbwc-config.sh agent-teams-enable --settings PATH --approved' >&2
+  printf '%s\n' 'Usage: meridian-config.sh <init|migrate|validate|get|set|set-json> <planning-dir> [setting] [json-value]' >&2
+  printf '%s\n' '       meridian-config.sh default-config' >&2
+  printf '%s\n' '       meridian-config.sh validate-config-json (reads JSON on stdin)' >&2
+  printf '%s\n' '       meridian-config.sh validate-tmux-execution-json (reads JSON on stdin)' >&2
+  printf '%s\n' '       meridian-config.sh agent-teams-status --settings PATH [--project-root PATH]' >&2
+  printf '%s\n' '       meridian-config.sh agent-teams-check --settings PATH [--project-root PATH]' >&2
+  printf '%s\n' '       meridian-config.sh agent-teams-enable --settings PATH --approved' >&2
 }
 
 require_jq() {
@@ -136,7 +136,7 @@ main() {
   esac
   [ -n "$command" ] && [ -n "$planning_dir" ] || { usage; exit 1; }
   [ -f "$ROUTING_PATH" ] || fail "routing transaction script is unavailable: $ROUTING_PATH"
-  if [ "${LBWC_CONFIG_TRANSACTION_ACTIVE:-0}" != 1 ]; then
+  if [ "${MERIDIAN_CONFIG_TRANSACTION_ACTIVE:-0}" != 1 ]; then
     prepare_transaction_directory "$command" "$planning_dir"
     exec bash "$ROUTING_PATH" transaction "$planning_dir" bash "$0" "$@"
   fi

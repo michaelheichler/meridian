@@ -3,20 +3,20 @@ set -euo pipefail
 
 . "$(dirname "$0")/resolve-claude-dir.sh" 2>/dev/null || true
 . "$(dirname "$0")/lib/display-glyphs.sh"
-lbwc_glyphs_load
-lbwc_glyph GLYPH_WARNING warning
-lbwc_glyph GLYPH_NEXT next
-lbwc_glyph GLYPH_TOP_LEFT top_left
-lbwc_glyph GLYPH_TOP_RIGHT top_right
-lbwc_glyph GLYPH_BOTTOM_LEFT bottom_left
-lbwc_glyph GLYPH_BOTTOM_RIGHT bottom_right
-lbwc_glyph GLYPH_VERTICAL vertical
-lbwc_glyph_repeat GLYPH_HORIZONTAL horizontal 74
-lbwc_glyph_repeat GLYPH_RULE rule 70
+meridian_glyphs_load
+meridian_glyph GLYPH_WARNING warning
+meridian_glyph GLYPH_NEXT next
+meridian_glyph GLYPH_TOP_LEFT top_left
+meridian_glyph GLYPH_TOP_RIGHT top_right
+meridian_glyph GLYPH_BOTTOM_LEFT bottom_left
+meridian_glyph GLYPH_BOTTOM_RIGHT bottom_right
+meridian_glyph GLYPH_VERTICAL vertical
+meridian_glyph_repeat GLYPH_HORIZONTAL horizontal 74
+meridian_glyph_repeat GLYPH_RULE rule 70
 
 PLUGIN_ROOT="${1:-${CLAUDE_PLUGIN_ROOT:-}}"
 if [ -z "$PLUGIN_ROOT" ]; then
-  PLUGIN_ROOT=$(find "${CLAUDE_DIR:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}}/plugins/cache/lbwc-marketplace/lbwc" -maxdepth 1 -mindepth 1 -type d 2>/dev/null | (sort -V 2>/dev/null || sort -t. -k1,1n -k2,2n -k3,3n) | tail -1 || true)
+  PLUGIN_ROOT=$(find "${CLAUDE_DIR:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}}/plugins/cache/meridian-marketplace/meridian" -maxdepth 1 -mindepth 1 -type d 2>/dev/null | (sort -V 2>/dev/null || sort -t. -k1,1n -k2,2n -k3,3n) | tail -1 || true)
 fi
 if [ -z "$PLUGIN_ROOT" ] || [ ! -d "$PLUGIN_ROOT" ]; then
   PLUGIN_ROOT="$(CDPATH='' cd -- "$(dirname "$0")/.." && pwd)"
@@ -105,9 +105,9 @@ fi
 
 printf '%s%s%s\n' "$GLYPH_TOP_LEFT" "$GLYPH_HORIZONTAL" "$GLYPH_TOP_RIGHT"
 if [ -n "$VERSION" ]; then
-  header="LBWC Help, v$VERSION"
+  header="MERIDIAN Help, v$VERSION"
 else
-  header="LBWC Help"
+  header="MERIDIAN Help"
 fi
 padding=$((72 - ${#header}))
 printf '%s %s%*s%s\n' "$GLYPH_VERTICAL" "$header" "$padding" "" "$GLYPH_VERTICAL"
@@ -133,4 +133,4 @@ print_section "Supporting" "The Safety Net"                  "$TMP_DIR/supportin
 print_section "Advanced"   "For When You're Feeling Ambitious" "$TMP_DIR/advanced"
 print_section "Other"      "Uncategorized"                  "$TMP_DIR/other"
 
-echo "  Getting Started: /lbwc:init ${GLYPH_NEXT} /lbwc:vibe ${GLYPH_NEXT} /lbwc:vibe --archive"
+echo "  Getting Started: /meridian:init ${GLYPH_NEXT} /meridian:transit ${GLYPH_NEXT} /meridian:transit --archive"

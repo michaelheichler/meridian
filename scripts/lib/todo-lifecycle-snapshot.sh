@@ -91,20 +91,20 @@ snapshot_write_canonical() {
   local tmp_file
 
   tmp_file=$(mktemp "${SNAPSHOT_PATH}.tmp.XXXXXX" 2>/dev/null) || {
-    error_json "snapshot_write_failed" "Todo snapshot could not be created. Rerun /lbwc:list-todos."
+    error_json "snapshot_write_failed" "Todo snapshot could not be created. Rerun /meridian:list-todos."
     return 0
   }
 
   if ! printf '%s' "$json_input" | jq -cS '.' > "$tmp_file"; then
     rm -f "$tmp_file"
-    error_json "snapshot_write_failed" "Todo snapshot could not be written. Rerun /lbwc:list-todos."
+    error_json "snapshot_write_failed" "Todo snapshot could not be written. Rerun /meridian:list-todos."
     return 0
   fi
 
   chmod 600 "$tmp_file" 2>/dev/null || true
   if ! mv "$tmp_file" "$SNAPSHOT_PATH"; then
     rm -f "$tmp_file"
-    error_json "snapshot_write_failed" "Todo snapshot could not be finalized. Rerun /lbwc:list-todos."
+    error_json "snapshot_write_failed" "Todo snapshot could not be finalized. Rerun /meridian:list-todos."
     return 0
   fi
   ok_json --arg status "ok" --arg path "$SNAPSHOT_PATH" '{status:$status, path:$path}'
@@ -115,12 +115,12 @@ snapshot_save() {
   json_input=$(read_stdin)
 
   if ! printf '%s' "$json_input" | jq empty >/dev/null 2>&1; then
-    error_json "snapshot_invalid" "Todo snapshot JSON is invalid. Rerun /lbwc:list-todos."
+    error_json "snapshot_invalid" "Todo snapshot JSON is invalid. Rerun /meridian:list-todos."
     return 0
   fi
 
   if ! snapshot_validate_schema "$json_input"; then
-    error_json "snapshot_invalid" "Todo snapshot JSON is malformed. Rerun /lbwc:list-todos."
+    error_json "snapshot_invalid" "Todo snapshot JSON is malformed. Rerun /meridian:list-todos."
     return 0
   fi
 
@@ -134,7 +134,7 @@ snapshot_select_require_unfiltered() {
 
   filter=$(printf '%s' "$snapshot" | jq -r '.filter // empty')
   if [ "$require_unfiltered" = "true" ] && [ -n "$filter" ]; then
-    error_json "snapshot_filtered" "Current list view is filtered. Rerun unfiltered /lbwc:list-todos before using this numbered todo command."
+    error_json "snapshot_filtered" "Current list view is filtered. Rerun unfiltered /meridian:list-todos before using this numbered todo command."
     return 1
   fi
 }
@@ -195,7 +195,7 @@ snapshot_select() {
   done
 
   if [ -z "$selection" ] || ! [[ "$selection" =~ ^[0-9]+$ ]]; then
-    error_json "invalid_selection" "Invalid selection. Choose a numbered todo from /lbwc:list-todos."
+    error_json "invalid_selection" "Invalid selection. Choose a numbered todo from /meridian:list-todos."
     return 0
   fi
 
@@ -287,20 +287,20 @@ validate_item_against_live_payload() {
   if [ -z "$state_path" ] || [ -z "$section_name" ] || \
     [ -z "$(printf '%s' "$metadata_json" | jq -r '.expected_occurrence')" ] || \
     [ -z "$(printf '%s' "$metadata_json" | jq -r '.expected_total')" ]; then
-    error_json "invalid_item" "Todo selection payload is missing required metadata. Rerun /lbwc:list-todos."
+    error_json "invalid_item" "Todo selection payload is missing required metadata. Rerun /meridian:list-todos."
     return 0
   fi
   local state_dir planning_dir
   state_dir=$(CDPATH='' cd -P -- "$(dirname "$state_path")" 2>/dev/null && pwd) || state_dir=""
   planning_dir=$(CDPATH='' cd -P -- "${PLANNING_DIR%/}" 2>/dev/null && pwd) || planning_dir=""
   if [ "$(basename "$state_path")" != "STATE.md" ] || [ "$state_dir" != "$planning_dir" ] || [ ! -f "$state_path" ] || [ -L "$state_path" ]; then
-    error_json "state_missing" "Todo selection no longer matches the writable root backlog. Rerun /lbwc:list-todos."
+    error_json "state_missing" "Todo selection no longer matches the writable root backlog. Rerun /meridian:list-todos."
     return 0
   fi
 
   current_items_json=$(section_items_json "$state_path" "$section_name")
   if ! candidate_json=$(validate_item_live_candidate_json "$metadata_json" "$current_items_json"); then
-    error_json "selection_stale" "Todo selection no longer matches live backlog. Rerun /lbwc:list-todos."
+    error_json "selection_stale" "Todo selection no longer matches live backlog. Rerun /meridian:list-todos."
     return 0
   fi
   printf '%s' "$candidate_json"

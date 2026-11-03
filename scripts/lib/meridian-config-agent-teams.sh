@@ -96,7 +96,7 @@ agent_teams_enable() {
   mkdir -p "$(dirname "$settings_path")"
   [ -f "$settings_path" ] || printf '{}\n' > "$settings_path"
   jq -e 'type == "object"' "$settings_path" >/dev/null 2>&1 || fail "settings file is not valid JSON: $settings_path"
-  temporary="${settings_path}.lbwc-agent-teams.tmp.${BASHPID:-$$}"
+  temporary="${settings_path}.meridian-agent-teams.tmp.${BASHPID:-$$}"
   jq '.env = (.env // {}) | .env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS = "1"' "$settings_path" > "$temporary" || {
     rm -f "$temporary"
     fail "could not write agent teams setting: $settings_path"
@@ -105,7 +105,7 @@ agent_teams_enable() {
     rm -f "$temporary"
     fail "could not persist agent teams setting: $settings_path"
   }
-  jq -n --arg path "$settings_path" '{enabled:true,source:"settings",settings_path:$path,restart_required:true,message:"Agent Teams enabled in settings. You must restart Claude Code before running /lbwc:team."}'
+  jq -n --arg path "$settings_path" '{enabled:true,source:"settings",settings_path:$path,restart_required:true,message:"Agent Teams enabled in settings. You must restart Claude Code before running /meridian:team."}'
 }
 
 dispatch_agent_teams() {

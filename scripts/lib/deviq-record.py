@@ -67,7 +67,7 @@ def _write_chained_line(fileobj, record: dict) -> str:
 
 
 def lock_timeout_seconds() -> float:
-    raw_timeout = os.environ.get("LBWC_DEVIQ_RECORD_LOCK_TIMEOUT")
+    raw_timeout = os.environ.get("MERIDIAN_DEVIQ_RECORD_LOCK_TIMEOUT")
     if raw_timeout is None:
         return DEFAULT_LOCK_TIMEOUT_SECONDS
     try:
@@ -113,8 +113,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--field", action="append", default=[], dest="fields")
     parser.add_argument(
         "--root",
-        default=".lbwc-planning/deviq",
-        help="directory holding the jsonl files (default: .lbwc-planning/deviq)",
+        default=".meridian/deviq",
+        help="directory holding the jsonl files (default: .meridian/deviq)",
     )
     return parser.parse_args(argv)
 
@@ -235,8 +235,8 @@ def parse_verify_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="deviq-record.py verify")
     parser.add_argument(
         "--root",
-        default=".lbwc-planning/deviq",
-        help="directory holding the jsonl files (default: .lbwc-planning/deviq)",
+        default=".meridian/deviq",
+        help="directory holding the jsonl files (default: .meridian/deviq)",
     )
     return parser.parse_args(argv)
 

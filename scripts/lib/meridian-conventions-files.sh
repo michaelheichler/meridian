@@ -39,7 +39,7 @@ resolve_planning_dir() {
     trimmed=${trimmed%/}
   done
   [ ! -L "$trimmed" ] || fail "planning directory boundary must not be a symbolic link: $input"
-  [ "${trimmed##*/}" = '.lbwc-planning' ] || fail "planning directory must end with .lbwc-planning: $input"
+  [ "${trimmed##*/}" = '.meridian' ] || fail "planning directory must end with .meridian: $input"
   assert_no_symbolic_links "$trimmed"
   [ -d "$trimmed" ] || fail "planning directory does not exist: $input"
   case "$trimmed" in
@@ -49,7 +49,7 @@ resolve_planning_dir() {
   physical_parent=$(CDPATH='' cd -P -- "$parent" 2>/dev/null && pwd -P) \
     || fail "could not resolve planning directory: $input"
   assert_no_symbolic_links "$physical_parent"
-  printf '%s/.lbwc-planning\n' "$physical_parent"
+  printf '%s/.meridian\n' "$physical_parent"
 }
 
 acquire_lock() {

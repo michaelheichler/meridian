@@ -2,7 +2,7 @@
 set -euo pipefail
 
 
-PLANNING_DIR="${1:-.lbwc-planning}"
+PLANNING_DIR="${1:-.meridian}"
 STATE="$PLANNING_DIR/STATE.md"
 ROADMAP="$PLANNING_DIR/ROADMAP.md"
 

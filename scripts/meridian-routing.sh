@@ -18,13 +18,13 @@ LOCK_WAIT_ATTEMPTS_DEFAULT=500
 OD_TOOL=""
 STAT_STYLE=""
 STAT_TOOL=""
-TRANSACTION_ACTIVE="${LBWC_CONFIG_TRANSACTION_ACTIVE:-0}"
+TRANSACTION_ACTIVE="${MERIDIAN_CONFIG_TRANSACTION_ACTIVE:-0}"
 
-. "$SCRIPT_DIR/lib/lbwc-routing-platform.sh"
-. "$SCRIPT_DIR/lib/lbwc-routing-lock.sh"
-. "$SCRIPT_DIR/lib/lbwc-routing-validate.sh"
-. "$SCRIPT_DIR/lib/lbwc-routing-ops.sh"
-. "$SCRIPT_DIR/lib/lbwc-routing-migrate.sh"
+. "$SCRIPT_DIR/lib/meridian-routing-platform.sh"
+. "$SCRIPT_DIR/lib/meridian-routing-lock.sh"
+. "$SCRIPT_DIR/lib/meridian-routing-validate.sh"
+. "$SCRIPT_DIR/lib/meridian-routing-ops.sh"
+. "$SCRIPT_DIR/lib/meridian-routing-migrate.sh"
 
 fail() {
   printf 'Error: %s\n' "$1" >&2
@@ -32,7 +32,7 @@ fail() {
 }
 
 usage() {
-  printf '%s\n' 'Usage: lbwc-routing.sh <set|check|activate|copy|resolve|validate|migrate|assert-transaction> <planning-dir> [arguments]' >&2
+  printf '%s\n' 'Usage: meridian-routing.sh <set|check|activate|copy|resolve|validate|migrate|assert-transaction> <planning-dir> [arguments]' >&2
 }
 
 resolve_planning_directory() {
@@ -45,7 +45,7 @@ resolve_planning_directory() {
     trimmed=${trimmed%/}
   done
   [ ! -L "$trimmed" ] || fail "planning directory boundary must not be a symbolic link: $input"
-  [ "${trimmed##*/}" = '.lbwc-planning' ] || fail "planning directory must end with .lbwc-planning: $input"
+  [ "${trimmed##*/}" = '.meridian' ] || fail "planning directory must end with .meridian: $input"
   [ -d "$trimmed" ] || fail "planning directory does not exist: $input"
   case "$trimmed" in
     */*)
@@ -55,7 +55,7 @@ resolve_planning_directory() {
     *) parent=. ;;
   esac
   physical_parent=$(CDPATH='' cd -P -- "$parent" 2>/dev/null && pwd -P) || fail "could not resolve planning directory: $input"
-  printf '%s/%s\n' "$physical_parent" '.lbwc-planning'
+  printf '%s/%s\n' "$physical_parent" '.meridian'
 }
 
 assert_command_arity() {

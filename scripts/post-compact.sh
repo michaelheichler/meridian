@@ -1,13 +1,13 @@
 #!/bin/bash
 set -u
 
-PLANNING_DIR="${LBWC_PLANNING_DIR:-.lbwc-planning}"
+PLANNING_DIR="${MERIDIAN_PLANNING_DIR:-.meridian}"
 SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd)"
 
 rm -f "$PLANNING_DIR/.compaction-marker" "$PLANNING_DIR/.context-usage" 2>/dev/null || true
 
 INPUT=$(cat)
-LBWC_PLANNING_DIR="$PLANNING_DIR" python3 "$SCRIPT_DIR/../hooks/context_usage.py" --reset <<< "$INPUT"
+MERIDIAN_PLANNING_DIR="$PLANNING_DIR" python3 "$SCRIPT_DIR/../hooks/context_usage.py" --reset <<< "$INPUT"
 NATIVE_AGENT_TYPE=$(echo "$INPUT" | jq -r '.agent_type // ""' 2>/dev/null)
 NAME_SOURCE=$(echo "$INPUT" | jq -r '.name // .agent_name // .agentName // .agent_type // ""' 2>/dev/null)
 

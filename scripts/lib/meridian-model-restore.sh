@@ -60,7 +60,7 @@ finish_restored_journal() {
   verify_pending_after_images || return 2
   remove_refresh_directory \
     "$PENDING_REFRESH" \
-    '.lbwc-model-refresh.pending' \
+    '.meridian-model-refresh.pending' \
     "$PENDING_REFRESH_IDENTITY" \
     || return 2
   PENDING_REFRESH=""

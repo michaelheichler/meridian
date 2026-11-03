@@ -5,11 +5,11 @@ REPO=/w
 OUT=/out
 PYDATA=/tmp/pycov
 
-# Tests are omitted because they are not production, except test_scope_guard.py.
+# Tests are omitted because they are not production, except scope_guard.py.
 write_pycov_rcfile() {
   local omit="" file
   for file in "$REPO"/hooks/test_*.py; do
-    [ "$(basename "$file")" = test_scope_guard.py ] || omit="$omit,$file"
+    [ "$(basename "$file")" = scope_guard.py ] || omit="$omit,$file"
   done
   mkdir -p "$PYDATA"
   cat >"$PYDATA/rc" <<RC

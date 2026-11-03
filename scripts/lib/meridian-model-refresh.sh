@@ -10,11 +10,11 @@ cleanup_preflight() {
     fi
   fi
   if [ -n "$PENDING_PREPARE" ] && [ -d "$PENDING_PREPARE" ]; then
-    remove_refresh_directory "$PENDING_PREPARE" '.lbwc-model-refresh.pending.prepare.' || cleanup_status=1
+    remove_refresh_directory "$PENDING_PREPARE" '.meridian-model-refresh.pending.prepare.' || cleanup_status=1
     PENDING_PREPARE=""
   fi
   if [ "$preserve_preflight" -eq 0 ] && [ -n "$PREFLIGHT_ROOT" ] && [ -d "$PREFLIGHT_ROOT" ]; then
-    if [[ "${PREFLIGHT_ROOT##*/}" != lbwc-model-preflight.* ]]; then
+    if [[ "${PREFLIGHT_ROOT##*/}" != meridian-model-preflight.* ]]; then
       return 1
     fi
     rm -rf -- "$PREFLIGHT_ROOT"
@@ -25,13 +25,13 @@ cleanup_preflight() {
 
 run_outside_transaction() {
   env \
-    -u LBWC_CONFIG_TRANSACTION_ACTIVE \
-    -u LBWC_CONFIG_TRANSACTION_PLANNING_DIR \
-    -u LBWC_CONFIG_TRANSACTION_LOCK_DIR \
-    -u LBWC_CONFIG_TRANSACTION_LOCK_IDENTITY \
-    -u LBWC_CONFIG_TRANSACTION_GUARD \
-    -u LBWC_CONFIG_TRANSACTION_FD \
-    -u LBWC_CONFIG_TRANSACTION_OWNER \
+    -u MERIDIAN_CONFIG_TRANSACTION_ACTIVE \
+    -u MERIDIAN_CONFIG_TRANSACTION_PLANNING_DIR \
+    -u MERIDIAN_CONFIG_TRANSACTION_LOCK_DIR \
+    -u MERIDIAN_CONFIG_TRANSACTION_LOCK_IDENTITY \
+    -u MERIDIAN_CONFIG_TRANSACTION_GUARD \
+    -u MERIDIAN_CONFIG_TRANSACTION_FD \
+    -u MERIDIAN_CONFIG_TRANSACTION_OWNER \
     "$@"
 }
 
@@ -43,7 +43,7 @@ preflight_refresh() {
   local planning_dir="$1" staged
   [ -f "$planning_dir/config.json" ] || fail "configuration is not readable: $planning_dir/config.json"
   [ ! -L "$planning_dir/config.json" ] || fail "symbolic link paths are not allowed: $planning_dir/config.json"
-  PREFLIGHT_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/lbwc-model-preflight.XXXXXX") \
+  PREFLIGHT_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/meridian-model-preflight.XXXXXX") \
     || fail 'could not create model refresh preflight directory'
   ROLLBACK_ROOT="$PREFLIGHT_ROOT/rollback"
   mkdir "$ROLLBACK_ROOT" || fail 'could not create model refresh rollback state'
@@ -57,7 +57,7 @@ preflight_refresh() {
     fail "capability catalog is not a regular file: $planning_dir/claude-capabilities.json"
   fi
   bind_rollback_images
-  staged="$PREFLIGHT_ROOT/.lbwc-planning"
+  staged="$PREFLIGHT_ROOT/.meridian"
   mkdir "$staged" || fail 'could not create model refresh preflight state'
   cp "$planning_dir/config.json" "$staged/config.json" \
     || fail 'could not stage configuration for model refresh preflight'
@@ -100,10 +100,10 @@ journal_catalog_before() {
 
 prepare_pending_refresh() {
   local planning_dir="$1" staged pending
-  staged="$PREFLIGHT_ROOT/.lbwc-planning"
-  pending="$planning_dir/.lbwc-model-refresh.pending"
+  staged="$PREFLIGHT_ROOT/.meridian"
+  pending="$planning_dir/.meridian-model-refresh.pending"
   assert_refresh_ready "$planning_dir" "$staged" "$pending"
-  PENDING_PREPARE=$(mktemp -d "$planning_dir/.lbwc-model-refresh.pending.prepare.XXXXXX") || fail 'could not create model refresh journal'
+  PENDING_PREPARE=$(mktemp -d "$planning_dir/.meridian-model-refresh.pending.prepare.XXXXXX") || fail 'could not create model refresh journal'
   cp "$ROLLBACK_ROOT/config.before" "$PENDING_PREPARE/config.before" \
     || fail 'could not preserve configuration before model refresh'
   journal_catalog_before "$planning_dir"

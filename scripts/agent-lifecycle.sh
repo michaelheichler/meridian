@@ -10,11 +10,11 @@ command -v jq >/dev/null 2>&1 || lifecycle_manifest_error unavailable
 SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname "$0")" && pwd)
 [ -f "$SCRIPT_DIR/lib/agent-manifest.sh" ] || lifecycle_manifest_error unavailable
 . "$SCRIPT_DIR/lib/agent-manifest.sh" || lifecycle_manifest_error unavailable
-. "$SCRIPT_DIR/lib/lbwc-control-root.sh" || lifecycle_manifest_error unavailable
+. "$SCRIPT_DIR/lib/meridian-control-root.sh" || lifecycle_manifest_error unavailable
 . "$SCRIPT_DIR/lib/iso-epoch.sh" || lifecycle_manifest_error unavailable
 
-PLANNING_DIR=$(lbwc_resolve_control_root "${LBWC_CONTROL_ROOT:-}" "" "$PWD" 2>/dev/null || true)
-[ -n "$PLANNING_DIR" ] || PLANNING_DIR="${LBWC_PLANNING_DIR:-.lbwc-planning}"
+PLANNING_DIR=$(meridian_resolve_control_root "${MERIDIAN_CONTROL_ROOT:-}" "" "$PWD" 2>/dev/null || true)
+[ -n "$PLANNING_DIR" ] || PLANNING_DIR="${MERIDIAN_PLANNING_DIR:-.meridian}"
 IDLE_WAIT_SECONDS=120
 COMMAND="${1:-}"
 case "$COMMAND" in
@@ -23,7 +23,7 @@ case "$COMMAND" in
 esac
 
 lifecycle_now_epoch() {
-  local value="${LBWC_LIFECYCLE_NOW:-}"
+  local value="${MERIDIAN_LIFECYCLE_NOW:-}"
   case "$value" in
     ''|*[!0-9]*) date +%s 2>/dev/null || printf '%s\n' 0 ;;
     *) printf '%s\n' "$value" ;;
@@ -74,11 +74,11 @@ tmux_session_start() {
   local control_root registry agent_id session_id updated now
   [ -f "$SCRIPT_DIR/lib/tmux-runtime.sh" ] || { tmux_lifecycle_error unavailable; return 1; }
   . "$SCRIPT_DIR/lib/tmux-runtime.sh" || { tmux_lifecycle_error unavailable; return 1; }
-  control_root="${LBWC_CONTROL_ROOT:-$PLANNING_DIR}"
-  control_root=$(lbwc_control_root_canonical_path "$control_root" 2>/dev/null) || { tmux_lifecycle_error malformed; return 1; }
+  control_root="${MERIDIAN_CONTROL_ROOT:-$PLANNING_DIR}"
+  control_root=$(meridian_control_root_canonical_path "$control_root" 2>/dev/null) || { tmux_lifecycle_error malformed; return 1; }
   tmux_runtime_configure_existing "$control_root" 2>/dev/null || { tmux_lifecycle_error malformed; return 1; }
   registry=$(tmux_runtime_registry_read 2>/dev/null) || { tmux_lifecycle_error malformed; return 1; }
-  agent_id="${LBWC_TMUX_AGENT_ID:-}"
+  agent_id="${MERIDIAN_TMUX_AGENT_ID:-}"
   session_id="${CLAUDE_SESSION_ID:-}"
   [ -n "$agent_id" ] && [ -n "$session_id" ] || { tmux_lifecycle_error malformed; return 1; }
   jq -e --arg agent_id "$agent_id" --arg session_id "$session_id" 'any(.agents[]; .agent_id == $agent_id and .claude_session_id == $session_id and .state != "shutdown")' <<<"$registry" >/dev/null 2>&1 || { tmux_lifecycle_error malformed; return 1; }
@@ -95,7 +95,7 @@ extract_known_agent_name() {
   local manifest="$1" candidate
   while IFS= read -r candidate; do
     agent_manifest_safe_name "$candidate" || continue
-    case "$candidate" in lbwc-*) ;; *) continue ;; esac
+    case "$candidate" in meridian-*) ;; *) continue ;; esac
     if jq -e --arg name "$candidate" '.agents | has($name)' <<< "$manifest" >/dev/null 2>&1; then
       printf '%s\n' "$candidate"
       return 0
@@ -176,7 +176,7 @@ lifecycle_resolve_contract_path() {
   contract_path=$(CDPATH='' cd -- "$(dirname "$contract_path")" 2>/dev/null && printf '%s/%s' "$(pwd -P)" "$(basename "$contract_path")") || return 1
   root=$(CDPATH='' cd -- "$PLANNING_DIR" 2>/dev/null && pwd -P) || return 1
   case "$(basename "$root")" in
-    .lbwc-planning) case "$contract_path" in "$root/.contracts/"*) ;; *) return 1 ;; esac ;;
+    .meridian) case "$contract_path" in "$root/.contracts/"*) ;; *) return 1 ;; esac ;;
     *) case "$contract_path" in "$root/contracts/"*) ;; *) return 1 ;; esac ;;
   esac
   printf '%s\n' "$contract_path"
@@ -210,7 +210,7 @@ lifecycle_contract_is_valid() {
   jq -e '.contract_enabled == true' <<< "$entry" >/dev/null 2>&1 || return 1
   contract_path=$(lifecycle_resolve_contract_path "$entry") || return 1
   root=$(CDPATH='' cd -- "$PLANNING_DIR" 2>/dev/null && pwd -P) || return 1
-  expected_root=$(lbwc_control_root_project_root "$root") || return 1
+  expected_root=$(meridian_control_root_project_root "$root") || return 1
   contract=$(bash "$SCRIPT_DIR/task-contract.sh" verify "$contract_path" "$expected_root" 2>/dev/null) || return 1
   lifecycle_contract_matches_entry "$entry" "$contract" || return 1
   [ "$(jq -r '.schema_version' <<< "$contract")" = "3" ] || return 0
@@ -279,7 +279,7 @@ idle_agent() {
   [ "$result" -eq 2 ] && exit 0
   [ "$result" -eq 3 ] && { printf 'agent_contract_status=invalid\n' >&2; exit 1; }
   [ "$result" -eq 0 ] || lifecycle_manifest_failure
-  jq -cn --arg name "$name" --arg seconds "$IDLE_WAIT_SECONDS" '{continue:false,stopReason:("LBWC stopped teammate " + $name + " after " + $seconds + " seconds of shell-observed inactivity.")}'
+  jq -cn --arg name "$name" --arg seconds "$IDLE_WAIT_SECONDS" '{continue:false,stopReason:("MERIDIAN stopped teammate " + $name + " after " + $seconds + " seconds of shell-observed inactivity.")}'
   exit 0
 }
 

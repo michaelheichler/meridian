@@ -15,7 +15,7 @@ if [ ! -f "$ROOT/.claude-plugin/plugin.json" ]; then
   exit 0
 fi
 PLUGIN_NAME=$(jq -r '.name // ""' "$ROOT/.claude-plugin/plugin.json" 2>/dev/null || echo "")
-if [ "$PLUGIN_NAME" != "lbwc" ]; then
+if [ "$PLUGIN_NAME" != "meridian" ]; then
   exit 0
 fi
 

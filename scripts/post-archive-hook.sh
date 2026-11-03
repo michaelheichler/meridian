@@ -4,11 +4,11 @@ set -u
 # Fails open, so a broken user hook never blocks archiving.
 
 SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname "$0")" && pwd -P 2>/dev/null || dirname "$0")
-ROOT_HELPER="$SCRIPT_DIR/lib/lbwc-config-root.sh"
+ROOT_HELPER="$SCRIPT_DIR/lib/meridian-config-root.sh"
 
 if [ -f "$ROOT_HELPER" ]; then
   . "$ROOT_HELPER"
-  find_lbwc_root "$SCRIPT_DIR" 2>/dev/null || true
+  find_meridian_root "$SCRIPT_DIR" 2>/dev/null || true
 fi
 
 warn() {
@@ -30,8 +30,8 @@ MILESTONE_SLUG="${1:-}"
 ARCHIVE_PATH="${2:-}"
 TAG="${3-}"
 
-BASE_ROOT="${LBWC_CONFIG_ROOT:-$(pwd -P 2>/dev/null || pwd)}"
-DEFAULT_CONFIG_PATH="${LBWC_PLANNING_DIR:-$BASE_ROOT/.lbwc-planning}/config.json"
+BASE_ROOT="${MERIDIAN_CONFIG_ROOT:-$(pwd -P 2>/dev/null || pwd)}"
+DEFAULT_CONFIG_PATH="${MERIDIAN_PLANNING_DIR:-$BASE_ROOT/.meridian}/config.json"
 CONFIG_PATH="${4:-$DEFAULT_CONFIG_PATH}"
 CONFIG_PATH=$(resolve_from_base "$CONFIG_PATH" "$BASE_ROOT")
 
@@ -43,8 +43,8 @@ else
 fi
 
 PROJECT_ROOT=$(dirname "$PLANNING_DIR")
-export LBWC_CONFIG_ROOT="$PROJECT_ROOT"
-export LBWC_PLANNING_DIR="$PLANNING_DIR"
+export MERIDIAN_CONFIG_ROOT="$PROJECT_ROOT"
+export MERIDIAN_PLANNING_DIR="$PLANNING_DIR"
 
 [ -n "$MILESTONE_SLUG" ] || exit 0
 [ -n "$ARCHIVE_PATH" ] || exit 0

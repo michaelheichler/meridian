@@ -39,7 +39,7 @@ check_staleness() {
     return 2
   fi
 
-  commit_count=$(git log --oneline "${base_commit}..HEAD" -- . ':!.lbwc-planning' ':!CLAUDE.md' 2>/dev/null | wc -l | tr -d ' ')
+  commit_count=$(git log --oneline "${base_commit}..HEAD" -- . ':!.meridian' ':!CLAUDE.md' 2>/dev/null | wc -l | tr -d ' ')
   classify_commit_count "$commit_count"
 }
 
@@ -54,7 +54,7 @@ emit_stale_warning() {
     echo "[research] Using research with staleness warning: $(basename "$file") (${commit_count_str} commits since)" >&2
   fi
   echo ""
-  lbwc_glyph_file "$file"
+  meridian_glyph_file "$file"
 }
 
 emit_research() {
@@ -69,7 +69,7 @@ emit_research() {
   case "$staleness_status" in
     0)
       echo "[research] Using fresh research: $(basename "$file")" >&2
-      lbwc_glyph_file "$file"
+      meridian_glyph_file "$file"
       ;;
     1)
       emit_stale_warning "$file" "$commit_count_str"

@@ -2,13 +2,13 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd)"
-. "$SCRIPT_DIR/lib/lbwc-settings.sh"
+. "$SCRIPT_DIR/lib/meridian-settings.sh"
 
-planning_dir="${1:-.lbwc-planning}"
+planning_dir="${1:-.meridian}"
 phase_dir="${2:?Usage: pipeline-research.sh <planning-dir> <phase-dir> [effort]}"
 effort="${3:-balanced}"
 [ -d "$phase_dir" ] || { printf 'Error: phase directory does not exist\n' >&2; exit 1; }
-config=$(lbwc_merged_config "$planning_dir/config.json")
+config=$(meridian_merged_config "$planning_dir/config.json")
 enabled=$(jq -er 'if .pipeline_research == null then false else .pipeline_research end | tostring' <<< "$config")
 research_name=$(bash "$SCRIPT_DIR/resolve-artifact-path.sh" phase-research "$phase_dir")
 research_path="$phase_dir/$research_name"

@@ -3,7 +3,7 @@ set -eu
 
 SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname "$0")" && pwd)
 . "$SCRIPT_DIR/lib/manifest-lock.sh"
-. "$SCRIPT_DIR/lib/lbwc-control-root.sh"
+. "$SCRIPT_DIR/lib/meridian-control-root.sh"
 
 usage() {
   printf '%s\n' 'Usage: explorer-journal.sh append --trigger precompact|pause|phase-end [--command TEXT] [--request TEXT] [--questions TEXT] [--next TEXT]' '       explorer-journal.sh current' >&2
@@ -126,8 +126,8 @@ main() {
     *) usage ;;
   esac
   local resolved
-  resolved=$(lbwc_resolve_control_root "${LBWC_CONTROL_ROOT:-}" "" "$PWD" 2>/dev/null || true)
-  [ -n "$resolved" ] || resolved="${LBWC_PLANNING_DIR:-.lbwc-planning}"
+  resolved=$(meridian_resolve_control_root "${MERIDIAN_CONTROL_ROOT:-}" "" "$PWD" 2>/dev/null || true)
+  [ -n "$resolved" ] || resolved="${MERIDIAN_PLANNING_DIR:-.meridian}"
   printf -v PLANNING_DIR '%s' "$resolved"
   case "$action" in
     append)

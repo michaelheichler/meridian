@@ -19,9 +19,9 @@ reject_milestone_phase_dir() {
   local phase_dir="$1"
 
   case "$phase_dir" in
-    */.lbwc-planning/milestones/*|.lbwc-planning/milestones/*)
+    */.meridian/milestones/*|.meridian/milestones/*)
       echo "Error: refusing to operate on archived milestone path: $phase_dir" >&2
-      echo "Remediation must target active phases in .lbwc-planning/phases/" >&2
+      echo "Remediation must target active phases in .meridian/phases/" >&2
       echo "Use create-remediation-phase.sh to create active remediation phases from milestone UAT." >&2
       exit 1
       ;;
@@ -47,11 +47,11 @@ canonicalize_existing_or_parent() {
 
 active_phase_root() {
   local candidate="$1"
-  if [[ "$candidate" != *"/.lbwc-planning/phases/"* ]]; then
-    echo "Error: UAT remediation phase must be under active .lbwc-planning/phases/: $candidate" >&2
+  if [[ "$candidate" != *"/.meridian/phases/"* ]]; then
+    echo "Error: UAT remediation phase must be under active .meridian/phases/: $candidate" >&2
     exit 1
   fi
-  printf '%s\n' "${candidate%%/.lbwc-planning/phases/*}"
+  printf '%s\n' "${candidate%%/.meridian/phases/*}"
 }
 
 canonicalize_phase_dir() {
@@ -59,14 +59,14 @@ canonicalize_phase_dir() {
   if [[ "$raw_phase_dir" = /* ]]; then
     candidate="$raw_phase_dir"
   else
-    candidate="${LBWC_CONFIG_ROOT:-$(pwd -P)}/$raw_phase_dir"
+    candidate="${MERIDIAN_CONFIG_ROOT:-$(pwd -P)}/$raw_phase_dir"
   fi
   candidate=$(canonicalize_existing_or_parent "$candidate")
   reject_milestone_phase_dir "$candidate"
   phase_root=$(active_phase_root "$candidate")
-  [ -n "$phase_root" ] || { echo "Error: unable to determine LBWC root from phase path: $candidate" >&2; exit 1; }
-  export LBWC_CONFIG_ROOT="$phase_root"
-  export LBWC_PLANNING_DIR="$phase_root/.lbwc-planning"
+  [ -n "$phase_root" ] || { echo "Error: unable to determine MERIDIAN root from phase path: $candidate" >&2; exit 1; }
+  export MERIDIAN_CONFIG_ROOT="$phase_root"
+  export MERIDIAN_PLANNING_DIR="$phase_root/.meridian"
   printf '%s\n' "$candidate"
 }
 
@@ -74,9 +74,9 @@ reject_milestone_phase_dir "$PHASE_DIR"
 PHASE_DIR=$(canonicalize_phase_dir "$PHASE_DIR")
 
 case "$PHASE_DIR" in
-  */.lbwc-planning/milestones/*)
+  */.meridian/milestones/*)
     echo "Error: refusing to operate on archived milestone path: $PHASE_DIR" >&2
-    echo "Remediation must target active phases in .lbwc-planning/phases/" >&2
+    echo "Remediation must target active phases in .meridian/phases/" >&2
     echo "Use create-remediation-phase.sh to create active remediation phases from milestone UAT." >&2
     exit 1
     ;;

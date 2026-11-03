@@ -42,7 +42,7 @@ deviq_print_sections() {
 }
 
 deviq_digest_main() {
-  local script_dir plugin_root root=".lbwc-planning/deviq" phase_filter="" open_issues recent_decisions
+  local script_dir plugin_root root=".meridian/deviq" phase_filter="" open_issues recent_decisions
   script_dir="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)" || return 1
   plugin_root="${CLAUDE_PLUGIN_ROOT:-$(CDPATH='' cd -- "$script_dir/../.." && pwd)}"
 

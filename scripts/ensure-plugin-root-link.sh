@@ -11,7 +11,7 @@ if [ -z "$link_path" ] || [ -z "$target_dir" ]; then
 fi
 
 case "$(basename "$link_path")" in
-  .lbwc-plugin-root-link-*) ;;
+  .meridian-plugin-root-link-*) ;;
   *)
     echo "Error: unexpected link path basename: $link_path" >&2
     exit 1

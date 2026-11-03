@@ -22,7 +22,7 @@ canonicalize_paths() {
   local planning_input="$1" phase_input="$2" phase_name
   [ -d "$planning_input" ] && [ ! -L "$planning_input" ] || fail "planning directory is unavailable: $planning_input"
   PLANNING_DIR=$(CDPATH='' cd -P -- "$planning_input" && pwd -P) || fail "cannot resolve planning directory: $planning_input"
-  [ "${PLANNING_DIR##*/}" = '.lbwc-planning' ] || fail "planning directory must end with .lbwc-planning: $planning_input"
+  [ "${PLANNING_DIR##*/}" = '.meridian' ] || fail "planning directory must end with .meridian: $planning_input"
   [ -d "$phase_input" ] && [ ! -L "$phase_input" ] || fail "phase directory is unavailable: $phase_input"
   PHASE_DIR=$(CDPATH='' cd -P -- "$phase_input" && pwd -P) || fail "cannot resolve phase directory: $phase_input"
   case "$PHASE_DIR" in

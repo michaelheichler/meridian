@@ -1,5 +1,5 @@
 parity_defaults_json() {
-  cat "$SCRIPT_DIR/lib/lbwc-config-parity.json"
+  cat "$SCRIPT_DIR/lib/meridian-config-parity.json"
 }
 
 read_defaults() {
@@ -28,5 +28,5 @@ migrate_config_json() {
   local existing="$1" defaults
   defaults=$(read_defaults)
   jq -cn --argjson defaults "$defaults" --argjson existing "$existing" \
-    -f "$SCRIPT_DIR/lib/lbwc-config-migrate.jq"
+    -f "$SCRIPT_DIR/lib/meridian-config-migrate.jq"
 }

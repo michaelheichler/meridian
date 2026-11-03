@@ -3,8 +3,8 @@ set -euo pipefail
 
 
 SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd)"
-LIB="$SCRIPT_DIR/lib/claude-md-lbwc-sections.sh"
-PLANNING_DIR="${LBWC_PLANNING_DIR:-.lbwc-planning}"
+LIB="$SCRIPT_DIR/lib/claude-md-meridian-sections.sh"
+PLANNING_DIR="${MERIDIAN_PLANNING_DIR:-.meridian}"
 CLAUDE_MD="CLAUDE.md"
 
 if [ ! -f "$LIB" ]; then
@@ -12,7 +12,7 @@ if [ ! -f "$LIB" ]; then
   exit 2
 fi
 
-source "$SCRIPT_DIR/lib/claude-md-lbwc-sections.sh"
+source "$SCRIPT_DIR/lib/claude-md-meridian-sections.sh"
 
 FIX=false
 JSON=false
@@ -23,9 +23,9 @@ for arg in "$@"; do
   esac
 done
 
-LBWC_SECTION_TITLES=(
+MERIDIAN_SECTION_TITLES=(
   "Active Context"
-  "LBWC Rules"
+  "MERIDIAN Rules"
   "Code Intelligence"
   "Plugin Isolation"
 )
@@ -61,13 +61,13 @@ if [ -f "$MARKER_FILE" ]; then
 fi
 
 MISSING_SECTIONS=()
-for title in "${LBWC_SECTION_TITLES[@]}"; do
+for title in "${MERIDIAN_SECTION_TITLES[@]}"; do
   if [ "$title" = "Code Intelligence" ]; then
-    if lbwc_markdown_has_code_intelligence "$CLAUDE_MD"; then
+    if meridian_markdown_has_code_intelligence "$CLAUDE_MD"; then
       continue
     fi
   else
-    if lbwc_markdown_has_heading_title "$CLAUDE_MD" "$title"; then
+    if meridian_markdown_has_heading_title "$CLAUDE_MD" "$title"; then
       continue
     fi
   fi
@@ -105,9 +105,9 @@ if [ "$JSON" = true ] && [ "$FIX" = false ]; then
 fi
 
 if [ "$FIX" = true ] && [ "$STALE" = true ]; then
-  REFRESHER="$SCRIPT_DIR/refresh-claude-md-lbwc-sections.sh"
+  REFRESHER="$SCRIPT_DIR/refresh-claude-md-meridian-sections.sh"
   if [ ! -f "$REFRESHER" ]; then
-    echo "ERROR: refresh-claude-md-lbwc-sections.sh not found at $REFRESHER" >&2
+    echo "ERROR: refresh-claude-md-meridian-sections.sh not found at $REFRESHER" >&2
     exit 2
   fi
 
@@ -117,17 +117,17 @@ if [ "$FIX" = true ] && [ "$STALE" = true ]; then
     if [ "$JSON" = true ]; then
       echo "{\"fixed\":true,\"installed_version\":\"${INSTALLED_VER:-unknown}\",\"previous_marker\":\"${MARKER_VER:-none}\"}"
     else
-      echo "CLAUDE.md LBWC sections refreshed in place (${MARKER_VER:-none} -> ${INSTALLED_VER:-unknown}). Non-LBWC content preserved."
+      echo "CLAUDE.md MERIDIAN sections refreshed in place (${MARKER_VER:-none} -> ${INSTALLED_VER:-unknown}). Non-MERIDIAN content preserved."
     fi
     exit 0
   else
-    echo "ERROR: refresh-claude-md-lbwc-sections.sh failed" >&2
+    echo "ERROR: refresh-claude-md-meridian-sections.sh failed" >&2
     exit 2
   fi
 fi
 
 if [ "$STALE" = true ]; then
-  echo "STALE: CLAUDE.md LBWC sections need refresh"
+  echo "STALE: CLAUDE.md MERIDIAN sections need refresh"
   if [ ${#MISSING_SECTIONS[@]} -gt 0 ]; then
     echo "  Missing sections:"
     for s in "${MISSING_SECTIONS[@]}"; do
@@ -137,12 +137,12 @@ if [ "$STALE" = true ]; then
   if [ "$VERSION_MISMATCH" = true ]; then
     echo "  Version: marker=${MARKER_VER:-none}, installed=${INSTALLED_VER:-unknown}"
   fi
-  echo "  Run with --fix to refresh LBWC-owned sections in place (all other CLAUDE.md content preserved)."
+  echo "  Run with --fix to refresh MERIDIAN-owned sections in place (all other CLAUDE.md content preserved)."
   exit 1
 else
   if [ -n "$INSTALLED_VER" ] && [ ! -f "$MARKER_FILE" ]; then
     echo "$INSTALLED_VER" > "$MARKER_FILE" 2>/dev/null || true
   fi
-  echo "FRESH: CLAUDE.md LBWC sections are current (v${INSTALLED_VER:-unknown})"
+  echo "FRESH: CLAUDE.md MERIDIAN sections are current (v${INSTALLED_VER:-unknown})"
   exit 0
 fi

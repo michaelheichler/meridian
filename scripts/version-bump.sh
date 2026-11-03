@@ -57,8 +57,8 @@ verify() {
   jq empty "$MARKETPLACE_FILE" >/dev/null || die '.claude-plugin/marketplace.json is invalid JSON'
   marketplace_version="$(jq -r '.version // empty' "$MARKETPLACE_FILE")"
   [ "$marketplace_version" = "$version" ] || die "marketplace version $marketplace_version does not match VERSION $version"
-  marketplace_plugin_version="$(jq -r '[.plugins[] | select(.name == "lbwc") | .version] | if length == 1 then .[0] else empty end' "$MARKETPLACE_FILE")"
-  [ "$marketplace_plugin_version" = "$version" ] || die "marketplace LBWC plugin version $marketplace_plugin_version does not match VERSION $version"
+  marketplace_plugin_version="$(jq -r '[.plugins[] | select(.name == "meridian") | .version] | if length == 1 then .[0] else empty end' "$MARKETPLACE_FILE")"
+  [ "$marketplace_plugin_version" = "$version" ] || die "marketplace MERIDIAN plugin version $marketplace_plugin_version does not match VERSION $version"
   require_changelog_entry "$version"
   printf 'version verify: %s is synchronized with plugin metadata and CHANGELOG.md\n' "$version"
 }
@@ -79,7 +79,7 @@ set_version() {
   jq --arg version "$version" '.version = $version' "$PLUGIN_FILE" > "$plugin_tmp"
   jq --arg version "$version" '
     .version = $version
-    | .plugins |= map(if .name == "lbwc" then .version = $version else . end)
+    | .plugins |= map(if .name == "meridian" then .version = $version else . end)
   ' "$MARKETPLACE_FILE" > "$marketplace_tmp"
   mv "$version_tmp" "$VERSION_FILE"
   mv "$plugin_tmp" "$PLUGIN_FILE"

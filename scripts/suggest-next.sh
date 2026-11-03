@@ -5,7 +5,7 @@ set -euo pipefail
 CMD="${1:-}"
 RESULT="${2:-}"
 TARGET_PHASE_ARG="${3:-}"
-PLANNING_DIR="${LBWC_PLANNING_DIR:-.lbwc-planning}"
+PLANNING_DIR="${MERIDIAN_PLANNING_DIR:-.meridian}"
 PHASES_DIR="$PLANNING_DIR/phases"
 SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd)"
 RESOLVE_VERIF_SCRIPT="$SCRIPT_DIR/resolve-verification-path.sh"
@@ -52,8 +52,8 @@ if [ "$CMD" = "verify" ] && [ "$effective_result" = "issues_found" ] && [ -d "${
 fi
 
 . "$SCRIPT_DIR/lib/display-glyphs.sh"
-lbwc_glyphs_load "$PLANNING_DIR"
-lbwc_glyph GLYPH_NEXT_UP next_up
+meridian_glyphs_load "$PLANNING_DIR"
+meridian_glyph GLYPH_NEXT_UP next_up
 printf '%s Next Up\n' "$GLYPH_NEXT_UP"
 
 suggest_for_command

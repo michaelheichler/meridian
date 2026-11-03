@@ -3,7 +3,7 @@ compact_json() {
 }
 
 render_next() {
-  printf '\n%s\n' 'Next: continue your current LBWC workflow.'
+  printf '\n%s\n' 'Next: continue your current MERIDIAN workflow.'
 }
 
 render_table() {

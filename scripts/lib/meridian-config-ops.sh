@@ -1,7 +1,7 @@
 validate_config_json() {
   local value="$1" roles
   roles=$(allowed_role_names)
-  jq -e --argjson roles "$roles" -f "$SCRIPT_DIR/lib/lbwc-config-validate.jq" <<< "$value" >/dev/null 2>&1
+  jq -e --argjson roles "$roles" -f "$SCRIPT_DIR/lib/meridian-config-validate.jq" <<< "$value" >/dev/null 2>&1
 }
 
 validate_or_fail() {

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -u
 
-PLANNING_DIR="${LBWC_PLANNING_DIR:-.lbwc-planning}"
+PLANNING_DIR="${MERIDIAN_PLANNING_DIR:-.meridian}"
 SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd)"
 DRIFT_COUNT=0
 

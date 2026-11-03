@@ -15,7 +15,7 @@ tmux_worker_directory() {
   worker_digest=$(shasum -a 256 "$worker_definition" | cut -d ' ' -f 1) || return 1
   mkdir -p "$TMUX_RUNTIME_ROOT/worker-worktrees" || return 1
   base_commit=$(git -C "$PROJECT_ROOT" rev-parse HEAD) || return 1
-  git -C "$PROJECT_ROOT" worktree add -b "lbwc-worker/$worker_id" "$worker_path" "$base_commit" >&2 || return 1
+  git -C "$PROJECT_ROOT" worktree add -b "meridian-worker/$worker_id" "$worker_path" "$base_commit" >&2 || return 1
   if ! tmux_runtime_atomic_json "$TMUX_RUNTIME_BUS_ROOT/worktrees/$worker_id.json" "$(jq -cn --arg path "$worker_path" --arg digest "$worker_digest" --arg base "$base_commit" '{path:$path,definition_digest:$digest,base_commit:$base}')"; then
     git -C "$PROJECT_ROOT" worktree remove "$worker_path" >&2 || true
     return 1
@@ -64,7 +64,7 @@ worker_commits_need_retention() {
 
 report_worker_branch() {
   local worker_id="$1" record="$2" base_commit branch_name ahead_count
-  branch_name="lbwc-worker/$worker_id"
+  branch_name="meridian-worker/$worker_id"
   git -C "$PROJECT_ROOT" show-ref --verify --quiet "refs/heads/$branch_name" || return 0
   base_commit=$(jq -r '.base_commit // empty' <<<"$record") || return 1
   if [ -z "$base_commit" ]; then

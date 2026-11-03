@@ -34,7 +34,7 @@ emit_posttool_context() {
   }'
 }
 
-if ! echo "$FILE_PATH" | grep -qE '\.lbwc-planning/.*SUMMARY\.md$'; then
+if ! echo "$FILE_PATH" | grep -qE '\.meridian/.*SUMMARY\.md$'; then
   exit 0
 fi
 

@@ -24,29 +24,29 @@ persist_cdpath_unset() {
 
 bind_tmux_bootstrap() {
   local agent_id contract_id capability control_root actual_session credential
-  [ -z "${LBWC_TMUX_AGENT:-}" ] || [ "${LBWC_TMUX_AGENT}" = '1' ] || { echo 'LBWC: SessionStart tmux agent mode is invalid' >&2; return 1; }
-  [ "${LBWC_TMUX_AGENT:-}" = '1' ] || return 0
-  agent_id="${LBWC_TMUX_AGENT_ID:-}"
-  contract_id="${LBWC_TMUX_CONTRACT_ID:-}"
-  control_root="${LBWC_TMUX_CONTROL_ROOT:-}"
+  [ -z "${MERIDIAN_TMUX_AGENT:-}" ] || [ "${MERIDIAN_TMUX_AGENT}" = '1' ] || { echo 'MERIDIAN: SessionStart tmux agent mode is invalid' >&2; return 1; }
+  [ "${MERIDIAN_TMUX_AGENT:-}" = '1' ] || return 0
+  agent_id="${MERIDIAN_TMUX_AGENT_ID:-}"
+  contract_id="${MERIDIAN_TMUX_CONTRACT_ID:-}"
+  control_root="${MERIDIAN_TMUX_CONTROL_ROOT:-}"
   actual_session="${CLAUDE_SESSION_ID:-}"
   for value in "$agent_id" "$contract_id" "$control_root"; do
-    [ -n "$value" ] || { echo 'LBWC: SessionStart tmux bind is missing' >&2; return 1; }
+    [ -n "$value" ] || { echo 'MERIDIAN: SessionStart tmux bind is missing' >&2; return 1; }
   done
-  [ -n "$actual_session" ] || { echo 'LBWC: SessionStart cannot bind tmux agent without CLAUDE_SESSION_ID' >&2; return 1; }
-  [[ "$actual_session" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || { echo 'LBWC: SessionStart received an invalid Claude session ID' >&2; return 1; }
-  [[ "$agent_id" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ && "$contract_id" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || { echo 'LBWC: SessionStart tmux bind is malformed' >&2; return 1; }
-  source "$CANONICAL_ROOT/scripts/lib/lbwc-control-root.sh"
-  control_root=$(lbwc_control_root_validate "$control_root" 0) || { echo 'LBWC: SessionStart tmux bind control root is invalid' >&2; return 1; }
+  [ -n "$actual_session" ] || { echo 'MERIDIAN: SessionStart cannot bind tmux agent without CLAUDE_SESSION_ID' >&2; return 1; }
+  [[ "$actual_session" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || { echo 'MERIDIAN: SessionStart received an invalid Claude session ID' >&2; return 1; }
+  [[ "$agent_id" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ && "$contract_id" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || { echo 'MERIDIAN: SessionStart tmux bind is malformed' >&2; return 1; }
+  source "$CANONICAL_ROOT/scripts/lib/meridian-control-root.sh"
+  control_root=$(meridian_control_root_validate "$control_root" 0) || { echo 'MERIDIAN: SessionStart tmux bind control root is invalid' >&2; return 1; }
   source "$CANONICAL_ROOT/scripts/lib/tmux-runtime.sh"
-  tmux_runtime_configure_existing "$control_root" || { echo 'LBWC: SessionStart tmux runtime is unavailable' >&2; return 1; }
-  credential=$(tmux_runtime_credential_read "$agent_id") || { echo 'LBWC: SessionStart tmux bind failed' >&2; return 1; }
+  tmux_runtime_configure_existing "$control_root" || { echo 'MERIDIAN: SessionStart tmux runtime is unavailable' >&2; return 1; }
+  credential=$(tmux_runtime_credential_read "$agent_id") || { echo 'MERIDIAN: SessionStart tmux bind failed' >&2; return 1; }
   capability=$(jq -r '.capability // empty' <<<"$credential")
-  jq -e --arg agent_id "$agent_id" --arg contract_id "$contract_id" --arg capability "$capability" '.agent_id == $agent_id and .contract_id == $contract_id and .capability == $capability' <<<"$credential" >/dev/null 2>&1 || { echo 'LBWC: SessionStart tmux bind is malformed' >&2; return 1; }
-  [[ "$capability" =~ ^[0-9a-f]{32}$ ]] || { echo 'LBWC: SessionStart tmux bind is malformed' >&2; return 1; }
-  bash "$CANONICAL_ROOT/scripts/tmux-bus.sh" --control-root "$control_root" bind --agent-id "$agent_id" --session-id "$actual_session" --capability "$capability" --contract-id "$contract_id" || { echo 'LBWC: SessionStart tmux bind failed' >&2; return 1; }
-  tmux_runtime_credential_delete "$agent_id" || { echo 'LBWC: SessionStart cannot consume the bound tmux credential' >&2; return 1; }
-  bash "$CANONICAL_ROOT/scripts/tmux-bus.sh" --control-root "$control_root" heartbeat --agent-id "$agent_id" --session-id "$actual_session" --capability "$capability" --state running >/dev/null || { echo 'LBWC: SessionStart tmux heartbeat failed' >&2; return 1; }
+  jq -e --arg agent_id "$agent_id" --arg contract_id "$contract_id" --arg capability "$capability" '.agent_id == $agent_id and .contract_id == $contract_id and .capability == $capability' <<<"$credential" >/dev/null 2>&1 || { echo 'MERIDIAN: SessionStart tmux bind is malformed' >&2; return 1; }
+  [[ "$capability" =~ ^[0-9a-f]{32}$ ]] || { echo 'MERIDIAN: SessionStart tmux bind is malformed' >&2; return 1; }
+  bash "$CANONICAL_ROOT/scripts/tmux-bus.sh" --control-root "$control_root" bind --agent-id "$agent_id" --session-id "$actual_session" --capability "$capability" --contract-id "$contract_id" || { echo 'MERIDIAN: SessionStart tmux bind failed' >&2; return 1; }
+  tmux_runtime_credential_delete "$agent_id" || { echo 'MERIDIAN: SessionStart cannot consume the bound tmux credential' >&2; return 1; }
+  bash "$CANONICAL_ROOT/scripts/tmux-bus.sh" --control-root "$control_root" heartbeat --agent-id "$agent_id" --session-id "$actual_session" --capability "$capability" --state running >/dev/null || { echo 'MERIDIAN: SessionStart tmux heartbeat failed' >&2; return 1; }
   printf '%s\n' "$capability" | nohup bash "$CANONICAL_ROOT/scripts/tmux-agent-heartbeat.sh" "$control_root" "$agent_id" "$actual_session" >/dev/null 2>&1 &
   TMUX_BIND_JSON=$(jq -cn --arg agent_id "$agent_id" --arg session_id "$actual_session" --arg control_root "$control_root" --arg capability "$capability" '{agent_id:$agent_id,session_id:$session_id,control_root:$control_root,capability:$capability,role:"agent"}')
   capability=''
@@ -55,13 +55,13 @@ bind_tmux_bootstrap() {
 if [ -f "$CANONICAL_ROOT/scripts/hook-wrapper.sh" ] && \
   [ -f "$CANONICAL_ROOT/scripts/ensure-plugin-root-link.sh" ] && \
   ! bash "$CANONICAL_ROOT/scripts/ensure-plugin-root-link.sh" \
-    "/tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID:-default}" "$CANONICAL_ROOT" >/dev/null 2>&1; then
-  echo "LBWC: SessionStart plugin root link bootstrap failed" >&2
+    "/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}" "$CANONICAL_ROOT" >/dev/null 2>&1; then
+  echo "MERIDIAN: SessionStart plugin root link bootstrap failed" >&2
   exit 1
 fi
 
 if ! command -v jq >/dev/null 2>&1; then
-  echo '{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"lbwc: jq not found. Install jq (brew install jq / apt install jq) -- quality gates are degraded until then."}}'
+  echo '{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"meridian: jq not found. Install jq (brew install jq / apt install jq) -- quality gates are degraded until then."}}'
   exit 0
 fi
 
@@ -125,11 +125,11 @@ SWEPT_COUNT=$((AFTER_EXPIRED - BEFORE_EXPIRED))
 [ "$SWEPT_COUNT" -lt 0 ] && SWEPT_COUNT=0
 
 if [ "${PHASE_DETECT_ERROR:-}" = "true" ]; then
-  CTX="lbwc: phase status unavailable (${PHASE_DETECT_REASON:-unknown})."
+  CTX="meridian: phase status unavailable (${PHASE_DETECT_REASON:-unknown})."
 elif [ "${PLANNING_EXISTS:-false}" != "true" ]; then
-  CTX="lbwc: no ${PLANNING_DIR}/ directory found. Run project init to set up planning."
+  CTX="meridian: no ${PLANNING_DIR}/ directory found. Run project init to set up planning."
 elif [ "${PROJECT_EXISTS:-false}" != "true" ]; then
-  CTX="lbwc: planning dir exists but PROJECT.md is not filled in yet."
+  CTX="meridian: planning dir exists but PROJECT.md is not filled in yet."
 else
   ARTIFACT="unknown"
   NEXT_CMD=""
@@ -151,17 +151,17 @@ else
   esac
 
   if [ -n "$NEXT_CMD" ]; then
-    CTX="lbwc phase ${NEXT_PHASE:-none}/${PHASE_COUNT:-0}: missing ${ARTIFACT}. Next: ${NEXT_CMD}"
+    CTX="meridian phase ${NEXT_PHASE:-none}/${PHASE_COUNT:-0}: missing ${ARTIFACT}. Next: ${NEXT_CMD}"
   else
-    CTX="lbwc phase ${NEXT_PHASE:-none}/${PHASE_COUNT:-0}, state: ${NEXT_PHASE_STATE:-unknown}."
+    CTX="meridian phase ${NEXT_PHASE:-none}/${PHASE_COUNT:-0}, state: ${NEXT_PHASE_STATE:-unknown}."
   fi
 fi
 
-[ -n "${TMUX_BIND_JSON:-}" ] && CTX="$CTX lbwc tmux bind: ${TMUX_BIND_JSON}."
+[ -n "${TMUX_BIND_JSON:-}" ] && CTX="$CTX meridian tmux bind: ${TMUX_BIND_JSON}."
 [ -n "$MAP_TOOLS_ROUTE" ] && CTX="$CTX Map tools route: ${MAP_TOOLS_ROUTE}."
 [ -n "$MAP_STALE_CTX" ] && CTX="$CTX ${MAP_STALE_CTX}"
 [ "$SWEPT_COUNT" -gt 0 ] && CTX="$CTX Swept ${SWEPT_COUNT} stale agent(s) from the manifest."
-[ "$LIFECYCLE_STATUS" -ne 0 ] && [ -n "$AGENT_MANIFEST_STATUS" ] && CTX="$CTX lbwc: agent manifest status ${AGENT_MANIFEST_STATUS}."
+[ "$LIFECYCLE_STATUS" -ne 0 ] && [ -n "$AGENT_MANIFEST_STATUS" ] && CTX="$CTX meridian: agent manifest status ${AGENT_MANIFEST_STATUS}."
 [ -n "$TEMP_RUN_CLEANUP" ] && CTX="$CTX Temporary agent run cleanup inspected retained state."
 
 jq -n --arg ctx "$CTX" '{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":$ctx}}'

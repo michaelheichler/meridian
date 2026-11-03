@@ -1,7 +1,7 @@
 #!/bin/bash
 set -u
 
-PLANNING_DIR="${LBWC_PLANNING_DIR:-.lbwc-planning}"
+PLANNING_DIR="${MERIDIAN_PLANNING_DIR:-.meridian}"
 
 if [ ! -d "$PLANNING_DIR" ]; then
   exit 0

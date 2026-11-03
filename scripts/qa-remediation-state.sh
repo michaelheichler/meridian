@@ -15,7 +15,7 @@ if [ -z "$CMD" ] || [ -z "$PHASE_DIR" ]; then
 fi
 
 case "$PHASE_DIR" in
-  */.lbwc-planning/milestones/*|.lbwc-planning/milestones/*)
+  */.meridian/milestones/*|.meridian/milestones/*)
     echo "Error: refusing to operate on archived milestone path: $PHASE_DIR" >&2
     exit 1
     ;;
@@ -26,9 +26,9 @@ if [[ "$PHASE_DIR" != /* ]]; then
 fi
 PHASE_DIR="$(CDPATH='' cd -- "$PHASE_DIR" 2>/dev/null && pwd -P)"
 case "$PHASE_DIR" in
-  */.lbwc-planning/phases/*) ;;
+  */.meridian/phases/*) ;;
   *)
-    echo "Error: QA remediation phase must be under active .lbwc-planning/phases/: $PHASE_DIR" >&2
+    echo "Error: QA remediation phase must be under active .meridian/phases/: $PHASE_DIR" >&2
     exit 1
     ;;
 esac
@@ -235,10 +235,10 @@ next_stage() {
 
 find_config_file() {
   local config_dir="$PHASE_DIR"
-  while [ "$config_dir" != / ] && [ ! -f "$config_dir/.lbwc-planning/config.json" ]; do
+  while [ "$config_dir" != / ] && [ ! -f "$config_dir/.meridian/config.json" ]; do
     config_dir=$(dirname "$config_dir")
   done
-  printf '%s/.lbwc-planning/config.json\n' "$config_dir"
+  printf '%s/.meridian/config.json\n' "$config_dir"
 }
 
 next_round_decision() {

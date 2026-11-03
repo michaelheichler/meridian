@@ -7,10 +7,10 @@ LOCK_DIR=""
 LOCK_HELD=0
 TEMP_PATH=""
 
-. "$SCRIPT_DIR/lib/lbwc-conventions-files.sh"
-. "$SCRIPT_DIR/lib/lbwc-conventions-artifact.sh"
-. "$SCRIPT_DIR/lib/lbwc-conventions-render.sh"
-. "$SCRIPT_DIR/lib/lbwc-conventions-commands.sh"
+. "$SCRIPT_DIR/lib/meridian-conventions-files.sh"
+. "$SCRIPT_DIR/lib/meridian-conventions-artifact.sh"
+. "$SCRIPT_DIR/lib/meridian-conventions-render.sh"
+. "$SCRIPT_DIR/lib/meridian-conventions-commands.sh"
 
 fail() {
   printf 'Error: %s\n' "$1" >&2
@@ -18,7 +18,7 @@ fail() {
 }
 
 usage() {
-  printf '%s\n' 'Usage: lbwc-conventions.sh [--json] <list|group|add|remove|reconcile|refresh> <planning-dir> [arguments]' >&2
+  printf '%s\n' 'Usage: meridian-conventions.sh [--json] <list|group|add|remove|reconcile|refresh> <planning-dir> [arguments]' >&2
   exit 2
 }
 

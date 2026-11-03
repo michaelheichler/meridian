@@ -3,7 +3,7 @@ set -u
 
 MODE="${1:-execute}"
 
-PLANNING_DIR="${LBWC_PLANNING_DIR:-.lbwc-planning}"
+PLANNING_DIR="${MERIDIAN_PLANNING_DIR:-.meridian}"
 USAGE_FILE="$PLANNING_DIR/.context-usage"
 
 _SC_SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd)"
@@ -17,7 +17,7 @@ fi
 
 PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-}"
 if [ -z "$PLUGIN_ROOT" ]; then
-  PLUGIN_ROOT=$(find "${CLAUDE_DIR:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}}/plugins/cache/lbwc-marketplace/lbwc" -maxdepth 1 -mindepth 1 -type d 2>/dev/null | (sort -V 2>/dev/null || sort -t. -k1,1n -k2,2n -k3,3n) | tail -1 || true)
+  PLUGIN_ROOT=$(find "${CLAUDE_DIR:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}}/plugins/cache/meridian-marketplace/meridian" -maxdepth 1 -mindepth 1 -type d 2>/dev/null | (sort -V 2>/dev/null || sort -t. -k1,1n -k2,2n -k3,3n) | tail -1 || true)
 fi
 if [ -z "$PLUGIN_ROOT" ] || [ ! -d "$PLUGIN_ROOT" ]; then
   PLUGIN_ROOT="$(CDPATH='' cd -- "$(dirname "$0")/.." && pwd)"
@@ -95,7 +95,7 @@ case "$MODE" in
     FIXED_BYTES=$(sum_bytes \
       "$PLUGIN_ROOT/references/execute-protocol.md" \
       "$PLUGIN_ROOT/references/handoff-schemas.md" \
-      "$PLUGIN_ROOT/references/lbwc-brand-essentials.md" \
+      "$PLUGIN_ROOT/references/meridian-brand-essentials.md" \
       "$(effort_file)" \
       "$PLUGIN_ROOT/templates/agent-roles/dev.md.tpl" \
       "$PLUGIN_ROOT/templates/agent-roles/qa.md.tpl" \
@@ -147,7 +147,7 @@ case "$MODE" in
   verify)
     FIXED_BYTES=$(sum_bytes \
       "$PLUGIN_ROOT/templates/UAT.md" \
-      "$PLUGIN_ROOT/references/lbwc-brand-essentials.md" \
+      "$PLUGIN_ROOT/references/meridian-brand-essentials.md" \
     )
     VARIABLE_BYTES=$(sum_bytes "$PLANNING_DIR/STATE.md")
     if [ -n "$PHASE_DIR" ] && [ -d "$PHASE_DIR" ]; then
@@ -162,7 +162,7 @@ case "$MODE" in
       "$PLUGIN_ROOT/templates/agent-roles/qa.md.tpl" \
       "$PLUGIN_ROOT/references/verification-protocol.md" \
       "$PLUGIN_ROOT/references/handoff-schemas.md" \
-      "$PLUGIN_ROOT/references/lbwc-brand-essentials.md" \
+      "$PLUGIN_ROOT/references/meridian-brand-essentials.md" \
       "$(effort_file)" \
     )
     VARIABLE_BYTES=$(sum_bytes \
@@ -257,8 +257,8 @@ fi
 
 if [ "$REMAINING" -lt "$NEEDED" ] || [ "$THRESHOLD_EXCEEDED" = true ]; then
   . "$_SC_SCRIPT_DIR/lib/display-glyphs.sh"
-  lbwc_glyphs_load "$PLANNING_DIR"
-  lbwc_glyph GLYPH_WARNING warning
+  meridian_glyphs_load "$PLANNING_DIR"
+  meridian_glyph GLYPH_WARNING warning
   if [ "$AUTONOMY" = "confident" ] || [ "$AUTONOMY" = "pure-vibe" ]; then
     cat <<EOF
 ${GLYPH_WARNING} **PRE-FLIGHT CONTEXT GUARD:** Context window is at ${USED_PCT}% (${REMAINING} tokens remaining). This ${MODE} workflow needs ~${EST_COST} tokens of headroom (${FIXED_BYTES}B fixed + ${VARIABLE_BYTES}B project files). Running /compact now to prevent mid-workflow compaction.
@@ -269,7 +269,7 @@ EOF
     cat <<EOF
 ${GLYPH_WARNING} **PRE-FLIGHT CONTEXT GUARD:** Context window is at ${USED_PCT}% (~${REMAINING} tokens remaining). This ${MODE} workflow needs ~${EST_COST} tokens of headroom (${FIXED_BYTES}B fixed + ${VARIABLE_BYTES}B project files). Starting now risks mid-workflow auto-compaction, which degrades context quality.
 
-**RECOMMENDED:** Run \`/compact\` first, then re-run this command. Or run \`/lbwc:pause\` then \`/lbwc:resume\` for a clean context reload.
+**RECOMMENDED:** Run \`/compact\` first, then re-run this command. Or run \`/meridian:pause\` then \`/meridian:resume\` for a clean context reload.
 EOF
   fi
 fi

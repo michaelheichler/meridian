@@ -3,21 +3,21 @@ set -euo pipefail
 
 
 SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd)"
-LIB="$SCRIPT_DIR/../lib/claude-md-lbwc-sections.sh"
+LIB="$SCRIPT_DIR/../lib/claude-md-meridian-sections.sh"
 
 if [[ ! -f "$LIB" ]]; then
   echo "Error: helper library not found at $LIB" >&2
   exit 1
 fi
 
-source "$SCRIPT_DIR/../lib/claude-md-lbwc-sections.sh"
+source "$SCRIPT_DIR/../lib/claude-md-meridian-sections.sh"
 source "$SCRIPT_DIR/lib/bootstrap-claude-migration.sh"
 
 
-LBWC_SECTIONS=("${LBWC_CANONICAL_HEADERS[@]}")
+MERIDIAN_SECTIONS=("${MERIDIAN_CANONICAL_HEADERS[@]}")
 
-LBWC_DEPRECATED_SECTIONS=(
-  "## Key Decisions"  # stale because .lbwc-planning/PROJECT.md and STATE.md track decisions
+MERIDIAN_DEPRECATED_SECTIONS=(
+  "## Key Decisions"  # stale because .meridian/PROJECT.md and STATE.md track decisions
   "## Installed Skills"  # stale because the runtime activation pipeline surfaces skills
 )
 
@@ -53,39 +53,39 @@ fi
 mkdir -p "$(dirname "$OUTPUT_PATH")"
 
 INCLUDE_ACTIVE_CONTEXT=true
-INCLUDE_LBWC_RULES=true
+INCLUDE_MERIDIAN_RULES=true
 INCLUDE_CODE_INTELLIGENCE=true
 INCLUDE_PLUGIN_ISOLATION=true
 
-generate_lbwc_sections() {
+generate_meridian_sections() {
   local emitted=false
 
   if [[ "$INCLUDE_ACTIVE_CONTEXT" == true ]]; then
-    lbwc_generate_active_context_section
+    meridian_generate_active_context_section
     emitted=true
   fi
 
-  if [[ "$INCLUDE_LBWC_RULES" == true ]]; then
+  if [[ "$INCLUDE_MERIDIAN_RULES" == true ]]; then
     if [[ "$emitted" == true ]]; then echo ""; fi
-    lbwc_generate_lbwc_rules_section
+    meridian_generate_meridian_rules_section
     emitted=true
   fi
 
   if [[ "$INCLUDE_CODE_INTELLIGENCE" == true ]]; then
     if [[ "$emitted" == true ]]; then echo ""; fi
-    lbwc_generate_code_intelligence_section
+    meridian_generate_code_intelligence_section
     emitted=true
   fi
 
   if [[ "$INCLUDE_PLUGIN_ISOLATION" == true ]]; then
     if [[ "$emitted" == true ]]; then echo ""; fi
-    lbwc_generate_plugin_isolation_section
+    meridian_generate_plugin_isolation_section
   fi
 }
 
-is_lbwc_section() {
+is_meridian_section() {
   local line="$1"
-  for header in "${LBWC_SECTIONS[@]}"; do
+  for header in "${MERIDIAN_SECTIONS[@]}"; do
     if [[ "$line" == "$header" ]]; then
       return 0
     fi
@@ -112,9 +112,9 @@ is_gsd_section() {
   return 1
 }
 
-is_deprecated_lbwc_section() {
+is_deprecated_meridian_section() {
   local line="$1"
-  for header in "${LBWC_DEPRECATED_SECTIONS[@]}"; do
+  for header in "${MERIDIAN_DEPRECATED_SECTIONS[@]}"; do
     if [[ "$line" == "$header" ]]; then
       return 0
     fi
@@ -149,7 +149,7 @@ update_fence_state() {
 }
 
 is_managed_section() {
-  is_lbwc_section "$1" || is_deprecated_lbwc_section "$1" || is_gsd_section "$1"
+  is_meridian_section "$1" || is_deprecated_meridian_section "$1" || is_gsd_section "$1"
 }
 
 if [[ -n "$EXISTING_PATH" && -f "$EXISTING_PATH" ]]; then
@@ -158,9 +158,9 @@ if [[ -n "$EXISTING_PATH" && -f "$EXISTING_PATH" ]]; then
     ALLOW_SOFT_GSD_STRIP=true
   fi
 
-  NON_LBWC_CONTENT=""
+  NON_MERIDIAN_CONTENT=""
   IN_MANAGED_SECTION=false
-  export FOUND_NON_LBWC=false
+  export FOUND_NON_MERIDIAN=false
   IN_DEPRECATED_SECTION=false
   DEPRECATED_SECTION_BUFFER=""
   DEPRECATED_HAS_USER_CONTENT=false
@@ -173,7 +173,7 @@ if [[ -n "$EXISTING_PATH" && -f "$EXISTING_PATH" ]]; then
 
     if [[ "$IN_FENCE" == false ]] && is_managed_section "$line"; then
       flush_deprecated_buffer
-      if is_deprecated_lbwc_section "$line"; then
+      if is_deprecated_meridian_section "$line"; then
         IN_DEPRECATED_SECTION=true
         DEPRECATED_SECTION_BUFFER="${line}"$'\n'
         DEPRECATED_HAS_USER_CONTENT=false
@@ -196,45 +196,45 @@ if [[ -n "$EXISTING_PATH" && -f "$EXISTING_PATH" ]]; then
     fi
 
     if [[ "$IN_MANAGED_SECTION" == false ]]; then
-      NON_LBWC_CONTENT+="${line}"$'\n'
-      FOUND_NON_LBWC=true
+      NON_MERIDIAN_CONTENT+="${line}"$'\n'
+      FOUND_NON_MERIDIAN=true
     fi
   done < "$EXISTING_PATH"
 
   flush_deprecated_buffer
 
-  if lbwc_should_emit_managed_section "$EXISTING_PATH" "Active Context" "## Active Context"; then
+  if meridian_should_emit_managed_section "$EXISTING_PATH" "Active Context" "## Active Context"; then
     INCLUDE_ACTIVE_CONTEXT=true
   else
     INCLUDE_ACTIVE_CONTEXT=false
   fi
 
-  if lbwc_should_emit_managed_section "$EXISTING_PATH" "LBWC Rules" "## LBWC Rules"; then
-    INCLUDE_LBWC_RULES=true
+  if meridian_should_emit_managed_section "$EXISTING_PATH" "MERIDIAN Rules" "## MERIDIAN Rules"; then
+    INCLUDE_MERIDIAN_RULES=true
   else
-    INCLUDE_LBWC_RULES=false
+    INCLUDE_MERIDIAN_RULES=false
   fi
 
-  if lbwc_should_emit_code_intelligence_section "$EXISTING_PATH"; then
+  if meridian_should_emit_code_intelligence_section "$EXISTING_PATH"; then
     INCLUDE_CODE_INTELLIGENCE=true
   else
     INCLUDE_CODE_INTELLIGENCE=false
   fi
 
-  if lbwc_should_emit_managed_section "$EXISTING_PATH" "Plugin Isolation" "## Plugin Isolation"; then
+  if meridian_should_emit_managed_section "$EXISTING_PATH" "Plugin Isolation" "## Plugin Isolation"; then
     INCLUDE_PLUGIN_ISOLATION=true
   else
     INCLUDE_PLUGIN_ISOLATION=false
   fi
 
   {
-    if [[ "$FOUND_NON_LBWC" == true ]]; then
-      echo "$NON_LBWC_CONTENT" | sed '/./,$!d' | sed -e :a -e '/^\n*$/{$d;N;ba' -e '}'
-      if [[ "$INCLUDE_ACTIVE_CONTEXT" == true || "$INCLUDE_LBWC_RULES" == true || "$INCLUDE_CODE_INTELLIGENCE" == true || "$INCLUDE_PLUGIN_ISOLATION" == true ]]; then
+    if [[ "$FOUND_NON_MERIDIAN" == true ]]; then
+      echo "$NON_MERIDIAN_CONTENT" | sed '/./,$!d' | sed -e :a -e '/^\n*$/{$d;N;ba' -e '}'
+      if [[ "$INCLUDE_ACTIVE_CONTEXT" == true || "$INCLUDE_MERIDIAN_RULES" == true || "$INCLUDE_CODE_INTELLIGENCE" == true || "$INCLUDE_PLUGIN_ISOLATION" == true ]]; then
         echo ""
       fi
     fi
-    generate_lbwc_sections
+    generate_meridian_sections
   } > "$OUTPUT_PATH"
 else
   {
@@ -242,7 +242,7 @@ else
     echo ""
     echo "**Core value:** ${CORE_VALUE}"
     echo ""
-    generate_lbwc_sections
+    generate_meridian_sections
   } > "$OUTPUT_PATH"
 fi
 

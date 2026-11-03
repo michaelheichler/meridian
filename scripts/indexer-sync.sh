@@ -41,7 +41,7 @@ if ! command -v jq >/dev/null 2>&1 || ! jq -n 'true' >/dev/null 2>&1; then
 fi
 
 SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd -P)"
-CONTROL_ROOT_SCRIPT="$SCRIPT_DIR/lib/lbwc-control-root.sh"
+CONTROL_ROOT_SCRIPT="$SCRIPT_DIR/lib/meridian-control-root.sh"
 PLANNING_DIR=""
 RUNTIME_DIR=""
 SYNC_FILE=""
@@ -52,8 +52,8 @@ if [[ ! -f "$CONTROL_ROOT_SCRIPT" ]]; then
 fi
 
 # The control-root contract only accepts an initialized planning directory.
-if PLANNING_DIR="$(CDPATH='' cd -- "$PROJECT_ROOT" && . "$CONTROL_ROOT_SCRIPT" && lbwc_resolve_control_root "" "$PROJECT_ROOT" "$PROJECT_ROOT" 2>/dev/null)" &&
-   [[ "$(basename "$PLANNING_DIR")" == ".lbwc-planning" ]] &&
+if PLANNING_DIR="$(CDPATH='' cd -- "$PROJECT_ROOT" && . "$CONTROL_ROOT_SCRIPT" && meridian_resolve_control_root "" "$PROJECT_ROOT" "$PROJECT_ROOT" 2>/dev/null)" &&
+   [[ "$(basename "$PLANNING_DIR")" == ".meridian" ]] &&
    [[ -f "$PLANNING_DIR/config.json" ]]; then
   RUNTIME_DIR="$PLANNING_DIR/.runtime"
   SYNC_FILE="$RUNTIME_DIR/indexer-sync.json"
@@ -85,13 +85,13 @@ if [[ ! -f "$SCRIPT_DIR/probe-map-tools.sh" ]]; then
 fi
 
 if [[ -n "$PLANNING_DIR" ]]; then
-  PROBE_RAW="$(CDPATH='' cd -- "$PROJECT_ROOT" && LBWC_PLANNING_DIR="$PLANNING_DIR" bash "$SCRIPT_DIR/probe-map-tools.sh" 2>/dev/null)" || {
+  PROBE_RAW="$(CDPATH='' cd -- "$PROJECT_ROOT" && MERIDIAN_PLANNING_DIR="$PLANNING_DIR" bash "$SCRIPT_DIR/probe-map-tools.sh" 2>/dev/null)" || {
     write_sync_record "unknown" "probe-failed" ""
     printf '%s\n' "Indexer sync: map-tools probe failed" >&2
     exit 2
   }
 else
-  PROBE_RAW="$(CDPATH='' cd -- "$PROJECT_ROOT" && LBWC_PLANNING_DIR="$PROJECT_ROOT/.lbwc-planning/.probe-disabled" bash "$SCRIPT_DIR/probe-map-tools.sh" 2>/dev/null)" || {
+  PROBE_RAW="$(CDPATH='' cd -- "$PROJECT_ROOT" && MERIDIAN_PLANNING_DIR="$PROJECT_ROOT/.meridian/.probe-disabled" bash "$SCRIPT_DIR/probe-map-tools.sh" 2>/dev/null)" || {
     write_sync_record "unknown" "probe-failed" ""
     printf '%s\n' "Indexer sync: map-tools probe failed" >&2
     exit 2

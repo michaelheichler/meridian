@@ -13,7 +13,7 @@ CFG_CONTEXT_COMPILER="true"
 CFG_AUTO_UAT="false"
 
 if [ "$JQ_AVAILABLE" = true ]; then
-  MERGED_CONFIG_ENV=$(lbwc_merged_config "$CONFIG_FILE")
+  MERGED_CONFIG_ENV=$(meridian_merged_config "$CONFIG_FILE")
   while IFS=$'\t' read -r cfg_key cfg_value; do
     case "$cfg_key" in
       effort) CFG_EFFORT=$cfg_value ;;

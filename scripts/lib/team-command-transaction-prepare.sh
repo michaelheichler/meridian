@@ -91,7 +91,7 @@ prepare_generate_agents() {
 prepare_collect_teammates() {
   local manifest_read_path name role
   TEAMMATES_JSON='[]'
-  manifest_read_path=$(lbwc_control_root_manifest_path "$CONTROL_ROOT") || fail_diag 'control root manifest path is unavailable'
+  manifest_read_path=$(meridian_control_root_manifest_path "$CONTROL_ROOT") || fail_diag 'control root manifest path is unavailable'
   while IFS= read -r name; do
     role=$(jq -r --arg name "$name" '.agents[$name].role // empty' "$manifest_read_path")
     [ -n "$role" ] || fail_diag "generated name '$name' is not registered in the run manifest"

@@ -2,16 +2,16 @@ debug_logging_init() {
   [ "${DEBUG_LOGGING_LOADED:-0}" = 1 ] && return 0
   local _debug_scripts _debug_planning _debug_config _debug_enabled
   _debug_scripts=$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd) || return 0
-  _debug_planning="${LBWC_PLANNING_DIR:-}"
+  _debug_planning="${MERIDIAN_PLANNING_DIR:-}"
   if [ -z "$_debug_planning" ]; then
     _debug_planning=$(
-      . "$_debug_scripts/lib/lbwc-config-root.sh"
-      find_lbwc_root "${1:-$PWD}"
-      printf '%s' "$LBWC_PLANNING_DIR"
+      . "$_debug_scripts/lib/meridian-config-root.sh"
+      find_meridian_root "${1:-$PWD}"
+      printf '%s' "$MERIDIAN_PLANNING_DIR"
     ) || return 0
   fi
-  . "$_debug_scripts/lib/lbwc-settings.sh"
-  _debug_config=$(lbwc_merged_config "$_debug_planning/config.json") || _debug_config='{}'
+  . "$_debug_scripts/lib/meridian-settings.sh"
+  _debug_config=$(meridian_merged_config "$_debug_planning/config.json") || _debug_config='{}'
   _debug_enabled=false
   if [ "$_debug_config" != '{}' ]; then
     _debug_enabled=$(jq -r '.debug_logging == true' <<< "$_debug_config" 2>/dev/null) || _debug_enabled=false

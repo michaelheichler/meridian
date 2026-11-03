@@ -4,7 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OPEN_FILTER="$SCRIPT_DIR/lib/deviq-open-blocks.jq"
 
-ROOT=".lbwc-planning/deviq"
+ROOT=".meridian/deviq"
 PHASE=""
 
 while [ $# -gt 0 ]; do

@@ -11,7 +11,7 @@ fi
 TARGET="${CLAUDE_PLUGIN_ROOT:+$CLAUDE_PLUGIN_ROOT/scripts/$SCRIPT}"
 
 if [ -z "$TARGET" ] || [ ! -f "$TARGET" ]; then
-  for f in /tmp/.lbwc-plugin-root-link-*/scripts/"$SCRIPT"; do
+  for f in /tmp/.meridian-plugin-root-link-*/scripts/"$SCRIPT"; do
     [ -f "$f" ] && TARGET="$f" && break
   done
 fi

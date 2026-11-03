@@ -59,10 +59,10 @@ build_resolver_args() {
 
 run_settings_resolver() {
   local role="$1" rc=0 settings_script
-  settings_script="${LBWC_AGENT_SETTINGS_SCRIPT:-$SCRIPT_DIR/resolve-agent-settings.sh}"
+  settings_script="${MERIDIAN_AGENT_SETTINGS_SCRIPT:-$SCRIPT_DIR/resolve-agent-settings.sh}"
   [ -f "$settings_script" ] || fail "agent settings resolver not found"
   TEMPORARY_CONTROL_ROOT=false
-  if [ "$(basename "$CONTROL_ROOT")" != ".lbwc-planning" ]; then
+  if [ "$(basename "$CONTROL_ROOT")" != ".meridian" ]; then
     TEMPORARY_CONTROL_ROOT=true
   fi
   build_resolver_args "$role"

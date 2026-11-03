@@ -12,7 +12,7 @@ CONTRACT_A=$(bash "$TASK_CONTRACT" issue "$PROJECT_A" pair-1 \
   --write-capability directory:src)
 TASK_ID_A=$(basename "$CONTRACT_A" .json)
 
-AGEN_OUTPUT_A=$(LBWC_AGENT_RANDOM_SEED=101 run_with_modern_bash "$AGENT_GENERATOR" --pair web-engineer \
+AGEN_OUTPUT_A=$(MERIDIAN_AGENT_RANDOM_SEED=101 run_with_modern_bash "$AGENT_GENERATOR" --pair web-engineer \
   --job "$ADVERSARIAL_JOB" --contract "$CONTRACT_A" --task-id "$TASK_ID_A" \
   --control-root "$CONTROL_ROOT_A" --write-capability directory:src \
   --execution-backend workflow 2>&1)
@@ -72,7 +72,7 @@ check_test "the registered args_digest is pinned to sha256(\"null\")" "$REGISTER
 WGEN_UNREGISTERED=$(run_with_modern_bash "$WORKFLOW_GENERATOR" pair web-engineer \
   --job "$ADVERSARIAL_JOB" --contract "$CONTRACT_A" --task-id "$TASK_ID_A" \
   --control-root "$CONTROL_ROOT_A" --autonomy standard \
-  --engineer-name "lbwc-web-engineer-bogus-bogus-bogus" --critic-name "$CRITIC_A" 2>&1)
+  --engineer-name "meridian-web-engineer-bogus-bogus-bogus" --critic-name "$CRITIC_A" 2>&1)
 check_test "a name absent from the manifest is refused" "$?" -ne 0
 grep -qi 'not registered' <<< "$WGEN_UNREGISTERED"; check "the refusal names the missing manifest entry" "$?"
 

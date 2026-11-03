@@ -2,7 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROUTING_PATH="$SCRIPT_DIR/lbwc-routing.sh"
+ROUTING_PATH="$SCRIPT_DIR/meridian-routing.sh"
 . "$SCRIPT_DIR/lib/compose-model-catalog.sh"
 WORKFLOW_MIN_VERSION='2.1.154'
 LOCK_DIR=""
@@ -76,7 +76,7 @@ resolve_planning_directory() {
     trimmed=${trimmed%/}
   done
   [ ! -L "$trimmed" ] || fail "state directory boundary must not be a symbolic link: $input"
-  [ "${trimmed##*/}" = '.lbwc-planning' ] || fail "planning directory must end with .lbwc-planning: $input"
+  [ "${trimmed##*/}" = '.meridian' ] || fail "planning directory must end with .meridian: $input"
   [ -d "$trimmed" ] || fail "planning directory does not exist: $input"
   case "$trimmed" in
     */*)
@@ -86,7 +86,7 @@ resolve_planning_directory() {
     *) parent=. ;;
   esac
   physical_parent=$(CDPATH='' cd -P -- "$parent" 2>/dev/null && pwd -P) || fail "could not resolve planning directory: $input"
-  printf '%s/%s\n' "$physical_parent" '.lbwc-planning'
+  printf '%s/%s\n' "$physical_parent" '.meridian'
 }
 
 resolve_claude_binary() {
@@ -121,7 +121,7 @@ extract_help() {
 }
 
 extract_model_records() {
-  lbwc_extract_model_records "$1" "$2" || fail 'Claude Code binary exposed no validated model catalog'
+  meridian_extract_model_records "$1" "$2" || fail 'Claude Code binary exposed no validated model catalog'
 }
 
 extract_reasoning_values() {
@@ -150,7 +150,7 @@ extract_reasoning_values() {
 
 extract_model_associations() {
   local binary="$1" output="$2" matches
-  matches=$(mktemp "${TMPDIR:-/tmp}/lbwc-claude-associations.XXXXXX") || fail 'could not create association temporary file'
+  matches=$(mktemp "${TMPDIR:-/tmp}/meridian-claude-associations.XXXXXX") || fail 'could not create association temporary file'
   LC_ALL=C grep -aoE 'modelReasoningEfforts:\{"[^"[:cntrl:]]+":\["[^"[:cntrl:]]+"(,"[^"[:cntrl:]]+")*\](,"[^"[:cntrl:]]+":\["[^"[:cntrl:]]+"(,"[^"[:cntrl:]]+")*\])*\}' "$binary" \
     | sed 's/^modelReasoningEfforts://' > "$matches" 2>/dev/null || true
   if [ ! -s "$matches" ]; then
@@ -181,9 +181,9 @@ validate_catalog_json() {
 
 build_catalog() {
   local binary="$1" output="$2" base version_line
-  base=$(mktemp "${TMPDIR:-/tmp}/lbwc-claude-catalog-base.XXXXXX") || fail 'could not create catalog base temporary file'
+  base=$(mktemp "${TMPDIR:-/tmp}/meridian-claude-catalog-base.XXXXXX") || fail 'could not create catalog base temporary file'
   CATALOG_BASE_TEMP="$base"
-  lbwc_build_catalog "$binary" "$base"
+  meridian_build_catalog "$binary" "$base"
   version_line=$(jq -r '.source.version' "$base")
   jq --argjson workflow "$(probe_workflow_capability "$version_line")" '. + {workflow: $workflow}' "$base" > "$output"
   rm -f "$base"
@@ -225,7 +225,7 @@ refresh_from_binary() {
   binary=$(realpath "$binary" 2>/dev/null) || fail "could not resolve Claude Code executable: $binary"
   [ -f "$binary" ] || fail "Claude Code executable is not a file: $binary"
   [ -x "$binary" ] || fail "Claude Code executable is not executable: $binary"
-  temporary=$(mktemp "${TMPDIR:-/tmp}/lbwc-claude-capabilities.XXXXXX") || fail 'could not create capability temporary file'
+  temporary=$(mktemp "${TMPDIR:-/tmp}/meridian-claude-capabilities.XXXXXX") || fail 'could not create capability temporary file'
   TEMPORARY="$temporary"
   build_catalog "$binary" "$temporary"
   validate_catalog_json "$temporary" || fail 'extracted Claude Code capability catalog is invalid'
@@ -240,7 +240,7 @@ catalog_planning_directory() {
   [ "${path##*/}" = 'claude-capabilities.json' ] || return 1
   parent=${path%/*}
   [ "$parent" != "$path" ] || parent=.
-  [ "${parent##*/}" = '.lbwc-planning' ] || return 1
+  [ "${parent##*/}" = '.meridian' ] || return 1
   resolve_planning_directory "$parent"
 }
 
@@ -253,7 +253,7 @@ run_map_agent_model() {
   }
   umask 077
   trap cleanup EXIT
-  mapped=$(lbwc_map_agent_model "$target" "$selector") \
+  mapped=$(meridian_map_agent_model "$target" "$selector") \
     || fail "model selector is not present in the live host Agent enum: $selector"
   printf '%s\n' "$mapped"
 }
@@ -262,7 +262,7 @@ enter_transaction() {
   local command="${1:-}" target="${2:-}" state_planning
   if [ "$command" = refresh ]; then
     [ -f "$ROUTING_PATH" ] || fail "routing transaction script is unavailable: $ROUTING_PATH"
-    if [ "${LBWC_CONFIG_TRANSACTION_ACTIVE:-0}" != 1 ]; then
+    if [ "${MERIDIAN_CONFIG_TRANSACTION_ACTIVE:-0}" != 1 ]; then
       resolve_planning_directory "$target" >/dev/null
       exec bash "$ROUTING_PATH" transaction "$target" bash "$SCRIPT_DIR/claude-capabilities.sh" "$@"
     fi
@@ -271,7 +271,7 @@ enter_transaction() {
   if [ "$command" = validate ] && state_planning=$(catalog_planning_directory "$target")
   then
     [ -f "$ROUTING_PATH" ] || fail "routing transaction script is unavailable: $ROUTING_PATH"
-    if [ "${LBWC_CONFIG_TRANSACTION_ACTIVE:-0}" != 1 ]
+    if [ "${MERIDIAN_CONFIG_TRANSACTION_ACTIVE:-0}" != 1 ]
     then
       exec bash "$ROUTING_PATH" transaction "$state_planning" \
         bash "$SCRIPT_DIR/claude-capabilities.sh" "$@"

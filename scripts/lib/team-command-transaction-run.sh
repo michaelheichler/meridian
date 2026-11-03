@@ -6,7 +6,7 @@ require_run_manifest() {
   [ "$(jq 'length' <<< "$roster_json")" -ge 1 ] || fail_diag 'run state has no teammates'
   control_root_record=$(jq -r '.control_root // empty' "$RUN_ROOT/run.json")
   [ -n "$control_root_record" ] || fail_diag 'run state is missing its control root record'
-  manifest_path=$(lbwc_control_root_manifest_path "$control_root_record" 2>/dev/null) \
+  manifest_path=$(meridian_control_root_manifest_path "$control_root_record" 2>/dev/null) \
     || fail_diag "control root is unavailable: $control_root_record"
   [ -f "$manifest_path" ] || fail_diag "agent manifest is missing: $manifest_path"
   jq -e 'type == "object" and (.agents | type == "object")' "$manifest_path" >/dev/null \

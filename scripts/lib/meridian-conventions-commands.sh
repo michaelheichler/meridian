@@ -60,7 +60,7 @@ add_convention() {
   today=$(date -u +%Y-%m-%d)
   result=$(jq -ceS --arg id "$new_id" --arg rule "$rule" --arg category "$category" \
     --arg tag "$tag" --arg today "$today" --arg replace "$CONV_REPLACE_ID" \
-    -f "$SCRIPT_DIR/lib/lbwc-conventions-add.jq" <<< "$current") || fail 'could not add convention'
+    -f "$SCRIPT_DIR/lib/meridian-conventions-add.jq" <<< "$current") || fail 'could not add convention'
   write_artifact "$planning_dir" "$result"
   if [ "$JSON_OUTPUT" -eq 1 ]; then compact_json "$result"; else printf 'Added %s: %s [%s]\n' "$new_id" "$rule" "$category"; render_next; fi
 }
@@ -81,7 +81,7 @@ reconciled_artifact() {
   local current="$1" candidates="$2" today
   today=$(date -u +%Y-%m-%d)
   jq -nceS --argjson current "$current" --argjson candidates "$candidates" --arg today "$today" \
-    -f "$SCRIPT_DIR/lib/lbwc-conventions-reconcile.jq" 2>/dev/null || fail 'could not reconcile convention candidates'
+    -f "$SCRIPT_DIR/lib/meridian-conventions-reconcile.jq" 2>/dev/null || fail 'could not reconcile convention candidates'
 }
 
 unknown_conflict_reference() {

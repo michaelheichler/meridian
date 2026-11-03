@@ -1,9 +1,9 @@
-LBWC_COMPOSE_LIB_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+MERIDIAN_COMPOSE_LIB_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-lbwc_extract_model_records() {
+meridian_extract_model_records() {
   local binary="$1" output="$2" entries metadata entry remainder selector_id group display_name
-  entries=$(mktemp "${TMPDIR:-/tmp}/lbwc-claude-model-entries.XXXXXX") || return 1
-  metadata=$(mktemp "${TMPDIR:-/tmp}/lbwc-claude-model-metadata.XXXXXX") || {
+  entries=$(mktemp "${TMPDIR:-/tmp}/meridian-claude-model-entries.XXXXXX") || return 1
+  metadata=$(mktemp "${TMPDIR:-/tmp}/meridian-claude-model-metadata.XXXXXX") || {
     rm -f "$entries"
     return 1
   }
@@ -28,19 +28,19 @@ lbwc_extract_model_records() {
   jq -e 'length > 0' "$output" >/dev/null
 }
 
-lbwc_extract_host_enum_candidates() {
+meridian_extract_host_enum_candidates() {
   local binary="$1" output="$2"
   LC_ALL=C grep -aoE '\["[A-Za-z0-9][A-Za-z0-9._:-]*"(,"[A-Za-z0-9][A-Za-z0-9._:-]*"){1,80}\]' "$binary" > "$output" 2>/dev/null || true
 }
 
-lbwc_compose_model_catalog() {
+meridian_compose_model_catalog() {
   local records_path="$1" candidates_path="$2" output="$3" filter
-  filter="$LBWC_COMPOSE_LIB_DIR/compose-model-catalog.jq"
+  filter="$MERIDIAN_COMPOSE_LIB_DIR/compose-model-catalog.jq"
   # Candidates are file input, not argv, so host-sized catalogs stay under ARG_MAX.
   jq -Rs --slurpfile records "$records_path" -f "$filter" "$candidates_path" > "$output"
 }
 
-lbwc_lookup_agent_model_id() {
+meridian_lookup_agent_model_id() {
   local composed="$1" selector="$2" mapped
   mapped=$(jq -r --arg selector "$selector" '
     if (.agent_model_ids | type == "object")
@@ -57,8 +57,8 @@ lbwc_lookup_agent_model_id() {
   printf '%s\n' "$mapped"
 }
 
-lbwc_alloc_catalog_temps() {
-  local stem="${TMPDIR:-/tmp}/lbwc-claude"
+meridian_alloc_catalog_temps() {
+  local stem="${TMPDIR:-/tmp}/meridian-claude"
   HELP_TEMP=$(mktemp "$stem-help.XXXXXX") || fail 'could not create help temporary file'
   MODELS_TEMP=$(mktemp "$stem-models.XXXXXX") || fail 'could not create model temporary file'
   REASONING_TEMP=$(mktemp "$stem-reasoning.XXXXXX") || fail 'could not create reasoning temporary file'
@@ -67,7 +67,7 @@ lbwc_alloc_catalog_temps() {
   COMPOSED_MODELS_TEMP=$(mktemp "$stem-composed-models.XXXXXX") || fail 'could not create composed-model temporary file'
 }
 
-lbwc_write_catalog_envelope() {
+meridian_write_catalog_envelope() {
   local binary="$1" version="$2" sha256="$3" output="$4" detected_at
   detected_at=$(date -u '+%Y-%m-%dT%H:%M:%SZ') || return 1
   jq -S -n \
@@ -78,51 +78,51 @@ lbwc_write_catalog_envelope() {
     --slurpfile composed "$COMPOSED_MODELS_TEMP" \
     --slurpfile reasoning "$REASONING_TEMP" \
     --slurpfile associations "$ASSOCIATIONS_TEMP" \
-    -f "$LBWC_COMPOSE_LIB_DIR/capability-catalog.jq" > "$output"
+    -f "$MERIDIAN_COMPOSE_LIB_DIR/capability-catalog.jq" > "$output"
 }
 
-lbwc_build_catalog() {
+meridian_build_catalog() {
   local binary="$1" output="$2" before after version
-  lbwc_alloc_catalog_temps
+  meridian_alloc_catalog_temps
   before=$(sha256_file "$binary") || fail 'could not fingerprint Claude Code executable'
   version=$(extract_version "$binary") || return 1
   extract_help "$binary" "$HELP_TEMP" || return 1
   extract_model_records "$binary" "$MODELS_TEMP" || return 1
-  lbwc_extract_host_enum_candidates "$binary" "$HOST_ENUM_TEMP"
-  lbwc_compose_model_catalog "$MODELS_TEMP" "$HOST_ENUM_TEMP" "$COMPOSED_MODELS_TEMP" \
+  meridian_extract_host_enum_candidates "$binary" "$HOST_ENUM_TEMP"
+  meridian_compose_model_catalog "$MODELS_TEMP" "$HOST_ENUM_TEMP" "$COMPOSED_MODELS_TEMP" \
     || fail 'could not compose host Agent model catalog'
   extract_reasoning_values "$HELP_TEMP" "$REASONING_TEMP" || return 1
   extract_model_associations "$binary" "$ASSOCIATIONS_TEMP" || return 1
   after=$(sha256_file "$binary") || fail 'could not recheck Claude Code executable fingerprint'
   [ "$before" = "$after" ] || fail 'Claude Code executable changed during capability extraction'
-  lbwc_write_catalog_envelope "$binary" "$version" "$after" "$output" || return 1
+  meridian_write_catalog_envelope "$binary" "$version" "$after" "$output" || return 1
   rm -f "$HELP_TEMP" "$MODELS_TEMP" "$REASONING_TEMP" "$ASSOCIATIONS_TEMP" "$HOST_ENUM_TEMP" "$COMPOSED_MODELS_TEMP"
 }
 
-lbwc_map_agent_model_from_binary() {
+meridian_map_agent_model_from_binary() {
   local binary="$1" selector="$2" records_path candidates_path composed_path mapped
-  records_path=$(mktemp "${TMPDIR:-/tmp}/lbwc-map-records.XXXXXX") || return 1
-  candidates_path=$(mktemp "${TMPDIR:-/tmp}/lbwc-map-enum.XXXXXX") || {
+  records_path=$(mktemp "${TMPDIR:-/tmp}/meridian-map-records.XXXXXX") || return 1
+  candidates_path=$(mktemp "${TMPDIR:-/tmp}/meridian-map-enum.XXXXXX") || {
     rm -f "$records_path"
     return 1
   }
-  composed_path=$(mktemp "${TMPDIR:-/tmp}/lbwc-map-composed.XXXXXX") || {
+  composed_path=$(mktemp "${TMPDIR:-/tmp}/meridian-map-composed.XXXXXX") || {
     rm -f "$records_path" "$candidates_path"
     return 1
   }
   MODELS_TEMP="$records_path"
   HOST_ENUM_TEMP="$candidates_path"
   COMPOSED_MODELS_TEMP="$composed_path"
-  lbwc_extract_model_records "$binary" "$records_path" || {
+  meridian_extract_model_records "$binary" "$records_path" || {
     rm -f "$records_path" "$candidates_path" "$composed_path"
     return 1
   }
-  lbwc_extract_host_enum_candidates "$binary" "$candidates_path"
-  lbwc_compose_model_catalog "$records_path" "$candidates_path" "$composed_path" || {
+  meridian_extract_host_enum_candidates "$binary" "$candidates_path"
+  meridian_compose_model_catalog "$records_path" "$candidates_path" "$composed_path" || {
     rm -f "$records_path" "$candidates_path" "$composed_path"
     return 1
   }
-  mapped=$(lbwc_lookup_agent_model_id "$composed_path" "$selector") || {
+  mapped=$(meridian_lookup_agent_model_id "$composed_path" "$selector") || {
     rm -f "$records_path" "$candidates_path" "$composed_path"
     return 1
   }
@@ -130,23 +130,23 @@ lbwc_map_agent_model_from_binary() {
   printf '%s\n' "$mapped"
 }
 
-lbwc_catalog_fingerprint_matches() {
+meridian_catalog_fingerprint_matches() {
   local catalog="$1" binary="$2" expected actual
   expected=$(jq -r '.source.sha256' "$catalog") || return 1
   actual=$(sha256_file "$binary") || return 1
   [ "$expected" = "$actual" ]
 }
 
-lbwc_map_agent_model_via_catalog() {
+meridian_map_agent_model_via_catalog() {
   local catalog="$1" binary="$2" selector="$3"
-  if lbwc_catalog_fingerprint_matches "$catalog" "$binary"; then
-    lbwc_lookup_agent_model_id "$catalog" "$selector"
+  if meridian_catalog_fingerprint_matches "$catalog" "$binary"; then
+    meridian_lookup_agent_model_id "$catalog" "$selector"
     return $?
   fi
-  lbwc_map_agent_model_from_binary "$binary" "$selector"
+  meridian_map_agent_model_from_binary "$binary" "$selector"
 }
 
-lbwc_map_agent_model() {
+meridian_map_agent_model() {
   local source="$1" selector="$2" catalog_binary live_binary
   [ -n "$selector" ] || return 1
   if [ -f "$source" ] && jq -e '.schema_version == 1 and .source.sha256' "$source" >/dev/null 2>&1; then
@@ -156,14 +156,14 @@ lbwc_map_agent_model() {
       live_binary=$(resolve_claude_binary 2>/dev/null || true)
     fi
     if [ -n "$live_binary" ]; then
-      lbwc_map_agent_model_via_catalog "$source" "$live_binary" "$selector"
+      meridian_map_agent_model_via_catalog "$source" "$live_binary" "$selector"
       return $?
     fi
     if [ -n "$catalog_binary" ] && [ -f "$catalog_binary" ] && [ -x "$catalog_binary" ]; then
-      lbwc_map_agent_model_via_catalog "$source" "$catalog_binary" "$selector"
+      meridian_map_agent_model_via_catalog "$source" "$catalog_binary" "$selector"
       return $?
     fi
     return 1
   fi
-  lbwc_map_agent_model_from_binary "$source" "$selector"
+  meridian_map_agent_model_from_binary "$source" "$selector"
 }

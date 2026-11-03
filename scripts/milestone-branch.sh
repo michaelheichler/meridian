@@ -2,12 +2,12 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd -P)"
-. "$SCRIPT_DIR/lib/lbwc-settings.sh"
+. "$SCRIPT_DIR/lib/meridian-settings.sh"
 
 action="${1:?Usage: milestone-branch.sh <start|complete|finish> [planning-dir] [slug]}"
-planning_dir="${2:-.lbwc-planning}"
+planning_dir="${2:-.meridian}"
 case "$action" in start|complete|finish) ;; *) exit 1 ;; esac
-config=$(lbwc_merged_config "$planning_dir/config.json")
+config=$(meridian_merged_config "$planning_dir/config.json")
 enabled=$(jq -r 'if .branch_per_milestone == null then false else .branch_per_milestone end' <<< "$config")
 if [ "$enabled" != true ]; then
   printf 'branch_action=disabled\n'
@@ -17,7 +17,7 @@ slug="${3:-}"
 [ -n "$slug" ] || slug=$(bash "$SCRIPT_DIR/derive-milestone-slug.sh" "$planning_dir")
 case "$slug" in ''|*[!a-z0-9-]*) printf 'Error: invalid milestone slug\n' >&2; exit 1 ;; esac
 branch="milestone/$slug"
-state=$(git rev-parse --git-path "lbwc-milestone-$slug.json")
+state=$(git rev-parse --git-path "meridian-milestone-$slug.json")
 if [ "$action" = complete ]; then
   if [ -f "$state" ]; then
     jq -r '"branch_action=offer_merge\nbranch=" + .branch + "\nmerge_target=" + .base' "$state"

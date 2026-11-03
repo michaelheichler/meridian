@@ -113,9 +113,9 @@ plan_source_detection_evidence() {
   jq -Rsc 'split("\n") | map(select(length > 0))' <<< "$evidence"
 }
 
-plan_source_collect_lbwc() {
+plan_source_collect_meridian() {
   local project_root="$1" planning_dir
-  planning_dir="$project_root/.lbwc-planning"
+  planning_dir="$project_root/.meridian"
   [ -d "$planning_dir" ] || return 0
   find "$planning_dir" \
     \( -path "$planning_dir/.cache" -o -path "$planning_dir/milestones" \) -prune -o \
@@ -168,7 +168,7 @@ plan_source_collect_generic_markdown() {
       printf '%s\t%s\t%s\n' "$epoch" "$size" "$path"
     done < <(
       find "$project_root" \
-        \( -path "$project_root/.git" -o -path "$project_root/.lbwc-planning" \
+        \( -path "$project_root/.git" -o -path "$project_root/.meridian" \
            -o -path "$project_root/.temporary-agent-runfiles" -o -path "$project_root/.planning" \
            -o -path "$project_root/.claude" -o -path "$project_root/node_modules" \
            -o -path "$project_root/.kilo" -o -path "$project_root/vendor" \

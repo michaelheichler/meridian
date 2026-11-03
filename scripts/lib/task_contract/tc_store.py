@@ -10,8 +10,8 @@ from tc_validate import validate_contract
 
 
 def contract_path(root: Path, contract_id: str, control_root: Any = None) -> Path:
-    nested = control_root and control_root.name != ".lbwc-planning"
-    registry = control_root / "contracts" / "tasks" if nested else (control_root or root / ".lbwc-planning") / ".contracts" / "tasks"
+    nested = control_root and control_root.name != ".meridian"
+    registry = control_root / "contracts" / "tasks" if nested else (control_root or root / ".meridian") / ".contracts" / "tasks"
     return registry / f"{contract_id}.json"
 
 
@@ -27,7 +27,7 @@ def locate_contract_path(root: Path, contract_id: str) -> Path:
 
 def control_root_for_contract_path(path: Path, root: Path) -> Any:
     resolved = path.resolve()
-    active_root = (root / ".lbwc-planning").resolve()
+    active_root = (root / ".meridian").resolve()
     if resolved.parent == active_root / ".contracts" / "tasks":
         return None
     return resolved.parent.parent.parent
@@ -35,7 +35,7 @@ def control_root_for_contract_path(path: Path, root: Path) -> Any:
 
 def validate_contract_path(path: Path, root: Path) -> Path:
     resolved = path.resolve()
-    valid = resolved.parent == (root / ".lbwc-planning" / ".contracts" / "tasks").resolve()
+    valid = resolved.parent == (root / ".meridian" / ".contracts" / "tasks").resolve()
     temporary_parent = root / ".temporary-agent-runfiles" / "runs"
     if temporary_parent.is_dir():
         runs = [item for item in temporary_parent.iterdir() if item.is_dir()]
@@ -63,8 +63,8 @@ def try_acquire(lock_dir: Path) -> bool:
 
 
 def lock(root: Path, control_root: Any = None) -> Path:
-    nested = control_root and control_root.name != ".lbwc-planning"
-    contracts = (control_root or root / ".lbwc-planning") / ("contracts" if nested else ".contracts")
+    nested = control_root and control_root.name != ".meridian"
+    contracts = (control_root or root / ".meridian") / ("contracts" if nested else ".contracts")
     tasks = contracts / "tasks"
     lock_dir = contracts / ".lock"
     if contracts.is_symlink():

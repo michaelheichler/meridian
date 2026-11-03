@@ -5,7 +5,7 @@ command -v jq >/dev/null 2>&1 || { echo '{"hookSpecificOutput":{"hookEventName":
 
 SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(pwd)"
-PLANNING_DIR="${LBWC_PLANNING_DIR:-.lbwc-planning}"
+PLANNING_DIR="${MERIDIAN_PLANNING_DIR:-.meridian}"
 
 CLAUDE_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
 SETTINGS_FILE="$CLAUDE_DIR/settings.json"

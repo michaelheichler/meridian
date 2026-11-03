@@ -98,8 +98,8 @@ if [ "$STATUS" != "issues_found" ]; then
   exit 0
 fi
 
-ISSUES_TMP="$(mktemp "${TMPDIR:-/tmp}/lbwc-uat-issues.XXXXXX")"
-ROUND_IDS_TMP="$(mktemp "${TMPDIR:-/tmp}/lbwc-uat-round-ids.XXXXXX")"
+ISSUES_TMP="$(mktemp "${TMPDIR:-/tmp}/meridian-uat-issues.XXXXXX")"
+ROUND_IDS_TMP="$(mktemp "${TMPDIR:-/tmp}/meridian-uat-round-ids.XXXXXX")"
 trap 'rm -f "$ISSUES_TMP" "$ROUND_IDS_TMP"' EXIT
 
 awk -f "$ISSUE_PARSER" "$UAT_FILE" > "$ISSUES_TMP"

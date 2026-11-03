@@ -2,7 +2,7 @@
 set -u
 
 command -v jq >/dev/null 2>&1 || {
-  printf 'LBWC status unavailable: jq is required\n'
+  printf 'MERIDIAN status unavailable: jq is required\n'
   exit 0
 }
 
@@ -19,12 +19,12 @@ BOLD='\033[1m'
 RESET='\033[0m'
 
 SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname "$0")" && pwd -P)
-. "$SCRIPT_DIR/lib/lbwc-statusline-format.sh"
-. "$SCRIPT_DIR/lib/lbwc-statusline-state.sh"
-. "$SCRIPT_DIR/lib/lbwc-statusline-tmux.sh"
+. "$SCRIPT_DIR/lib/meridian-statusline-format.sh"
+. "$SCRIPT_DIR/lib/meridian-statusline-state.sh"
+. "$SCRIPT_DIR/lib/meridian-statusline-tmux.sh"
 
 NATIVE_FIELDS=$(read_native_fields 2>/dev/null) || {
-  printf 'LBWC status unavailable: invalid Claude Code input\n'
+  printf 'MERIDIAN status unavailable: invalid Claude Code input\n'
   exit 0
 }
 IFS=$'\x1f' read -r MODEL EFFORT PROJECT_ROOT CONTEXT_PERCENT INPUT_TOKENS OUTPUT_TOKENS CACHE_CREATE CACHE_READ COST DURATION_MS LINES_ADDED LINES_REMOVED FIVE_PERCENT FIVE_RESET SEVEN_PERCENT SEVEN_RESET CONTEXT_RECORD <<< "$NATIVE_FIELDS"
@@ -43,7 +43,7 @@ else
   DIRTY_COLOR="$GREEN"
 fi
 
-PLANNING_DIR="$PROJECT_ROOT/.lbwc-planning"
+PLANNING_DIR="$PROJECT_ROOT/.meridian"
 if [ -d "$PLANNING_DIR" ] && [ -n "$CONTEXT_RECORD" ]; then
   CURRENT_CONTEXT_RECORD=''
   IFS= read -r CURRENT_CONTEXT_RECORD 2>/dev/null < "$PLANNING_DIR/.context-usage" || true
@@ -60,13 +60,13 @@ IN_TMUX='false'
 [ "$IN_TMUX" = true ] && read_tmux_runtime_state
 
 if [ "$IN_TMUX" = true ] && [ "$TMUX_COLLAPSE_AGENT" = true ] && is_git_worktree; then
-  printf '%bLBWC%b %s@%s  %b%s%b  %s  TMUX agents %s running:%s idle:%s failed:%s stale:%s' "$BOLD$CYAN" "$RESET" "$PROJECT_NAME" "$BRANCH" "$DIRTY_COLOR" "$DIRTY" "$RESET" "$(format_duration "$DURATION_MS")" "$TMUX_AGENT_TOTAL" "$TMUX_RUNNING" "$TMUX_IDLE" "$TMUX_FAILED" "$TMUX_STALE"
+  printf '%bMERIDIAN%b %s@%s  %b%s%b  %s  TMUX agents %s running:%s idle:%s failed:%s stale:%s' "$BOLD$CYAN" "$RESET" "$PROJECT_NAME" "$BRANCH" "$DIRTY_COLOR" "$DIRTY" "$RESET" "$(format_duration "$DURATION_MS")" "$TMUX_AGENT_TOTAL" "$TMUX_RUNNING" "$TMUX_IDLE" "$TMUX_FAILED" "$TMUX_STALE"
   [ -z "$TMUX_DIAGNOSTICS" ] || printf '  Diagnostics %s' "$TMUX_DIAGNOSTICS"
   printf '\n'
   exit 0
 fi
 
-printf '%bLBWC%b %b%s%b  %b%s%b  %s@%s  %b%s%b  %s\n' "$BOLD$CYAN" "$RESET" "$MAGENTA" "$MODEL" "$RESET" "$BLUE" "$EFFORT" "$RESET" "$PROJECT_NAME" "$BRANCH" "$DIRTY_COLOR" "$DIRTY" "$RESET" "$(format_duration "$DURATION_MS")"
+printf '%bMERIDIAN%b %b%s%b  %b%s%b  %s@%s  %b%s%b  %s\n' "$BOLD$CYAN" "$RESET" "$MAGENTA" "$MODEL" "$RESET" "$BLUE" "$EFFORT" "$RESET" "$PROJECT_NAME" "$BRANCH" "$DIRTY_COLOR" "$DIRTY" "$RESET" "$(format_duration "$DURATION_MS")"
 printf '%bContext%b [' "$BOLD" "$RESET"
 progress_bar "$CONTEXT_PERCENT"
 printf '] %s%%  in %s  out %s  cache %s/%s  cost $%.2f  lines %b+%s%b/%b-%s%b\n' "$CONTEXT_PERCENT" "$(format_tokens "$INPUT_TOKENS")" "$(format_tokens "$OUTPUT_TOKENS")" "$(format_tokens "$CACHE_READ")" "$(format_tokens "$CACHE_CREATE")" "$COST" "$GREEN" "$LINES_ADDED" "$RESET" "$RED" "$LINES_REMOVED" "$RESET"

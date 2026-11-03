@@ -293,8 +293,8 @@ ENDSESSION
       exit 0
     fi
     . "$(dirname "$0")/lib/display-glyphs.sh"
-    lbwc_glyphs_load "$PLANNING_DIR"
-    lbwc_glyph GLYPH_NEXT next
+    meridian_glyphs_load "$PLANNING_DIR"
+    meridian_glyph GLYPH_NEXT next
     MIGRATED=0
     for f in "$PLANNING_DIR"/RESEARCH-*.md; do
       [ -f "$f" ] && [ ! -L "$f" ] || continue

@@ -6,7 +6,7 @@ if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
   echo ""
   echo "Extract project context from codebase mapping files."
   echo ""
-  echo "  CODEBASE_DIR  Path to .lbwc-planning/codebase/ mapping files"
+  echo "  CODEBASE_DIR  Path to .meridian/codebase/ mapping files"
   echo "  REPO_ROOT     Optional, defaults to current directory"
   echo ""
   echo "Outputs structured JSON to stdout with source attribution per field."

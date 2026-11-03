@@ -4,9 +4,9 @@ set -Eeo pipefail
 umask 077
 
 SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd -P)"
-source "$SCRIPT_DIR/lib/lbwc-control-root.sh"
+source "$SCRIPT_DIR/lib/meridian-control-root.sh"
 source "$SCRIPT_DIR/lib/tmux-runtime.sh"
-source "$SCRIPT_DIR/lib/lbwc-config-files.sh"
+source "$SCRIPT_DIR/lib/meridian-config-files.sh"
 source "$SCRIPT_DIR/lib/tmux-heartbeat-settings.sh"
 
 fail() {
@@ -210,7 +210,7 @@ if [ "$(jq 'length' <<<"$newly_failed")" -gt 0 ]; then
   if [ -e "$notification_path" ]; then
     notification_count=$(jq -s 'length' "$notification_path" 2>/dev/null) || notification_count=-1
   fi
-  if ! printf '%s\n' "$notification" | LBWC_PLANNING_DIR="$control_root" bash "$SCRIPT_DIR/notification-log.sh" >/dev/null 2>&1; then
+  if ! printf '%s\n' "$notification" | MERIDIAN_PLANNING_DIR="$control_root" bash "$SCRIPT_DIR/notification-log.sh" >/dev/null 2>&1; then
     watchdog_failures+=('cannot append stale agent failure notification')
   else
     updated_notification_count=0

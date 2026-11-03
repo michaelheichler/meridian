@@ -42,13 +42,13 @@ valid_root() {
     [ -f "$candidate/scripts/$required_script" ]
 }
 
-session_link="/tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID:-default}"
+session_link="/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}"
 
 fail_resolution() {
   if [ "$nonfatal" = true ]; then
     exit 0
   fi
-  echo "LBWC: plugin root unavailable. Restart this session to recreate $session_link." >&2
+  echo "MERIDIAN: plugin root unavailable. Restart this session to recreate $session_link." >&2
   exit 1
 }
 
@@ -56,7 +56,7 @@ fail_link() {
   if [ "$nonfatal" = true ]; then
     exit 0
   fi
-  echo "LBWC: plugin root link unavailable. Restart this session to recreate $session_link." >&2
+  echo "MERIDIAN: plugin root link unavailable. Restart this session to recreate $session_link." >&2
   exit 1
 }
 

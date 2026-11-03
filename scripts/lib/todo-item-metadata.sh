@@ -5,7 +5,7 @@
 : "${DETAILS_CACHE_JSON:=}"
 
 todo_item_current_epoch() {
-  local override_epoch="${LBWC_TODO_NOW_EPOCH:-}"
+  local override_epoch="${MERIDIAN_TODO_NOW_EPOCH:-}"
 
   if [ -n "$override_epoch" ] && [[ "$override_epoch" =~ ^[0-9]+$ ]]; then
     printf '%s\n' "$override_epoch"

@@ -2,7 +2,7 @@
 set -u
 
 SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd)"
-PLANNING_DIR="${LBWC_PLANNING_DIR:-.lbwc-planning}"
+PLANNING_DIR="${MERIDIAN_PLANNING_DIR:-.meridian}"
 
 [ -d "$PLANNING_DIR" ] || exit 0
 
@@ -10,7 +10,7 @@ PLANNING_DIR="${LBWC_PLANNING_DIR:-.lbwc-planning}"
 
 rm -f "$PLANNING_DIR/.context-usage" 2>/dev/null || true
 
-WORKTREES_DIR=".lbwc-worktrees"
+WORKTREES_DIR=".meridian-worktrees"
 if [ -d "$WORKTREES_DIR" ] && [ -f "$SCRIPT_DIR/worktree-cleanup.sh" ]; then
   NOW=$(date +%s 2>/dev/null || echo 0)
   STALE_SECS=7200
@@ -26,7 +26,7 @@ if [ -d "$WORKTREES_DIR" ] && [ -f "$SCRIPT_DIR/worktree-cleanup.sh" ]; then
       WT_NAME=$(basename "$wt_dir")
       WT_PHASE=$(echo "$WT_NAME" | cut -d'-' -f1)
       WT_PLAN=$(echo "$WT_NAME" | cut -d'-' -f2)
-      LBWC_AUTOMATIC_CLEANUP=1 bash "$SCRIPT_DIR/worktree-cleanup.sh" "$WT_PHASE" "$WT_PLAN" >/dev/null 2>&1 || true
+      MERIDIAN_AUTOMATIC_CLEANUP=1 bash "$SCRIPT_DIR/worktree-cleanup.sh" "$WT_PHASE" "$WT_PLAN" >/dev/null 2>&1 || true
     fi
   done
 fi

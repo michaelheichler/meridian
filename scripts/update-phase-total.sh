@@ -79,7 +79,7 @@ else
   }
 fi
 
-planning_root="${1:-.lbwc-planning}"
+planning_root="${1:-.meridian}"
 state_md="${planning_root}/STATE.md"
 phases_dir="${planning_root}/phases"
 

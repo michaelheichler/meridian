@@ -82,7 +82,7 @@ check_rendered="$rendered"
 all_tokens=(NAME DESCRIPTION TOOLS DISALLOWED_TOOLS MODEL PERMISSION_MODE MAX_TURNS SKILLS MCP_SERVERS MEMORY BACKGROUND EFFORT ISOLATION COLOR INITIAL_PROMPT JOB)
 for token in "${all_tokens[@]}"; do
   marker="{{$token}}"
-  sentinel="__LBWC_TEMPLATE_SLOT_${token}__"
+  sentinel="__MERIDIAN_TEMPLATE_SLOT_${token}__"
   rendered=${rendered//"$marker"/"$sentinel"}
   check_rendered=${check_rendered//"$marker"/"$sentinel"}
 done
@@ -96,15 +96,15 @@ for token in "${all_tokens[@]}"; do
     escaped=$(jq -Rn --arg value "$value" '$value')
     escaped=${escaped:1:${#escaped}-2}
   fi
-  sentinel="__LBWC_TEMPLATE_SLOT_${token}__"
+  sentinel="__MERIDIAN_TEMPLATE_SLOT_${token}__"
   rendered=${rendered//"$sentinel"/"$escaped"}
-  check_rendered=${check_rendered//"$sentinel"/__LBWC_USER_CONTENT__}
+  check_rendered=${check_rendered//"$sentinel"/__MERIDIAN_USER_CONTENT__}
 done
 
 for token in "${all_tokens[@]}"; do
   keyed_has EMPTY_TOKENS "$token" || continue
   marker="{{$token}}"
-  sentinel="__LBWC_TEMPLATE_SLOT_${token}__"
+  sentinel="__MERIDIAN_TEMPLATE_SLOT_${token}__"
   rendered=${rendered//"$sentinel"/"$marker"}
   check_rendered=${check_rendered//"$sentinel"/"$marker"}
 done

@@ -12,7 +12,7 @@ assert_migration_profile() {
     || fail 'could not resolve migrated routing profile'
   validate_profile "$profile"
   profile_json=$(jq -cn --arg profile "$profile" '$profile') || fail 'could not encode routing profile'
-  bash "$SCRIPT_DIR/lbwc-config.sh" assert-execution-setting-writable \
+  bash "$SCRIPT_DIR/meridian-config.sh" assert-execution-setting-writable \
     "$planning_dir" routing.active_profile "$profile_json"
 }
 

@@ -4,8 +4,8 @@ set -eo pipefail
 umask 077
 
 SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname "$0")" && pwd -P)
-. "$SCRIPT_DIR/lib/lbwc-control-root.sh"
-. "$SCRIPT_DIR/lib/lbwc-config-files.sh"
+. "$SCRIPT_DIR/lib/meridian-control-root.sh"
+. "$SCRIPT_DIR/lib/meridian-config-files.sh"
 . "$SCRIPT_DIR/lib/tmux-runtime.sh"
 . "$SCRIPT_DIR/lib/tmux-heartbeat-settings.sh"
 

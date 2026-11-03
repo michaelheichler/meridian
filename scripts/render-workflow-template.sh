@@ -72,13 +72,13 @@ check_rendered="$rendered"
 
 for token in "${BODY_TOKENS[@]}"; do
   marker="@@${token}@@"
-  sentinel="${SEP}LBWC_WORKFLOW_SLOT_${token}${SEP}"
+  sentinel="${SEP}MERIDIAN_WORKFLOW_SLOT_${token}${SEP}"
   rendered=${rendered//"$marker"/"$sentinel"}
   check_rendered=${check_rendered//"$marker"/"$sentinel"}
 done
 
 for token in "${BODY_TOKENS[@]}"; do
-  sentinel="${SEP}LBWC_WORKFLOW_SLOT_${token}${SEP}"
+  sentinel="${SEP}MERIDIAN_WORKFLOW_SLOT_${token}${SEP}"
   load_field "$token"
   if is_optional_token "$token" && [ -z "$CURRENT_FIELD" ]; then
     escaped='null'
@@ -86,7 +86,7 @@ for token in "${BODY_TOKENS[@]}"; do
     escaped=$(jq -Rn --arg v "$CURRENT_FIELD" '$v')
   fi
   rendered=${rendered//"$sentinel"/"$escaped"}
-  check_rendered=${check_rendered//"$sentinel"/__LBWC_WORKFLOW_USER_CONTENT__}
+  check_rendered=${check_rendered//"$sentinel"/__MERIDIAN_WORKFLOW_USER_CONTENT__}
 done
 
 case "$rendered" in
