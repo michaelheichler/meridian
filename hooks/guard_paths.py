@@ -4,6 +4,7 @@ import os
 import re
 import shlex
 import signal
+import time
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterable, Iterator, NamedTuple, Optional
@@ -21,6 +22,9 @@ else:
 
 OptionalPath = Optional[Path]
 GUARD_MODULES = (
+    "dispatch.py",
+    "hook_batch.py",
+    "hook_output.py",
     "user_question_guard.py",
     "decision_common.py",
     "decision_layout.py",
@@ -33,7 +37,7 @@ GUARD_MODULES = (
     "brace_expansion.py",
     "path_identity.py",
 )
-SCRIPT_MARKERS = ("pending-decision.sh", *GUARD_MODULES)
+SCRIPT_MARKERS = ("pending-decision.sh", "hook-batch.sh", *GUARD_MODULES)
 RUNTIME_MARKERS = (".lbwc-planning/.runtime", ".runtime/decisions", ".hook-transitions")
 PROTECTED_MARKERS = (*SCRIPT_MARKERS, *RUNTIME_MARKERS)
 EXPANSION_CHARS = "$`*?[{"
@@ -53,6 +57,7 @@ OPERATOR_SPLIT = re.compile(r"[<>&|;()]")
 PLUGIN_ROOT = Path(__file__).resolve().parent.parent
 PROTECTED_FILES = {
     (PLUGIN_ROOT / "scripts" / "pending-decision.sh").resolve(),
+    (PLUGIN_ROOT / "scripts" / "hook-batch.sh").resolve(),
     *((PLUGIN_ROOT / "hooks" / name).resolve() for name in GUARD_MODULES),
 }
 
@@ -222,7 +227,7 @@ def _analyse(data: dict, planning_dir: OptionalPath) -> bool:
 
 @contextmanager
 def _deadline(seconds: float) -> Iterator[None]:
-    def expire(signum: int, frame: object) -> None:
+    def expire(_signum: int, _frame: object) -> None:
         raise AnalysisTimeout()
 
     try:
@@ -230,14 +235,16 @@ def _deadline(seconds: float) -> Iterator[None]:
     except (ValueError, AttributeError):
         yield
         return
+    started = time.monotonic()
+    outer_timer = signal.setitimer(signal.ITIMER_REAL, seconds)
     try:
-        signal.setitimer(signal.ITIMER_REAL, seconds)
         yield
     finally:
-        try:
-            signal.setitimer(signal.ITIMER_REAL, 0)
-        finally:
-            signal.signal(signal.SIGALRM, previous)
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous)
+        if outer_timer[0] > 0:
+            remaining = max(0.000001, outer_timer[0] - (time.monotonic() - started))
+            signal.setitimer(signal.ITIMER_REAL, remaining, outer_timer[1])
 
 
 def has_protected_decision_path(data: dict, planning_dir: OptionalPath) -> bool:
