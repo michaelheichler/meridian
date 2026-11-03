@@ -47,7 +47,9 @@ rollback_split_group() {
     [ -n "$agent_id" ] && write_teardown_intent "$agent_id" "$agent_id" prepared || true
   done <<<"$agent_ids"
   while IFS= read -r pane_id; do
-    [ -n "$pane_id" ] && tmux kill-pane -t "$pane_id" >/dev/null 2>&1 || true
+    [ -n "$pane_id" ] || continue
+    tmux kill-pane -t "$pane_id" >/dev/null 2>&1 || true
+    wait_for_pane_absence "$pane_id" || printf 'tmux rollback pane remains 3 seconds after kill request: %s\n' "$pane_id" >&2
   done <<<"$pane_ids"
   while IFS= read -r agent_id; do
     [ -n "$agent_id" ] || continue
