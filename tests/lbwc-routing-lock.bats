@@ -110,7 +110,7 @@ teardown() {
 backend_row() {
   local label="$1" want_status="$2" want_output="$3"
   shift 3
-  run bash -c 'source "$1"; shift; "$@"' _ "$ROUTING" "$@"
+  run bash "$BATS_TEST_DIRNAME/routing_lock_probe.bash" "$ROUTING" "$@"
   expect_case "$label" "$want_status"
   [ -z "$want_output" ] || [ "$output" = "$want_output" ] \
     || record_case_failure "$label" "expected output=[$want_output] got=[$output]"
@@ -138,43 +138,22 @@ backend_row() {
   LOCK_OWNER_RELEASE="$TEST_TEMP_DIR/platform-owner-release"
   export LOCK_OWNER_RELEASE
 
-  bash -c '
-    set -euo pipefail
-    source "$1"
-    configure_platform_tools
-    LOCK_FD=8
-    exec 8>> "$2"
-    invoke_lock_backend "$LOCK_BACKEND" "$LOCK_TOOL" "$LOCK_FD"
-    printf "%s\n" "$LOCK_TOOL" > "$3"
-    : > "$4"
-    while [ ! -e "$5" ]; do sleep 0.01; done
-  ' _ "$ROUTING" "$guard" "$backend" "$ready" "$LOCK_OWNER_RELEASE" &
+  bash "$BATS_TEST_DIRNAME/routing_lock_probe.bash" "$ROUTING" \
+    hold_platform_guard "$guard" "$backend" "$ready" "$LOCK_OWNER_RELEASE" &
   LOCK_OWNER_PID=$!
   export LOCK_OWNER_PID
   wait_for_file "$ready"
 
   [ "$(<"$backend")" = "$expected_backend" ]
-  run bash -c '
-    set -euo pipefail
-    source "$1"
-    configure_platform_tools
-    LOCK_FD=8
-    exec 8>> "$2"
-    invoke_lock_backend "$LOCK_BACKEND" "$LOCK_TOOL" "$LOCK_FD"
-  ' _ "$ROUTING" "$guard"
+  run bash "$BATS_TEST_DIRNAME/routing_lock_probe.bash" "$ROUTING" \
+    hold_platform_guard "$guard"
   [ "$status" -ne 0 ]
 
   : > "$LOCK_OWNER_RELEASE"
   wait "$LOCK_OWNER_PID"
   unset LOCK_OWNER_PID
-  run bash -c '
-    set -euo pipefail
-    source "$1"
-    configure_platform_tools
-    LOCK_FD=8
-    exec 8>> "$2"
-    invoke_lock_backend "$LOCK_BACKEND" "$LOCK_TOOL" "$LOCK_FD"
-  ' _ "$ROUTING" "$guard"
+  run bash "$BATS_TEST_DIRNAME/routing_lock_probe.bash" "$ROUTING" \
+    hold_platform_guard "$guard"
   [ "$status" -eq 0 ]
 }
 
@@ -361,7 +340,7 @@ od_ignored_row() {
   backend_row linux-uses-flock 0 flock lock_backend_for_system Linux
   backend_row lockf-arguments 0 '-s -t 0 9' invoke_lock_backend lockf "$fake_tool" 9
   backend_row flock-arguments 0 '-n 9' invoke_lock_backend flock "$fake_tool" 9
-  run bash -c 'source "$1"; lock_backend_for_system Windows' _ "$ROUTING"
+  run bash "$BATS_TEST_DIRNAME/routing_lock_probe.bash" "$ROUTING" lock_backend_for_system Windows
   [ "$status" -ne 0 ] || record_case_failure unsupported-system-fails "unexpected success output=$output"
 
   while IFS='|' read -r operation behavior; do

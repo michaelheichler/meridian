@@ -542,6 +542,12 @@ CASES
   kill_result="$TEST_ROOT/kill.json"
   capability_file="$TEST_ROOT/main-capability"
   definitions="$(prepare_tmux_agents worker-a)"
+  shell_ready="$TEST_ROOT/external-shell-ready"
+  cat > "$TEST_ROOT/external-shell.sh" <<SCRIPT
+#!/usr/bin/env bash
+export PROMPT_COMMAND=': > "$shell_ready"'
+exec "$LBWC_TEST_CHILD_SHELL" --noprofile --norc -i
+SCRIPT
 
   cat > "$TEST_ROOT/provision.sh" <<SCRIPT
 #!/usr/bin/env bash
@@ -564,8 +570,9 @@ printf '%s\n' "\$?" > "$kill_result.status"
 SCRIPT
   chmod +x "$TEST_ROOT/provision.sh" "$TEST_ROOT/split.sh" "$TEST_ROOT/kill.sh"
 
-  run env PATH="$BIN_DIR:$PATH" TMUX_TMPDIR="$TMUX_TMPDIR" tmux -L "$TMUX_SERVER" new-session -d -s "$external_session" -n external -c "$PROJECT_ROOT" 3>&-
+  run env PATH="$BIN_DIR:$PATH" TMUX_TMPDIR="$TMUX_TMPDIR" tmux -L "$TMUX_SERVER" new-session -d -s "$external_session" -n external -c "$PROJECT_ROOT" "bash '$TEST_ROOT/external-shell.sh'" 3>&-
   [ "$status" -eq 0 ]
+  wait_for_result "$shell_ready"
   external_pane_id="$(TMUX_TMPDIR="$TMUX_TMPDIR" tmux -L "$TMUX_SERVER" list-panes -t "$external_session" -F '#{pane_id}')"
 
   run env TMUX_TMPDIR="$TMUX_TMPDIR" tmux -L "$TMUX_SERVER" send-keys -t "$external_pane_id" "bash $TEST_ROOT/provision.sh" C-m
@@ -588,7 +595,7 @@ SCRIPT
   run env TMUX_TMPDIR="$TMUX_TMPDIR" tmux -L "$TMUX_SERVER" send-keys -t "$external_pane_id" "bash $TEST_ROOT/kill.sh" C-m
   [ "$status" -eq 0 ]
   wait_for_result "$kill_result.status" || { cat "$split_result" >&3; cat "$kill_result" >&3; false; }
-  [ "$(cat "$kill_result.status")" -eq 0 ]
+  [ "$(cat "$kill_result.status")" -eq 0 ] || { cat "$kill_result" >&3; false; }
   run jq -e '.state == "agents_shutdown" and .external_session_preserved == true' "$kill_result"
   [ "$status" -eq 0 ]
 
