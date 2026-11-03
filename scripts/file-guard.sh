@@ -13,6 +13,10 @@ command -v jq >/dev/null 2>&1 || {
   echo "Blocked: control root resolver unavailable" >&2
   exit 2
 }
+. "$SCRIPT_DIR/lib/tmux-agent-context.sh" 2>/dev/null || {
+  echo "Blocked: tmux agent context library unavailable" >&2
+  exit 2
+}
 
 INPUT=$(cat 2>/dev/null) || { echo "Blocked: unable to read file guard input" >&2; exit 2; }
 [ -n "$INPUT" ] || exit 0
@@ -38,7 +42,7 @@ TOOL_NAME="" FILE_PATH="" HOOK_CWD="" AGENT_IDENTIFIER=""
   read_field AGENT_IDENTIFIER
 } < <(printf '%s' "$INPUT" | json_fields hook)
 [ -n "$FILE_PATH" ] || exit 0
-if [ "${LBWC_TMUX_AGENT:-}" = 1 ]; then
+if tmux_agent_context; then
   case "$FILE_PATH" in
     *.runtime-snapshot.json*) echo 'Blocked: tmux agent cannot write a frozen runtime snapshot' >&2; exit 2 ;;
   esac

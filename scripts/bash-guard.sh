@@ -12,9 +12,7 @@ if ! command -v jq >/dev/null 2>&1; then
 fi
 
 INPUT=$(cat 2>/dev/null) || { echo "Blocked: unable to read bash guard input" >&2; exit 2; }
-tmux_agent_context() {
-  [ "${LBWC_TMUX_AGENT:-}" = 1 ] && [ -n "${LBWC_TMUX_CONTROL_ROOT:-}" ] && [ -n "${TMUX:-}" ] && [ -n "${TMUX_PANE:-}" ]
-}
+. "$SCRIPT_DIR/lib/tmux-agent-context.sh" || { echo "Blocked: tmux agent context library failed to load" >&2; exit 2; }
 
 if tmux_agent_context; then
   python3 -B "$PLUGIN_ROOT/hooks/tmux_restrictions.py" <<<"$INPUT" || {

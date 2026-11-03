@@ -14,9 +14,10 @@ fail() {
 }
 
 INPUT=$(cat 2>/dev/null) || fail "agent spawn guard could not read tool call input"
-[ -z "$INPUT" ] && [ "${LBWC_TMUX_AGENT:-}" != 1 ] && exit 0
-
 SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd)"
+. "$SCRIPT_DIR/lib/tmux-agent-context.sh" || fail "tmux agent context library failed to load"
+[ -z "$INPUT" ] && ! tmux_agent_context && exit 0
+
 [ -f "$SCRIPT_DIR/lib/agent-manifest.sh" ] || fail "agent manifest library is unavailable"
 . "$SCRIPT_DIR/lib/agent-manifest.sh" || fail "agent manifest library failed to load"
 [ -f "$SCRIPT_DIR/lib/lbwc-control-root.sh" ] || fail "control root library is unavailable"
@@ -24,14 +25,14 @@ SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd)"
 . "$SCRIPT_DIR/lib/lbwc-config-files.sh" || fail "config library failed to load"
 . "$SCRIPT_DIR/lib/worktree-isolation.sh" || fail "worktree isolation library failed to load"
 
-if [ "${LBWC_TMUX_AGENT:-}" = 1 ]; then
+if tmux_agent_context; then
   python3 -B "$SCRIPT_DIR/../hooks/tmux_restrictions.py" <<<"$INPUT" || fail 'tmux_execution.restrictions.allow_nested_spawn policy check failed'
 fi
 
 TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // ""' 2>/dev/null) || fail "agent spawn guard could not parse tool call input"
 case "$TOOL_NAME" in
   Agent|TaskCreate) ;;
-  Task) [ "${LBWC_TMUX_AGENT:-}" = 1 ] || exit 0 ;;
+  Task) tmux_agent_context || exit 0 ;;
   *) exit 0 ;;
 esac
 

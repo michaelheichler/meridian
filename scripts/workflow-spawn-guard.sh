@@ -14,10 +14,11 @@ fail() {
 }
 
 INPUT=$(cat 2>/dev/null) || fail "workflow spawn guard could not read tool call input"
-[ -z "$INPUT" ] && [ "${LBWC_TMUX_AGENT:-}" != 1 ] && exit 0
-
 SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd)"
-if [ "${LBWC_TMUX_AGENT:-}" = 1 ]; then
+. "$SCRIPT_DIR/lib/tmux-agent-context.sh" || fail "tmux agent context library failed to load"
+[ -z "$INPUT" ] && ! tmux_agent_context && exit 0
+
+if tmux_agent_context; then
   python3 -B "$SCRIPT_DIR/../hooks/tmux_restrictions.py" <<<"$INPUT" || fail 'tmux_execution.restrictions.allow_nested_spawn policy check failed'
 fi
 
