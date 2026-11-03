@@ -14,14 +14,15 @@ fail() {
 }
 
 INPUT=$(cat 2>/dev/null) || fail "workflow spawn guard could not read tool call input"
-[ -z "$INPUT" ] && exit 0
+[ -z "$INPUT" ] && [ "${LBWC_TMUX_AGENT:-}" != 1 ] && exit 0
+
+SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd)"
+if [ "${LBWC_TMUX_AGENT:-}" = 1 ]; then
+  python3 -B "$SCRIPT_DIR/../hooks/tmux_restrictions.py" <<<"$INPUT" || fail 'tmux_execution.restrictions.allow_nested_spawn policy check failed'
+fi
 
 TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // ""' 2>/dev/null) || fail "workflow spawn guard could not parse tool call input"
 [ "$TOOL_NAME" = "Workflow" ] || exit 0
-
-SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd)"
-python3 -B "$SCRIPT_DIR/../hooks/tmux_restrictions.py" <<<"$INPUT"
-[ "$?" -ne 2 ] || exit 2
 [ -f "$SCRIPT_DIR/lib/workflow-manifest.sh" ] || fail "workflow manifest library is unavailable"
 . "$SCRIPT_DIR/lib/workflow-manifest.sh" || fail "workflow manifest library failed to load"
 [ -f "$SCRIPT_DIR/lib/lbwc-control-root.sh" ] || fail "control root library is unavailable"
