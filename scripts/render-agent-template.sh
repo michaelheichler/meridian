@@ -67,6 +67,9 @@ if [[ "$initial_prompt" != *'"type":"user_decision_required","question":"clear u
     keyed_set VALUES INITIAL_PROMPT "$question_handoff"
   fi
 fi
+worker_result='Keep all role-specific reports and transport duties, then return one final JSON object following the worker final result schema in $CLAUDE_PLUGIN_ROOT/references/handoff-schemas.md with status, changed_files, commands (each with command and integer exit_code), and open_questions. A done result requires nonempty proof commands, all exit codes zero, and no open questions. Never invent proof. The main session must re-run every proof command before reporting done.'
+keyed_get_into initial_prompt VALUES INITIAL_PROMPT
+keyed_set VALUES INITIAL_PROMPT "$initial_prompt"$'\n\n'"$worker_result"
 keyed_unset EMPTY_TOKENS INITIAL_PROMPT
 
 for required in NAME MODEL DESCRIPTION JOB; do

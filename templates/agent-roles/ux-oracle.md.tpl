@@ -85,3 +85,7 @@ Reply directly to the sender by name. If you cannot reach them, say so in your f
 ## Your job
 
 {{JOB}}
+
+## Final result
+
+Keep all role-specific reports and transport duties, then end with one JSON object following the worker final result schema in `$CLAUDE_PLUGIN_ROOT/references/handoff-schemas.md`. Require `status`, `changed_files`, `commands` with each actual `command` and integer `exit_code`, and `open_questions`. Return `done` only with nonempty proof commands, all exit codes zero, and no open questions. Never invent proof. The main session must re-run each proof command before reporting done.

@@ -106,7 +106,7 @@ A remediation round that only adds justification text to SUMMARY.md `deviations:
 Classify a test or check failure as **pre-existing** only when it is clearly unrelated to phase work. Evidence can include a test for a module outside the plan's `files_modified`, a failure that predates the phase commits, or a base-branch reproduction. Report pre-existing failures in a separate **Pre-existing Issues** section of your response (test name, file, error message). In teammate mode, include them in your `qa_verdict` payload's `pre_existing_issues` array (same `{test, file, error}` structure as other schemas). They must NOT influence the PASS/FAIL/PARTIAL verdict for the phase. If your context includes tracked phase known issues, re-check them and include only the ones that still remain unresolved. If you cannot determine whether a failure is pre-existing or caused by the phase changes, treat it as a phase failure and count it against the verdict. Do not ignore uncertain failures.
 
 ## Output
-Check tables use **5-col** (`# | ID | {col} | Status | Evidence`) or **6-col** per-category format:
+Check tables use **5-col** (`Number | ID | {col} | Status | Evidence`) or **6-col** per-category format:
 - **5-col:** must_have (Truth/Condition), anti_pattern (Pattern), or fallback when category fields absent
 - **6-col:** artifact (Artifact|Exists|Contains|Status), key_link (From|To|Via|Status), requirement (Requirement|Plan Ref|Evidence|Status), convention (Convention|File|Status|Detail)
 
@@ -116,12 +116,12 @@ Summary: `Tier | Result | Passed: N/total | Failed: list`
 Frontmatter: `phase`, `tier` (quick|standard|deep), `result` (PASS|FAIL|PARTIAL), `passed`, `failed`, `total`, `date`, `plans_verified` (array of plan IDs verified).
 
 Body sections (include all that apply): tables use 5-col or 6-col per-category:
-- `## Must-Have Checks`: 5-col: # | ID | Truth/Condition | Status | Evidence
-- `## Artifact Checks`: 6-col: # | ID | Artifact | Exists | Contains | Status _(5-col fallback)_
-- `## Key Link Checks`: 6-col: # | ID | From | To | Via | Status _(5-col fallback)_
-- `## Anti-Pattern Scan` (standard+): 5-col: # | ID | Pattern | Status | Evidence
-- `## Requirement Mapping` (deep only): 6-col: # | ID | Requirement | Plan Ref | Evidence | Status _(5-col fallback)_
-- `## Convention Compliance` (standard+, if CONVENTIONS.md): 6-col: # | ID | Convention | File | Status | Detail _(5-col fallback)_
+- `## Must-Have Checks`: 5-col: Number | ID | Truth/Condition | Status | Evidence
+- `## Artifact Checks`: 6-col: Number | ID | Artifact | Exists | Contains | Status _(5-col fallback)_
+- `## Key Link Checks`: 6-col: Number | ID | From | To | Via | Status _(5-col fallback)_
+- `## Anti-Pattern Scan` (standard+): 5-col: Number | ID | Pattern | Status | Evidence
+- `## Requirement Mapping` (deep only): 6-col: Number | ID | Requirement | Plan Ref | Evidence | Status _(5-col fallback)_
+- `## Convention Compliance` (standard+, if CONVENTIONS.md): 6-col: Number | ID | Convention | File | Status | Detail _(5-col fallback)_
 - `## Pre-existing Issues` (if any found): table: Test | File | Error
 - `## Summary`: Tier: / Result: / Passed: N/total / Failed: [list]
 
@@ -196,3 +196,7 @@ When a decision is unclear, when your critic returns BLOCK, or before you deviat
 ## Your job
 
 {{JOB}}
+
+## Final result
+
+Keep all role-specific reports and transport duties, then end with one JSON object following the worker final result schema in `$CLAUDE_PLUGIN_ROOT/references/handoff-schemas.md`. Require `status`, `changed_files`, `commands` with each actual `command` and integer `exit_code`, and `open_questions`. Return `done` only with nonempty proof commands, all exit codes zero, and no open questions. Never invent proof. The main session must re-run each proof command before reporting done.
