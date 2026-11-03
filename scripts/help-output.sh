@@ -2,6 +2,17 @@
 set -euo pipefail
 
 . "$(dirname "$0")/resolve-claude-dir.sh" 2>/dev/null || true
+. "$(dirname "$0")/lib/display-glyphs.sh"
+lbwc_glyphs_load
+lbwc_glyph GLYPH_WARNING warning
+lbwc_glyph GLYPH_NEXT next
+lbwc_glyph GLYPH_TOP_LEFT top_left
+lbwc_glyph GLYPH_TOP_RIGHT top_right
+lbwc_glyph GLYPH_BOTTOM_LEFT bottom_left
+lbwc_glyph GLYPH_BOTTOM_RIGHT bottom_right
+lbwc_glyph GLYPH_VERTICAL vertical
+lbwc_glyph_repeat GLYPH_HORIZONTAL horizontal 74
+lbwc_glyph_repeat GLYPH_RULE rule 70
 
 PLUGIN_ROOT="${1:-${CLAUDE_PLUGIN_ROOT:-}}"
 if [ -z "$PLUGIN_ROOT" ]; then
@@ -15,20 +26,20 @@ COMMANDS_DIR="$PLUGIN_ROOT/commands"
 PLUGIN_MANIFEST="$PLUGIN_ROOT/.claude-plugin/plugin.json"
 
 if [ ! -d "$COMMANDS_DIR" ]; then
-  echo "⚠ Commands directory not found: $COMMANDS_DIR"
+  echo "${GLYPH_WARNING} Commands directory not found: $COMMANDS_DIR"
   exit 1
 fi
 
 if [ ! -f "$PLUGIN_MANIFEST" ]; then
-  echo "⚠ Plugin manifest not found: $PLUGIN_MANIFEST"
+  echo "${GLYPH_WARNING} Plugin manifest not found: $PLUGIN_MANIFEST"
   exit 1
 fi
 if ! command -v jq >/dev/null 2>&1; then
-  echo "⚠ jq is required to read the plugin manifest"
+  echo "${GLYPH_WARNING} jq is required to read the plugin manifest"
   exit 1
 fi
 PLUGIN_NAME=$(jq -er '.name | select(type == "string" and length > 0)' "$PLUGIN_MANIFEST") || {
-  echo "⚠ Plugin manifest has no valid name: $PLUGIN_MANIFEST"
+  echo "${GLYPH_WARNING} Plugin manifest has no valid name: $PLUGIN_MANIFEST"
   exit 1
 }
 
@@ -92,15 +103,15 @@ if [ -f "$PLUGIN_ROOT/VERSION" ]; then
   VERSION=$(cat "$PLUGIN_ROOT/VERSION")
 fi
 
-echo "╔══════════════════════════════════════════════════════════════════════════╗"
+printf '%s%s%s\n' "$GLYPH_TOP_LEFT" "$GLYPH_HORIZONTAL" "$GLYPH_TOP_RIGHT"
 if [ -n "$VERSION" ]; then
   header="LBWC Help, v$VERSION"
 else
   header="LBWC Help"
 fi
 padding=$((72 - ${#header}))
-printf "║ %s%${padding}s║\n" "$header" ""
-echo "╚══════════════════════════════════════════════════════════════════════════╝"
+printf '%s %s%*s%s\n' "$GLYPH_VERTICAL" "$header" "$padding" "" "$GLYPH_VERTICAL"
+printf '%s%s%s\n' "$GLYPH_BOTTOM_LEFT" "$GLYPH_HORIZONTAL" "$GLYPH_BOTTOM_RIGHT"
 echo ""
 
 print_section() {
@@ -111,7 +122,7 @@ print_section() {
   [ -s "$file" ] || return 0
 
   echo "  $title, $subtitle"
-  echo "  ──────────────────────────────────────────────────────────────────────"
+  printf '  %s\n' "$GLYPH_RULE"
   sort < "$file"
   echo ""
 }
@@ -122,4 +133,4 @@ print_section "Supporting" "The Safety Net"                  "$TMP_DIR/supportin
 print_section "Advanced"   "For When You're Feeling Ambitious" "$TMP_DIR/advanced"
 print_section "Other"      "Uncategorized"                  "$TMP_DIR/other"
 
-echo "  Getting Started: /lbwc:init → /lbwc:vibe → /lbwc:vibe --archive"
+echo "  Getting Started: /lbwc:init ${GLYPH_NEXT} /lbwc:vibe ${GLYPH_NEXT} /lbwc:vibe --archive"

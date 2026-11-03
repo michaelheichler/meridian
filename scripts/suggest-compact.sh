@@ -256,15 +256,18 @@ if [[ "${THRESHOLD:-}" =~ ^[0-9]+$ ]] && [ "$THRESHOLD" -gt 0 ]; then
 fi
 
 if [ "$REMAINING" -lt "$NEEDED" ] || [ "$THRESHOLD_EXCEEDED" = true ]; then
+  . "$_SC_SCRIPT_DIR/lib/display-glyphs.sh"
+  lbwc_glyphs_load "$PLANNING_DIR"
+  lbwc_glyph GLYPH_WARNING warning
   if [ "$AUTONOMY" = "confident" ] || [ "$AUTONOMY" = "pure-vibe" ]; then
     cat <<EOF
-⚠ **PRE-FLIGHT CONTEXT GUARD:** Context window is at ${USED_PCT}% (${REMAINING} tokens remaining). This ${MODE} workflow needs ~${EST_COST} tokens of headroom (${FIXED_BYTES}B fixed + ${VARIABLE_BYTES}B project files). Running /compact now to prevent mid-workflow compaction.
+${GLYPH_WARNING} **PRE-FLIGHT CONTEXT GUARD:** Context window is at ${USED_PCT}% (${REMAINING} tokens remaining). This ${MODE} workflow needs ~${EST_COST} tokens of headroom (${FIXED_BYTES}B fixed + ${VARIABLE_BYTES}B project files). Running /compact now to prevent mid-workflow compaction.
 
 **ACTION REQUIRED:** Run /compact before proceeding with this workflow. Auto-compacting now because autonomy is set to ${AUTONOMY}.
 EOF
   else
     cat <<EOF
-⚠ **PRE-FLIGHT CONTEXT GUARD:** Context window is at ${USED_PCT}% (~${REMAINING} tokens remaining). This ${MODE} workflow needs ~${EST_COST} tokens of headroom (${FIXED_BYTES}B fixed + ${VARIABLE_BYTES}B project files). Starting now risks mid-workflow auto-compaction, which degrades context quality.
+${GLYPH_WARNING} **PRE-FLIGHT CONTEXT GUARD:** Context window is at ${USED_PCT}% (~${REMAINING} tokens remaining). This ${MODE} workflow needs ~${EST_COST} tokens of headroom (${FIXED_BYTES}B fixed + ${VARIABLE_BYTES}B project files). Starting now risks mid-workflow auto-compaction, which degrades context quality.
 
 **RECOMMENDED:** Run \`/compact\` first, then re-run this command. Or run \`/lbwc:pause\` then \`/lbwc:resume\` for a clean context reload.
 EOF

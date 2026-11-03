@@ -19,6 +19,9 @@ if [[ -z "$phase_dir" || ! -d "$phase_dir" ]]; then
   exit 0
 fi
 
+. "$SCRIPT_DIR/lib/display-glyphs.sh"
+lbwc_glyphs_load "" "$phase_dir"
+
 verif_files=()
 append_verif_file() {
   local candidate="$1"
@@ -129,7 +132,8 @@ for vf in "${verif_files[@]}"; do
             status=$(echo "$safe_line" | awk -F'|' -v col="$status_col" '{cell = $col; gsub(/^ +| +$/, "", cell); print cell}')
             status=$(echo "$status" | sed 's/\*\*//g')
             if [[ -n "$check_id" && -n "$status" ]]; then
-              echo "  $status $check_id: $description"
+              lbwc_glyph_text display_line "$status $check_id: $description"
+              echo "  $display_line"
             fi
           fi
           ;;
@@ -138,9 +142,11 @@ for vf in "${verif_files[@]}"; do
   else
     if grep -qE '^✓ \*\*|^⚠ \*\*' "$vf" 2>/dev/null; then
       grep -E '^✓ \*\*' "$vf" 2>/dev/null | sed 's/\*\*//g; s/ \xE2\x80\x94 .*//' | while IFS= read -r line; do
+        lbwc_glyph_text line "$line"
         echo "  $line"
       done || true
       grep -E '^⚠ \*\*' "$vf" 2>/dev/null | sed 's/\*\*//g; s/ \xE2\x80\x94 .*//' | while IFS= read -r line; do
+        lbwc_glyph_text line "$line"
         echo "  $line"
       done || true
     fi
