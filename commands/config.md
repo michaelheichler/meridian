@@ -347,10 +347,10 @@ The log never holds payloads, tool input, file contents, command text, prompts, 
 - During active plan execution, identified by `.execution-state.json` status `running`, `executing`, or `active`, `STATE.md` status `active` or `executing`, or a dispatched or running task contract, the execution backend stays fixed.
 - The frozen fields include `worktree_isolation`, `agent_execution_mode`, `tmux_execution.max_agents`, `tmux_execution.comms_fallback`, all four `tmux_execution.restrictions` booleans, `effort`, and `routing.active_profile`.
 
-#### Agent restrictions
+#### Worker restrictions
 
 - Guards read restrictions from the frozen phase runtime snapshot, never from live config. A plan worker uses the snapshot beside its contract source plan. A command worker requires one unambiguous phase snapshot. Missing or ambiguous snapshots deny restricted agent actions with the key name.
-- `allow_nested_spawn=false` denies Agent, Task, TaskCreate and Workflow calls inside tmux agent panes. `true` removes this restriction but keeps manifest, contract and isolation guards.
+- `allow_nested_spawn=false` denies nested agent launches, task-management calls and grouped workflow calls inside tmux agent panes. `true` removes this restriction but keeps manifest, contract and isolation guards.
 
 #### Worker git policy
 
@@ -363,7 +363,7 @@ The log never holds payloads, tool input, file contents, command text, prompts, 
 
 - `allow_agent_ask_user=false` denies AskUserQuestion inside tmux agent panes and directs the agent to send the question to the orchestrator through the bus. `true` permits the call under normal question and pending-decision validation. Other agents retain the main-session-only question policy.
 - `require_orchestrator_attach` currently has no runtime effect. Both values retain authenticated orchestrator registration and allow detached-session provisioning. `attach_policy` controls pane focus and layout, not client attachment. Enforcing an attached-client requirement would change the supported detached flow, so this key awaits an owner decision.
-- Agent action restrictions leave the orchestrator and non-tmux sessions unchanged.
+- Worker action restrictions leave the orchestrator and non-tmux sessions unchanged.
 #### Pane cleanup
 
 - `tmux_execution.cleanup_policy` may change for the next teardown. The default `kill_on_complete` kills owned agent panes and owned sessions, but never an external session. `keep_panes` leaves panes, their processes and the session open for inspection. Both policies mark agents as shutdown, remove their routes and inboxes, stop heartbeat senders, clear teardown transactions and release runtime locks. Shutdown registry records remain as history, not active workers.
