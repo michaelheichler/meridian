@@ -38,6 +38,11 @@ TOOL_NAME="" FILE_PATH="" HOOK_CWD="" AGENT_IDENTIFIER=""
   read_field AGENT_IDENTIFIER
 } < <(printf '%s' "$INPUT" | json_fields hook)
 [ -n "$FILE_PATH" ] || exit 0
+if [ "${LBWC_TMUX_AGENT:-}" = 1 ]; then
+  case "$FILE_PATH" in
+    *.runtime-snapshot.json*) echo 'Blocked: tmux agent cannot write a frozen runtime snapshot' >&2; exit 2 ;;
+  esac
+fi
 case "$FILE_PATH" in
   *$'\n'*) echo "Blocked: newline in file path" >&2; exit 2 ;;
   ..|../*|*/..|*/../*) echo "Blocked: path traversal in file path ($FILE_PATH)" >&2; exit 2 ;;
@@ -150,7 +155,7 @@ agent_write_capability_allows() {
     *) return 5 ;;
   esac
   case "$relative_path" in
-    config/subagent-critical-execution.txt|config/destructive-commands.txt|scripts/*guard*|scripts/task-contract.sh|scripts/agent-lifecycle.sh|.lbwc-planning/.agent-manifest.json|.lbwc-planning/.contracts|.lbwc-planning/.contracts/*|.claude/agents|.claude/agents/*) return 7 ;;
+    *.runtime-snapshot.json*|config/subagent-critical-execution.txt|config/destructive-commands.txt|scripts/*guard*|scripts/task-contract.sh|scripts/agent-lifecycle.sh|.lbwc-planning/.agent-manifest.json|.lbwc-planning/.contracts|.lbwc-planning/.contracts/*|.claude/agents|.claude/agents/*) return 7 ;;
   esac
   contract_path="$ENTRY_CONTRACT"
   if [ -n "$contract_path" ] || [[ "$identifier" == lbwc-* ]]; then
@@ -194,7 +199,7 @@ agent_write_capability_allows() {
         path_is_within_root "$candidate_target" "$actual_root" || return 5
       fi
       case "$capability_relative" in
-        .lbwc-planning|.lbwc-planning/*|.temporary-agent-runfiles|.temporary-agent-runfiles/*|.claude/agents|.claude/agents/*|.git|.git/*|.env|.env.*|*/.env|*/.env.*|*.pem|*.key|*.cert|*.p12|*.pfx|*/credentials.json|*/secrets.json|*/service-account.json|credentials.json|secrets.json|service-account.json|config/subagent-critical-execution.txt|config/destructive-commands.txt|scripts/*guard*|scripts/task-contract.sh|scripts/agent-lifecycle.sh) return 7 ;;
+        .lbwc-planning|.lbwc-planning/*|.temporary-agent-runfiles|.temporary-agent-runfiles/*|.claude/agents|.claude/agents/*|.git|.git/*|.env|.env.*|*/.env|*/.env.*|*.pem|*.key|*.cert|*.p12|*.pfx|*/credentials.json|*/secrets.json|*/service-account.json|credentials.json|secrets.json|service-account.json|*.runtime-snapshot.json*|config/subagent-critical-execution.txt|config/destructive-commands.txt|scripts/*guard*|scripts/task-contract.sh|scripts/agent-lifecycle.sh) return 7 ;;
       esac
       return 0
     done
