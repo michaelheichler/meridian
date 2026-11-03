@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Runtime CLI: look up DevIQ corpus articles by keyword, id, or grep.
 set -u
 
 SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -84,8 +83,8 @@ case "$MODE" in
     while IFS= read -r hit; do
       [ -n "$hit" ] || continue
       rel="${hit#"$CORPUS_DIR"/}"
-      id="${rel%.md}"
-      line=$(jq -r --arg id "$id" '.[] | select(.id == $id) | "\(.id) | \(.title) | \(.description)"' "$INDEX")
+      article_id="${rel%.md}"
+      line=$(jq -r --arg article_id "$article_id" '.[] | select(.id == $article_id) | "\(.id) | \(.title) | \(.description)"' "$INDEX")
       [ -n "$line" ] && RESULT="${RESULT}${RESULT:+$'\n'}${line}"
     done <<< "$HITS"
     print_matches "$RESULT"
