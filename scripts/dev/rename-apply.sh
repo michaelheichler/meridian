@@ -69,7 +69,7 @@ def transform(text, kind, rows, path=""):
 
 
 def wire_environment(text, path):
-    if not path.startswith("scripts/") or path.startswith(("scripts/tests/", "scripts/dev/")):
+    if not path.startswith("scripts/") or path.startswith("scripts/tests/"):
         return text
     if not text.startswith("#!") or "bash" not in text.splitlines()[0]:
         return text
