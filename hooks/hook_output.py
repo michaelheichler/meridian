@@ -23,7 +23,7 @@ def _append(target, key, value):
 def _permission(current, incoming):
     decision = incoming.get("permissionDecision")
     previous = current.get("permissionDecision")
-    if decision not in PERMISSION_PRIORITY:
+    if not isinstance(decision, str) or decision not in PERMISSION_PRIORITY:
         return
     if PERMISSION_PRIORITY[decision] > PERMISSION_PRIORITY.get(previous, -1):
         current["permissionDecision"] = decision
