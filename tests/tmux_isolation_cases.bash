@@ -10,6 +10,55 @@ config_isolation_row() {
   "config_${kind}_row" "$row"
 }
 
+config_two_worker_row() {
+  isolation_target_workers distinct
+}
+
+config_three_worker_row() {
+  isolation_target_workers triple
+}
+
+isolation_target_workers() {
+  local target pane worker
+  isolation_tmux_prepare kill_on_complete off "$1"
+  jq -e '([.agents[].tmux_target] | length) == ([.agents[].tmux_target] | unique | length)' "$(registry_file)"
+  while IFS=$'\t' read -r target pane; do
+    [ "$(tmux_on_test_server display-message -p -t "$target" '#{pane_id}')" = "$pane" ]
+  done < <(jq -r '.agents[] | [.tmux_target,.tmux_pane_id] | @tsv' "$(registry_file)")
+  while read -r worker; do
+    AGENT_TARGET=$(jq -r --arg worker "$worker" '.agents[] | select(.agent_id == $worker) | .tmux_target' "$(registry_file)")
+    isolation_kill_agent
+    isolation_success
+    jq -e --arg worker "$worker" '.agents[] | select(.agent_id == $worker) | .state == "shutdown" and .tmux_pane_id == null' "$(registry_file)"
+    while read -r pane; do
+      [ "$(tmux_on_test_server display-message -p -t "$pane" '#{pane_id}')" = "$pane" ]
+    done < <(jq -r '.agents[] | select(.state != "shutdown") | .tmux_pane_id' "$(registry_file)")
+  done < <(jq -r '.agents[].agent_id' "$(registry_file)")
+  [ "$(pane_count "$SESSION")" = 1 ]
+}
+
+config_stale_target_row() {
+  local stale unregistered before
+  isolation_tmux_prepare kill_on_complete off
+  unregistered=$(tmux_on_test_server split-window -t "$AGENT_PANE" -P -F '#{pane_id}' 'sleep 600')
+  stale=$(tmux_on_test_server display-message -p -t "$unregistered" '#{session_name}:#{window_index}.#{pane_index}')
+  jq --arg stale "$stale" '.agents[0].tmux_target=$stale' "$(registry_file)" > "$TEST_ROOT/registry-next"
+  cp "$TEST_ROOT/registry-next" "$(registry_file)"
+  before=$(bus_state_digest)
+  run_orchestrator kill-agent --project-root "$PROJECT_ROOT" --control-root "$CONTROL_ROOT" --target "$stale"
+  [ "$status" -ne 0 ]
+  [ "$(bus_state_digest)" = "$before" ]
+  [ "$(tmux_on_test_server display-message -p -t "$AGENT_PANE" '#{pane_id}')" = "$AGENT_PANE" ]
+  [ "$(tmux_on_test_server display-message -p -t "$unregistered" '#{pane_id}')" = "$unregistered" ]
+}
+
+config_require_attach_row() {
+  local value=$1
+  jq -n --argjson value "$value" '{tmux_execution:{restrictions:{require_orchestrator_attach:$value}}}' > "$CONTROL_ROOT/config.json"
+  provision_main
+  tmux_on_test_server has-session -t "$(provisioned_session)"
+}
+
 isolation_tmux_repo() {
   cd "$PROJECT_ROOT"
   git init -q
@@ -21,6 +70,7 @@ isolation_tmux_repo() {
 isolation_tmux_prepare() {
   local policy="$1" isolation="$2" workers=worker-a
   [ "${3:-}" != distinct ] || workers='worker-a worker-b'
+  [ "${3:-}" != triple ] || workers='worker-a worker-b worker-c'
   isolation_tmux_repo
   jq -cn --arg policy "$policy" --arg isolation "$isolation" '
     {} | if $policy == "missing" then . else .tmux_execution.cleanup_policy=$policy end

@@ -40,3 +40,8 @@ rollback-stuck-pane|rollback_poll,timeout
 existing-worker-branch|existing_branch,none
 worktree-record-collision|worktree_record,none
 definition-copy-collision|definition_copy,none
+two-worker-targets|two_worker,none
+three-worker-targets|three_worker,none
+stale-human-target|stale_target,none
+require-attach-true|require_attach,true
+require-attach-false|require_attach,false
