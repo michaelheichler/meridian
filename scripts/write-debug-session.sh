@@ -59,57 +59,14 @@ update_frontmatter() {
 KNOWN_SECTIONS_RE='^## (Issue|Source Todo|Investigation|Plan|Implementation|QA|UAT|Remediation History)$'
 BLANK_LINE_RE='^[[:space:]]*$'
 
-normalize_content() {
-  printf '%s' "$1" | awk -v blank_re="$BLANK_LINE_RE" '
-    function is_blank(line) {
-      return line ~ blank_re
-    }
-    { buf[++n] = $0 }
-    END {
-      start = 1
-      while (start <= n && is_blank(buf[start])) start++
-      end = n
-      while (end >= start && is_blank(buf[end])) end--
-      for (i = start; i <= end; i++) print buf[i]
-    }
-  '
-}
+. "$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/lib/debug-session-content.sh"
 
-write_normalized_content_file() {
-  local content="$1" file="$2"
-  normalize_content "$content" > "$file"
-}
-
-normalize_block_body() {
-  normalize_content "$1"
-}
-
-escape_table_cell() {
-  awk '
-    BEGIN { first = 1 }
-    {
-      sub(/\r$/, "", $0)
-      gsub(/\|/, "\\|", $0)
-      if (!first) printf "<br>"
-      printf "%s", $0
-      first = 0
-    }
-  '
-}
-
-replace_section() {
-  local heading="$1" content="$2"
-  local tmpfile content_file
-  tmpfile=$(mktemp)
-  content_file=$(mktemp)
-  write_normalized_content_file "$content" "$content_file"
+render_section_replacement() {
+  local heading="$1" content_file="$2"
   awk -v heading="$heading" -v cfile="$content_file" -v bre="$KNOWN_SECTIONS_RE" '
-    BEGIN { in_section = 0; printed = 0 }
+    BEGIN { in_section = 0 }
     $0 ~ bre {
-      if (in_section) {
-        in_section = 0
-        printed = 1
-      }
+      in_section = 0
       if ($0 == "## " heading) {
         print $0
         print ""
@@ -125,11 +82,16 @@ replace_section() {
       }
     }
     !in_section { print }
-    END {
-      if (in_section && !printed) {
-      }
-    }
-  ' "$SESSION_FILE" > "$tmpfile"
+  ' "$SESSION_FILE"
+}
+
+replace_section() {
+  local heading="$1" content="$2"
+  local tmpfile content_file
+  tmpfile=$(mktemp)
+  content_file=$(mktemp)
+  write_normalized_content_file "$content" "$content_file"
+  render_section_replacement "$heading" "$content_file" > "$tmpfile"
   rm -f "$content_file"
   mv "$tmpfile" "$SESSION_FILE"
 }
