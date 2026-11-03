@@ -79,6 +79,7 @@ ${MD_HASH} Snapshots & recovery
 ${MD_HASH} Logging & markers
 .hook-errors.log
 .hook-debug.log
+.debug.log*
 .skill-decisions.log
 .compaction-marker
 .session-log.jsonl

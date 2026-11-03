@@ -1,5 +1,7 @@
 #!/bin/bash
 set -u
+. "$(CDPATH='' cd -- "${BASH_SOURCE[0]%/*}" 2>/dev/null && pwd)/lib/debug-logging.sh" 2>/dev/null || true
+debug_logging_gate agent-spawn-guard.sh PreToolUse 2>/dev/null || true
 
 command -v jq >/dev/null 2>&1 || {
   echo "Blocked: jq not available, cannot validate agent spawn" >&2

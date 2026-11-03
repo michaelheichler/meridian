@@ -1,6 +1,7 @@
 """PreToolUse hook: a subagent's own final return to main isn't a tool call, so only its explicit mid-task SendMessage("main") calls are interceptable here."""
 import sys
 
+from debug_logging import trace_decision
 from skill_gate import (
     _agent_identifier,
     _pair_id_for_identifier,
@@ -33,6 +34,7 @@ def blocked() -> str:
             "instead, and let the critic relay the trio's verdict.")
 
 
+@trace_decision
 def verdict(stdin_text, cwd=None) -> "str | None":
     data, error = _parse_pretool_input(stdin_text)
     if error:

@@ -4,6 +4,8 @@ import sys
 import tempfile
 import time
 
+from debug_logging import trace_decision
+
 TEAM_ROLES = {
     "coding-dijkstra",
     "coding-dijkstra-critic",
@@ -181,6 +183,7 @@ def _required_reading(role) -> "str | None":
     return None
 
 
+@trace_decision
 def verdict(stdin_text, cwd=None) -> "str | None":
     data, error = _parse_pretool_input(stdin_text)
     if error:

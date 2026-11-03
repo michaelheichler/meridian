@@ -16,6 +16,7 @@ class BashBatch:
         scripts = Path(__file__).resolve().parent.parent / "scripts"
         environment = dict(os.environ)
         environment.pop("CDPATH", None)
+        environment["MERIDIAN_DISPATCH_LOGGING"] = "1"
         self.scripts = scripts
         self.process = subprocess.Popen(
             ["bash", str(scripts / "hook-batch.sh"), str(self.root)],

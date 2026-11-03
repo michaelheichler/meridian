@@ -6,6 +6,7 @@ import signal
 import sys
 import time
 
+from debug_logging import DebugLogger, dispatched_decisions, result_decision
 from hook_batch import BashBatch
 from hook_output import decode_output, merge_output
 
@@ -76,7 +77,7 @@ def _python_guard(spec, text, event):
     previous = signal.signal(signal.SIGALRM, _timeout)
     try:
         signal.setitimer(signal.ITIMER_REAL, timeout)
-        with contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
+        with dispatched_decisions(), contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
             _python_call(name, text, event)
     except SystemExit as error:
         status = error.code if isinstance(error.code, int) else 1
@@ -110,8 +111,24 @@ class GuardRunner:
         self.text = text
         self.event = event
         self.batch = None
+        self.logger = DebugLogger(text)
+        self.logger.event = event if event in EVENTS else "unknown"
 
     def run(self, spec) -> tuple:
+        self.started = time.monotonic()
+        self.retries = 0
+        return self._run(spec)
+
+    def log_result(self, spec, result) -> None:
+        decision, reason = result_decision(result[0], result[1])
+        self.logger.component = "gate"
+        self.logger.log(spec[1], (decision, reason, self.started))
+        self.logger.component = "dispatcher"
+        for _attempt in range(self.retries):
+            self.logger.log(spec[1], ("retry", "runner_failure", None))
+        self.logger.log(spec[1], (decision, reason, self.started))
+
+    def _run(self, spec) -> tuple:
         if not spec[1].endswith(".sh"):
             return _python_guard(spec, self.text, self.event)
         deadline = time.monotonic() + spec[2]
@@ -119,6 +136,7 @@ class GuardRunner:
             try:
                 return self._bash_guard(spec, deadline)
             except Exception:
+                self.retries += 1
                 self._reset()
         return 1, "", ""
 
@@ -157,7 +175,9 @@ def _execute(runner, specs):
             result = runner.run(spec)
             blocked = result[0] == 2 or blocked
             _collect(result, outputs, spec[1])
+            runner.log_result(spec, result)
     except (Exception, DispatchTerminated):
+        runner.logger.log("execution", ("error", "exception", None))
         _warning("dispatch.py execution", 1)
         failed = True
     return blocked, outputs, failed
@@ -199,6 +219,10 @@ def dispatch(text, event_hint="") -> tuple:
         event = event_hint
     tool = data.get("tool_name")
     if not isinstance(tool, str) or not tool:
+        logger = DebugLogger(text)
+        logger.component = "dispatcher"
+        logger.event = event if event in EVENTS else "unknown"
+        logger.log("routing", ("error", "invalid_route", None))
         sys.stderr.write("meridian hook warning: dispatch.py invalid routing data, call allowed\n")
         return 0, {}
     specs = [spec for spec in EVENTS.get(event, ()) if tool in spec[0].split()]

@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Optional, cast
 
 if __package__:
+    from .debug_logging import trace_decision
     from .decision_common import (
         ACTIVE_STATUSES,
         ASK_TOOL,
@@ -21,6 +22,7 @@ if __package__:
     from .guard_paths import has_protected_decision_path, planning_directory
     from .question_validation import fingerprint, validate_question
 else:
+    from debug_logging import trace_decision
     from decision_common import (
         ACTIVE_STATUSES,
         ASK_TOOL,
@@ -307,6 +309,7 @@ EMITTERS = {
 }
 
 
+@trace_decision
 def _dispatch(stdin_text: str, event_name: str) -> Verdict:
     data, error = _event(stdin_text)
     if error:
