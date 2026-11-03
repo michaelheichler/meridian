@@ -483,3 +483,7 @@ Find global and project skills.
 ```bash
 !`ls .claude/skills/ 2>/dev/null || echo "No project skills"`
 ```
+
+## Feedback card
+
+As the last output step, follow the Feedback card input section in `${CLAUDE_PLUGIN_ROOT}/references/handoff-schemas.md`.
