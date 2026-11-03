@@ -7,6 +7,10 @@
     "output": "(?im)^## (Output Format|Output style|Display|Output)$",
     "next_up": "(?im)^## Next Up$|`?Next:`?"
   },
+  "final_heading": {
+    "heading": "Feedback card",
+    "commands": ["build.md", "debug.md", "discuss.md", "fix.md", "init.md", "plan.md", "qa.md", "research.md", "team.md", "uat.md", "verify.md", "vibe.md"]
+  },
   "commands": {
     "build.md": {
       "required_headings": [

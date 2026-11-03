@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Cross-file command contracts need this gate because Claude Code validates each Markdown file in isolation.
+# Claude Code checks each command alone, so this gate checks them together.
 set -euo pipefail
 
 ROOT="$(CDPATH='' cd -- "$(dirname "$0")/.." && pwd -P)"
@@ -244,6 +244,27 @@ def validate_manifest(manifest):
     return compiled, commands
 
 
+def validate_final_heading(manifest, commands_dir):
+    """Require each listed orchestration command to end with the shared final section."""
+    rule = manifest.get("final_heading")
+    if rule is None:
+        return []
+    heading = rule.get("heading") if isinstance(rule, dict) else None
+    names = rule.get("commands") if isinstance(rule, dict) else None
+    if not isinstance(heading, str) or not heading or not isinstance(names, list) or not names:
+        fail_setup("final_heading needs a heading string and a nonempty commands array")
+    errors = []
+    for name in names:
+        path = commands_dir / name if isinstance(name, str) else None
+        if path is None or not path.is_file():
+            errors.append(f"final_heading names a missing command: {name}")
+            continue
+        headings = [line[3:] for line in path.read_text(encoding="utf-8").splitlines() if line.startswith("## ")]
+        if not headings or headings[-1] != heading:
+            errors.append(f"{name}: last section must be {heading}")
+    return errors
+
+
 def validate_command(path, root, entry, patterns):
     """Return every discovery, reference, and section violation for one command."""
     text = path.read_text(encoding="utf-8")
@@ -445,6 +466,7 @@ def main():
     for path in command_paths:
         errors.extend(validate_command(path, root, section_entries.get(path.name), patterns))
 
+    errors.extend(validate_final_heading(manifest, commands_dir))
     errors.extend(validate_legacy_identifiers(root, allowlist, allowlist_path))
     errors.extend(validate_workflow_authoring_ban(commands_dir, root))
     errors.extend(validate_gated_tool_grants(commands_dir, root, gated_tool_prose_allowlist))
