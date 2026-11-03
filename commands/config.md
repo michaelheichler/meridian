@@ -276,7 +276,7 @@ Note that `auto_commit` controls source-task commits during Execute mode, while 
 | tmux_execution.cleanup_policy | string | kill_on_complete/keep_panes | kill_on_complete |
 | tmux_execution.layout | string | main-vertical/main-horizontal/tiled/even-horizontal/even-vertical | main-vertical |
 | tmux_execution.restrictions | object | four strict boolean restrictions | see defaults |
-| tmux_execution.restrictions.allow_nested_spawn | boolean | allow Agent, Task, TaskCreate and Workflow calls from tmux agents under existing guards | false |
+| tmux_execution.restrictions.allow_nested_spawn | boolean | allow nested agent and workflow launches or task-management calls from tmux agents under existing guards | false |
 | tmux_execution.restrictions.allow_agent_git | boolean | allow state-changing git commands from tmux agents under existing guards | false |
 | tmux_execution.restrictions.allow_agent_ask_user | boolean | allow tmux agents to ask the user under existing question validation | false |
 | tmux_execution.restrictions.require_orchestrator_attach | boolean | reserved attachment requirement, runtime meaning awaits an owner decision | true |
