@@ -239,11 +239,15 @@ def move(root: str, source: str, destination: str) -> None:
 
 
 def link_ack(source: Location, destination: Location) -> None:
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "hooks"))
+    from rename_migration import migrate_environment
+    migrate_environment()
     source_parent, source_name = source
     destination_parent, destination_name = destination
     os.link(source_name, destination_name, src_dir_fd=source_parent, dst_dir_fd=destination_parent, follow_symlinks=False)
     os.fsync(destination_parent)
-    if os.environ.get("LBWC_TMUX_FS_FAIL_AFTER_ACK_LINK") == "1":
+    if os.environ.get("MERIDIAN_TMUX_FS_FAIL_AFTER_ACK_LINK") == "1":
         fail("injected acknowledgement interruption after link")
 
 

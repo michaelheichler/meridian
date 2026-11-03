@@ -4,7 +4,7 @@
 meridian_migrate_environment
 set -euo pipefail
 
-PLANNING_DIR="${LBWC_PLANNING_DIR:-.lbwc-planning}"
+PLANNING_DIR="${MERIDIAN_PLANNING_DIR:-.meridian}"
 REGISTRY_PATH="${PLANNING_DIR}/todo-details.json"
 MAX_CONTEXT_LENGTH=2000
 

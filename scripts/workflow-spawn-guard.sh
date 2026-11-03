@@ -29,9 +29,9 @@ TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // ""' 2>/dev/null) || fail "workf
 [ "$TOOL_NAME" = "Workflow" ] || exit 0
 [ -f "$SCRIPT_DIR/lib/workflow-manifest.sh" ] || fail "workflow manifest library is unavailable"
 . "$SCRIPT_DIR/lib/workflow-manifest.sh" || fail "workflow manifest library failed to load"
-[ -f "$SCRIPT_DIR/lib/lbwc-control-root.sh" ] || fail "control root library is unavailable"
-. "$SCRIPT_DIR/lib/lbwc-control-root.sh" || fail "control root library failed to load"
-. "$SCRIPT_DIR/lib/lbwc-config-files.sh" || fail "config library failed to load"
+[ -f "$SCRIPT_DIR/lib/meridian-control-root.sh" ] || fail "control root library is unavailable"
+. "$SCRIPT_DIR/lib/meridian-control-root.sh" || fail "control root library failed to load"
+. "$SCRIPT_DIR/lib/meridian-config-files.sh" || fail "config library failed to load"
 . "$SCRIPT_DIR/lib/worktree-isolation.sh" || fail "worktree isolation library failed to load"
 
 HAS_SCRIPT=$(echo "$INPUT" | jq -r '(.tool_input.script != null)' 2>/dev/null) \
@@ -49,12 +49,12 @@ esac
 CANONICAL_SCRIPT_PATH=$(CDPATH='' cd -- "$(dirname "$SCRIPT_PATH")" 2>/dev/null && printf '%s/%s' "$(pwd -P)" "$(basename "$SCRIPT_PATH")") \
   || fail "scriptPath is unavailable"
 
-CONTROL_ROOT=$(lbwc_resolve_control_root "" "" "$PWD" 2>/dev/null || true)
+CONTROL_ROOT=$(meridian_resolve_control_root "" "" "$PWD" 2>/dev/null || true)
 [ -n "$CONTROL_ROOT" ] || fail "generated workflow has no resolvable control root or manifest"
 if worktree_isolation_enabled "$CONTROL_ROOT"; then
   fail 'worktree_isolation=on cannot run the workflow backend because its agent API has no verified isolation option'
 fi
-WORKFLOWS_DIR=$(lbwc_control_root_workflows_dir "$CONTROL_ROOT" 2>/dev/null || true)
+WORKFLOWS_DIR=$(meridian_control_root_workflows_dir "$CONTROL_ROOT" 2>/dev/null || true)
 [ -n "$WORKFLOWS_DIR" ] || fail "generated workflow directory is unavailable"
 case "$CANONICAL_SCRIPT_PATH" in
   "$WORKFLOWS_DIR"[/]*) ;;

@@ -6,13 +6,13 @@ set -u
 . "$(CDPATH='' cd -- "${BASH_SOURCE[0]%/*}" 2>/dev/null && pwd)/lib/debug-logging.sh" 2>/dev/null || true
 debug_logging_gate file-guard.sh PreToolUse 2>/dev/null || true
 SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd -P)"
-PLANNING_DIR_OVERRIDE="${LBWC_PLANNING_DIR:-}"
+PLANNING_DIR_OVERRIDE="${MERIDIAN_PLANNING_DIR:-}"
 
 command -v jq >/dev/null 2>&1 || {
   echo "Blocked: jq not available, cannot validate file write" >&2
   exit 2
 }
-. "$SCRIPT_DIR/lib/lbwc-control-root.sh" 2>/dev/null || {
+. "$SCRIPT_DIR/lib/meridian-control-root.sh" 2>/dev/null || {
   echo "Blocked: control root resolver unavailable" >&2
   exit 2
 }
@@ -64,12 +64,12 @@ esac
 
 CONTROL_ROOT=""
 if [ -n "$PLANNING_DIR_OVERRIDE" ]; then
-  CONTROL_ROOT=$(lbwc_control_root_validate "$PLANNING_DIR_OVERRIDE" 1 2>/dev/null || true)
+  CONTROL_ROOT=$(meridian_control_root_validate "$PLANNING_DIR_OVERRIDE" 1 2>/dev/null || true)
 else
-  CONTROL_ROOT=$(lbwc_resolve_control_root "" "" "$HOOK_CWD" 2>/dev/null || true)
+  CONTROL_ROOT=$(meridian_resolve_control_root "" "" "$HOOK_CWD" 2>/dev/null || true)
 fi
 if [ -n "$CONTROL_ROOT" ]; then
-  MANIFEST=$(lbwc_control_root_manifest_path "$CONTROL_ROOT" 2>/dev/null || true)
+  MANIFEST=$(meridian_control_root_manifest_path "$CONTROL_ROOT" 2>/dev/null || true)
 else
   MANIFEST=""
 fi
@@ -127,7 +127,7 @@ worker_root_matches_project() {
     "$project_root/.claude/worktrees/"?*) ;;
     "$CONTROL_ROOT/.runtime/worker-worktrees/$AGENT_IDENTIFIER")
       case "$AGENT_IDENTIFIER" in ''|*/*) return 1 ;; esac
-      control_project=$(lbwc_control_root_project_root "$CONTROL_ROOT") || return 1
+      control_project=$(meridian_control_root_project_root "$CONTROL_ROOT") || return 1
       [ "$control_project" = "$project_root" ] || return 1
       ;;
     *) return 1 ;;
@@ -162,10 +162,10 @@ agent_write_capability_allows() {
     *) return 5 ;;
   esac
   case "$relative_path" in
-    *.runtime-snapshot.json*|config/subagent-critical-execution.txt|config/destructive-commands.txt|scripts/*guard*|scripts/task-contract.sh|scripts/agent-lifecycle.sh|.lbwc-planning/.agent-manifest.json|.lbwc-planning/.contracts|.lbwc-planning/.contracts/*|.claude/agents|.claude/agents/*) return 7 ;;
+    *.runtime-snapshot.json*|config/subagent-critical-execution.txt|config/destructive-commands.txt|scripts/*guard*|scripts/task-contract.sh|scripts/agent-lifecycle.sh|.meridian/.agent-manifest.json|.meridian/.contracts|.meridian/.contracts/*|.claude/agents|.claude/agents/*) return 7 ;;
   esac
   contract_path="$ENTRY_CONTRACT"
-  if [ -n "$contract_path" ] || [[ "$identifier" == lbwc-* ]]; then
+  if [ -n "$contract_path" ] || [[ "$identifier" == meridian-* ]]; then
     [ -n "$contract_path" ] || return 6
     contract=$(bash "$SCRIPT_DIR/task-contract.sh" verify "$contract_path" "$expected_root" 2>/dev/null) || return 6
     contract_valid=false
@@ -206,7 +206,7 @@ agent_write_capability_allows() {
         path_is_within_root "$candidate_target" "$actual_root" || return 5
       fi
       case "$capability_relative" in
-        .lbwc-planning|.lbwc-planning/*|.temporary-agent-runfiles|.temporary-agent-runfiles/*|.claude/agents|.claude/agents/*|.git|.git/*|.env|.env.*|*/.env|*/.env.*|*.pem|*.key|*.cert|*.p12|*.pfx|*/credentials.json|*/secrets.json|*/service-account.json|credentials.json|secrets.json|service-account.json|*.runtime-snapshot.json*|config/subagent-critical-execution.txt|config/destructive-commands.txt|scripts/*guard*|scripts/task-contract.sh|scripts/agent-lifecycle.sh) return 7 ;;
+        .meridian|.meridian/*|.temporary-agent-runfiles|.temporary-agent-runfiles/*|.claude/agents|.claude/agents/*|.git|.git/*|.env|.env.*|*/.env|*/.env.*|*.pem|*.key|*.cert|*.p12|*.pfx|*/credentials.json|*/secrets.json|*/service-account.json|credentials.json|secrets.json|service-account.json|*.runtime-snapshot.json*|config/subagent-critical-execution.txt|config/destructive-commands.txt|scripts/*guard*|scripts/task-contract.sh|scripts/agent-lifecycle.sh) return 7 ;;
       esac
       return 0
     done
@@ -228,7 +228,7 @@ agent_write_capability_allows() {
 }
 
 path_in_planning() {
-  local planning_dir="${CONTROL_ROOT:-${PLANNING_DIR_OVERRIDE:-.lbwc-planning}}"
+  local planning_dir="${CONTROL_ROOT:-${PLANNING_DIR_OVERRIDE:-.meridian}}"
   if [ -n "$CONTROL_ROOT" ]; then
     case "$1" in
       "$CONTROL_ROOT"|"$CONTROL_ROOT"/*) return 0 ;;
@@ -321,7 +321,7 @@ if [ -n "$AGENT_ENTRY" ]; then
       exit 2
       ;;
     7)
-      echo "Blocked: generated workers cannot write LBWC policy, guard, contract, manifest, lifecycle, or agent-definition paths" >&2
+      echo "Blocked: generated workers cannot write MERIDIAN policy, guard, contract, manifest, lifecycle, or agent-definition paths" >&2
       exit 2
       ;;
     *)
@@ -329,7 +329,7 @@ if [ -n "$AGENT_ENTRY" ]; then
       exit 2
       ;;
   esac
-elif [ -n "$AGENT_IDENTIFIER" ] && [[ "$AGENT_IDENTIFIER" == lbwc-* ]]; then
+elif [ -n "$AGENT_IDENTIFIER" ] && [[ "$AGENT_IDENTIFIER" == meridian-* ]]; then
   echo "Blocked: worker '$AGENT_IDENTIFIER' manifest capability could not be resolved" >&2
   exit 2
 fi

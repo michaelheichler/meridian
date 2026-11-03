@@ -23,9 +23,9 @@ SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd)"
 
 [ -f "$SCRIPT_DIR/lib/agent-manifest.sh" ] || fail "agent manifest library is unavailable"
 . "$SCRIPT_DIR/lib/agent-manifest.sh" || fail "agent manifest library failed to load"
-[ -f "$SCRIPT_DIR/lib/lbwc-control-root.sh" ] || fail "control root library is unavailable"
-. "$SCRIPT_DIR/lib/lbwc-control-root.sh" || fail "control root library failed to load"
-. "$SCRIPT_DIR/lib/lbwc-config-files.sh" || fail "config library failed to load"
+[ -f "$SCRIPT_DIR/lib/meridian-control-root.sh" ] || fail "control root library is unavailable"
+. "$SCRIPT_DIR/lib/meridian-control-root.sh" || fail "control root library failed to load"
+. "$SCRIPT_DIR/lib/meridian-config-files.sh" || fail "config library failed to load"
 . "$SCRIPT_DIR/lib/worktree-isolation.sh" || fail "worktree isolation library failed to load"
 
 if tmux_agent_context; then
@@ -44,14 +44,14 @@ SUBAGENT_TYPE=$(echo "$INPUT" | jq -r '.tool_input.subagent_type // .tool_input.
 
 block_unresolved_generated_identity() {
   case "$SUBAGENT_TYPE" in
-    lbwc-*) echo "Blocked: generated LBWC identity has no resolvable control root or manifest" >&2; exit 2 ;;
+    meridian-*) echo "Blocked: generated MERIDIAN identity has no resolvable control root or manifest" >&2; exit 2 ;;
   esac
   exit 0
 }
 
-CONTROL_ROOT=$(lbwc_resolve_control_root "" "" "$PWD" 2>/dev/null || true)
+CONTROL_ROOT=$(meridian_resolve_control_root "" "" "$PWD" 2>/dev/null || true)
 [ -n "$CONTROL_ROOT" ] || block_unresolved_generated_identity
-PROJECT_ROOT=$(lbwc_control_root_project_root "$CONTROL_ROOT" 2>/dev/null || true)
+PROJECT_ROOT=$(meridian_control_root_project_root "$CONTROL_ROOT" 2>/dev/null || true)
 [ -n "$PROJECT_ROOT" ] || block_unresolved_generated_identity
 PLANNING_DIR="$CONTROL_ROOT"
 MANIFEST_PATH=$(agent_manifest_path "$PLANNING_DIR" 2>/dev/null) || block_unresolved_generated_identity
@@ -61,7 +61,7 @@ requested_cwd_values() {
 }
 
 requested_sidechain_cwd() {
-  requested_cwd_values | grep -Eq '(^|/)\.lbwc-worktrees/agent-[^/]+(/|$)'
+  requested_cwd_values | grep -Eq '(^|/)\.meridian-worktrees/agent-[^/]+(/|$)'
 }
 
 requested_worktree_isolation() {
@@ -92,15 +92,15 @@ STRIP_WARN=""
 STRIPPED_INPUT=""
 if [ "$ISOLATED_CODE_WRITER" = true ] || { [ "$ISOLATION_REQUIRED" = true ] && requested_sidechain_cwd; }; then
   STRIPPED_INPUT=$(echo "$INPUT" | jq '.tool_input | del(.cwd, .working_dir, .workingDirectory, .workdir)' 2>/dev/null)
-  STRIP_REASON="lbwc stripped sidechain cwd fields and preserved required isolation"
+  STRIP_REASON="meridian stripped sidechain cwd fields and preserved required isolation"
 elif requested_sidechain_cwd; then
   STRIPPED_INPUT=$(echo "$INPUT" | jq '.tool_input | del(.cwd, .working_dir, .workingDirectory, .workdir, .isolation)' 2>/dev/null)
-  STRIP_REASON="lbwc stripped sidechain cwd fields, worktree targeting is task metadata, not spawn cwd"
-  STRIP_WARN="lbwc guard: stripped sidechain cwd fields from spawn (models add these spontaneously, blocking causes retry loops)"
+  STRIP_REASON="meridian stripped sidechain cwd fields, worktree targeting is task metadata, not spawn cwd"
+  STRIP_WARN="meridian guard: stripped sidechain cwd fields from spawn (models add these spontaneously, blocking causes retry loops)"
 elif [ "$ISOLATION_REQUIRED" = false ] && requested_worktree_isolation; then
   STRIPPED_INPUT=$(echo "$INPUT" | jq '.tool_input | del(.isolation)' 2>/dev/null)
-  STRIP_REASON="lbwc stripped isolation:worktree, worktree isolation is not managed via spawn params"
-  STRIP_WARN="lbwc guard: stripped isolation:worktree from spawn (models add this spontaneously, blocking causes retry loops)"
+  STRIP_REASON="meridian stripped isolation:worktree, worktree isolation is not managed via spawn params"
+  STRIP_WARN="meridian guard: stripped isolation:worktree from spawn (models add this spontaneously, blocking causes retry loops)"
 fi
 
 emit_updated_input() {
@@ -119,7 +119,7 @@ allow_with_strip() {
 
 if [ ! -f "$MANIFEST_PATH" ]; then
   case "$SUBAGENT_TYPE" in
-    lbwc-*) block_unresolved_generated_identity ;;
+    meridian-*) block_unresolved_generated_identity ;;
     *) [ "$ISOLATED_CODE_WRITER" != true ] || allow_with_strip ;;
   esac
   block_unresolved_generated_identity
@@ -333,7 +333,7 @@ manifest_guard() {
     0) return 0 ;;
     10)
       case "$SUBAGENT_TYPE" in
-        lbwc-*)
+        meridian-*)
           echo "Blocked: agent '$SUBAGENT_TYPE' has no manifest entry, spawn it through the generator first." >&2
           exit 2
           ;;
