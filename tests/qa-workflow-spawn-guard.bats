@@ -76,6 +76,10 @@ run_guard_plain() {
 apply_mutation() {
   case "$1" in
     append-to-script) printf '\n// tampered after generation\n' >> "$SCRIPT_PATH" ;;
+    isolation-on)
+      jq '.worktree_isolation="on"' "$CONTROL_ROOT/config.json" > "$CONTROL_ROOT/config.tmp"
+      mv "$CONTROL_ROOT/config.tmp" "$CONTROL_ROOT/config.json"
+      ;;
     rewrite-recorded-path)
       jq --arg id "$WORKFLOW_ID" '.workflows[$id].script_path = "/elsewhere/other.js"' \
         "$CONTROL_ROOT/workflow-manifest.json" > "$CONTROL_ROOT/manifest.rewrite"
@@ -190,6 +194,7 @@ no-manifest-entry|@WF@/evil.js|has no manifest entry
 CASES
 
   run_recorded_fact_table <<'CASES'
+isolation-unavailable|isolation-on|null|worktree_isolation=on cannot run the workflow backend
 recorded-path-differs|rewrite-recorded-path|null|does not match the path recorded at generation
 file-digest-differs|append-to-script|null|file digest no longer matches the digest recorded at generation
 args-differ|none|{"foo":"bar"}|args do not match the args recorded at generation
@@ -211,6 +216,8 @@ CASES
 
 @test "workflow spawn guard claims a valid matching scriptPath once and blocks a second start" {
   build_fixture valid
+  jq '.worktree_isolation="off"' "$CONTROL_ROOT/config.json" > "$CONTROL_ROOT/config.tmp"
+  mv "$CONTROL_ROOT/config.tmp" "$CONTROL_ROOT/config.json"
 
   run_guard_in_root "$(workflow_call_json "$SCRIPT_PATH")"
   expect_case_silent valid-call-allowed 0

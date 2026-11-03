@@ -2,6 +2,9 @@
 
 load test_helper
 load guard_helper
+load gate_case_helper
+load isolated_case_helper
+load isolation_spawn_cases
 
 setup() {
   setup_temp_dir
@@ -178,6 +181,16 @@ sidechain-cwd|cwd|{"cwd":".lbwc-worktrees/agent-a1"}
 sidechain-working-dir|working_dir|{"working_dir":"/project/.lbwc-worktrees/agent-a1/sub"}
 worktree-isolation|isolation|{"isolation":"worktree"}
 CASES
+}
+
+@test "configured native isolation rejects unsafe writers before claiming and preserves isolated spawn inputs" {
+  run_scenario_cases isolation_missing isolation_off isolation_writer isolation_unknown \
+    isolation_critic_suffix isolation_mixed_case isolation_agent_type isolation_name isolation_empty_agent \
+    isolation_task_identity isolation_task_no_identity isolation_none isolation_boolean isolation_array \
+    isolation_invalid isolation_config_null isolation_config_false isolation_config_true \
+    isolation_config_number isolation_config_array isolation_config_object \
+    isolation_scout isolation_lead isolation_critic isolation_explore \
+    isolation_registered_rejected isolation_registered_allowed isolation_frozen
 }
 
 @test "spawn guard refuses wrong generated agents, claims registered ones with host model ids, and holds open groups" {
