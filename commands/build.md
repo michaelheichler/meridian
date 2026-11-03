@@ -226,6 +226,10 @@ If the workflow generator fails or a guard or the user denies the `Workflow` cal
 
 Show the phase, each task and grouping verdict, main-session commit hashes, deviations, summary path, telemetry status, and any blocker. Use the LBWC phase banner and no ANSI codes.
 
+## Feedback card
+
+After the existing final output on every terminal path, including a blocker, failure, or human decision, prepare fresh phase detector output in `PHASE_FILE` and this step's result JSON in `RESULT_FILE` under the feedback card input contract in `{LINK}/references/handoff-schemas.md`, re-run each proof command in the main session and record its exit code, then run `bash "{LINK}/scripts/status-card.sh" "$PHASE_FILE" "$RESULT_FILE"` and show the card as the final output. Keep all existing output and next-step instructions. A renderer failure blocks a done claim.
+
 ## Next Up
 
 For a completed build, show `/lbwc:qa <phase>`. For a remediation build, show the same QA command for the active round. For a blocker, show only its exact recovery command, then stop.

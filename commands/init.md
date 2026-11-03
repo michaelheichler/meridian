@@ -443,6 +443,10 @@ Follow @${CLAUDE_PLUGIN_ROOT}/references/lbwc-brand-essentials.md
 Use a Phase Banner with a double-line box, a File Checklist (✓), ○ for pending, and a Next Up Block.
 Use no ANSI color codes.
 
+## Feedback card
+
+After the existing final output on every terminal path, including a blocker, failure, or human decision, prepare fresh `phase-detect.sh` output in `PHASE_FILE` and this step's result JSON in `RESULT_FILE` under the feedback card input contract in `${CLAUDE_PLUGIN_ROOT}/references/handoff-schemas.md`, re-run each proof command in the main session and record its exit code, then run `bash "${CLAUDE_PLUGIN_ROOT}/scripts/status-card.sh" "$PHASE_FILE" "$RESULT_FILE"` and show the card as the final output. Keep all existing output and next-step instructions. A renderer failure blocks a done claim.
+
 ## Context
 
 Store the working directory as `{PROJECT_ROOT}`.

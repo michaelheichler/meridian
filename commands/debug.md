@@ -124,6 +124,10 @@ Session-aware next step (only shown when the inline flow did not run):
 
 Use the existing investigation result block, then the QA and UAT result blocks where applicable. Report the main-session commit only after it exists.
 
+## Feedback card
+
+After the existing final output on every terminal path, including a blocker, failure, or human decision, prepare fresh `phase-detect.sh` output in `PHASE_FILE` and this step's result JSON in `RESULT_FILE` under the feedback card input contract in `{plugin-root}/references/handoff-schemas.md`, re-run each proof command in the main session and record its exit code, then run `bash "{plugin-root}/scripts/status-card.sh" "$PHASE_FILE" "$RESULT_FILE"` and show the card as the final output. Keep all existing output and next-step instructions. A renderer failure blocks a done claim.
+
 ## Next Up
 
 Use the session-aware next steps above and `suggest-next.sh`.

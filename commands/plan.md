@@ -6,7 +6,7 @@ allowed-tools: Read, Glob, Grep, Bash, AskUserQuestion, Agent
 disable-model-invocation: true
 ---
 
-Required first step: read `skills-bundle/ponytail/SKILL.md` under the plugin root (`${CLAUDE_PLUGIN_ROOT}`) and apply the ponytail discipline at level full for the whole task.
+As the required first step, read `skills-bundle/ponytail/SKILL.md` under the plugin root (`${CLAUDE_PLUGIN_ROOT}`) and apply the ponytail discipline at level full for the whole task.
 
 ## Context
 
@@ -16,7 +16,7 @@ The main session owns all planning state, user questions, contracts, generated-a
 
 ## Guard
 
-Initialized, roadmap exists, phase exists. If every phase is planned, stop with `All phases planned. Specify phase: /lbwc:vibe --plan N`. If the phase directory is inside `.lbwc-planning/milestones/`, stop with `Cannot plan inside archived milestones.` Archived milestones are read-only.
+Initialized, roadmap exists, phase exists. If plans exist for every phase, stop with `All phases planned. Specify phase: /lbwc:vibe --plan N`. If the phase directory is inside `.lbwc-planning/milestones/`, stop with `Cannot plan inside archived milestones.` Archived milestones are read-only.
 
 ## Steps
 
@@ -34,6 +34,10 @@ Follow the reference's failure behavior exactly. Stop and report contract, gener
 
 Use the Phase Banner and planning output defined in `@references/vibe-mode-plan.md`, including plans, titles, waves, task counts, and effort. Report any allowed research warning or blocking failure plainly.
 
+## Feedback card
+
+After the existing final output on every terminal path, including a blocker, failure, or human decision, prepare fresh `phase-detect.sh` output in `PHASE_FILE` and this step's result JSON in `RESULT_FILE` under the feedback card input contract in `${CLAUDE_PLUGIN_ROOT}/references/handoff-schemas.md`, re-run each proof command in the main session and record its exit code, then run `bash "${CLAUDE_PLUGIN_ROOT}/scripts/status-card.sh" "$PHASE_FILE" "$RESULT_FILE"` and show the card as the final output. Keep all existing output and next-step instructions. A renderer failure blocks a done claim.
+
 ## Next Up
 
-When planning completes, use the reference's autonomy gate. If execution is approved or auto-chained, direct the user to `Next Up: /lbwc:build <phase>`. On a cautious stop or blocker, show only the documented next action.
+When planning completes, use the reference's autonomy gate. If the user approves execution or the autonomy gate auto-chains it, direct the user to `Next Up: /lbwc:build <phase>`. On a cautious stop or blocker, show only the documented next action.

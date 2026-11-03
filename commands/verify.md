@@ -193,6 +193,10 @@ When every checkpoint has a result, Read `{plugin-root}/references/commands/veri
 
 Use the existing CHECKPOINT and final UAT result blocks. Present one checkpoint with its `AskUserQuestion` tool call at a time.
 
+## Feedback card
+
+After the existing final output on every terminal path, including a blocker, failure, or human decision, prepare fresh `phase-detect.sh` output in `PHASE_FILE` and this step's result JSON in `RESULT_FILE` under the feedback card input contract in `{plugin-root}/references/handoff-schemas.md`, re-run each proof command in the main session and record its exit code, then run `bash "{plugin-root}/scripts/status-card.sh" "$PHASE_FILE" "$RESULT_FILE"` and show the card as the final output. Keep all existing output and next-step instructions. A renderer failure blocks a done claim.
+
 ## Next Up
 
 Use the existing remediation routing and `suggest-next.sh` output.

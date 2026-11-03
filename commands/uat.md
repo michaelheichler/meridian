@@ -6,7 +6,7 @@ allowed-tools: Read, Glob, Grep, Bash, AskUserQuestion
 disable-model-invocation: true
 ---
 
-Required first step: read `skills-bundle/ponytail/SKILL.md` under the plugin root (`${CLAUDE_PLUGIN_ROOT}`) and apply the ponytail discipline at level full for the whole task.
+As the required first step, read `skills-bundle/ponytail/SKILL.md` under the plugin root (`${CLAUDE_PLUGIN_ROOT}`) and apply the ponytail discipline at level full for the whole task.
 
 ## Context
 
@@ -29,6 +29,10 @@ Follow the reference's failure behavior exactly. A missing, stale, non-PASS, or 
 ## Output Format
 
 Use the checkpoint and completion output defined in `@references/execute-uat.md`. Report the UAT path, completed checkpoints, pass, skip, and issue counts, current remediation round when applicable, and the observed telemetry outcome.
+
+## Feedback card
+
+After the existing final output on every terminal path, including a blocker, failure, or human decision, prepare fresh `phase-detect.sh` output in `PHASE_FILE` and this step's result JSON in `RESULT_FILE` under the feedback card input contract in `${CLAUDE_PLUGIN_ROOT}/references/handoff-schemas.md`, re-run each proof command in the main session and record its exit code, then run `bash "${CLAUDE_PLUGIN_ROOT}/scripts/status-card.sh" "$PHASE_FILE" "$RESULT_FILE"` and show the card as the final output. Keep all existing output and next-step instructions. A renderer failure blocks a done claim.
 
 ## Next Up
 

@@ -18,7 +18,7 @@ Plugin root, project root, and Agent Teams check (self-contained). Shell variabl
 
 Store the returned `Plugin root` value as `{LINK}` and the returned `Project root` value as `{PROJECT_ROOT}` for every literal helper invocation below. Never guess a plugin path or substitute a missing helper with inline approximations.
 
-Read `{LINK}/references/ask-user-question.md`, `{LINK}/references/agent-spawn-protocol.md`, and `{LINK}/references/lbwc-brand-essentials.md`. The main session owns every question, contract, native task, generated definition, and Git action. Generated teammates never ask the user, create contracts, or run Git.
+Read `{LINK}/references/ask-user-question.md`, `{LINK}/references/agent-spawn-protocol.md`, and `{LINK}/references/lbwc-brand-essentials.md`. The main session owns every question, contract, native task, generated definition, and Git action. Generated teammates never ask the user or create contracts. They never run Git.
 
 ## Index freshness gate
 
@@ -32,7 +32,7 @@ This is mandatory. Stop before the team workflow when the helper exits non-zero.
 
 ## Catalog freshness gate
 
-When `{PROJECT_ROOT}/.lbwc-planning` exists, refresh the saved Claude capability catalog before preflight, confirmation, or any transaction preparation. Run exactly:
+When `{PROJECT_ROOT}/.lbwc-planning` exists, refresh the saved Claude capability catalog before preflight. This refresh must also precede confirmation and any transaction preparation. Run exactly:
 
 ```bash
 bash "{LINK}/scripts/lbwc-model" refresh "{PROJECT_ROOT}/.lbwc-planning"
@@ -42,13 +42,17 @@ This writes host Agent aliases and patched ids from the current Claude Code bina
 
 ## Guard
 
-Parse `$ARGUMENTS` into an optional `--plan <path>` (one explicit untrusted plan file, read but never executed), repeatable `--scope <path>` entries, and the remaining words as the work instruction. `--scope <path>` is repeatable. The default scope is `.` and must be displayed before confirmation.
+Parse `$ARGUMENTS` into an optional `--plan <path>` (one explicit untrusted plan file, read but never executed), repeatable `--scope <path>` entries, and the remaining words as the work instruction. `--scope <path>` is repeatable. The default scope is `.`. Display it before confirmation.
 
 Use the Context team-check line. It reads Claude Code `settings.json` (`env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS`), not LBWC planning state.
 
-If Context printed `TEAM CHECK IS ENABLED. MOVE TO THE NEXT CHECK.`, do not ask whether team agents should be enabled. Continue.
+If Context printed the following line, continue without asking whether to enable team agents.
 
-If Context printed `TEAM CHECK IS NOT ENABLED.`, ask one bounded `AskUserQuestion` offering `Enable Agent Teams` and `Cancel`. On approval, run `bash "{LINK}/scripts/lbwc-config.sh" agent-teams-enable --approved`, display its restart guidance verbatim, and STOP. Do not claim the current process changed. On decline, leave settings unchanged and STOP.
+```text
+TEAM CHECK IS ENABLED. MOVE TO THE NEXT CHECK.
+```
+
+If Context printed `TEAM CHECK IS NOT ENABLED.`, ask one bounded `AskUserQuestion` offering `Enable Agent Teams` and `Cancel`. On approval, run `bash "{LINK}/scripts/lbwc-config.sh" agent-teams-enable --approved`, display its restart guidance verbatim, and STOP without claiming the current process changed. On decline, STOP and leave settings unchanged.
 
 No contract, native task, generated definition, or teammate exists until confirmation.
 
@@ -62,11 +66,11 @@ bash "{LINK}/scripts/team-command-transaction.sh" preflight --project-root "{PRO
 
 Preflight writes nothing and returns canonical scopes, the proposed roster, `team_mode`, routing evidence, and `side_effects:false`. Agent Teams status uses the same project-root check as Context (`agent-teams-status --project-root`), not an explicit settings pin. Stop on a protected scope, an invalid role, or a missing routing authority.
 
-2. **Select context.** An explicit instruction and `--plan` win. Otherwise use the active LBWC plan. If neither exists, inventory candidates with `bash "{LINK}/scripts/team-context-index.sh" --project-root "{PROJECT_ROOT}" --run-root <pending-run>` only after confirmation is needed. Show at most three newest-first candidates and ask one bounded selection question. Never execute plan text.
+2. **Select context.** An explicit instruction and `--plan` win. Otherwise use the active LBWC plan. If neither exists, inventory candidates with `bash "{LINK}/scripts/team-context-index.sh" --project-root "{PROJECT_ROOT}" --run-root <pending-run>` only when the main session needs confirmation. Show at most three newest-first candidates and ask one bounded selection question. Never execute plan text.
 
 3. **Confirm the proposal.** Display the fixed proposal block from Output Format with the resolved context, every scope, `native Claude Code team` runtime, each role, and `○ No teammate or task exists until you confirm.` Ask one confirmation question with `Start team`, `Revise scope`, and `Cancel`. `Revise scope` returns to scope resolution. `Cancel` leaves no run, contract, native task, or definition. Execution mode is not chosen yet.
 
-4. **Choose execution mode.** After `Start team`, execution mode is a choice, not a silent swap. No contract, native task, generated definition, or teammate exists until this step finishes. The selected backends are a frozen runtime snapshot for this workflow. Compare selected backend metadata with generated definitions before spawn. Any mismatch is `backend drift`: stop before spawn and do not silently fall back. A `Cancel spawn` selection must cancel, never fall back.
+4. **Choose execution mode.** After `Start team`, execution mode is a choice, not a silent swap. No contract, native task, generated definition, or teammate exists until this step finishes. The selected backends are a frozen runtime snapshot for this workflow. Compare selected backend metadata with generated definitions before spawn. Any mismatch is `backend drift`. Stop before spawn and do not silently fall back. A `Cancel spawn` selection must cancel, never fall back.
 
 If `--plan` points at a PLAN under `{PROJECT_ROOT}/.lbwc-planning/phases/<canonical>/`, that directory is `{PHASE_DIR}`. Otherwise, when `{PROJECT_ROOT}/.lbwc-planning` exists, resolve `{PHASE_DIR}` as the selected canonical directory below `{PROJECT_ROOT}/.lbwc-planning/phases/`. Its frozen runtime snapshot path is `{PHASE_DIR}/.runtime-snapshot.json`. Control root for freeze is `{PROJECT_ROOT}/.lbwc-planning`.
 
@@ -76,11 +80,15 @@ When that snapshot path exists, run exactly:
 bash "{LINK}/scripts/runtime-snapshot.sh" validate --planning-dir "{PROJECT_ROOT}/.lbwc-planning" --phase-dir "{PHASE_DIR}"
 ```
 
-On success, use the returned `snapshot` as the only authority for requested backend, resolved backend, effort, routing profile, routed models, TMUX settings, and restrictions. Do not re-read live configuration for execution selection. A non-zero result is `backend drift` or malformed runtime state. Stop before contract opening, generation, or spawning.
+On success, use the returned `snapshot` as the only authority for requested backend, resolved backend, effort, routing profile, routed models, TMUX settings, and restrictions. Do not re-read live configuration for execution selection. A non-zero result is `backend drift` or malformed runtime state. Stop before opening a contract. Do not generate or spawn an agent.
 
 When no snapshot exists and `{PROJECT_ROOT}/.lbwc-planning` is missing, select requested and resolved `in_process`. Do not ask. TMUX spawn requires initialized planning and a canonical phase directory. Stop if the user or config selected `tmux` without those artifacts.
 
-When no snapshot exists and planning is present, read validated execution configuration once. An explicit `agent_execution_mode` wins outright, including an explicit `in_process` or `tmux`. `agent_execution_mode=in_process` selects requested and resolved `in_process`. `agent_execution_mode=tmux` selects requested `tmux`. `agent_execution_mode=workflow` selects requested `workflow`: read `.workflow.available` from `{PROJECT_ROOT}/.lbwc-planning/claude-capabilities.json` and `.workflow_execution.enabled` from `{PROJECT_ROOT}/.lbwc-planning/config.json`. When `.workflow.available` is `false`, stop before any contract or agent exists and report `.workflow.unavailable_reasons` verbatim. Otherwise, when `.workflow_execution.enabled` is not `true`, stop before any contract or agent exists with `workflow backend is disabled in configuration`. Otherwise resolve `workflow`. There is no automatic fallback from a requested `workflow` to another backend. For `agent_execution_mode=ask`, read both `.workflow.available` and `.workflow_execution.enabled` from the same catalog and config first, then ask one bounded execution-mode question before any contract or agent exists. Follow `{LINK}/references/ask-user-question.md`: exactly one question, `multiSelect` false, two to four visible options.
+When no snapshot exists and planning is present, read validated execution configuration once. An explicit `agent_execution_mode` wins outright, including an explicit `in_process` or `tmux`. `agent_execution_mode=in_process` selects requested and resolved `in_process`. `agent_execution_mode=tmux` selects requested `tmux`. `agent_execution_mode=workflow` selects requested `workflow`. Read `.workflow.available` from `{PROJECT_ROOT}/.lbwc-planning/claude-capabilities.json` and `.workflow_execution.enabled` from `{PROJECT_ROOT}/.lbwc-planning/config.json`. When `.workflow.available` is `false`, stop before any contract or agent exists and report `.workflow.unavailable_reasons` verbatim. Otherwise, when `.workflow_execution.enabled` is not `true`, stop before any contract or agent exists with the disabled-workflow message below. Otherwise resolve `workflow`. There is no automatic fallback from a requested `workflow` to another backend. For `agent_execution_mode=ask`, read both `.workflow.available` and `.workflow_execution.enabled` from the same catalog and config first, then ask one bounded execution-mode question before any contract or agent exists. Follow `{LINK}/references/ask-user-question.md` with exactly one question, `multiSelect` false, and two to four visible options.
+
+```text
+workflow backend is disabled in configuration
+```
 
 - header: `Team execution`
 - question when `.workflow.available` and `.workflow_execution.enabled` are both `true`: `After confirming this team, where should teammates run? Workflow run orchestrates the roster from a committed background script. Native keeps the current Claude Code Agent team. TMUX starts each teammate as a fresh pane session.`
@@ -103,7 +111,7 @@ bash "{LINK}/scripts/runtime-snapshot.sh" cancel --planning-dir "{PROJECT_ROOT}/
 
 Report cancellation and stop. This writes `{PHASE_DIR}/.runtime-cancelled.json` and creates no snapshot. If `{PHASE_DIR}` is missing, report cancellation and stop without a snapshot. It must cancel, never fall back.
 
-This gate is a fast, friendly stop before any contract, native task, generated definition, or teammate exists. It is not the only layer: freezing a requested `workflow` still fails with `workflow backend is disabled in configuration` when `workflow_execution.enabled` in `{PROJECT_ROOT}/.lbwc-planning/config.json` is `false`, and `workflow-generator.sh` re-validates both flags again at generation time. The shipped default has `workflow_execution.enabled=false`, so an unconfigured project never offers `Workflow run` and does not reach that freeze-time failure.
+This gate stops before any contract, native task, generated definition, or teammate exists. Freezing a requested `workflow` still fails with the disabled-workflow message above when `workflow_execution.enabled` in `{PROJECT_ROOT}/.lbwc-planning/config.json` is `false`, and `workflow-generator.sh` re-validates both flags at generation time. The shipped default has `workflow_execution.enabled=false`, so an unconfigured project never offers `Workflow run` and does not reach that freeze-time failure.
 
 For requested `tmux`, complete preflight before freezing. On success resolve `tmux`. On failure, resolve `in_process` only if `tmux_execution.comms_fallback=fall_back_to_in_process`. Otherwise stop without a snapshot. Then, when `{PHASE_DIR}` exists, run exactly:
 
@@ -113,7 +121,7 @@ bash "{LINK}/scripts/runtime-snapshot.sh" freeze --planning-dir "{PROJECT_ROOT}/
 
 A `created` or `matched` result moves runtime state to `ready` and does not alter a task contract. Pass `snapshot.resolved_backend` to every `agent-generator.sh --execution-backend` invocation that follows a schema 3 open. Schema 2 generation omits `--execution-backend`.
 
-Copy snapshot backends into CLI flags only when `{PHASE_DIR}/.runtime-snapshot.json` exists. Control root is `{PROJECT_ROOT}/.lbwc-planning`, the freeze `--planning-dir`. Native `in_process` with no freeze must not `jq` a missing snapshot: leave `OPEN_BACKEND_ARGS` empty and keep the selected `in_process` backends. When the snapshot exists and `snapshot.requested_backend` equals `snapshot.resolved_backend`, pass those values plus `--control-root` and `--assert-snapshot` so the schema 3 team contract cannot disagree with the snapshot. When they differ, that is the already-frozen `comms_fallback` case: omit the schema 3 backend flags, then follow the native Agent path.
+Copy snapshot backends into CLI flags only when `{PHASE_DIR}/.runtime-snapshot.json` exists. Control root is `{PROJECT_ROOT}/.lbwc-planning`, the freeze `--planning-dir`. Native `in_process` with no freeze must not `jq` a missing snapshot. Leave `OPEN_BACKEND_ARGS` empty and keep the selected `in_process` backends. When the snapshot exists and `snapshot.requested_backend` equals `snapshot.resolved_backend`, pass those values plus `--control-root` and `--assert-snapshot` so the schema 3 team contract cannot disagree with the snapshot. When they differ, that is the already-frozen `comms_fallback` case. Omit the schema 3 backend flags, then follow the native Agent path.
 
 ```bash
 SNAPSHOT_PATH="{PHASE_DIR}/.runtime-snapshot.json"
@@ -140,7 +148,7 @@ If `snapshot.resolved_backend` is `workflow`, follow `{LINK}/references/workflow
 bash "{LINK}/scripts/team-command-transaction.sh" prepare --project-root "{PROJECT_ROOT}" --run-id "$RUN_ID" --instruction "$INSTRUCTION" ${SCOPE_ARGS[@]+"${SCOPE_ARGS[@]}"}
 ```
 
-Prepare always creates a run root below `.temporary-agent-runfiles/runs/`, issues exactly one schema 3 native-team contract for the whole roster (`pair` or `trio`, never `solo` for a multi-role roster), generates every teammate definition, registers the manifest, and advances the contract to `dispatched`. It returns `run_root`, `control_root`, `contract_id`, `teammates`, and `ordered_actions` with `agent_spawn` before `task_create`. For an initialized project the control root is the active `.lbwc-planning`. Otherwise it is the run root. Do not create `.lbwc-planning` for an uninitialized repository.
+Prepare always creates a run root below `.temporary-agent-runfiles/runs/`, issues exactly one schema 3 native-team contract for the whole roster (`pair` or `trio`, never `solo` for a multi-role roster), generates every teammate definition, registers the manifest, and advances the contract to `dispatched`. It returns `run_root`, `control_root`, `contract_id`, `teammates`, and `ordered_actions` with `agent_spawn` before `task_create`. For an initialized project the control root is the active `.lbwc-planning`, otherwise it is the run root. Do not create `.lbwc-planning` for an uninitialized repository.
 
 Read spawn payloads from:
 
@@ -148,13 +156,13 @@ Read spawn payloads from:
 bash "{LINK}/scripts/team-command-transaction.sh" spawn-payload --project-root "{PROJECT_ROOT}" --run-root "$RUN_ROOT"
 ```
 
-The payloads contain only `subagent_type` and `name`, one per teammate, and block unless every manifest entry is registered against the contract. Spawn every payload with `Agent` in one message, all in parallel, never sequential, never a subset. Never pass `team_name`, and never pass `model`, `effort`, `maxTurns`, `tools`, `prompt`, role, or permission overrides. The generated frontmatter is authoritative. The spawn guard rejects conflicting call-time values. The first teammate forms the session team natively. Do not edit Claude Code native team configuration, task storage, inboxes, or mailbox files. After each spawn succeeds, record it:
+The payloads contain only `subagent_type` and `name`, one per teammate, and block unless the generator registered every manifest entry against the contract. Spawn every payload with `Agent` in one message, all in parallel, never sequential, never a subset. Never pass `team_name`, and never pass `model`, `effort`, `maxTurns`, `tools`, `prompt`, role, or permission overrides. The generated frontmatter is authoritative. The spawn guard rejects conflicting call-time values. The first teammate forms the session team natively. Do not edit Claude Code native team configuration, task storage, inboxes, or mailbox files. After each spawn succeeds, record it:
 
 ```bash
 bash "{LINK}/scripts/team-command-transaction.sh" record-spawn --project-root "{PROJECT_ROOT}" --run-root "$RUN_ROOT" --contract-id "$CONTRACT_ID" --teammate "$NAME"
 ```
 
-Only after every roster teammate is recorded (`spawn_complete` true), read the task payload:
+Only after you record every roster teammate (`spawn_complete` true), read the task payload:
 
 ```bash
 bash "{LINK}/scripts/team-command-transaction.sh" task-payload --project-root "{PROJECT_ROOT}" --run-root "$RUN_ROOT"
@@ -215,7 +223,7 @@ On contract, task binding, generation, spawn, routing evidence, tmux preflight, 
 
 ## Output Format
 
-Use horizontal rules, not side-bordered boxes. The proposal block before confirmation is fixed:
+Use horizontal rules, not side-bordered boxes. Use this exact proposal block before confirmation.
 
 ```text
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -234,6 +242,10 @@ Use horizontal rules, not side-bordered boxes. The proposal block before confirm
 ```
 
 Report missing runtime routing evidence as unknown. After completion, print the run summary fields from `team-command-transaction.sh summary` unchanged: `run_id`, `status`, `project_root`, `scope`, and `records`. A recorded mismatch blocks acceptance.
+
+## Feedback card
+
+After the existing final output on every terminal path, including a blocker, failure, or human decision, prepare fresh `phase-detect.sh` output in `PHASE_FILE` and this step's result JSON in `RESULT_FILE` under the feedback card input contract in `{LINK}/references/handoff-schemas.md`, re-run each proof command in the main session and record its exit code, then run `bash "{LINK}/scripts/status-card.sh" "$PHASE_FILE" "$RESULT_FILE"` and show the card as the final output. Keep all existing output and next-step instructions. A renderer failure blocks a done claim.
 
 ## Next Up
 

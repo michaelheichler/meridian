@@ -294,6 +294,10 @@ Per-mode output:
 
 Use a Phase Banner (double-line box), Metrics Block, and Next Up Block without ANSI color codes. Status symbols remain ◆ running, ✓ complete, ✗ failed, and ○ skipped.
 
+## Feedback card
+
+After the existing final output on every terminal path, including a blocker, failure, or human decision, prepare fresh `phase-detect.sh` output in `PHASE_FILE` and this step's result JSON in `RESULT_FILE` under the feedback card input contract in `{LINK}/references/handoff-schemas.md`, re-run each proof command in the main session and record its exit code, then run `bash "{LINK}/scripts/status-card.sh" "$PHASE_FILE" "$RESULT_FILE"` and show the card as the final output. Keep all existing output and next-step instructions. A renderer failure blocks a done claim.
+
 ## Next Up
 
 Only after the selected mode reaches its terminal boundary, run `bash "{LINK}/scripts/suggest-next.sh" vibe {result}`. Render its exact next command in one Next Up Block, then stop. Do not begin the suggested mode in the same turn unless the Pure-Vibe Phase Loop explicitly authorizes it.
