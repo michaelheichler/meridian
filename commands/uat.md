@@ -6,7 +6,7 @@ allowed-tools: Read, Glob, Grep, Bash, AskUserQuestion
 disable-model-invocation: true
 ---
 
-Required first step: read `skills-bundle/ponytail/SKILL.md` under the plugin root (`${CLAUDE_PLUGIN_ROOT}`) and apply the ponytail discipline at level full for the whole task.
+As the required first step, read `skills-bundle/ponytail/SKILL.md` under the plugin root (`${CLAUDE_PLUGIN_ROOT}`) and apply the ponytail discipline at level full for the whole task.
 
 ## Context
 
@@ -33,3 +33,7 @@ Use the checkpoint and completion output defined in `@references/execute-uat.md`
 ## Next Up
 
 On a clean completion, end with `Next Up: /lbwc:vibe`. On issues with a validated remediation plan, end with `Next Up: /lbwc:build <phase>`. On a resumed UAT, present only the next incomplete checkpoint and wait for the human.
+
+## Feedback card
+
+As the last output step, follow the Feedback card input section in `${CLAUDE_PLUGIN_ROOT}/references/handoff-schemas.md`.

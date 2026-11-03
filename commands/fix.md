@@ -26,7 +26,7 @@ Store the plugin root path output above as `{plugin-root}` for use in script inv
 
 @${CLAUDE_PLUGIN_ROOT}/references/agent-spawn-protocol.md
 
-Config: Pre-injected by SessionStart hook.
+The SessionStart hook pre-injects config.
 
 ## Workflow capability gate
 
@@ -36,12 +36,12 @@ Refresh the saved Claude capability catalog before any Dev contract or spawn:
 bash "{plugin-root}/scripts/lbwc-model" refresh .lbwc-planning
 ```
 
-This persists workflow-backend availability as `.workflow` on `.lbwc-planning/claude-capabilities.json`, the authority the execution-mode choice below reads before offering or resolving `workflow`. A non-zero exit here does not stop the fix. It leaves `RESOLVED_BACKEND` at `in_process`, so the fix proceeds on whatever catalog already exists. Only a run that goes on to request or choose `workflow` can still be blocked, by step 0 of `workflow-spawn-protocol.md` and by `workflow-generator.sh`'s own live re-validation at generation time. Skip this gate when `.lbwc-planning/` is missing. Do not create a planning directory here.
+This persists workflow-backend availability as `.workflow` on `.lbwc-planning/claude-capabilities.json`, the authority the execution-mode choice below reads before offering or resolving `workflow`. A non-zero exit here does not stop the fix. It leaves `RESOLVED_BACKEND` at `in_process`, so the fix proceeds on whatever catalog already exists. Step 0 of `workflow-spawn-protocol.md` and the live re-validation in `workflow-generator.sh` can still block a run at generation time, but only when the run goes on to request or choose `workflow`. Skip this gate when `.lbwc-planning/` is missing. Do not create a planning directory here.
 
 ## Guard
 
 - Not initialized (no .lbwc-planning/ dir): STOP "Run /lbwc:init first."
-- No $ARGUMENTS: STOP "Usage: /lbwc:fix \"description of what to fix\""
+- If $ARGUMENTS is absent, STOP "Usage: /lbwc:fix \"description of what to fix\""
 
 ## Steps
 
@@ -51,9 +51,9 @@ This persists workflow-backend availability as `.workflow` on `.lbwc-planning/cl
   bash "{plugin-root}/scripts/resolve-todo-item.sh" &lt;N&gt; --session-snapshot --require-unfiltered --validate-live
 ```
 
-  Parse the JSON output. If `status` is `"ok"`, store the full payload as `TODO_SELECTED_JSON`, preserve `TODO_SELECTED=true`, and replace $ARGUMENTS with the item's `command_text` value (not the old duplicated `description` form). If the resolved `state_path` points under `.lbwc-planning/milestones/`, STOP with: `This todo came from archived milestone state. Restore the writable root STATE.md first by restarting so session-start.sh can run migration, or run 'bash scripts/migrate-orphaned-state.sh .lbwc-planning'.` Do not continue using the archived description as live work input. If `status` is `"error"`, STOP with the `message` value.
+  Parse the JSON output. If `status` is `"ok"`, store the full payload as `TODO_SELECTED_JSON`, preserve `TODO_SELECTED=true`, and replace $ARGUMENTS with the item's `command_text` value (not the old duplicated `description` form). If the resolved `state_path` points under `.lbwc-planning/milestones/`, STOP with `This todo came from archived milestone state. Restore the writable root STATE.md first by restarting so session-start.sh can run migration, or run 'bash scripts/migrate-orphaned-state.sh .lbwc-planning'.` Do not continue using the archived description as live work input. If `status` is `"error"`, STOP with the `message` value.
 
-1. **Parse:** Entire $ARGUMENTS (minus flags) = fix description. If `TODO_SELECTED_JSON` exists, treat its `command_text` as the fix description and its `ref` as the already-resolved ref before any additional parsing. Otherwise, if the description contains a `(ref:HASH)` suffix (8 hex characters), extract the hash and strip the ref tag from the description before further processing. If a ref was found, load extended detail:
+1. **Parse:** Entire $ARGUMENTS (minus flags) = fix description. If `TODO_SELECTED_JSON` exists, treat its `command_text` as the fix description and its `ref` as the already-resolved ref before any additional parsing. Otherwise, if the description contains a `(ref:HASH)` suffix (8 hex characters), extract the hash and strip the ref tag from the description before further processing. If you found a ref, load extended detail:
 
 ```bash
   bash "{plugin-root}/scripts/todo-details.sh" get &lt;hash&gt;
@@ -67,7 +67,7 @@ Command shape: `bash "{plugin-root}/scripts/todo-details.sh" get <hash>`.
 ```
 
   In all cases, continue without detail.
-  **Post-parse validation:** If the fix description is empty or whitespace-only after stripping flags and ref, check whether a ref was found AND its detail loaded successfully (status `"ok"`). If yes, proceed, the detail provides the fix context. If no ref was found, or the ref detail failed to load, STOP: `"Usage: /lbwc:fix \"description of what to fix\""`.
+  **Post-parse validation:** If the fix description is empty or whitespace-only after stripping flags and ref, check whether you found a ref AND its detail loaded successfully (status `"ok"`). If yes, proceed, the detail provides the fix context. If you found no ref, or the ref detail failed to load, STOP: `"Usage: /lbwc:fix \"description of what to fix\""`.
 
 1. **State:** Use `.lbwc-planning/STATE.md`.
 2. . **Set delegation marker:** Before spawning Dev, activate the delegation guard so the orchestrator cannot accidentally write product files directly:
@@ -77,7 +77,7 @@ Command shape: `bash "{plugin-root}/scripts/todo-details.sh" get <hash>`.
   bash "{plugin-root}/scripts/delegated-workflow.sh" set fix turbo
 ```
 
-- **Immediate todo pickup (numeric selections only):** If `TODO_SELECTED=true`, claim the todo now, after fix has passed its own parse/guard steps, and before Dev is spawned. Pipe `TODO_SELECTED_JSON` into:
+- **Immediate todo pickup (numeric selections only):** If `TODO_SELECTED=true`, claim the todo now, after fix has passed its own parse/guard steps, and before you spawn Dev. Pipe `TODO_SELECTED_JSON` into:
 
   ```bash
 
@@ -131,9 +131,9 @@ Command shape: `bash "{plugin-root}/scripts/todo-details.sh" get <hash>`.
 
   Read the `Workflow-call parameters:` block and the `WORKFLOW_READY <task-id>` line that follows it. Call `Workflow` exactly once with `scriptPath` set to the printed `path` value. Never pass `script`, and never inline or paraphrase the rendered file into the call. The `PreToolUse` guard on `Workflow` independently revalidates the path against the registered digest. A denial is a stop, not a fallback trigger. `Workflow` runs Dev in the background. Its own tool result reports only the launch, never Dev's report. Wait for the run's own terminal result. A `user_decision_required` result is the only path back to the user, ask exactly one bounded `AskUserQuestion` about it. Any other terminal result is Dev's report. Process it exactly like the `in_process` branch above.
 
-  Before composing the Dev task description, evaluate installed skills visible in your system context. Read each skill's description and select all materially helpful skills for this fix, including adjacent or supporting skills surfaced by the prompt, logs, error text, related files, or stack context. Do not choose only the single most direct skill. The spawned prompt MUST begin with exactly one explicit skill outcome block: use `<skill_activation>{For each selected skill: "Call Skill({skill-name})"}</skill_activation>` when one or more installed skills are preselected at orchestration time, or `<skill_no_activation>Evaluated installed skills for this task. No skills were preselected at orchestration time. Reason: {brief task-specific reason}.</skill_no_activation>` when none are preselected. Silent omission of both blocks is invalid. After evaluating, state the skill outcome in your response. If the prompt or error mentions SwiftData, include `swiftdata` alongside relevant test and build skills. After calling `Skill(...)`, read any relevant follow-up files named by that skill before reasoning or acting. Do not scan entire skill folders or read unrelated references.
+  Before composing the Dev task description, evaluate installed skills visible in your system context. Read each skill's description and select all materially helpful skills for this fix, including adjacent or supporting skills surfaced by the prompt, logs, error text, related files, or stack context. Do not choose only the single most direct skill. The spawned prompt MUST begin with exactly one explicit skill outcome block. Use `<skill_activation>{For each selected skill: "Call Skill({skill-name})"}</skill_activation>` when you preselect one or more installed skills at orchestration time, or `<skill_no_activation>Evaluated installed skills for this task. I preselected no skills at orchestration time. Reason: {brief task-specific reason}.</skill_no_activation>` when you preselect none. Silent omission of both blocks is invalid. After evaluating, state the skill outcome in your response. If the prompt or error mentions SwiftData, include `swiftdata` alongside relevant test and build skills. After calling `Skill(...)`, read any relevant follow-up files named by that skill before reasoning or acting. Do not scan entire skill folders or read unrelated references.
 
-  If one or more skills were preselected, run `bash "{plugin-root}/scripts/extract-skill-follow-up-files.sh" "{all preselected skill names from the activation block}" 2>/dev/null || true` before spawning the Dev. If the helper prints a `<skill_follow_up_files>` block, paste it immediately after the follow-up-read sentence in the spawned payload. Otherwise omit that block.
+  If you preselected one or more skills, run `bash "{plugin-root}/scripts/extract-skill-follow-up-files.sh" "{all preselected skill names from the activation block}" 2>/dev/null || true` before spawning the Dev. If the helper prints a `<skill_follow_up_files>` block, paste it immediately after the follow-up-read sentence in the spawned payload. Otherwise omit that block.
 
   **Discover research context** (optional, from prior `/lbwc:research`):
 
@@ -192,8 +192,8 @@ Command shape: `bash "{plugin-root}/scripts/todo-details.sh" get <hash>`.
 
   This is **display-only**. Do NOT edit STATE.md, do NOT add todos, do NOT
   invoke /lbwc:todo, and do NOT enter an interactive loop. The user decides
-  whether to track these. If no discovered issues: omit the section entirely.
-  After displaying discovered issues, **STOP. Do not take further action** on discovered issues (no auto-fix, no auto-track, no investigation),just display them.
+  whether to track these. If there are no discovered issues, omit the section entirely.
+  After displaying discovered issues, **STOP. Do not take further action** on discovered issues (no auto-fix, no auto-track, no investigation), display them only.
   Run `bash "{plugin-root}/scripts/write-fix-marker.sh" .lbwc-planning 2>/dev/null || true` silently, this persists fix context for inline QA/UAT.
   Run `bash "{plugin-root}/scripts/suggest-next.sh" fix` and display.
 
@@ -209,7 +209,7 @@ Command shape: `bash "{plugin-root}/scripts/todo-details.sh" get <hash>`.
 ## Failure and recovery
 
 - If contract issuance, generation, spawn, or verification fails, clear the delegation marker, preserve the working tree, and report the failure verbatim. Do not create an uncontracted fallback.
-- If the workflow generator fails or the `Workflow` call is denied, clear the delegation marker, leave the contract `planned`, and report the failure verbatim. Do not fall back to `in_process`.
+- If the workflow generator fails or a guard or the user denies the `Workflow` call, clear the delegation marker, leave the contract `planned`, and report the failure verbatim. Do not fall back to `in_process`.
 - If the Dev reports ambiguity, stop without a commit and direct the user to `/lbwc:debug`.
 
 ## Output Format
@@ -219,3 +219,7 @@ Use the existing success, discovered-issues, and stopped result blocks above. In
 ## Next Up
 
 Use `suggest-next.sh` output. For an unresolved issue, recommend `/lbwc:debug`.
+
+## Feedback card
+
+As the last output step, follow the Feedback card input section in `{plugin-root}/references/handoff-schemas.md`.

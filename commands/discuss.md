@@ -75,15 +75,15 @@ All phase-selection and discussion-state checks below are blocking guards.
 
 ## Guards
 
-- No `.lbwc-planning/` directory: STOP "Run /lbwc:init first."
-- No phases in ROADMAP.md: STOP "No phases defined. Run /lbwc:vibe first."
+- If `.lbwc-planning/` does not exist, STOP "Run /lbwc:init first."
+- If ROADMAP.md has no phases, STOP "No phases defined. Run /lbwc:vibe first."
 
 ## Phase Resolution
 
 1. If `$ARGUMENTS` contains a number N, target phase N.
 2. If the target phase has a `*-CONTEXT.md` file with `pre_seeded: true` in its YAML frontmatter (remediation phase): WARN the user that this phase has pre-seeded UAT context and ask whether they want to re-discuss (which overwrites the pre-seeded content) or skip discussion and proceed to planning.
 3. If the target phase has a `*-CONTEXT.md` file WITHOUT `pre_seeded: true` (organic discussion already happened): This is a **continuation discussion**. Display: "Phase {NN} already has discussion context. Continuing to explore additional topics." The Discussion Engine's Step 1.5 will handle loading existing decisions as baseline.
-4. If no target was set by step 1 (no explicit phase number): auto-detect by finding the first phase directory without a `*-CONTEXT.md` file. If all phases already have context: STOP "All phases discussed. Specify a phase number to deepen an existing discussion."
+4. If step 1 set no target (no explicit phase number), auto-detect by finding the first phase directory without a `*-CONTEXT.md` file. If all phases already have context, STOP "All phases discussed. Specify a phase number to deepen an existing discussion."
 
 ## Discussion Mode Resolution
 
@@ -114,7 +114,7 @@ else
 fi
 ```
 
-Behavior: `planning_tracking=commit` commits `{NN}-CONTEXT.md` and `discovery.json` if changed. Other modes no-op.
+With `planning_tracking=commit`, the helper commits `{NN}-CONTEXT.md` and `discovery.json` if changed. Other modes no-op.
 
 Run `bash /tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/suggest-next.sh discuss`.
 
@@ -134,3 +134,7 @@ Follow @${CLAUDE_PLUGIN_ROOT}/references/lbwc-brand-essentials.md. Display the p
   /lbwc:research "topic" - resolve an open question
   /lbwc:status - review project state
 ```
+
+## Feedback card
+
+As the last output step, follow the Feedback card input section in `${CLAUDE_PLUGIN_ROOT}/references/handoff-schemas.md`.

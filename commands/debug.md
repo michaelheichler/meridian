@@ -147,3 +147,7 @@ Recent commits:
 ```bash
 !`git log --oneline -10 2>/dev/null || echo "No git history"`
 ```
+
+## Feedback card
+
+As the last output step, follow the Feedback card input section in `{plugin-root}/references/handoff-schemas.md`.

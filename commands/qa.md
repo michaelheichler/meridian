@@ -468,3 +468,7 @@ Use the existing debug and phase result blocks. Label a result authoritative onl
 ## Next Up
 
 Use the existing result routing and `suggest-next.sh` output.
+
+## Feedback card
+
+As the last output step, follow the Feedback card input section in `{plugin-root}/references/handoff-schemas.md`.

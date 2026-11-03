@@ -6,7 +6,7 @@ allowed-tools: Read, Glob, Grep, Bash, AskUserQuestion, Agent
 disable-model-invocation: true
 ---
 
-Required first step: read `skills-bundle/ponytail/SKILL.md` under the plugin root (`${CLAUDE_PLUGIN_ROOT}`) and apply the ponytail discipline at level full for the whole task.
+As the required first step, read `skills-bundle/ponytail/SKILL.md` under the plugin root (`${CLAUDE_PLUGIN_ROOT}`) and apply the ponytail discipline at level full for the whole task.
 
 ## Context
 
@@ -16,7 +16,7 @@ The main session owns all planning state, user questions, contracts, generated-a
 
 ## Guard
 
-Initialized, roadmap exists, phase exists. If every phase is planned, stop with `All phases planned. Specify phase: /lbwc:vibe --plan N`. If the phase directory is inside `.lbwc-planning/milestones/`, stop with `Cannot plan inside archived milestones.` Archived milestones are read-only.
+Initialized, roadmap exists, phase exists. If plans exist for every phase, stop with `All phases planned. Specify phase: /lbwc:vibe --plan N`. If the phase directory is inside `.lbwc-planning/milestones/`, stop with `Cannot plan inside archived milestones.` Archived milestones are read-only.
 
 ## Steps
 
@@ -36,4 +36,8 @@ Use the Phase Banner and planning output defined in `@references/vibe-mode-plan.
 
 ## Next Up
 
-When planning completes, use the reference's autonomy gate. If execution is approved or auto-chained, direct the user to `Next Up: /lbwc:build <phase>`. On a cautious stop or blocker, show only the documented next action.
+When planning completes, use the reference's autonomy gate. If the user approves execution or the autonomy gate auto-chains it, direct the user to `Next Up: /lbwc:build <phase>`. On a cautious stop or blocker, show only the documented next action.
+
+## Feedback card
+
+As the last output step, follow the Feedback card input section in `${CLAUDE_PLUGIN_ROOT}/references/handoff-schemas.md`.

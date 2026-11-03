@@ -297,3 +297,7 @@ Use a Phase Banner (double-line box), Metrics Block, and Next Up Block without A
 ## Next Up
 
 Only after the selected mode reaches its terminal boundary, run `bash "{LINK}/scripts/suggest-next.sh" vibe {result}`. Render its exact next command in one Next Up Block, then stop. Do not begin the suggested mode in the same turn unless the Pure-Vibe Phase Loop explicitly authorizes it.
+
+## Feedback card
+
+As the last output step, follow the Feedback card input section in `{LINK}/references/handoff-schemas.md`.

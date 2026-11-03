@@ -242,3 +242,7 @@ QA verification summary (pre-extracted from VERIFICATION.md):
 ```
 !`bash "/tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/verify-load-context.sh" qa-summary || true`
 ```
+
+## Feedback card
+
+As the last output step, follow the Feedback card input section in `{plugin-root}/references/handoff-schemas.md`.

@@ -229,3 +229,7 @@ Show the phase, each task and grouping verdict, main-session commit hashes, devi
 ## Next Up
 
 For a completed build, show `/lbwc:qa <phase>`. For a remediation build, show the same QA command for the active round. For a blocker, show only its exact recovery command, then stop.
+
+## Feedback card
+
+As the last output step, follow the Feedback card input section in `{LINK}/references/handoff-schemas.md`.
