@@ -1,18 +1,18 @@
-# LBWC Public Architecture
+# MERIDIAN Public Architecture
 
-LBWC is a Claude Code plugin for disciplined software delivery. The human owns direction, the main session owns orchestration, and generated agents receive only shell-issued work contracts.
+MERIDIAN is a Claude Code plugin for disciplined software delivery. The human owns direction, the main session owns orchestration, and generated agents receive only shell-issued work contracts.
 
 ## One user route
 
 ```text
-/lbwc:init once
+/meridian:init once
     |
-/lbwc:vibe for every next step
+/meridian:transit for every next step
     |
-LBWC routes the active phase through planning, build, QA, and UAT
+MERIDIAN routes the active phase through planning, build, QA, and UAT
 ```
 
-`/lbwc:vibe` reads the project state, identifies one missing artifact, asks for approval, and dispatches the route that owns that work. Users do not have to manage the pipeline stages themselves.
+`/meridian:transit` reads the project state, identifies one missing artifact, asks for approval, and dispatches the route that owns that work. Users do not have to manage the pipeline stages themselves.
 
 ## System shape
 
@@ -44,7 +44,7 @@ Agent output is evidence, not authority. The framework protects the human from a
 
 ## Durable project state
 
-LBWC stores initialized workflow state under `.lbwc-planning/` in the target project. Authoritative team runs and import interviews can stage diagnostic state under `.temporary-agent-runfiles/` without initializing the project.
+MERIDIAN stores initialized workflow state under `.meridian/` in the target project. Authoritative team runs and import interviews can stage diagnostic state under `.temporary-agent-runfiles/` without initializing the project.
 
 | Artifact | Purpose |
 | --- | --- |
@@ -57,7 +57,7 @@ LBWC stores initialized workflow state under `.lbwc-planning/` in the target pro
 | `phases/<phase>/VERIFICATION.md` | Main-session QA result |
 | `phases/<phase>/UAT.md` | Human acceptance record |
 
-`/lbwc:vibe` reads these artifacts in order. It stops at the first missing or invalid stage. It does not mark work complete from an agent claim alone.
+`/meridian:transit` reads these artifacts in order. It stops at the first missing or invalid stage. It does not mark work complete from an agent claim alone.
 
 ## Task contracts
 
@@ -83,18 +83,18 @@ Schema 3 native-team contracts also bind runtime kind, communication policy, gen
 
 ## Team boundaries
 
-LBWC uses the smallest team that matches the work:
+MERIDIAN uses the smallest team that matches the work:
 
 - A solo specialist handles a bounded planning, research, QA, debug, or documentation task.
 - An engineer and critic pair handles implementation and independent review.
 - If the task has separate test-path ownership, a trio adds `test-dev`.
-- `/lbwc:team` forms a Claude Code native team after the main session shows the roster and scope and the user approves them.
+- `/meridian:team` forms a Claude Code native team after the main session shows the roster and scope and the user approves them.
 
-Only one generated grouping is active at a time. The next grouping waits until every current member is `used` or `expired`. After Claude Code spawns the first teammate, the native team exists. LBWC never calls `TeamCreate`, passes deprecated `team_name`, or edits native team configuration. Critics have no write allowance. Test owners receive test paths only. The main session owns commits and final artifact writes.
+Only one generated grouping is active at a time. The next grouping waits until every current member is `used` or `expired`. After Claude Code spawns the first teammate, the native team exists. MERIDIAN never calls `TeamCreate`, passes deprecated `team_name`, or edits native team configuration. Critics have no write allowance. Test owners receive test paths only. The main session owns commits and final artifact writes.
 
 ## External plan import
 
-`/lbwc:import` parses external planning sources into schema 1 normalized IR. The GSD adapter is fixture-verified. Generic Markdown is visibly unverified and capped by file count and bytes. Source text is inert data. Staging, preview, and conflict decisions occur before promotion. Promotion accepts an explicit artifact list, writes atomically, persists provenance, and rolls back selected destinations on failure.
+`/meridian:import` parses external planning sources into schema 1 normalized IR. The GSD adapter is fixture-verified. Generic Markdown is visibly unverified and capped by file count and bytes. Source text is inert data. Staging, preview, and conflict decisions occur before promotion. Promotion accepts an explicit artifact list, writes atomically, persists provenance, and rolls back selected destinations on failure.
 
 ## Enforcement
 
@@ -108,7 +108,7 @@ Only one generated grouping is active at a time. The next grouping waits until e
 | Command admission | Git, shell evaluation, critical commands, control paths | Bash guard |
 | Main-session persistence | Verification and remediation artifacts | Deterministic writers and locked state scripts |
 
-Command admission is not an operating-system sandbox. It blocks recognized generated-agent command routes and protected control paths. LBWC does not claim that a lexical shell check can confine every arbitrary executable or child process.
+Command admission is not an operating-system sandbox. It blocks recognized generated-agent command routes and protected control paths. MERIDIAN does not claim that a lexical shell check can confine every arbitrary executable or child process.
 
 ## Quality and evidence
 
@@ -126,13 +126,13 @@ The DevIQ ledger records local decisions, evidence, and blocks in append-only ha
 
 The statusline is read-only. If Claude Code supplies status fields, it reads them and combines them with local project state. It shows phase progress, team status, QA or UAT state, and telemetry health. It does not call an API or read credentials.
 
-LBWC observes an idle teammate for 120 seconds, then checks the manifest, contract, and idle token again before returning native stop guidance. It never sends process signals, deletes output, or clears ownership without a valid state transition.
+MERIDIAN observes an idle teammate for 120 seconds, then checks the manifest, contract, and idle token again before returning native stop guidance. It never sends process signals, deletes output, or clears ownership without a valid state transition.
 
 Session telemetry is local and advisory. The main session writes bounded, hash-chained events. Events never contain prompts, transcripts, tool payloads, secrets, or uploaded data.
 
 ## Distribution and release
 
-The repository is a Claude Code marketplace. Its `.claude-plugin/` manifest declares LBWC and remains versioned.
+The repository is a Claude Code marketplace. Its `.claude-plugin/` manifest declares MERIDIAN and remains versioned.
 
 Release metadata stays synchronized across `VERSION`, plugin metadata, marketplace metadata, and `CHANGELOG.md`. `scripts/release-verify.sh` checks local release readiness. Publishing, tagging, history changes, and repository visibility remain explicit maintainer actions.
 

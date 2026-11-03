@@ -14,7 +14,7 @@ The owner comes first. He is a developer who builds software with Claude Code ag
 
 ## Product Purpose
 
-Meridian (renamed from LBWC in Group E of the 2.0 plan) turns one command into the next correct step of a software project. It reads project state, finds the one missing artifact, asks for approval, and routes the work through planning, build, QA, and UAT with generated agents. Success means the human owns direction and approvals, while agents do bounded work that the main session checks before it changes durable state.
+Meridian (renamed from MERIDIAN in Group E of the 2.0 plan) turns one command into the next correct step of a software project. It reads project state, finds the one missing artifact, asks for approval, and routes the work through planning, build, QA, and UAT with generated agents. Success means the human owns direction and approvals, while agents do bounded work that the main session checks before it changes durable state.
 
 ## Positioning
 

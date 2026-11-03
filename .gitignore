@@ -1,7 +1,7 @@
 .DS_Store
 __pycache__/
 *.pyc
-.lbwc-planning/
+.meridian/
 .claude/*
 !.claude/dispatch/
 .agent-discipline.json

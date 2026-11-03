@@ -1,4 +1,4 @@
-# LBWC Smoke Matrix
+# MERIDIAN Smoke Matrix
 
 This matrix separates automated local proof from scenarios that require a clean interactive Claude Code consumer session.
 
@@ -11,15 +11,15 @@ This matrix separates automated local proof from scenarios that require a clean 
 | Schema 3 typed capabilities and temporary control roots fail closed | `tests/control-root.bats`, `tests/qa-file-guard.bats`, `tests/qa-agent-spawn-guard.bats` | PASS |
 | Native task creation binds one pending contract and completion requires verification | `tests/task-hooks.bats` | PASS |
 | Generated definition owns model, effort, maxTurns, tools, and role instructions | `tests/agent-generator.bats`, spawn override rejection | PASS |
-| Authoritative context discovery avoids `.lbwc-planning` creation | `tests/team-context-index.bats` | PASS |
+| Authoritative context discovery avoids `.meridian` creation | `tests/team-context-index.bats` | PASS |
 | Import staging preserves source and canonical artifacts until explicit promotion | `tests/plan-import.bats`, import command tests | PASS |
-| Configuration defaults, TMUX preflight, and runtime-snapshot cancel | `tests/lbwc-execution-config.bats`, `tests/tmux-preflight.bats`, `tests/runtime-snapshot.bats` | PASS |
+| Configuration defaults, TMUX preflight, and runtime-snapshot cancel | `tests/meridian-execution-config.bats`, `tests/tmux-preflight.bats`, `tests/runtime-snapshot.bats` | PASS |
 | TMUX bus job, result, acknowledgement, heartbeat, and malformed-registry rejection | `tests/tmux-bus.bats` | PASS |
 | Detached provision, authenticated status, routes, panes, and kill-session cleanup | `tests/tmux-orchestrator.bats` | PASS |
 | Partial split rollback and attached external-pane preservation | `tests/tmux-orchestrator.bats` | PASS |
 | Watchdog graceful and forced teardown | `tests/tmux-bus-watchdog.bats` | PASS |
 | Snapshot drift | `tests/runtime-snapshot.bats` | PASS |
-| Build and vibe command markdown contracts for schema 3 open flags and explicit tmux vs native branches | `tests/runtime-snapshot.bats` (`build wires schema 3 open flags and an explicit tmux spawn branch`, `vibe execute wires schema 3 open flags and an explicit tmux spawn branch`) | PASS |
+| Build and transit command markdown contracts for schema 3 open flags and explicit tmux vs native branches | `tests/runtime-snapshot.bats` (`build wires schema 3 open flags and an explicit tmux spawn branch`, `transit execute wires schema 3 open flags and an explicit tmux spawn branch`) | PASS |
 | Team command markdown contract for execution choice and an explicit tmux spawn branch | `tests/team-command.bats` (`team command documents execution choice and an explicit tmux spawn branch`) | PASS |
 | Child SessionStart bind and heartbeat | `tests/session-start.bats` | PASS |
 | TMUX spawn driver builds agents JSON, fails closed without session id, awaits then acks returned message ids | `tests/tmux-spawn-group.bats` | PASS |
@@ -39,14 +39,14 @@ A full `bats tests/` count is not claimed here. That invocation was not re-run i
 
 | Scenario | Required evidence | Status |
 | --- | --- | --- |
-| Clean Claude Code 2.1.231 session loads the inline plugin command set | Debug log reports `Loaded 33 commands from plugin lbwc default directory`, matching 33 command files | PASS |
-| Clean interactive help exposes `/lbwc:team` and `/lbwc:import` without `/lbwc:lbwc:*` aliases | Rendered command discovery output from a fresh consumer session | PENDING |
+| Clean Claude Code 2.1.231 session loads the inline plugin command set | Debug log reports `Loaded 33 commands from plugin meridian default directory`, matching 33 command files | PASS |
+| Clean interactive help exposes `/meridian:team` and `/meridian:import` without `/meridian:meridian:*` aliases | Rendered command discovery output from a fresh consumer session | PENDING |
 | First generated teammate forms a session-named native team in in-process mode | Native roster and task list, with no pre-authored configuration | PENDING |
 | Split-pane teammate payload resolves the same generated identity | Hook payload identity and manifest claim evidence | PENDING |
 | Runtime model and reasoning match generated frontmatter | Agent routing evidence plus teammate runtime transcript metadata | PENDING |
 | Teammates use native peer and lead messaging | Native inbox messages and message-scope hook evidence | PENDING |
-| Source-less `/lbwc:team` shows at most three newest candidates and creates no run before the user approves | Interactive proposal and filesystem check | PENDING |
-| `/lbwc:import` cancel and failed promotion preserve canonical artifact digests | Before and after digest evidence in a consumer project | PENDING |
+| Source-less `/meridian:team` shows at most three newest candidates and creates no run before the user approves | Interactive proposal and filesystem check | PENDING |
+| `/meridian:import` cancel and failed promotion preserve canonical artifact digests | Before and after digest evidence in a consumer project | PENDING |
 | When the user picks the workflow path, a command runs its task groupings through a generated workflow script | Workflow run record and generated script under the control root workflows directory | PENDING |
 | A failed workflow generation or denied `Workflow` call leaves the contract `planned` and does not fall back to `in_process` or `tmux` | Verbatim failure report and unchanged contract state | PENDING |
 | `workflow-spawn-guard` denies a `Workflow` call for an unissued, edited, or inline-script workflow | Hook denial message and manifest state before and after | PENDING |
