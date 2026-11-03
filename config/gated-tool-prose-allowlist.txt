@@ -7,6 +7,14 @@
 commands/config.md:Agent:Agent Teams
 commands/config.md:Agent:Agent execution
 commands/config.md:Agent:Agent call
+commands/config.md:Agent:allow Agent, Task, TaskCreate and Workflow calls
+commands/config.md:Task:allow Agent, Task, TaskCreate and Workflow calls
+commands/config.md:Workflow:allow Agent, Task, TaskCreate and Workflow calls
+commands/config.md:Agent:#### Agent restrictions
+commands/config.md:Agent:denies Agent, Task, TaskCreate and Workflow calls
+commands/config.md:Task:denies Agent, Task, TaskCreate and Workflow calls
+commands/config.md:Workflow:denies Agent, Task, TaskCreate and Workflow calls
+commands/config.md:Agent:Agent action restrictions
 commands/doctor.md:Agent:Agent role templates
 commands/doctor.md:Agent:Agent routing
 commands/status.md:Agent:Agent Teams
