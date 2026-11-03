@@ -44,12 +44,12 @@ validate_publish_request() {
 }
 
 acquire_delivery_slot() {
-  local lock_name="$1" inbox="$2" message_type="$3" recipient="$4" publish_timeout_ms="$5" deadline now
+  local lock_name="$1" inbox="$2" message_type="$3" recipient="$4" publish_timeout_ms="$5" deadline remaining_ms
   deadline=$(tmux_runtime_deadline_after "$publish_timeout_ms")
   while :; do
-    tmux_runtime_deadline_expired "$deadline" && fail "timed out waiting for $message_type inbox slot: $recipient"
-    now=$(tmux_runtime_deadline_remaining "$deadline")
-    tmux_runtime_lock_acquire "$lock_name" "$now" 30000
+    remaining_ms=$(tmux_runtime_deadline_remaining "$deadline")
+    [ "$remaining_ms" -gt 0 ] || fail "timed out waiting for $message_type inbox slot: $recipient"
+    tmux_runtime_lock_acquire "$lock_name" "$remaining_ms" 30000
     if [ "$message_type" = heartbeat ] || [ ! -e "$inbox/$message_type.json" ]; then
       break
     fi
