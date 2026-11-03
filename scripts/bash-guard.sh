@@ -79,7 +79,8 @@ command_without_shell_syntax() {
 
 MASKED_COMMAND=$(command_without_quoted_text "$COMMAND")
 
-if [ "$ALLOW_DESTRUCTIVE" != "1" ]; then
+enforce_destructive_guard() {
+  [ "$ALLOW_DESTRUCTIVE" != 1 ] || return 0
   PATTERNS=""
   for PFILE in "$PLUGIN_ROOT/config/destructive-commands.txt" "$LBWC_PLANNING_DIR/destructive-commands.local.txt"; do
     [ -f "$PFILE" ] || continue
@@ -94,7 +95,7 @@ Hint: Use LBWC_ALLOW_DESTRUCTIVE=1 to override.
 See: config/destructive-commands.txt for the full blocklist." >&2
     exit 2
   fi
-fi
+}
 
 resolve_agent_role() {
   local identifier="$1" manifest_path
@@ -219,6 +220,18 @@ command_is_critical_execution() {
   printf '%s' "$command" | grep -qiE "$patterns"
 }
 
+tmux_agent_context() {
+  [ "${LBWC_TMUX_AGENT:-}" = 1 ] && [ -n "${LBWC_TMUX_CONTROL_ROOT:-}" ] && [ -n "${TMUX:-}" ] && [ -n "${TMUX_PANE:-}" ]
+}
+
+if tmux_agent_context && command_invokes_git "$COMMAND"; then
+  python3 -B "$PLUGIN_ROOT/hooks/tmux_restrictions.py" <<<"$INPUT"
+  printf -v TMUX_RESTRICTION_STATUS '%s' "$?"
+  [ "$TMUX_RESTRICTION_STATUS" -ne 2 ] || exit 2
+fi
+
+enforce_destructive_guard
+
 AGENT_IDENTIFIER=$(printf '%s' "$INPUT" | jq -r '
   .agent_id // .agentId // .agent_type // .agentType // .subagent_type // .subagentType // .name // empty
 ' 2>/dev/null) || AGENT_IDENTIFIER=""
@@ -234,7 +247,7 @@ if [ -n "$POLICY_STATE" ]; then
     echo "Blocked: generated agent cannot use a shell execution route" >&2
     exit 2
   fi
-  if command_invokes_git "$COMMAND"; then
+  if ! tmux_agent_context && command_invokes_git "$COMMAND"; then
     echo "Blocked: Git is reserved for the main session" >&2
     exit 2
   fi
