@@ -2,6 +2,9 @@
 
 load test_helper
 load guard_helper
+load gate_case_helper
+load isolated_case_helper
+load isolated_guard_cases
 
 setup() {
   setup_temp_dir
@@ -269,6 +272,15 @@ CASES
   run env PATH="$no_jq_path" bash -c "printf '%s' '{}' | bash '$SCRIPTS_DIR/file-guard.sh'"
   expect_status jq-missing 2
   expect_output_has jq-missing "jq not available"
+}
+
+@test "file-guard permits only verified isolated roots and preserves contract boundaries" {
+  run_scenario_cases guard_primary guard_planning_relative guard_planning_absolute \
+    guard_temporary_relative guard_temporary_absolute guard_native_relative guard_native_absolute \
+    guard_other_worker guard_project_runtime guard_nested_root guard_prefix_root guard_copied_git \
+    guard_pruned guard_foreign_git guard_symlink_runtime guard_symlink_worktree \
+    guard_primary_absolute guard_planning_policy guard_git_policy guard_script_policy \
+    guard_outside_allowance guard_foreign_control guard_local_manifest
 }
 
 @test "registered Write hook denies traversal outside the workspace" {
