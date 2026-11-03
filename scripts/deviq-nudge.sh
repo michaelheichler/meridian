@@ -17,9 +17,6 @@ command -v jq >/dev/null 2>&1 || exit 0
 INPUT=$(cat 2>/dev/null) || exit 0
 [ -n "$INPUT" ] || exit 0
 
-CONTENT=$(printf '%s' "$INPUT" | jq -r '(.tool_input.content // .tool_input.new_string // "") | select(type == "string")' 2>/dev/null) || exit 0
-[ -n "$CONTENT" ] || exit 0
-
 if [ -f "$STATE_FILE" ]; then
   LAST=$(cat "$STATE_FILE" 2>/dev/null)
   case "$LAST" in
@@ -29,29 +26,38 @@ if [ -f "$STATE_FILE" ]; then
   [ $((NOW - LAST)) -ge "$COOLDOWN_SECONDS" ] || exit 0
 fi
 
-NUDGES=$(jq -c '.[]' "$NUDGES_FILE" 2>/dev/null) || exit 0
-[ -n "$NUDGES" ] || exit 0
+emit_nudge() {
+  local content='' pattern='' article='' title='' output=''
+  IFS= read -r -d '' content || return 0
+  while [[ "$content" = *$'\n' ]]; do content=${content%$'\n'}; done
+  [ -n "$content" ] || return 0
+  while IFS= read -r -d '' pattern; do
+    IFS= read -r -d '' article || return 0
+    IFS= read -r -d '' title || return 0
+    IFS= read -r -d '' output || return 0
+    [ -n "$pattern" ] && [ -n "$article" ] || continue
+    printf '%s' "$content" | grep -Eiq -- "$pattern" 2>/dev/null || continue
+    [ -n "$title" ] || return 0
+    mkdir -p "$(dirname "$STATE_FILE")" 2>/dev/null || return 0
+    date +%s > "$STATE_FILE" 2>/dev/null
+    printf '%s\n' "$output"
+    return 0
+  done
+}
 
-ARTICLE=""
-while IFS= read -r entry; do
-  [ -n "$entry" ] || continue
-  PATTERN=$(printf '%s' "$entry" | jq -r '.pattern // ""' 2>/dev/null) || continue
-  [ -n "$PATTERN" ] || continue
-  if printf '%s' "$CONTENT" | grep -Eiq -- "$PATTERN" 2>/dev/null; then
-    ARTICLE=$(printf '%s' "$entry" | jq -r '.article // ""' 2>/dev/null)
-    [ -n "$ARTICLE" ] && break
-  fi
-done <<< "$NUDGES"
-
-[ -n "$ARTICLE" ] || exit 0
-
-TITLE=$(jq -r --arg id "$ARTICLE" '.[] | select(.id == $id) | .title' "$INDEX_FILE" 2>/dev/null)
-[ -n "$TITLE" ] || exit 0
-
-mkdir -p "$(dirname "$STATE_FILE")" 2>/dev/null || exit 0
-date +%s > "$STATE_FILE" 2>/dev/null
-
-CONTEXT="DevIQ: this resembles $TITLE ($ARTICLE). Run scripts/deviq-lookup.sh --show $ARTICLE for the practice."
-jq -n --arg ctx "$CONTEXT" '{hookSpecificOutput: {hookEventName: "PostToolUse", additionalContext: $ctx}}' 2>/dev/null
+emit_nudge < <(printf '%s' "$INPUT" | jq -j \
+  --slurpfile nudges "$NUDGES_FILE" --slurpfile index "$INDEX_FILE" '
+  def text: (if type == "string" then . else tojson end) | gsub("\u0000"; "") | sub("\n+$"; "");
+  def field: ., "\u0000";
+  (.tool_input.content // .tool_input.new_string // "") |
+  select(type == "string") | gsub("\u0000"; "") | field,
+  ($nudges[0][] |
+   (.pattern // "" | text) as $pattern |
+   (.article // "" | text) as $article |
+   ([$index[0][] | select(.id == $article) | .title | text] | join("\n")) as $title |
+   ("DevIQ: this resembles " + $title + " (" + $article + "). Run scripts/deviq-lookup.sh --show " + $article + " for the practice.") as $context |
+   ($pattern | field), ($article | field), ($title | field),
+   ({hookSpecificOutput: {hookEventName: "PostToolUse", additionalContext: $context}} | tojson | field))
+' 2>/dev/null)
 
 exit 0
