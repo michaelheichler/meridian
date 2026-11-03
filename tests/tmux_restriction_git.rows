@@ -1,0 +1,76 @@
+2|git commit
+2|true; git commit
+2|true && git commit
+2|false || git commit
+2|true | git commit
+2|env git commit
+2|env -i git commit
+2|env -S 'git -C .' commit
+2|command git commit
+2|command -p git commit
+2|xargs git commit
+2|xargs -p git commit
+2|exec git commit
+2|sudo git commit
+2|time git commit
+2|time -p git commit
+2|nohup git commit
+2|timeout 3 git commit
+2|find . -exec git commit \;
+2|bash -c 'git commit'
+2|bash -c -- 'git commit'
+2|sh -c 'git commit'
+2|zsh -c 'git commit'
+2|fish -c 'git commit'
+2|echo $(git commit)
+2|echo `git commit`
+2|eval 'git commit'
+2|sh <<< 'git commit'
+2|echo 'git commit' | sh
+2|git -C . commit
+2|git -c alias.x=commit x
+2|GIT_DIR=.git git commit
+2|git --git-dir x commit
+2|/usr/bin/git commit
+2|\git commit
+2|git-commit
+2|git push
+2|git merge
+2|git rebase
+2|git reset
+2|git checkout
+2|git switch
+2|git tag release
+2|git stash
+2|git worktree add dir
+2|git branch -d topic
+2|git config --global user.name fixture
+2|git update-ref refs/heads/topic HEAD
+2|git apply patch
+2|git am patch
+2|git cherry-pick HEAD
+2|git restore file
+2|git clean -fd
+2|git notes add
+0|git status
+0|git diff
+0|git log
+0|git show
+0|git rev-parse HEAD
+0|git ls-files
+0|git blame file
+0|git log --oneline
+0|git diff --stat
+0|git -C dir status
+0|git branch --list
+0|git worktree list
+0|git config --get user.name
+0|git remote -v
+0|git describe
+0|git tag --list
+0|git stash list
+0|git reflog
+0|git --git-dir=.git log
+0|git -c color.ui=never log
+0|grep git file
+0|echo "git commit"
