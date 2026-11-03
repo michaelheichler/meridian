@@ -1,5 +1,8 @@
 # Because the import driver owns shell options, leave them unchanged here.
 
+. "$(CDPATH="" cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/../lib/rename-migration.sh"
+meridian_migrate_environment
+
 import_adapter_gsd_name() {
   printf '%s\n' gsd
 }

@@ -1,5 +1,8 @@
 #!/bin/bash
 
+. "$(CDPATH="" cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/lib/rename-migration.sh"
+meridian_migrate_environment
+
 set -euo pipefail
 if ! command -v jq &>/dev/null; then
   echo '{"error":"jq is required but not installed. Install: brew install jq (macOS) / apt install jq (Linux)"}' >&2

@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+
+. "$(CDPATH="" cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/lib/rename-migration.sh"
+meridian_migrate_environment
 set -euo pipefail
 
 command -v jq >/dev/null 2>&1 || { echo '{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"jq is required but not installed"}}'; exit 0; }

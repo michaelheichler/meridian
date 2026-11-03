@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 
+. "$(CDPATH="" cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/lib/rename-migration.sh"
+meridian_migrate_environment
+
 set -u
 
 PHASES_DIR="${1:-.meridian/phases}"

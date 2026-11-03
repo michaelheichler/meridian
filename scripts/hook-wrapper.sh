@@ -1,4 +1,7 @@
 #!/bin/bash
+
+. "$(CDPATH="" cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/lib/rename-migration.sh"
+meridian_migrate_environment
 set -u
 # With CDPATH set, cd prints the path, so $(cd d && pwd) returns two lines.
 unset CDPATH

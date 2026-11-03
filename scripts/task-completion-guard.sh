@@ -1,4 +1,7 @@
 #!/bin/bash
+
+. "$(CDPATH="" cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/lib/rename-migration.sh"
+meridian_migrate_environment
 set -u
 . "$(CDPATH='' cd -- "${BASH_SOURCE[0]%/*}" 2>/dev/null && pwd)/lib/debug-logging.sh" 2>/dev/null || true
 debug_logging_gate task-completion-guard.sh TaskCompleted 2>/dev/null || true

@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+
+. "$(CDPATH="" cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/lib/rename-migration.sh"
+meridian_migrate_environment
 set -euo pipefail
 
 # R: success prints the canonical first valid root and repairs its exact session link. Failure follows the selected fatal or nonfatal contract.

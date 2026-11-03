@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 
+. "$(CDPATH="" cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/../lib/rename-migration.sh"
+meridian_migrate_environment
+
 import_adapter_markdown_normalize() {
   local source="$1" output="$2" plans='[]' provenance='[]' warnings='["unverified generic Markdown adapter"]' skipped='[]' selected=0 total_selected_bytes=0 path relative size title plan_json content root_label
   local max_files=64 max_file_bytes=1048576 max_total_bytes=8388608

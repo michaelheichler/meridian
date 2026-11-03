@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+
+. "$(CDPATH="" cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/lib/rename-migration.sh"
+meridian_migrate_environment
 set -euo pipefail
 
 PROJECT_ROOT="$(pwd -P)"

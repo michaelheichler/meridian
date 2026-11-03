@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 
+. "$(CDPATH="" cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/../lib/rename-migration.sh"
+meridian_migrate_environment
+
 # Shared helpers for scripts/import-adapters/*.sh. Expects the caller to have
 # sourced plan-import.sh first so import_sha256 and import_fail exist.
 

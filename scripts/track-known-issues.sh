@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+
+. "$(CDPATH="" cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/lib/rename-migration.sh"
+meridian_migrate_environment
 # Signature keys entries because a repeated issue must stay one entry.
 set -euo pipefail
 

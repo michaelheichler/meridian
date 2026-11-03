@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 
+. "$(CDPATH="" cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/rename-migration.sh"
+meridian_migrate_environment
+
 
 meridian_candidate_dir_for_path() {
   local candidate="$1"

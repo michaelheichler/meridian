@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 
+. "$(CDPATH="" cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/rename-migration.sh"
+meridian_migrate_environment
+
 plan_source_canonical_file() {
   local path="$1" canonical directory filename
   [ -f "$path" ] || return 1

@@ -1,4 +1,7 @@
 #!/bin/bash
+
+. "$(CDPATH="" cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/lib/rename-migration.sh"
+meridian_migrate_environment
 set -u
 _pd_normal_exit=false
 _pd_output_file=

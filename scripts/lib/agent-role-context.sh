@@ -1,4 +1,7 @@
 #!/bin/bash
+
+. "$(CDPATH="" cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/rename-migration.sh"
+meridian_migrate_environment
 # Both compaction hooks source this file, so their role lists cannot drift apart.
 
 normalize_agent_role() {

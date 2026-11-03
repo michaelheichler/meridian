@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 
+. "$(CDPATH="" cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/lib/rename-migration.sh"
+meridian_migrate_environment
+
 set -euo pipefail
 
 STALE_WARN_THRESHOLD=10   # Past this many commits research is skipped because it no longer matches the code

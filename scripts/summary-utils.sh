@@ -1,5 +1,8 @@
 #!/bin/bash
 
+. "$(CDPATH="" cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/lib/rename-migration.sh"
+meridian_migrate_environment
+
 : 'The status-counting hot path stays in bash without external process dependencies. Deviation extraction helpers intentionally use awk, find plus path filters, and sort/sort -V.'
 
 SUMMARY_UTILS_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

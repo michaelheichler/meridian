@@ -1,5 +1,8 @@
 #!/bin/bash
 
+. "$(CDPATH="" cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/rename-migration.sh"
+meridian_migrate_environment
+
 should_emit_hook_output() {
   local event_name="${1:-}"
 
