@@ -1,5 +1,16 @@
 #!/usr/bin/env bash
 set -u
+if [ "${1:-}" = -L ]; then
+  [ "${2:-}" = "$LBWC_TEST_TMUX_SERVER" ] || exit 1
+  shift 2
+fi
+case "${1:-}" in
+  new-session|split-window)
+    : "${LBWC_TEST_CHILD_PATH:?fixture child PATH is required}"
+    : "${LBWC_TEST_CHILD_SHELL:?fixture child shell is required}"
+    [ -x "$LBWC_TEST_CHILD_SHELL" ] || exit 1
+    ;;
+esac
 if [ "$1" = "split-window" ] && [ -n "${LBWC_TEST_SPLIT_COUNTER:-}" ]; then
   count=0
   [ -f "$LBWC_TEST_SPLIT_COUNTER" ] && count=$(cat "$LBWC_TEST_SPLIT_COUNTER")
@@ -17,7 +28,7 @@ if [ "$1" = "split-window" ] && [ -n "${LBWC_TEST_FAST_CHILD_ENV:-}" ]; then
         ;;
     esac
   done
-  pane_id=$("$LBWC_TEST_TMUX_BINARY" -L "$LBWC_TEST_TMUX_SERVER" "${arguments[0]}" \
+  pane_id=$("$LBWC_TEST_TMUX_BINARY" -L "$LBWC_TEST_TMUX_SERVER" -f /dev/null "${arguments[0]}" \
     -e "PATH=$LBWC_TEST_CHILD_PATH" \
     -e "LBWC_TEST_FAST_CHILD_ENV=$LBWC_TEST_FAST_CHILD_ENV" \
     -e "LBWC_TEST_FAST_CHILD_STATUS=$LBWC_TEST_FAST_CHILD_STATUS" \
@@ -52,10 +63,10 @@ if [ "$1" = select-layout ] && [ "${LBWC_TEST_FAIL_PANE_LAYOUT:-0}" = 1 ] && [[ 
   exit 1
 fi
 if [ "$1" = select-pane ] && [ "$#" = 3 ] && [ -n "${LBWC_TEST_FOCUS_LOG:-}" ]; then
-  "$LBWC_TEST_TMUX_BINARY" -L "$LBWC_TEST_TMUX_SERVER" "$@" || exit 1
-  target=$("$LBWC_TEST_TMUX_BINARY" -L "$LBWC_TEST_TMUX_SERVER" display-message -p -t "$3" '#{pane_id}')
-  selected=$("$LBWC_TEST_TMUX_BINARY" -L "$LBWC_TEST_TMUX_SERVER" list-panes -t "$3" -F '#{pane_id} #{pane_active}' | awk '$2 == 1 {print $1}')
-  geometry=$("$LBWC_TEST_TMUX_BINARY" -L "$LBWC_TEST_TMUX_SERVER" list-panes -t "$3" -F '#{pane_top} #{pane_width}')
+  "$LBWC_TEST_TMUX_BINARY" -L "$LBWC_TEST_TMUX_SERVER" -f /dev/null "$@" || exit 1
+  target=$("$LBWC_TEST_TMUX_BINARY" -L "$LBWC_TEST_TMUX_SERVER" -f /dev/null display-message -p -t "$3" '#{pane_id}')
+  selected=$("$LBWC_TEST_TMUX_BINARY" -L "$LBWC_TEST_TMUX_SERVER" -f /dev/null list-panes -t "$3" -F '#{pane_id} #{pane_active}' | awk '$2 == 1 {print $1}')
+  geometry=$("$LBWC_TEST_TMUX_BINARY" -L "$LBWC_TEST_TMUX_SERVER" -f /dev/null list-panes -t "$3" -F '#{pane_top} #{pane_width}')
   aligned=false
   if awk 'NR == 1 {top=$1; width=$2} $1 != top || $2 < width-1 || $2 > width+1 {exit 1}' <<<"$geometry"; then
     aligned=true
@@ -63,4 +74,9 @@ if [ "$1" = select-pane ] && [ "$#" = 3 ] && [ -n "${LBWC_TEST_FOCUS_LOG:-}" ]; 
   printf '{"target":"%s","active":"%s","aligned":%s}\n' "$target" "$selected" "$aligned" >> "$LBWC_TEST_FOCUS_LOG"
   exit 0
 fi
-exec "$LBWC_TEST_TMUX_BINARY" -L "$LBWC_TEST_TMUX_SERVER" "$@"
+case "$1" in
+  new-session|split-window)
+    exec "$LBWC_TEST_TMUX_BINARY" -L "$LBWC_TEST_TMUX_SERVER" -f /dev/null "$@" /usr/bin/env "PATH=$LBWC_TEST_CHILD_PATH" "$LBWC_TEST_CHILD_SHELL" --noprofile --norc
+    ;;
+esac
+exec "$LBWC_TEST_TMUX_BINARY" -L "$LBWC_TEST_TMUX_SERVER" -f /dev/null "$@"
