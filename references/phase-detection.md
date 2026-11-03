@@ -33,7 +33,13 @@ All directory scanning below uses this path.
 2. If the configured discussion gate is active, route `needs_discussion` to `/lbwc:discuss {NN}`. If the gate is inactive, do not route it there.
 3. For `needs_plan_and_execute`, route to `/lbwc:plan {NN}`.
 4. For any state with an existing plan, require an explicit replan request. Do not choose a phase by scanning plan filenames.
-5. If every phase is planned, report `All phases are planned. Specify a phase to re-plan: /lbwc:plan N` and stop.
+5. If every phase has a plan, report 
+
+```text
+All phases are planned. Specify a phase to re-plan: /lbwc:plan N
+```
+
+ and stop.
 
 ### Discussion Gate (`require_phase_discussion` config)
 
@@ -47,7 +53,13 @@ When `require_phase_discussion=true`, `phase-detect.sh` emits `needs_discussion`
 1. Accept `needs_execute` for a root PLAN, or an active remediation execution state for its exact round PLAN.
 2. Read the root or round path emitted by `scripts/remediation-round.sh current <phase-dir> <qa|uat>`.
 3. Require all predecessor contract and summary evidence before a dependent task starts.
-4. If all planned phases are terminally built, report `All planned phases are built. Specify a phase to rebuild: /lbwc:build N` and stop.
+4. If all planned phases have terminal build evidence, report 
+
+```text
+All planned phases are built. Specify a phase to rebuild: /lbwc:build N
+```
+
+ and stop.
 
 **Matching logic:** `phase-detect.sh` and task-contract state supersede filename-prefix matching. A terminal SUMMARY requires contract, verdict, verification, and commit evidence.
 

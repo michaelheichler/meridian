@@ -83,7 +83,7 @@ declarative style as the roughly 39 clauses already there.
 **Judgment:** the size is real but not the classic god-function shape, one
 function doing several unrelated jobs. It is one job, "assert the full
 config schema," repeated once per config key, and LBWC's config surface
-genuinely has around forty keys. The plan's change is a single clause added
+has around forty keys. The plan's change is a single clause added
 in the existing pattern. It did not introduce a new responsibility or a new
 shape of complexity to the function.
 
@@ -157,7 +157,7 @@ roughly an hour, not a byproduct of adding one execution backend.
 | `command-contract.sh` | 462 lines | +186/-0 (67% growth) | Worsened. Two new prose-heuristic validators, each internally clean, now share a file with the original structural checks and a different failure mode |
 
 Only `command-contract.sh` shows a cohesion cost this plan actually
-introduced. The other three files are unchanged in kind, even where their
+introduced. The other three files keep the same structure, even where their
 pre-existing size (particularly `task-contract.sh`'s `validate_contract`
 and `lbwc-config.sh`'s `validate_config_json`) would be worth a future,
 separately-scoped look.

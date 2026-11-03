@@ -137,7 +137,13 @@ Skill activation:
 - Before composing the Scout task description, evaluate installed skills visible in your system context. Read each skill's description and select only skills directly needed for this research task. Do not include implementation, build, or adjacent domain skills only because a later Lead or Dev stage can use them.
 - Begin the Scout prompt with exactly one explicit skill outcome block:
   - For one or more installed skills preselected at orchestration time, use `<skill_activation>{For each selected skill: "Call Skill({skill-name})"}</skill_activation>`.
-  - Use `<skill_no_activation>Evaluated installed skills for this task. No skills were preselected at orchestration time. Reason: {brief task-specific reason}.</skill_no_activation>` when none are preselected.
+  - Use 
+
+```text
+<skill_no_activation>Evaluated installed skills for this task. No skills were preselected at orchestration time. Reason: {brief task-specific reason}.</skill_no_activation>
+```
+
+ when orchestration preselects none.
   - Silent omission of both blocks is invalid.
 - State the skill outcome in your response before spawning the agent (for example, "Skills: activating {skill-name}" or "Skills: none preselected, {reason}").
 - If the prompt or error mentions SwiftData and the research task requires SwiftData model semantics, include `swiftdata`. Do not include it only as a possible future implementation aid.
@@ -229,7 +235,13 @@ Each group is the pair or trio required by `references/agent-spawn-protocol.md`.
 ### Skill activation
 
 - Before composing Dev task descriptions, evaluate installed skills visible in your system context. Read each skill's description. Select the task-specific skills listed in the remediation plan, plus any build, test, documentation, or domain skills that the current task directly requires. Do not carry over broad Scout/Lead context or activate skills for unrelated future tasks.
-- The Dev prompt MUST begin with exactly one explicit skill outcome block: use `<skill_activation>{For each selected skill: "Call Skill({skill-name})"}</skill_activation>` when one or more installed skills are preselected at orchestration time, or `<skill_no_activation>Evaluated installed skills for this task. No skills were preselected at orchestration time. Reason: {brief task-specific reason}.</skill_no_activation>` when none are preselected. Silent omission of both blocks is invalid.
+- The Dev prompt MUST begin with exactly one explicit skill outcome block. Use `<skill_activation>{For each selected skill: "Call Skill({skill-name})"}</skill_activation>` when orchestration preselects one or more installed skills, or 
+
+```text
+<skill_no_activation>Evaluated installed skills for this task. No skills were preselected at orchestration time. Reason: {brief task-specific reason}.</skill_no_activation>
+```
+
+ when orchestration preselects none. Silent omission of both blocks is invalid.
 - After evaluating, state the skill outcome in your response (for example, "Skills: activating {skill-name}" or "Skills: none preselected, {reason}") so the user sees it before you spawn the agent.
 #### Follow-up context
 

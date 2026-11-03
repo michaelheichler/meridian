@@ -14,7 +14,7 @@ Drop from tmux identity: `bootstrap_id`, `binding_token`, `bootstrap_binding_has
 
 Drop from tmux registry: registry-route journal, `tmux-bus.sh init` as a second creator, `tmux-bus.sh register`, `messaging_socket`.
 
-Drop from tmux lifecycle: heartbeat daemon, `--cancel`, unused config keys, production `LBWC_TMUX_TEST_*` gates.
+Drop the heartbeat daemon, `--cancel`, unused config keys, and production `LBWC_TMUX_TEST_*` gates from the tmux lifecycle.
 
 ```mermaid
 flowchart TD
@@ -496,7 +496,7 @@ Destack points:
 
 ## Spawn wiring (follow-on, DONE)
 
-Destack is closed. Remaining Option 2 work was live spawn: schema 3 contracts from the frozen snapshot, destack-correct protocol text, then vibe/build/team dispatch through provision and split-group when the user chooses tmux.
+Destack is closed. Remaining Option 2 work covered live spawn with schema 3 contracts from the frozen snapshot, destack-correct protocol text, then vibe/build/team dispatch through provision and split-group when the user chooses tmux.
 
 - **T1 DONE:** `task-contract.sh open` writes schema 3 from CLI flags plus `--assert-snapshot`. Tests in `tests/task-contract.bats`.
 - **T2 DONE:** `references/tmux-spawn-protocol.md` rewritten to destack bind-file + split-group.

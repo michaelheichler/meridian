@@ -1,6 +1,6 @@
 # Discussion Engine
 
-One engine, two entry points: `/lbwc:vibe` auto-dispatches here when phase detection reports `needs_discussion`, and `/lbwc:discuss` invokes it directly. The user is the visionary, the orchestrator is the builder. The engine's job is to surface decisions that downstream agents (`lead`, engineers) need so they never ask the user again mid-phase. No agent is spawned for this, the main session runs it inline.
+One engine has two entry points. `/lbwc:vibe` auto-dispatches here when phase detection reports `needs_discussion`, and `/lbwc:discuss` invokes it directly. The user is the visionary, the orchestrator is the builder. The engine's job is to surface decisions that downstream agents (`lead`, engineers) need so they never ask the user again mid-phase. No agent is spawned for this, the main session runs it inline.
 
 ## Shared decision boundary
 
@@ -8,7 +8,7 @@ Follow `references/ask-user-question.md`. The main session asks one bounded, sin
 
 ## Step 1: Calibrate
 
-Infer user sophistication from conversation signals, never ask: language in prior messages (jargon vs plain), project description complexity, and whether they typed `/lbwc:discuss` explicitly or arrived via `/lbwc:vibe`.
+Infer user sophistication without asking. Use conversation signals including language in prior messages (jargon vs plain), project description complexity, and whether they typed `/lbwc:discuss` explicitly or arrived via `/lbwc:vibe`.
 
 | Mode | Signals | Question style |
 | --- | --- | --- |
@@ -35,7 +35,7 @@ Activation, first match wins:
 
 If the assumptions path activates but no codebase map exists, say so and fall back to questions: "Assumptions mode works best with codebase context. Run `/lbwc:map` first for evidence-backed assumptions, or falling back to questions mode."
 
-**A1: Codebase analysis.** Read `.lbwc-planning/codebase/ARCHITECTURE.md`, `PATTERNS.md`, and `CONCERNS.md` when present, plus the phase goal from ROADMAP.md. For gray areas needing deeper evidence, read the actual source files, do not form assumptions from summaries alone when the source is readily available.
+**A1. Codebase analysis.** Read `.lbwc-planning/codebase/ARCHITECTURE.md`, `PATTERNS.md`, and `CONCERNS.md` when present, plus the phase goal from ROADMAP.md. For gray areas needing deeper evidence, read the actual source files, do not form assumptions from summaries alone when the source is readily available.
 
 **A2: Form assumptions.** Identify gray areas the same way Step 2 does, then structure each as:
 
