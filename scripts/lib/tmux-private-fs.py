@@ -79,14 +79,23 @@ def open_child(parent_fd: int, name: str, create: bool) -> int:
     return os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent_fd)
 
 
+def validated_child(parent_fd: int, name: str, create: bool) -> int:
+    next_fd = open_child(parent_fd, name, create)
+    try:
+        private_directory(next_fd, name)
+    except Exception:
+        os.close(next_fd)
+        raise
+    return next_fd
+
+
 def open_parent(root_fd: int, relative: str, create: bool) -> Location:
     parts = components(relative)
     current = os.dup(root_fd)
     try:
         private_directory(current, "root")
         for part in parts[:-1]:
-            next_fd = open_child(current, part, create)
-            private_directory(next_fd, part)
+            next_fd = validated_child(current, part, create)
             os.close(current)
             current = next_fd
         return current, parts[-1]
@@ -106,7 +115,11 @@ def parent_location(root: str, relative: str, create: bool) -> Iterator[Location
 @contextmanager
 def parent_pair(root_fd: int, source: str, destination: str) -> Iterator[LocationPair]:
     source_parent, source_name = open_parent(root_fd, source, False)
-    destination_parent, destination_name = open_parent(root_fd, destination, False)
+    try:
+        destination_parent, destination_name = open_parent(root_fd, destination, False)
+    except Exception:
+        os.close(source_parent)
+        raise
     with held_pair((source_parent, destination_parent)):
         yield (source_parent, source_name), (destination_parent, destination_name)
 
@@ -263,7 +276,12 @@ def finish_ack(locations: LocationPair, descriptors: DescriptorPair, paths: Path
 
 def complete_ack_files(locations: LocationPair, paths: PathPair) -> None:
     source_fd = open_optional(locations[0])
-    destination_fd = open_optional(locations[1])
+    try:
+        destination_fd = open_optional(locations[1])
+    except Exception:
+        if source_fd is not None:
+            os.close(source_fd)
+        raise
     with held_pair((source_fd, destination_fd)):
         finish_ack(locations, (source_fd, destination_fd), paths)
 
