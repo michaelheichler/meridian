@@ -313,7 +313,9 @@ Note that `auto_commit` controls source-task commits during Execute mode, while 
 
 - During active plan execution, identified by `.execution-state.json` status `running`, `executing`, or `active`, `STATE.md` status `active` or `executing`, or a dispatched or running task contract, the execution backend stays fixed.
 - The frozen fields are `agent_execution_mode`, `tmux_execution.max_agents`, `tmux_execution.comms_fallback`, `tmux_execution.restrictions.allow_agent_git`, `effort`, and `routing.active_profile`.
-- `tmux_execution.cleanup_policy` may change for the next teardown. The emergency `agent_execution_mode=in_process` override works only when the registry lists no running TMUX agents.
+- `tmux_execution.cleanup_policy` may change for the next teardown. The default `kill_on_complete` kills owned agent panes and owned sessions, but never an external session. `keep_panes` leaves panes, their processes and the session open for inspection. Both policies mark agents as shutdown, remove their routes and inboxes, stop heartbeat senders, clear teardown transactions and release runtime locks. Shutdown registry records remain as history, not active workers.
+- A kept owned session carries a retention marker. A later detached provision chooses the next free session name by adding `-next`, without adopting or killing retained panes. Spawn new generated identities for new workers. A repeated teardown ignores shutdown agents, and an explicit later `kill_on_complete` session teardown can close the retained owned session before reprovisioning.
+- The emergency `agent_execution_mode=in_process` override works only when the registry lists no running TMUX agents.
 - The command rejects invalid or malformed configuration and keeps the saved file. Migration fills only missing execution defaults and preserves valid existing values.
 - `agent_execution_mode=ask` is a persisted gate, not a fallback instruction. A rejected or cancelled spawn remains cancelled until the caller explicitly starts a different backend.
 

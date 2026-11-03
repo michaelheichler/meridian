@@ -107,9 +107,15 @@ if [ -n "${TMUX:-}" ]; then
 fi
 
 session=$(bash "$SCRIPT_DIR/tmux-session-name.sh" --project-root "$project_root" --control-root "$control_root" --main-id "$main_id") || fail 'cannot derive a safe tmux session name'
-if tmux has-session -t "$session" 2>/dev/null; then
-  fail "tmux session already exists for this main ID: $session; inspect or clean up the orphan before retrying"
-fi
+while tmux has-session -t "$session" 2>/dev/null; do
+  kept=$(tmux show-options -v -t "$session" @lbwc_kept_panes 2>/dev/null || true)
+  [ "$kept" = true ] || fail "tmux session already exists for this main ID: $session; inspect or clean up the orphan before retrying"
+  if [ -f "$bus_dir/registry.json" ]; then
+    jq -e --arg session "$session" '.tmux.session != $session or all(.agents[]; .state == "shutdown")' "$bus_dir/registry.json" >/dev/null \
+      || fail 'retained tmux session has active agents, complete teardown before provisioning again'
+  fi
+  session="${session}-next"
+done
 
 jq -n --arg topology 'detached-new-session' --arg session "$session" --arg control_root "$control_root" \
   '{preflight: "passed", topology: $topology, tmux_session: $session, control_root: $control_root}'
