@@ -14,4 +14,3 @@ commands/status.md:Agent:{Agent}
 commands/uninstall.md:Agent:Agent Teams
 commands/fix.md:Task:Task:
 commands/qa.md:Task:Task description
-commands/resume.md:Task:Task contracts
