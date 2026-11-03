@@ -51,7 +51,7 @@ emit_nudge < <(printf '%s' "$INPUT" | jq -j \
   def field: ., "\u0000";
   (.tool_input.content // .tool_input.new_string // "") |
   select(type == "string") | gsub("\u0000"; "") | field,
-  ($nudges[0][] |
+  ($nudges[0][] | select(type == "object") |
    (.pattern // "" | text) as $pattern |
    (.article // "" | text) as $article |
    ([$index[0][] | select(.id == $article) | .title | text] | join("\n")) as $title |
