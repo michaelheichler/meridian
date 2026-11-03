@@ -92,9 +92,21 @@ case "$FILE_PATH" in
       *) NEW_STATUS="" ;;
     esac
     if [ -n "$NEW_STATUS" ]; then
+      PREVIOUS_STATUS=$(sed -n 's/^Status:[[:space:]]*//p' "$STATE_FILE" | head -n 1)
       TMP="${STATE_FILE}.tmp.$$.${RANDOM:-0}"
-      sed "s|^Status: .*|Status: ${NEW_STATUS}|" "$STATE_FILE" > "$TMP" 2>/dev/null && \
-        [ -s "$TMP" ] && mv "$TMP" "$STATE_FILE" || rm -f "$TMP"
+      if sed "s|^Status: .*|Status: ${NEW_STATUS}|" "$STATE_FILE" > "$TMP" 2>/dev/null && \
+        [ -s "$TMP" ] && mv "$TMP" "$STATE_FILE"; then
+        if [ "$NEW_STATUS" = complete ] && [ "$PREVIOUS_STATUS" != complete ] && \
+          grep -q '^Status: complete$' "$STATE_FILE"; then
+          if ! LBWC_CONTROL_ROOT="$PLANNING_ROOT" LBWC_PLANNING_DIR="$PLANNING_ROOT" \
+            bash "$SCRIPT_DIR/explorer-journal.sh" append \
+            --trigger phase-end --next "Continue after phase ${ARTIFACT_PHASE_NUM}." >/dev/null 2>&1; then
+            printf '%s\n' 'state-updater.sh could not append journal entry' >&2
+          fi
+        fi
+      else
+        rm -f "$TMP"
+      fi
     fi
     ;;
 esac
