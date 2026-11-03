@@ -88,7 +88,9 @@ class BashBatch:
             stderr = (self.root / "stderr").read_text(errors="replace")
             return status, stdout, stderr
         except OSError:
-            return status, "", "meridian hook warning: hook-batch.sh output unavailable, call allowed\n"
+            if status == 2:
+                return 2, "", "meridian hook warning: hook-batch.sh output unavailable, call allowed\n"
+            return 1, "", ""
 
     def _stop_runner(self):
         if self.process.stdin:
