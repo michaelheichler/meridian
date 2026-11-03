@@ -28,7 +28,7 @@ The turn's usage record also carried a `permission_denials` entry naming the too
 
 The model's own summary confirmed the denial: "Workflow tool call blocked. Hook output: `PROBE DENY: workflow calls are blocked in this test`." No workflow ran. There is no `journal.jsonl` for this attempt, because the call never reached the runtime.
 
-**Answer: YES.** A `PreToolUse` matcher on `"Workflow"` fires exactly like it does for any other tool, and exit code 2 blocks the call through the same `permission_denials` / `is_error` mechanism documented for other tools. The trust model's layer 1 guard (the `PreToolUse` guard on `Workflow`) is viable on this host version.
+**Answer. YES.** A `PreToolUse` matcher on `"Workflow"` fires exactly like it does for any other tool, and exit code 2 blocks the call through the same `permission_denials` / `is_error` mechanism documented for other tools. The trust model's layer 1 guard (the `PreToolUse` guard on `Workflow`) is viable on this host version.
 
 ## Unknown B: does the subagent's own `PreToolUse` payload carry the generated name in `agent_type`
 
@@ -48,7 +48,7 @@ Asked a nested `claude -p` session to call `Workflow` once with an inline script
 
 `agent_type` is exactly the generated subagent definition name (`lbwc-probe-writer-quiet-amber-otter`), the same identifier LBWC would generate for a real role and register in the manifest, and the same field `hooks/test_scope_guard.py` reads through `_agent_identifier`.
 
-**Answer: YES.** A workflow-spawned subagent's `Write` call carries the subagent's definition name in `agent_type`, matching the subagents documentation and matching what `skill_gate.py` and `test_scope_guard.py` already key on. No change to the role-resolution logic in those two guards is required for the workflow backend.
+**Answer. YES.** A workflow-spawned subagent's `Write` call carries the subagent's definition name in `agent_type`, matching the subagents documentation and matching what `skill_gate.py` and `test_scope_guard.py` already key on. No change to the role-resolution logic in those two guards is required for the workflow backend.
 
 ## Incidental observation, not one of the two gated unknowns
 

@@ -17,7 +17,7 @@ const result = await agent("...", { agentType: "...", ... });
 return { status: "complete", ... };
 ```
 
-`meta` is a plain object literal, never a function call or a template-derived value. LBWC's renderer builds it with `jq -nc` and writes it as line 1, so its purity is verified by feeding that line back through `jq -e .`.
+`meta` is a plain object literal, never a function call or a template-derived value. LBWC's renderer builds it with `jq -nc` and writes it as line 1, so verify its purity by feeding that line back through `jq -e .`.
 
 A top-level `return` ends the script and populates the run's `result` field. This is legal in a workflow script and illegal in an ES module, confirmed empirically in `references/workflow-probe-findings.md` (Unknown C). The run's own state file separates `result` (from the top-level `return`) from `logs` (from `log()` calls), and `log()` output never reaches `result`. LBWC's committed templates always end every branch with `return`, never `log()`, because of this.
 

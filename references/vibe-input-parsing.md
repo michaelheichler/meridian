@@ -34,7 +34,13 @@ bash "/tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/todo-lif
   bash "/tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/resolve-todo-item.sh" <N> --session-snapshot --require-unfiltered --validate-live
   ```
   If `status` is `"ok"`, preserve `TODO_SELECTED=true` and store the full payload as `TODO_SELECTED_JSON`. Then replace $ARGUMENTS with the item's `command_text` and keep the resolved `ref`/`state_path` metadata for later pickup. If the resolved `state_path` points under `.lbwc-planning/milestones/`, STOP with the message `This todo came from archived milestone state. Restore the writable root STATE.md first by restarting so session-start.sh can run migration, or run 'bash /tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/migrate-orphaned-state.sh .lbwc-planning'.`. Do not continue using the archived description as live work input.
-- If the snapshot is present and `filter` is non-null, do **not** treat the integer as a claimable backlog todo. Preserve the existing bare phase-number path instead. If the integer later fails to resolve as a valid phase target, fail closed with: `Current list view is filtered, rerun unfiltered /lbwc:list-todos before using /lbwc:vibe N as a todo pickup.`
+- If the snapshot is present and `filter` is non-null, do **not** treat the integer as a claimable backlog todo. Preserve the existing bare phase-number path instead. If the integer later fails to resolve as a valid phase target, fail closed with: 
+
+```text
+Current list view is filtered, rerun unfiltered /lbwc:list-todos before using /lbwc:vibe N as a todo pickup.
+```
+
+
 - If the snapshot is missing or malformed, preserve the existing bare phase-number path. Do **not** silently fall back to live unfiltered backlog resolution for todo pickup.
 
 If `TODO_SELECTED_JSON` exists and its `ref` is non-null, eagerly load detail during Input Parsing, before routing commits to the todo-derived request:
@@ -204,7 +210,13 @@ Before entering Verify mode (UAT), check `qa_status` from phase-detect output:
   **QA pending artifact and gate reason labels:**
   - `missing_verification_artifact` → `no verification artifact exists`
   - `verification_result_missing` → `verification result is missing`
-  - `verification_result_unrecognized` → `verification result is unrecognized`
+  - `verification_result_unrecognized` → 
+
+```text
+verification result is unrecognized
+```
+
+
   - `qa_gate_rerun_required` → `the QA gate requires a rerun`
   - `qa_gate_output_missing` → `the QA gate did not return a routing decision`
 
@@ -212,12 +224,24 @@ Before entering Verify mode (UAT), check `qa_status` from phase-detect output:
   - `working_tree_changed` → `the working tree changed after QA`
   - `git_status_failed` → `git status failed during freshness check`
   - `git_log_failed` → `git log failed during freshness check`
-  - `product_commit_unavailable` → `no product-code commit could be resolved`
+  - `product_commit_unavailable` → 
+
+```text
+no product-code commit could be resolved
+```
+
+
 
   **Product freshness reason labels:**
   - `verified_at_commit_mismatch` → `product code changed since QA`
   - `product_changed_after_verification` → `product code changed after QA`
-  - `freshness_baseline_unavailable` → `QA freshness could not be proven`
+  - `freshness_baseline_unavailable` → 
+
+```text
+QA freshness could not be proven
+```
+
+
   - Unknown non-empty token → use the token verbatim.
 
   Then continue with QA:
