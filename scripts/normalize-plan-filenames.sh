@@ -12,12 +12,8 @@ fi
 PHASE_DIR="${PHASE_DIR%/}"
 PHASE_DIR_BASE=$(basename "$PHASE_DIR")
 
-round_plan_content_is_valid() {
-  local file_path="$1" expected_round="${2:-}" remediation_kind="${3:-uat}"
-  local frontmatter frontmatter_round frontmatter_round_norm
-
-  [ -s "$file_path" ] || return 1
-  frontmatter=$(awk '
+read_round_plan_frontmatter() {
+  awk '
     BEGIN { delimiter_count = 0; frontmatter_closed = 0 }
     /^---[[:space:]]*$/ {
       delimiter_count++
@@ -26,17 +22,26 @@ round_plan_content_is_valid() {
     }
     delimiter_count == 1 { print }
     END { if (!frontmatter_closed) exit 1 }
-  ' "$file_path" 2>/dev/null) || return 1
+  ' "$1" 2>/dev/null
+}
 
+round_plan_number_matches() {
+  local frontmatter="$1" expected_round="$2" frontmatter_round frontmatter_round_norm
+  [ -n "$expected_round" ] || return 0
+  frontmatter_round=$(printf '%s\n' "$frontmatter" | sed -n 's/^round:[[:space:]]*\([0-9][0-9]*\).*$/\1/p' | head -1)
+  [ -n "$frontmatter_round" ] || return 1
+  frontmatter_round_norm=$(printf "%02d" "$((10#$frontmatter_round))")
+  [ "$frontmatter_round_norm" = "$expected_round" ]
+}
+
+round_plan_content_is_valid() {
+  local file_path="$1" expected_round="${2:-}" remediation_kind="${3:-uat}" frontmatter
+  [ -s "$file_path" ] || return 1
+  frontmatter=$(read_round_plan_frontmatter "$file_path") || return 1
   [ -n "$frontmatter" ] || return 1
   grep -Eq '^phase:[[:space:]]*[0-9]+([[:space:]]*(#.*)?)?$' <<< "$frontmatter" || return 1
   grep -Eq '^round:[[:space:]]*[0-9]+([[:space:]]*(#.*)?)?$' <<< "$frontmatter" || return 1
-  if [ -n "$expected_round" ]; then
-    frontmatter_round=$(printf '%s\n' "$frontmatter" | sed -n 's/^round:[[:space:]]*\([0-9][0-9]*\).*$/\1/p' | head -1)
-    [ -n "$frontmatter_round" ] || return 1
-    frontmatter_round_norm=$(printf "%02d" "$((10#$frontmatter_round))")
-    [ "$frontmatter_round_norm" = "$expected_round" ] || return 1
-  fi
+  round_plan_number_matches "$frontmatter" "$expected_round" || return 1
   grep -Eq '^title:[[:space:]]*.+' <<< "$frontmatter" || return 1
   grep -Eq '^type:[[:space:]]*remediation([[:space:]]*(#.*)?)?$' <<< "$frontmatter" || return 1
   grep -Eq '^fail_classifications:[[:space:]]*.*$' <<< "$frontmatter" || return 1
@@ -85,7 +90,7 @@ if [ -n "$ROUND_PLAN_TOKEN" ]; then
   ROUND_PLAN_CANDIDATES=()
   for f in "$PHASE_DIR"/[Pp][Ll][Aa][Nn]-[Rr][0-9]*.[mM][dD] "$PHASE_DIR"/[Pp][Ll][Aa][Nn]-[0-9]*.[mM][dD]; do
     [ -f "$f" ] || continue
-    [ ! -L "$f" ] || continue  # skip symlinks
+    [ ! -L "$f" ] || continue
     BASENAME=$(basename "$f")
     if ! echo "$BASENAME" | grep -qE '^[Pp][Ll][Aa][Nn]-[Rr]?[0-9]+\.[mM][dD]$'; then
       echo "skipped: $BASENAME (unknown remediation round plan form)" >&2
@@ -193,7 +198,7 @@ fi
 
 for f in "$PHASE_DIR"/[Pp][Ll][Aa][Nn]-[0-9]*.[mM][dD]; do
   [ -f "$f" ] || continue
-  [ ! -L "$f" ] || continue  # skip symlinks
+  [ ! -L "$f" ] || continue
   BASENAME=$(basename "$f")
   if ! echo "$BASENAME" | grep -qiE '^PLAN-[0-9]+\.(md|MD)$|^PLAN-[0-9]+-(SUMMARY|CONTEXT)\.(md|MD)$'; then
     echo "skipped: $BASENAME (unknown compound form)" >&2
@@ -221,7 +226,7 @@ done
 
 for f in "$PHASE_DIR"/[Ss][Uu][Mm][Mm][Aa][Rr][Yy]-[0-9]*.[mM][dD]; do
   [ -f "$f" ] || continue
-  [ ! -L "$f" ] || continue  # skip symlinks
+  [ ! -L "$f" ] || continue
   BASENAME=$(basename "$f")
   if ! echo "$BASENAME" | grep -qiE '^SUMMARY-[0-9]+\.(md|MD)$'; then
     echo "skipped: $BASENAME (unknown compound form)" >&2
@@ -241,7 +246,7 @@ done
 
 for f in "$PHASE_DIR"/[Cc][Oo][Nn][Tt][Ee][Xx][Tt]-[0-9]*.[mM][dD]; do
   [ -f "$f" ] || continue
-  [ ! -L "$f" ] || continue  # skip symlinks
+  [ ! -L "$f" ] || continue
   BASENAME=$(basename "$f")
   if ! echo "$BASENAME" | grep -qiE '^CONTEXT-[0-9]+\.(md|MD)$'; then
     echo "skipped: $BASENAME (unknown compound form)" >&2
