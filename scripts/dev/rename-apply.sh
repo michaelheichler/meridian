@@ -8,6 +8,7 @@ import argparse
 import csv
 import fnmatch
 import pathlib
+import posixpath
 import re
 import subprocess
 import sys
@@ -67,6 +68,19 @@ def transform(text, kind, rows, path=""):
     return text, count
 
 
+def wire_environment(text, path):
+    if not path.startswith("scripts/") or path.startswith(("scripts/tests/", "scripts/dev/")):
+        return text
+    if not text.startswith("#!") or "bash" not in text.splitlines()[0]:
+        return text
+    if "meridian_migrate_environment" in text:
+        return text
+    shim = posixpath.relpath("scripts/lib/rename-migration.sh", posixpath.dirname(path))
+    startup = "\n. \"$(CDPATH=\"\" cd -- \"$(dirname \"${BASH_SOURCE[0]}\")\" && pwd -P)/%s\"\nmeridian_migrate_environment\n" % shim
+    header, separator, body = text.partition("\n")
+    return header + separator + startup + body
+
+
 def inspect(root, rows, args):
     listing = subprocess.check_output(["git", "-C", str(root), "ls-files", "-z",
                                       "--cached", "--others", "--exclude-standard"])
@@ -91,6 +105,7 @@ def inspect(root, rows, args):
         scanned += 1
         target, _ = transform(name, "path", rows)
         updated, contents = transform(text, "content", rows, name)
+        updated = wire_environment(updated, target)
         if target != name or updated != text:
             results.append((name, int(target != name), contents, target, updated))
     return results, scanned, binary, skipped
