@@ -167,6 +167,6 @@ config_real() {
 lines=pathlib.Path(sys.argv[1]).read_text().splitlines()
 missing={line.split()[4] for line in lines if line.startswith("Documented without a reader  ")}
 extra={line.split()[3] for line in lines if line.startswith("Read without documentation  ")}
-assert missing == {"tmux_execution.restrictions"}, missing
+assert missing == {"tmux_execution.restrictions.require_orchestrator_attach"}, missing
 assert extra == set(), extra' audit-output
 }
