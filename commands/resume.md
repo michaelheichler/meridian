@@ -88,12 +88,18 @@ fi`
    - `.lbwc-planning/ROADMAP.md`, phases overview
    - `.lbwc-planning/RESUME.md`, session notes
 
-   Execution evidence:
-   - Canonical PLAN and SUMMARY files under `.lbwc-planning/phases/`
-   - The most recent terminal SUMMARY
-   - Task contracts and generated-agent manifest state when a build may have stopped before completion
+   Run the deterministic resume helper after the guards and any normalization.
+   ```bash
+   bash "/tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/resume-context.sh"
+   ```
+   It reads `explorer-journal.sh current`, compares the journal HEAD with current HEAD, prints `git log --oneline <journal HEAD>..HEAD` when HEAD moved, and prints `git diff --stat`. Show its staleness or unknown HEAD line and any consistency findings. Clean consistency checks produce no output.
 
-   Skip missing optional files. A missing required PLAN, contract, or terminal summary remains a blocker.
+   Execution evidence from the active phase only.
+   - Read each `active_phase_file=` path from the helper output. These are the canonical PLAN and SUMMARY files of the phase that phase-detect selects, including its most recent terminal SUMMARY.
+   - Do not read PLAN or SUMMARY files from other phases or archived milestones.
+   - Query task contracts and generated-agent manifest state when a build may have stopped before completion. For an interrupted build in another phase, inspect its contract, commits and verify results, report the phase mismatch, and leave recovery blocked until that phase becomes active.
+
+   Keep reading `RESUME.md` even when a journal entry exists. Skip missing optional files. A missing required PLAN, contract, or terminal summary remains a blocker.
 2. **Compute progress from phase-detect.sh output:** Use the pre-computed `phase_count`, `next_phase`, `next_phase_state`, `next_phase_plans`, `next_phase_summaries`, `uat_issues_phase`, `uat_issues_slug`, `uat_issues_phases`, and `uat_issues_count` values. Map `next_phase_state` to display: `needs_uat_remediation` → "⚠ Needs remediation", `needs_verification` → "⏳ Needs UAT verification", `needs_plan_and_execute` → "not started", `needs_execute` → "in progress", `all_done` → "complete". **Per-phase status:** any phase whose number appears in the comma-separated `uat_issues_phases` list has unresolved UAT issues, mark it "⚠ Needs remediation". Only mark a phase as "✓ Done" if its number is NOT in `uat_issues_phases` and it has completed execution (SUMMARY count ≥ PLAN count). Phases not yet executed are "not started".
    **Known issues check:** For each phase directory, run:
    ```bash

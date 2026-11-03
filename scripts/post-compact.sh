@@ -44,10 +44,14 @@ if [ -z "$ROLE" ]; then
   ORCH_RESUME=" ORCHESTRATOR RESUME: re-read ${PLANNING_DIR}/STATE.md and run phase-detect.sh to see where the project stood before compaction, then resume the command you were executing from that point."
 fi
 
-jq -n --arg role "${ROLE:-orchestrator}" --arg files "$FILES" --arg worktree "$WORKTREE_CONTEXT" --arg orch "$ORCH_RESUME" '{
+RESUME_CONTEXT=$(bash "$SCRIPT_DIR/resume-context.sh") || RESUME_CONTEXT="${RESUME_CONTEXT}
+Resume context helper failed. Run resume-context.sh manually before continuing."
+RESUME_READS="Read only the active_phase_file paths above for phase PLAN and SUMMARY state, not other phases. Keep RESUME.md session notes when present."
+
+jq -n --arg role "${ROLE:-orchestrator}" --arg files "$FILES" --arg worktree "$WORKTREE_CONTEXT" --arg orch "$ORCH_RESUME" --arg resume "$RESUME_CONTEXT" --arg reads "$RESUME_READS" '{
   "hookSpecificOutput": {
     "hookEventName": "SessionStart",
-    "additionalContext": ("Context was compacted. Role: " + $role + ". Re-read these key files from disk: " + $files + "." + $worktree + $orch)
+    "additionalContext": ("Context was compacted. Role: " + $role + ". Re-read these key files from disk: " + $files + "." + $worktree + $orch + "\n" + $resume + "\n" + $reads)
   }
 }'
 exit 0
