@@ -464,6 +464,8 @@ bus_case_ack_resumes_interrupted_states() {
   bus_case_dead_owner_claim_reclaimed
   bus_case_ack_rejects_symlinked_acked_dir
   bus_case_descriptor_move_never_clobbers
+  run bash -c 'cd "$1" && python3 "$2"' _ "$TEST_ROOT" "$REPO_ROOT/tests/tmux-private-fs.py"
+  [ "$status" -eq 0 ]
   bus_case_ack_resumes_interrupted_states
 }
 
