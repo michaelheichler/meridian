@@ -11,7 +11,7 @@
   "agent_execution_mode": "ask",
   "tmux_execution": {
     "enabled": false,
-    "session_name_prefix": "lbwc",
+    "session_name_prefix": "meridian",
     "max_agents": 3,
     "attach_policy": "orchestrator_only",
     "heartbeat_interval_seconds": 30,

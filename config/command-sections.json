@@ -9,7 +9,7 @@
   },
   "final_heading": {
     "heading": "Feedback card",
-    "commands": ["build.md", "debug.md", "discuss.md", "fix.md", "init.md", "plan.md", "qa.md", "research.md", "team.md", "uat.md", "verify.md", "vibe.md"]
+    "commands": ["build.md", "debug.md", "discuss.md", "fix.md", "init.md", "plan.md", "qa.md", "research.md", "team.md", "uat.md", "verify.md", "transit.md"]
   },
   "commands": {
     "build.md": {
@@ -127,7 +127,7 @@
     "verify.md": {
       "required_headings": ["Context", "Guard", "Debug Session Routing", "Steps"]
     },
-    "vibe.md": {
+    "transit.md": {
       "required_headings": ["Shared interaction contract", "Context", "Input Parsing", "Modes", "Output Format"]
     },
     "whats-new.md": {
