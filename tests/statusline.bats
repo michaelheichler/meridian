@@ -108,6 +108,27 @@ statusline_usage_row() {
     || record_case_failure "$label" 'unfinished usage record remains'
 }
 
+statusline_write_row() {
+  local label=$1 input=$2 seed=$3 expected=$4 before after record
+  local planning="$PROJECT/.lbwc-planning" log="$TEST_ROOT/mv.log"
+  cp "$BATS_TEST_DIRNAME/statusline_mv_proxy.bash" "$BIN/mv"
+  chmod +x "$BIN/mv"
+  export STATUSLINE_REAL_MV="$(command -v mv)" STATUSLINE_MV_LOG="$log"
+  printf '%s\n' "$seed" > "$planning/.context-usage"
+  : > "$log"
+  before=$(python3 -c 'import os,sys; print(os.stat(sys.argv[1]).st_mtime_ns)' "$planning")
+  run_statusline "$input"
+  expect_case "$label" 0
+  after=$(python3 -c 'import os,sys; print(os.stat(sys.argv[1]).st_mtime_ns)' "$planning")
+  [ "$(wc -l < "$log" | tr -d ' ')" = "$expected" ] || record_case_failure "$label" 'wrong atomic publication count'
+  record=$(cat "$planning/.context-usage")
+  [ "$record" = 's1|72.5|1000000|statusline' ] || record_case_failure "$label" 'native measurement lost'
+  case "$expected" in
+    0) [ "$before" = "$after" ] || record_case_failure "$label" 'unchanged render created a temporary file' ;;
+    1) [ "$(cat "$log")" = "$record" ] || record_case_failure "$label" 'publication lacked a complete staged record' ;;
+  esac
+}
+
 statusline_invalid_row() {
   local label=$1 input=$2 expected=$3
   statusline_usage_row "$label" "$input" 'previous|33|200000|statusline'
@@ -119,6 +140,8 @@ statusline_invalid_row() {
   local input unavailable
   input=$(native_usage_input)
   statusline_usage_row native-record "$input" 's1|72.5|1000000|statusline'
+  statusline_write_row unchanged-record "$input" 's1|72.5|1000000|statusline' 0
+  statusline_write_row changed-record "$input" 's1|33|1000000|statusline' 1
   statusline_usage_row missing-percentage "$(jq 'del(.context_window.used_percentage)' <<< "$input")" 'previous|33|200000|statusline'
   statusline_usage_row null-percentage "$(jq '.context_window.used_percentage = null' <<< "$input")" 'previous|33|200000|statusline'
   statusline_usage_row negative-percentage "$(jq '.context_window.used_percentage = -1' <<< "$input")" 'previous|33|200000|statusline'

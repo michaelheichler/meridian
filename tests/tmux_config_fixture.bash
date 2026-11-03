@@ -156,15 +156,31 @@ config_heartbeat_row() {
   case "$kind" in
     live) config_live_sender "$state" ;;
     terminal) config_terminal_sender "$state" ;;
-    stale)
-      config_agent_update ".agents[0].heartbeat_at_ms = $(($(date +%s) * 1000 - 5000))"
-      config_watchdog "$threshold"
-      [ "$status" -eq 1 ]
-      jq -e '.stale_agents == ["agent-a"]' <<<"$output"
-      jq -e '.agents[0].state == "shutdown" and .agents[0].watchdog_failure_reported_at_ms > 0 and (.routes | has("agent-a") | not)' "$(registry_file)"
-      [ "$(pane_count "$SESSION")" = 1 ]
-      ;;
+    process) config_process_sender "$state" ;;
+    stale) config_stale_sender "$threshold" ;;
   esac
+}
+
+config_stale_sender() {
+  config_agent_update ".agents[0].heartbeat_at_ms = $(($(date +%s) * 1000 - 5000))"
+  config_watchdog "$1"
+  [ "$status" -eq 1 ]
+  jq -e '.stale_agents == ["agent-a"]' <<<"$output"
+  jq -e '.agents[0].state == "shutdown" and .agents[0].watchdog_failure_reported_at_ms > 0 and (.routes | has("agent-a") | not)' "$(registry_file)"
+  [ "$(pane_count "$SESSION")" = 1 ]
+}
+
+config_wait_periodic_heartbeat() {
+  local initial deadline=$((SECONDS + 8))
+  initial=$(jq -r '.agents[] | select(.agent_id == "worker-a") | .heartbeat_at_ms' "$(registry_file)")
+  until jq -e --argjson initial "$initial" '.agents[] | select(.agent_id == "worker-a") | .heartbeat_at_ms > $initial' "$(registry_file)" >/dev/null; do
+    [ "$SECONDS" -lt "$deadline" ] || return 1
+    sleep 0.05
+  done
+}
+
+config_process_sender() {
+  env TMUX_TMPDIR="$TMUX_TMPDIR" python3 "$REPO_ROOT/tests/heartbeat_process_fixture.py" "$1" "$REPO_ROOT" "$CONTROL_ROOT" "$TEST_ROOT" "$BIN_DIR" "$TEST_ROOT/capability" "$MAIN_CAPABILITY"
 }
 
 config_live_sender() {

@@ -73,6 +73,35 @@ level_row() {
   assert_no_case_failures
 }
 
+@test "a native measurement published after estimate staging closes survives without a leaked estimate" {
+  local transcript="$PROJECT_DIR/transcript.jsonl"
+  printf '%s\n' 'transcript content' > "$transcript"
+  run python3 "$PROJECT_ROOT/tests/context_native_race_fixture.py" "$PROJECT_ROOT" <<EOF
+{"session_id":"s1","cwd":"$PROJECT_DIR","transcript_path":"$transcript"}
+EOF
+  expect_case native-wins-after-staging 0
+  assert_no_case_failures
+}
+
+compact_usage_row() {
+  local label=$1 record=$2 expected=$3
+  printf '%s\n' "$record" > "$USAGE_FILE"
+  run env CLAUDE_SESSION_ID=s1 LBWC_PLANNING_DIR="$PROJECT_DIR/.lbwc-planning" bash "$SCRIPTS_DIR/suggest-compact.sh" execute
+  expect_case "$label" 0
+  case "$expected" in
+    suggest) [ -n "$output" ] || record_case_failure "$label" 'missing context warning' ;;
+    silent) [ -z "$output" ] || record_case_failure "$label" 'unexpected context warning' ;;
+  esac
+}
+
+@test "compact suggestions accept estimated and native records for the current session" {
+  compact_usage_row estimated-short-headroom 's1|99|100' suggest
+  compact_usage_row native-short-headroom 's1|99.9|100|statusline' suggest
+  compact_usage_row estimated-ample-headroom 's1|0|1000000' silent
+  compact_usage_row native-ample-headroom 's1|0|1000000|statusline' silent
+  assert_no_case_failures
+}
+
 @test "resolve_caveman_level maps usage records to a level" {
   level_row under-50-is-none auto "s1|30|200000" none
   level_row 49-is-none auto "s1|49|200000" none

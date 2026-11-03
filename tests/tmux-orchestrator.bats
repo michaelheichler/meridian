@@ -442,7 +442,7 @@ jq-fails-transpose;worker-a;jq:transpose@1;1
 CASES
 }
 
-@test "child SessionStart binds once and records a heartbeat" {
+@test "child SessionStart binds once and keeps publishing periodic heartbeats" {
   export LBWC_TEST_FAST_CHILD_ENV="$TEST_ROOT/fast-child.env"
   export LBWC_TEST_FAST_CHILD_STATUS="$TEST_ROOT/fast-child.status"
   export LBWC_TEST_FAST_CHILD_OUTPUT="$TEST_ROOT/fast-child.output"
@@ -452,6 +452,7 @@ CASES
   export LBWC_TEST_FAST_CHILD_STARTED="$TEST_ROOT/fast-child.started"
   export LBWC_TEST_FAST_CHILD_EXIT="$TEST_ROOT/fast-child.exit"
   export LBWC_TEST_SESSION_START="$REPO_ROOT/scripts/session-start.sh"
+  printf '%s\n' '{"tmux_execution":{"heartbeat_interval_seconds":1}}' > "$CONTROL_ROOT/config.json"
   provision_main
   local session definitions
   session="$(provisioned_session)"
@@ -466,6 +467,7 @@ CASES
   run jq -e '.agents[] | select(.agent_id == "worker-a") | .state == "running" and (.heartbeat_at_ms | type == "number")' "$(registry_file)"
   [ "$status" -eq 0 ]
   [ ! -e "$CONTROL_ROOT/.runtime/tmux-bus/credentials/worker-a.json" ]
+  config_wait_periodic_heartbeat
   : > "$LBWC_TEST_FAST_CHILD_RELEASE"
   wait_for_result "$LBWC_TEST_FAST_CHILD_EXIT"
   unset LBWC_TEST_FAST_CHILD_ENV LBWC_TEST_FAST_CHILD_STATUS LBWC_TEST_FAST_CHILD_OUTPUT LBWC_TEST_FAST_CHILD_READY LBWC_TEST_FAST_CHILD_RELEASE LBWC_TEST_FAST_CHILD_PANE LBWC_TEST_FAST_CHILD_STARTED LBWC_TEST_FAST_CHILD_EXIT LBWC_TEST_SESSION_START
@@ -683,6 +685,14 @@ ROWS
   run_config_rows heartbeat <<'ROWS'
 running-heartbeat|live;1;none;running
 idle-heartbeat|live;1;none;idle
+resets-failure-count|process;1;none;recovery
+third-failure-stops|process;1;none;exhausted
+registry-and-bus-failures-accumulate|process;1;none;mixed
+term-reaps-sleep|process;3;none;TERM
+int-reaps-sleep|process;3;none;INT
+teardown-stops-recorded-sender|process;3;none;matching
+teardown-rejects-stale-start|process;3;none;stale-start
+teardown-rejects-unrelated-command|process;3;none;stale-command
 derived-stale-limit|stale;1;none;running
 capped-cli-limit|stale;1;90000;running
 stricter-config-limit|stale;30;configured;running
