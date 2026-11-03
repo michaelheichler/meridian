@@ -18,6 +18,8 @@ TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // ""' 2>/dev/null) || fail "workf
 [ "$TOOL_NAME" = "Workflow" ] || exit 0
 
 SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd)"
+python3 -B "$SCRIPT_DIR/../hooks/tmux_restrictions.py" <<<"$INPUT"
+[ "$?" -ne 2 ] || exit 2
 [ -f "$SCRIPT_DIR/lib/workflow-manifest.sh" ] || fail "workflow manifest library is unavailable"
 . "$SCRIPT_DIR/lib/workflow-manifest.sh" || fail "workflow manifest library failed to load"
 [ -f "$SCRIPT_DIR/lib/lbwc-control-root.sh" ] || fail "control root library is unavailable"

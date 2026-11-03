@@ -13,7 +13,7 @@ from hook_output import decode_output, merge_output
 QUESTION_TOOLS = "AskUserQuestion Agent TaskCreate TaskUpdate Write Edit NotebookEdit Bash Skill SendMessage Grep Glob"
 PRETOOL = (
     (QUESTION_TOOLS, "user_question_guard", 5),
-    ("Agent TaskCreate", "agent-spawn-guard.sh", 15),
+    ("Agent Task TaskCreate", "agent-spawn-guard.sh", 15),
     ("Workflow", "workflow-spawn-guard.sh", 15),
     ("Write Edit NotebookEdit Read Glob", "skill_gate", 5),
     ("Write Edit NotebookEdit", "test_scope_guard", 5),
