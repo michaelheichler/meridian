@@ -3,154 +3,24 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "AskUserQuestion|Agent|TaskCreate|TaskUpdate|Write|Edit|NotebookEdit|Bash|Skill|SendMessage|Grep|Glob",
+        "matcher": "AskUserQuestion|Agent|TaskCreate|TaskUpdate|Write|Edit|NotebookEdit|Bash|Skill|SendMessage|Grep|Glob|Workflow|Read",
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/user_question_guard.py\" pretool",
-            "timeout": 5
-          }
-        ]
-      },
-      {
-        "matcher": "Agent|TaskCreate",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/hook-wrapper.sh\" agent-spawn-guard.sh",
-            "timeout": 15
-          }
-        ]
-      },
-      {
-        "matcher": "Workflow",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/hook-wrapper.sh\" workflow-spawn-guard.sh",
-            "timeout": 15
-          }
-        ]
-      },
-      {
-        "matcher": "Write|Edit|NotebookEdit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/skill_gate.py\"",
-            "timeout": 5
-          },
-          {
-            "type": "command",
-            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/test_scope_guard.py\"",
-            "timeout": 5
-          }
-        ]
-      },
-      {
-        "matcher": "Read|Glob",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/skill_gate.py\"",
-            "timeout": 5
-          }
-        ]
-      },
-      {
-        "matcher": "SendMessage",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/message_scope_guard.py\"",
-            "timeout": 5
-          }
-        ]
-      },
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/hook-wrapper.sh\" bash-guard.sh",
-            "timeout": 5
-          }
-        ]
-      },
-      {
-        "matcher": "Write|Edit|NotebookEdit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/hook-wrapper.sh\" file-guard.sh",
-            "timeout": 5
-          }
-        ]
-      },
-      {
-        "matcher": "Read|Glob|Grep|Write|Edit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/hook-wrapper.sh\" security-filter.sh",
-            "timeout": 5
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/dispatch.py\" PreToolUse",
+            "timeout": 40
           }
         ]
       }
     ],
     "PostToolUse": [
       {
-        "matcher": "AskUserQuestion",
+        "matcher": "AskUserQuestion|Bash|Write|Edit",
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/user_question_guard.py\" posttool",
-            "timeout": 5
-          }
-        ]
-      },
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/hook-wrapper.sh\" validate-commit.sh",
-            "timeout": 5
-          }
-        ]
-      },
-      {
-        "matcher": "Bash|Write|Edit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/context_usage.py\"",
-            "timeout": 5
-          }
-        ]
-      },
-      {
-        "matcher": "Write|Edit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/hook-wrapper.sh\" validate-summary.sh",
-            "timeout": 5
-          },
-          {
-            "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/hook-wrapper.sh\" validate-frontmatter.sh",
-            "timeout": 5
-          },
-          {
-            "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/hook-wrapper.sh\" state-updater.sh",
-            "timeout": 5
-          },
-          {
-            "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/hook-wrapper.sh\" deviq-nudge.sh",
-            "timeout": 5
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/dispatch.py\" PostToolUse",
+            "timeout": 40
           }
         ]
       }
