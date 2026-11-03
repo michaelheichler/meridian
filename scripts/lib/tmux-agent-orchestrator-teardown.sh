@@ -44,6 +44,7 @@ persist_shutdown_agents() {
     [ -n "$agent_id" ] || continue
     cleanup_worker_worktree "$agent_id" "$preserve_worktrees" || return 1
   done < <(jq -r '.[]' <<<"$agent_ids")
+  updated=$(refresh_agent_targets "$updated") || return 1
   tmux_runtime_write_registry_route_bundle "$updated" || return 1
   while IFS= read -r agent_id; do
     [ -n "$agent_id" ] || continue
@@ -89,15 +90,33 @@ stop_agent_pane() {
   fi
 }
 
+resolve_agent_entry() {
+  local registry="$1" requested="$2" resolved_pane candidates fallback_pane
+  if [[ "$requested" =~ ^%[0-9]+$ ]]; then
+    candidates=$(jq -c --arg pane "$requested" '[.agents[] | select(.tmux_pane_id == $pane)]' <<<"$registry") || return 1
+  else
+    resolved_pane=$(tmux display-message -p -t "$requested" '#{pane_id}' 2>/dev/null) || resolved_pane=''
+    candidates=$(jq -c --arg pane "$resolved_pane" '[.agents[] | select(.tmux_pane_id == $pane)]' <<<"$registry") || return 1
+    if [ "$(jq length <<<"$candidates")" -eq 0 ]; then
+      candidates=$(jq -c --arg target "$requested" '[.agents[] | select(.tmux_target == $target)]' <<<"$registry") || return 1
+      fallback_pane=$(jq -r 'if length == 1 then .[0].tmux_pane_id // empty else empty end' <<<"$candidates") || return 1
+      if [ -n "$fallback_pane" ] && tmux_pane_exists "$fallback_pane"; then
+        return 1
+      fi
+    fi
+  fi
+  jq -ce 'select(length == 1) | .[0]' <<<"$candidates"
+}
+
 kill_agent() {
-  local registry agent_state pane_id agent_id
+  local registry agent_state pane_id agent_id entry
   require_main_orchestrator
   tmux_runtime_lock_acquire registry 5000 30000
   registry=$(tmux_runtime_registry_read)
-  agent_state=$(jq -r --arg target "$target" '.agents[] | select(.tmux_target == $target) | .state' <<<"$registry")
-  agent_id=$(jq -r --arg target "$target" '.agents[] | select(.tmux_target == $target) | .agent_id' <<<"$registry")
-  [ -n "$agent_state" ] || fail 'active agent target is not registered'
-  pane_id=$(jq -r --arg target "$target" '.agents[] | select(.tmux_target == $target) | .tmux_pane_id' <<<"$registry")
+  entry=$(resolve_agent_entry "$registry" "$target") || fail 'agent target is not registered or is ambiguous'
+  agent_state=$(jq -r '.state' <<<"$entry")
+  agent_id=$(jq -r '.agent_id' <<<"$entry")
+  pane_id=$(jq -r '.tmux_pane_id' <<<"$entry")
   if [ "$pane_id" = null ]; then
     [ "$agent_state" = shutdown ] || fail 'registered agent pane identity is invalid'
     tmux_runtime_lock_release registry
