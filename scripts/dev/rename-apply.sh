@@ -1,15 +1,12 @@
 #!/bin/bash
 set -eu
 unset CDPATH
-
-if [ "$#" -ne 1 ] || [ "$1" != --dry-run ]; then
-  printf '%s\n' 'Usage: rename-apply.sh --dry-run' >&2
-  exit 2
-fi
 SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname "$0")" && pwd -P)
 ROOT=$(CDPATH='' cd -- "$SCRIPT_DIR/../.." && pwd -P)
 exec python3 -I -c '
+import argparse
 import csv
+import fnmatch
 import pathlib
 import re
 import subprocess
@@ -27,10 +24,14 @@ def read_map(path):
     return rows
 
 
+def matches(path, filters):
+    return any(path == item.rstrip("/") or path.startswith(item.rstrip("/") + "/")
+               or fnmatch.fnmatchcase(path, item) for item in filters)
+
+
 def excluded(path, rows):
     return any(row["scope"].startswith("exclude ") and
-               (path == row["from"] or path.startswith(row["from"] + "/"))
-               for row in rows)
+               matches(path, [row["from"]]) for row in rows)
 
 
 def rule_pattern(row):
@@ -41,46 +42,38 @@ def rule_pattern(row):
     return re.escape(row["from"])
 
 
-def transform(text, kind, rows):
-    rules = [row for row in rows if row["kind"] == kind and
-             row["scope"] in ("literal", "command", "command-word")]
-    choices = [(len(row["from"]), rule_pattern(row), row["to"], True)
-               for row in rules]
-    choices += [(len(row["from"]), re.escape(row["from"]), row["to"], False)
-                for row in rows if row["scope"].startswith("preserve ")]
-    choices.sort(key=lambda choice: -choice[0])
-    pattern = re.compile("|".join("(?P<r%d>%s)" % (index, choice[1])
-                                  for index, choice in enumerate(choices)))
+def transform(text, kind, rows, path=""):
+    protected = []
+
+    def protect(match):
+        protected.append(match.group())
+        return "\x00%d\x00" % (len(protected) - 1)
+
+    for row in rows:
+        if row["scope"].startswith("preserve "):
+            text = re.sub(re.escape(row["from"]), protect, text)
+        if row["from"] == path and row["scope"].startswith("exclude-block "):
+            markers = re.findall(r"<!-- .*? -->", row["scope"])
+            if len(markers) != 2:
+                raise ValueError("invalid migration block markers")
+            text = re.sub(re.escape(markers[0]) + r".*?" + re.escape(markers[1]),
+                          protect, text, flags=re.S)
     count = 0
-
-    def replace(match):
-        nonlocal count
-        choice = choices[int(match.lastgroup[1:])]
-        count += int(choice[3])
-        return choice[2]
-
-    return pattern.sub(replace, text), count
+    for row in rows:
+        if row["kind"] == kind and row["scope"] in ("literal", "command", "command-word"):
+            text, replacements = re.subn(rule_pattern(row), lambda match: row["to"], text)
+            count += replacements
+    text = re.sub(r"\x00(\d+)\x00", lambda match: protected[int(match[1])], text)
+    return text, count
 
 
-def content_count(text, path, rows):
-    blocks = [row for row in rows if row["from"] == path and
-              row["scope"].startswith("exclude-block ")]
-    for row in blocks:
-        markers = re.findall(r"<!-- .*? -->", row["scope"])
-        if len(markers) != 2:
-            raise ValueError("invalid migration block markers")
-        text = re.sub(re.escape(markers[0]) + r".*?" + re.escape(markers[1]),
-                      "", text, flags=re.S)
-    return transform(text, "content", rows)[1]
-
-
-def inspect(root, rows):
+def inspect(root, rows, args):
     listing = subprocess.check_output(["git", "-C", str(root), "ls-files", "-z",
                                       "--cached", "--others", "--exclude-standard"])
     results = []
     scanned = binary = skipped = 0
     for name in sorted(set(listing.decode().split("\0")) - {""}):
-        if excluded(name, rows):
+        if excluded(name, rows) or matches(name, args.exclude) or (args.include and not matches(name, args.include)):
             skipped += 1
             continue
         path = root / name
@@ -97,18 +90,44 @@ def inspect(root, rows):
             continue
         scanned += 1
         target, _ = transform(name, "path", rows)
-        paths = int(target != name)
-        contents = content_count(text, name, rows)
-        if paths or contents:
-            results.append((name, paths, contents, target))
+        updated, contents = transform(text, "content", rows, name)
+        if target != name or updated != text:
+            results.append((name, int(target != name), contents, target, updated))
     return results, scanned, binary, skipped
 
 
+def apply(root, results):
+    targets = [row[3] for row in results]
+    if len(set(targets)) != len(targets):
+        raise ValueError("rename targets collide")
+    for name, paths, _, target, _ in results:
+        if paths and (root / target).exists():
+            raise ValueError("rename target already exists, " + target)
+        if pathlib.PurePosixPath(target).is_absolute() or ".." in pathlib.PurePosixPath(target).parts:
+            raise ValueError("rename target escapes repository")
+    for name, paths, _, target, updated in results:
+        if paths:
+            (root / target).parent.mkdir(parents=True, exist_ok=True)
+            subprocess.run(["git", "-C", str(root), "mv", "--", name, target], check=True)
+        (root / target).write_bytes(updated.encode("utf-8"))
+
+
 def main():
+    parser = argparse.ArgumentParser()
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--apply", action="store_true")
+    mode.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--include", action="append", default=[])
+    parser.add_argument("--exclude", action="append", default=[])
+    args = parser.parse_args(sys.argv[2:])
     root = pathlib.Path(sys.argv[1])
+    if args.apply and subprocess.check_output(["git", "-C", str(root), "status", "--porcelain", "--untracked-files=all"]):
+        raise ValueError("apply requires a clean working tree")
     rows = read_map(root / "scripts/dev/rename-map.tsv")
-    results, scanned, binary, skipped = inspect(root, rows)
-    for name, paths, contents, target in results:
+    results, scanned, binary, skipped = inspect(root, rows, args)
+    if args.apply:
+        apply(root, results)
+    for name, paths, contents, target, _ in results:
         print("%s\tpath_renames=%d\tcontent_replacements=%d\ttarget=%s" %
               (name, paths, contents, target))
     print("SUMMARY total_files=%d affected_files=%d path_renames=%d content_replacements=%d "
@@ -116,13 +135,13 @@ def main():
           (scanned, len(results), sum(row[1] for row in results),
            sum(row[2] for row in results), skipped, binary))
     print("TOP FILES")
-    for name, paths, contents, _ in sorted(results, key=lambda row: (-row[2], row[0]))[:10]:
+    for name, paths, contents, _, _ in sorted(results, key=lambda row: (-row[2], row[0]))[:10]:
         print("%s\tpath_renames=%d\tcontent_replacements=%d" % (name, paths, contents))
 
 
 try:
     main()
 except (OSError, ValueError, subprocess.CalledProcessError) as error:
-    print("rename dry run failed: %s" % error, file=sys.stderr)
+    print("rename failed, %s" % error, file=sys.stderr)
     sys.exit(1)
-' "$ROOT"
+' "$ROOT" "$@"
