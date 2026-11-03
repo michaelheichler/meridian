@@ -88,7 +88,10 @@ class QuestionFixture(unittest.TestCase):
         ]
         arguments = [shlex.split(command.replace("${CLAUDE_PLUGIN_ROOT}", str(PROJECT_ROOT))) for command in commands]
         guard_path = str(Path(user_question_guard.__file__).resolve())
-        selected = [command for command in arguments if event_name == "Stop" or guard_path in command]
+        dispatcher_path = str(PROJECT_ROOT / "hooks" / "dispatch.py")
+        selected = [command for command in arguments
+                    if event_name == "Stop" or guard_path in command or dispatcher_path in command]
+        event = {**event, "hook_event_name": event_name}
         environment = {**os.environ, "CLAUDE_PLUGIN_ROOT": str(PROJECT_ROOT), "LBWC_PLANNING_DIR": str(self.planning_dir), "CDPATH": ""}
         return [subprocess.run(command, input=json.dumps(event) + "\n", cwd=self.root,
                                env=environment, capture_output=True, text=True, check=False)
