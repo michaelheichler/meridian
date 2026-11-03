@@ -24,12 +24,15 @@ SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd)"
 
 TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // ""' 2>/dev/null) || fail "agent spawn guard could not parse tool call input"
 case "$TOOL_NAME" in
-  Agent|Task|TaskCreate) ;;
+  Agent|TaskCreate) ;;
+  Task) [ "${LBWC_TMUX_AGENT:-}" = 1 ] || exit 0 ;;
   *) exit 0 ;;
 esac
 
-python3 -B "$SCRIPT_DIR/../hooks/tmux_restrictions.py" <<<"$INPUT"
-[ "$?" -ne 2 ] || exit 2
+if [ "${LBWC_TMUX_AGENT:-}" = 1 ]; then
+  python3 -B "$SCRIPT_DIR/../hooks/tmux_restrictions.py" <<<"$INPUT"
+  [ "$?" -ne 2 ] || exit 2
+fi
 
 SUBAGENT_TYPE=$(echo "$INPUT" | jq -r '.tool_input.subagent_type // .tool_input.agent_type // .tool_input.name // ""' 2>/dev/null) \
   || fail "agent spawn guard could not parse subagent type"
