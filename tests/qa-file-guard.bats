@@ -275,6 +275,7 @@ CASES
 }
 
 @test "file-guard permits only verified isolated roots and preserves contract boundaries" {
+  local WORKER_ROOT GUARD_CONTROL_ROOT
   run_scenario_cases guard_primary guard_planning_relative guard_planning_absolute \
     guard_temporary_relative guard_temporary_absolute guard_native_relative guard_native_absolute \
     guard_other_worker guard_project_runtime guard_nested_root guard_prefix_root guard_copied_git \
