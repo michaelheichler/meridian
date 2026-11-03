@@ -119,6 +119,8 @@ restore_planning() {
 @test "spawn guard blocks malformed input, passes non-LBWC calls untouched, and strips sidechain fields" {
   local before after json no_jq_path="$TEST_TEMP_DIR/no-jq-bin"
   snapshot_planning
+  load guard_library_fixture
+  context_library_absent agent-spawn-guard
 
   while IFS='|' read -r label setup reason stdin; do
     [ -n "$label" ] || continue

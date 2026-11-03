@@ -148,7 +148,11 @@ force-push|-|destructive command detected|git push --force origin main
 local-list-entry|local-list|destructive command detected (frobnicate --all|frobnicate --all
 CASES
 
-  mkdir -p "$isolated_plugin/scripts"
+  load guard_library_fixture
+  context_library_absent bash-guard
+
+  mkdir -p "$isolated_plugin/scripts/lib"
+  cp "$SCRIPTS_DIR/lib/tmux-agent-context.sh" "$isolated_plugin/scripts/lib/"
   cp "$SCRIPTS_DIR/bash-guard.sh" "$isolated_plugin/scripts/bash-guard.sh"
   register_agent lbwc-docs-a docs running
   run bash -c 'jq -cn "{tool_input:{command:\"printf x\"},agent_id:\"lbwc-docs-a\"}" | bash "$1"' _ "$isolated_plugin/scripts/bash-guard.sh"

@@ -102,6 +102,7 @@ run_library_table() {
     shadow="$TEST_TEMP_DIR/shadow-$label"
     mkdir -p "$shadow/lib"
     cp "$GUARD" "$shadow/workflow-spawn-guard.sh"
+    cp "$SCRIPTS_DIR/lib/tmux-agent-context.sh" "$shadow/lib/"
     write_library_stub "$manifest_stub" "$shadow/lib/workflow-manifest.sh"
     write_library_stub "$root_stub" "$shadow/lib/lbwc-control-root.sh"
     run_guard_plain '{"tool_name":"Workflow","tool_input":{"scriptPath":"/tmp/whatever.js"}}' \
@@ -163,6 +164,9 @@ run_recorded_fact_table() {
 
   run_guard_plain ''
   expect_case_silent empty-input-passes 0
+
+  load guard_library_fixture
+  context_library_absent workflow-spawn-guard
 
   run_library_table <<'CASES'
 manifest-library-absent|absent|absent|workflow manifest library is unavailable
