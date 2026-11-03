@@ -202,6 +202,19 @@ glob_and_placeholder_references() {
   checker_row missing-required-section 1 'beta.md: missing required heading: Next Up'
   expect_fragment missing-required-section 'beta.md: missing next_up contract'
 
+  fresh_fixture
+  write_valid_command build
+  write_manifest alpha.md build.md
+  printf '\n## Feedback card\n\nResult.\n\n## Later\n' >> "$FIXTURE/commands/build.md"
+  jq '.final_heading={heading:"Feedback card",commands:["build.md"]}' "$FIXTURE/config/command-sections.json" > "$FIXTURE/config/sections.tmp"
+  mv "$FIXTURE/config/sections.tmp" "$FIXTURE/config/command-sections.json"
+  checker_row section-after-feedback 1 'last section must be Feedback card'
+
+  fresh_fixture
+  jq '.final_heading={heading:[],commands:[]}' "$FIXTURE/config/command-sections.json" > "$FIXTURE/config/sections.tmp"
+  mv "$FIXTURE/config/sections.tmp" "$FIXTURE/config/command-sections.json"
+  checker_row malformed-final-heading 2 'final_heading needs a heading string and a nonempty commands array'
+
   run bash "$CHECKER" --root "$REPO_ROOT"
   expect_case repository-commands 0
 
