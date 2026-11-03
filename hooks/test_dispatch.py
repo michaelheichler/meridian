@@ -7,6 +7,7 @@ from hooks.dispatch_scenarios import AGGREGATION_CASES, aggregation_case, batchi
 PRE_ROUTES = {
     "AskUserQuestion": ("user_question_guard",),
     "Agent": ("user_question_guard", "agent-spawn-guard.sh"),
+    "Task": ("agent-spawn-guard.sh",),
     "TaskCreate": ("user_question_guard", "agent-spawn-guard.sh"),
     "TaskUpdate": ("user_question_guard",),
     "Write": ("user_question_guard", "skill_gate", "test_scope_guard", "file-guard.sh", "security-filter.sh"),
