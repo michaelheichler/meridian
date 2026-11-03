@@ -20,7 +20,8 @@ def contract_matches:
     else true end));
 if $source == "hook" then
   (.tool_name // "" | field),
-  (.tool_input.file_path // .tool_input.notebook_path // "" | field),
+  (.tool_input.file_path // .tool_input.notebook_path // "" |
+   if type == "string" then . else "invalid\nfile path" end | field),
   (.cwd // "" | field),
   (.agent_id // .agentId // .agent_type // .agentType // .subagent_type // .subagentType // .name // "" | field)
 elif $source == "manifest" then
