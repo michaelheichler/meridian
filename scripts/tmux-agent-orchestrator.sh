@@ -64,17 +64,36 @@ require_main_orchestrator() {
   [ "$orchestrator_id" = "$(jq -r '.main.agent_id' <<<"$registry")" ] || fail 'operation requires the main orchestrator'
 }
 
+configure_cleanup_policy() {
+  local policy="$1"
+  case "$policy" in
+    kill_on_complete|keep_panes) ;;
+    *)
+      case "$subcommand" in
+        status|rollback)
+          printf 'tmux orchestrator warning: cleanup_policy is invalid, %s uses kill_on_complete\n' "$subcommand" >&2
+          policy=kill_on_complete
+          ;;
+        *) fail 'tmux cleanup_policy is invalid' ;;
+      esac
+      ;;
+  esac
+  printf -v TMUX_CLEANUP_POLICY '%s' "$policy"
+}
+
 read_tmux_settings() {
-  local config settings layout_name agent_limit attach_policy
+  local config settings layout_name agent_limit attach_policy cleanup_policy
   config=$(read_existing_config "$TMUX_RUNTIME_CONTROL_ROOT/config.json")
   settings=$(jq -er '[.tmux_execution.layout // .tmux.layout // "tiled", .tmux_execution.max_agents // .tmux.max_agents // 3, .tmux_execution.attach_policy // "orchestrator_only"] | @tsv' <<<"$config") || fail 'cannot read tmux settings'
   IFS=$'\t' read -r layout_name agent_limit attach_policy <<<"$settings"
+  cleanup_policy=$(jq -er '.tmux_execution // {} | if has("cleanup_policy") then .cleanup_policy else "kill_on_complete" end | if type == "string" then . else "__invalid__" end' <<<"$config") || fail 'cannot read tmux cleanup_policy'
   case "$layout_name" in tiled|even-horizontal|even-vertical|main-horizontal|main-vertical) ;; *) fail 'tmux layout is invalid' ;; esac
   [[ "$agent_limit" =~ ^[1-4]$ ]] || fail 'tmux max_agents must be between 1 and 4'
   case "$attach_policy" in orchestrator_only|visible_grid) ;; *) fail 'tmux attach_policy is invalid' ;; esac
   printf -v TMUX_LAYOUT '%s' "$layout_name"
   printf -v TMUX_AGENT_LIMIT '%s' "$agent_limit"
   printf -v TMUX_ATTACH_POLICY '%s' "$attach_policy"
+  configure_cleanup_policy "$cleanup_policy"
 }
 
 tmux_layout_name() {

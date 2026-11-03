@@ -57,8 +57,22 @@ focus_orchestrator() {
   jq -n --arg target "$target" '{orchestrator_target: $target}'
 }
 
+stop_agent_pane() {
+  local agent_id="$1" target="$2" pane_id="$3" remaining_pane_id
+  [ "$TMUX_CLEANUP_POLICY" != keep_panes ] || return 0
+  write_teardown_intent "$agent_id" "$target" prepared || fail 'cannot persist agent teardown intent'
+  if tmux_pane_exists "$pane_id"; then
+    tmux kill-pane -t "$pane_id" || fail 'cannot kill owned agent pane'
+    remaining_pane_id=$(tmux display-message -p -t "$pane_id" '#{pane_id}' 2>/dev/null || true)
+    [ "$remaining_pane_id" != "$pane_id" ] || fail 'owned agent pane remains after kill request'
+    write_teardown_intent "$agent_id" "$target" process_stopped || fail 'cannot persist stopped agent teardown intent'
+  else
+    write_teardown_intent "$agent_id" "$target" process_stopped || fail 'cannot persist absent agent shutdown state'
+  fi
+}
+
 kill_agent() {
-  local registry agent_state pane_id remaining_pane_id agent_id
+  local registry agent_state pane_id agent_id
   require_main_orchestrator
   tmux_runtime_lock_acquire registry 5000 30000
   registry=$(tmux_runtime_registry_read)
@@ -73,15 +87,7 @@ kill_agent() {
     return 0
   fi
   [[ "$pane_id" =~ ^%[0-9]+$ ]] || fail 'registered agent pane identity is invalid'
-  write_teardown_intent "$agent_id" "$target" prepared || fail 'cannot persist agent teardown intent'
-  if tmux_pane_exists "$pane_id"; then
-    tmux kill-pane -t "$pane_id" || fail 'cannot kill owned agent pane'
-    remaining_pane_id=$(tmux display-message -p -t "$pane_id" '#{pane_id}' 2>/dev/null || true)
-    [ "$remaining_pane_id" != "$pane_id" ] || fail 'owned agent pane remains after kill request'
-    write_teardown_intent "$agent_id" "$target" process_stopped || fail 'cannot persist stopped agent teardown intent'
-  else
-    write_teardown_intent "$agent_id" "$target" process_stopped || fail 'cannot persist absent agent shutdown state'
-  fi
+  stop_agent_pane "$agent_id" "$target" "$pane_id"
   persist_shutdown_agents "$registry" "$(jq -n --arg agent_id "$agent_id" '[ $agent_id ]')" || fail 'cannot persist agent shutdown state; retry to finalize teardown'
   clear_teardown_intent "$agent_id"
   tmux_runtime_lock_release registry
@@ -144,6 +150,24 @@ stop_external_session() {
   jq -n '{state: "agents_shutdown", external_session_preserved: true}'
 }
 
+keep_session_panes() {
+  local registry="$1" managed="$2" agent_ids agent_id ownership marker
+  if [ "$managed" = true ] && tmux_session_exists "$session"; then
+    ownership=$(jq -r '.tmux.ownership_token' <<<"$registry")
+    marker=$(tmux show-options -v -t "$session" @lbwc_ownership_token 2>/dev/null || true)
+    [ "$marker" = "$ownership" ] || fail 'owned tmux session is missing its provisioning ownership marker'
+    tmux set-option -t "$session" @lbwc_kept_panes true || fail 'cannot mark kept tmux session'
+  fi
+  agent_ids=$(jq -c '[.agents[].agent_id]' <<<"$registry")
+  persist_shutdown_agents "$registry" "$agent_ids" || fail 'cannot clear kept session runtime state'
+  while IFS= read -r agent_id; do
+    [ -z "$agent_id" ] || clear_teardown_intent "$agent_id"
+  done < <(jq -r '.[]' <<<"$agent_ids")
+  clear_teardown_intent session
+  tmux_runtime_lock_release registry
+  jq -n --argjson managed "$managed" '{state: "shutdown", panes_preserved: true, external_session_preserved: ($managed | not)}'
+}
+
 kill_session() {
   local registry registered_session managed active_agent_ids intent_name='session'
   require_main_orchestrator
@@ -152,6 +176,10 @@ kill_session() {
   registered_session=$(jq -r '.tmux.session' <<<"$registry")
   [ "$session" = "$registered_session" ] || fail 'session does not match registry'
   managed=$(jq -r '.tmux.managed_session' <<<"$registry")
+  if [ "$TMUX_CLEANUP_POLICY" = keep_panes ]; then
+    keep_session_panes "$registry" "$managed"
+    return 0
+  fi
   active_agent_ids=$(jq -c '[.agents[] | select(.state != "shutdown") | .agent_id]' <<<"$registry")
   if [ "$managed" = true ] && tmux_session_exists "$session"; then
     write_teardown_intent "$intent_name" "$session" prepared || fail 'cannot persist session teardown intent'
