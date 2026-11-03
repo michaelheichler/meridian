@@ -258,6 +258,8 @@ CASES
 
 @test "file-guard ignores calls that carry no file path and fails closed when jq is missing" {
   local no_jq_path="$TEST_TEMP_DIR/no-jq-bin"
+  load guard_library_fixture
+  context_library_absent file-guard
 
   run run_raw_guard ''
   expect_status empty-stdin 0
