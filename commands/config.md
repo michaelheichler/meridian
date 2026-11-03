@@ -276,6 +276,10 @@ Note that `auto_commit` controls source-task commits during Execute mode, while 
 | tmux_execution.cleanup_policy | string | kill_on_complete/keep_panes | kill_on_complete |
 | tmux_execution.layout | string | main-vertical/main-horizontal/tiled/even-horizontal/even-vertical | main-vertical |
 | tmux_execution.restrictions | object | four strict boolean restrictions | see defaults |
+| tmux_execution.restrictions.allow_nested_spawn | boolean | allow Agent, Task, TaskCreate and Workflow calls from tmux agents under existing guards | false |
+| tmux_execution.restrictions.allow_agent_git | boolean | allow state-changing git commands from tmux agents under existing guards | false |
+| tmux_execution.restrictions.allow_agent_ask_user | boolean | allow tmux agents to ask the user under existing question validation | false |
+| tmux_execution.restrictions.require_orchestrator_attach | boolean | reserved attachment requirement, runtime meaning awaits an owner decision | true |
 | workflow_execution | object | strict workflow backend object | enabled=false |
 | workflow_execution.enabled | boolean | true/false | false |
 | pipeline_research | boolean | true/false | false |
@@ -312,7 +316,16 @@ Note that `auto_commit` controls source-task commits during Execute mode, while 
 ### Execution Runtime Rules
 
 - During active plan execution, identified by `.execution-state.json` status `running`, `executing`, or `active`, `STATE.md` status `active` or `executing`, or a dispatched or running task contract, the execution backend stays fixed.
-- The frozen fields are `agent_execution_mode`, `tmux_execution.max_agents`, `tmux_execution.comms_fallback`, `tmux_execution.restrictions.allow_agent_git`, `effort`, and `routing.active_profile`.
+- The frozen fields include `agent_execution_mode`, `tmux_execution.max_agents`, `tmux_execution.comms_fallback`, all four `tmux_execution.restrictions` booleans, `effort`, and `routing.active_profile`.
+
+#### Agent restrictions
+
+- Guards read restrictions from the frozen phase runtime snapshot, never from live config. A plan worker uses the snapshot beside its contract source plan. A command worker requires one unambiguous phase snapshot. Missing or ambiguous snapshots deny restricted agent actions with the key name.
+- `allow_nested_spawn=false` denies Agent, Task, TaskCreate and Workflow calls inside tmux agent panes. `true` removes this restriction but keeps manifest, contract and isolation guards.
+- `allow_agent_git=false` denies git writes, including commit, push, merge, rebase, reset, checkout, switch, tag, stash, worktree add or remove, branch creation, deletion or rename and config writes. Status, diff, log, show, rev-parse, ls-files and blame remain available. Compound commands, env, command, shell command strings and git directory options do not bypass the check. Unknown git subcommands or global options require `true`. Existing role and control-path guards still apply with either value.
+- `allow_agent_ask_user=false` denies AskUserQuestion inside tmux agent panes and directs the agent to send the question to the orchestrator through the bus. `true` permits the call under normal question and pending-decision validation. Other agents retain the main-session-only question policy.
+- `require_orchestrator_attach` currently has no runtime effect. Both values retain authenticated orchestrator registration and allow detached-session provisioning. `attach_policy` controls pane focus and layout, not client attachment. Enforcing an attached-client requirement would change the supported detached flow, so this key awaits an owner decision.
+- Agent action restrictions leave the orchestrator and non-tmux sessions unchanged.
 #### Pane cleanup
 
 - `tmux_execution.cleanup_policy` may change for the next teardown. The default `kill_on_complete` kills owned agent panes and owned sessions, but never an external session. `keep_panes` leaves panes, their processes and the session open for inspection. Both policies mark agents as shutdown, remove their routes and inboxes, stop heartbeat senders, clear teardown transactions and release runtime locks. Shutdown registry records remain as history, not active workers.

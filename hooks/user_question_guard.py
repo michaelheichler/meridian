@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Optional, cast
 
 if __package__:
+    from . import tmux_restrictions
     from .decision_common import (
         ACTIVE_STATUSES,
         ASK_TOOL,
@@ -21,6 +22,7 @@ if __package__:
     from .guard_paths import has_protected_decision_path, planning_directory
     from .question_validation import fingerprint, validate_question
 else:
+    import tmux_restrictions
     from decision_common import (
         ACTIVE_STATUSES,
         ASK_TOOL,
@@ -161,7 +163,7 @@ def _pretool_context(data: Record) -> Any:
 
 
 def _open_question(data: Record, store: DecisionStore, session_id: str) -> Verdict:
-    if _agent_identifier(data):
+    if _agent_identifier(data) and not tmux_restrictions.question_allowed():
         return (
             "AskUserQuestion is reserved for the main session. "
             "Return a user_decision_required handoff instead."
@@ -187,6 +189,10 @@ def _missing_session_reason(tool_name: str) -> Verdict:
 
 
 def _pretool(data: Record) -> Verdict:
+    if data.get("tool_name") == ASK_TOOL:
+        reason = tmux_restrictions.denial(data)
+        if reason:
+            return reason
     context = _pretool_context(data)
     if isinstance(context, str):
         return context
