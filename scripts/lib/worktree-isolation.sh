@@ -5,7 +5,7 @@ worktree_isolation_enabled() {
     isolation_path="$isolation_project/.lbwc-planning/config.json"
   fi
   isolation_config=$(read_existing_config "$isolation_path") || fail 'cannot read worktree isolation configuration'
-  isolation_value=$(jq -er '.worktree_isolation // "off"' <<<"$isolation_config") || fail 'cannot read worktree_isolation'
+  isolation_value=$(jq -er '.worktree_isolation as $isolation | if has("worktree_isolation") then ($isolation | if type == "string" then . else "__invalid__" end) else "off" end' <<<"$isolation_config") || fail 'cannot read worktree_isolation'
   case "$isolation_value" in
     on) return 0 ;;
     off) return 1 ;;
