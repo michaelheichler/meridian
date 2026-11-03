@@ -7,6 +7,7 @@ from typing import Any, Optional, cast
 
 if __package__:
     from .debug_logging import trace_decision
+    from . import tmux_restrictions
     from .decision_common import (
         ACTIVE_STATUSES,
         ASK_TOOL,
@@ -23,6 +24,7 @@ if __package__:
     from .question_validation import fingerprint, validate_question
 else:
     from debug_logging import trace_decision
+    import tmux_restrictions
     from decision_common import (
         ACTIVE_STATUSES,
         ASK_TOOL,
@@ -163,7 +165,7 @@ def _pretool_context(data: Record) -> Any:
 
 
 def _open_question(data: Record, store: DecisionStore, session_id: str) -> Verdict:
-    if _agent_identifier(data):
+    if _agent_identifier(data) and not tmux_restrictions.question_allowed():
         return (
             "AskUserQuestion is reserved for the main session. "
             "Return a user_decision_required handoff instead."
@@ -189,6 +191,10 @@ def _missing_session_reason(tool_name: str) -> Verdict:
 
 
 def _pretool(data: Record) -> Verdict:
+    if data.get("tool_name") == ASK_TOOL:
+        reason = tmux_restrictions.denial(data)
+        if reason:
+            return reason
     context = _pretool_context(data)
     if isinstance(context, str):
         return context
