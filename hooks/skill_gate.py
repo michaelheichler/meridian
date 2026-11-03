@@ -1,4 +1,3 @@
-"""PreToolUse hook: denies a teammate's first file write until it has done its required reading."""
 import json
 import os
 import sys
@@ -56,8 +55,6 @@ def emit_pretool_denial(reason) -> None:
 def _dig(data, path):
     node = data
     for key in path:
-        if not isinstance(node, dict):
-            return None
         node = node.get(key)
     return node if isinstance(node, str) and node else None
 
@@ -164,7 +161,9 @@ def blocked(requirement) -> str:
             "first' section under the skills-bundle base, then retry this write.")
 
 
-def _record_read(state_key, identifier, tool_name, tool_input):
+def _record_read(state_key, identifier, event):
+    tool_name = event.get("tool_name") or ""
+    tool_input = event.get("tool_input") or {}
     is_bundle_read = _is_bundle_read(tool_name, tool_input)
     is_architecture_read = _is_architecture_read(tool_name, tool_input)
     if is_bundle_read:
@@ -193,9 +192,8 @@ def verdict(stdin_text, cwd=None) -> "str | None":
         return None
     state_key = data.get("session_id") or identifier
     tool_name = data.get("tool_name") or ""
-    tool_input = data.get("tool_input") or {}
 
-    if _record_read(state_key, identifier, tool_name, tool_input):
+    if _record_read(state_key, identifier, data):
         return None
     if tool_name not in WRITE_TOOLS:
         return None
