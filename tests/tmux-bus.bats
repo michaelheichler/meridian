@@ -9,6 +9,10 @@ setup() {
 }
 
 teardown() {
+  if [ -n "${PUBLISH_PID:-}" ]; then
+    kill "$PUBLISH_PID" 2>/dev/null || true
+    wait "$PUBLISH_PID" 2>/dev/null || true
+  fi
   rm -rf "$TEST_ROOT"
 }
 
@@ -223,29 +227,43 @@ bus_case_concurrent_publish_serializes() {
   [ "$status" -eq 0 ]
 }
 
+wait_for_pending_publish() {
+  local first_id="$1" attempt inbox="$CONTROL_ROOT/.runtime/tmux-bus/inboxes/agent-a"
+  for ((attempt = 0; attempt < 1000; attempt++)); do
+    kill -0 "$PUBLISH_PID" 2>/dev/null || return 1
+    if [ ! -e "$inbox/acked/$first_id.json" ] &&
+      jq -e --arg id "$first_id" '.message_id == $id' "$inbox/job.json" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 0.01
+  done
+  return 1
+}
+
 bus_case_publish_backpressure_or_timeout() {
-  local first_id ack_watcher
+  local first_id second_id publish_result="$TEST_ROOT/backpressure-publish"
   bus_with_agent publish-backpressure
   publish_main_job agent-a
   [ "$status" -eq 0 ]
   first_id="$output"
   run_bus claim --agent-id agent-a --session-id child-session-a --capability "$AGENT_CAPABILITY" --type job --lease-ms 1000
   [ "$status" -eq 0 ]
-  env SCRIPT="$SCRIPT" CONTROL_ROOT="$CONTROL_ROOT" CAPABILITY="$AGENT_CAPABILITY" MESSAGE_ID="$first_id" LOCK="$CONTROL_ROOT/.runtime/tmux-bus/locks/delivery.agent-a.job.lock" bash -c '
-    for ((attempt = 0; attempt < 1000; attempt++)); do
-      [ -e "$LOCK" ] && break
-      sleep 0.005
-    done
-    [ -e "$LOCK" ] || exit 1
-    bash "$SCRIPT" --control-root "$CONTROL_ROOT" ack --agent-id agent-a --session-id child-session-a --capability "$CAPABILITY" --message-id "$MESSAGE_ID" >/dev/null' &
-  ack_watcher=$!
-  publish_main_job agent-a --timeout-ms 5000
+  bash "$SCRIPT" --control-root "$CONTROL_ROOT" publish --to agent-a --from-agent-id main-session --from-session-id main-session --from-role orchestrator --capability "$MAIN_CAPABILITY" --type job --correlation-id after-ack --payload '{"brief":"after acknowledgement"}' --timeout-ms 60000 > "$publish_result" 2> "$publish_result.stderr" &
+  PUBLISH_PID=$!
+  wait_for_pending_publish "$first_id"
+  [ ! -s "$publish_result" ]
+  kill -0 "$PUBLISH_PID"
+  run_bus ack --agent-id agent-a --session-id child-session-a --capability "$AGENT_CAPABILITY" --message-id "$first_id"
   [ "$status" -eq 0 ]
-  wait "$ack_watcher"
+  wait "$PUBLISH_PID" || { cat "$publish_result.stderr" >&3; return 1; }
+  unset PUBLISH_PID
   [ -f "$CONTROL_ROOT/.runtime/tmux-bus/inboxes/agent-a/acked/$first_id.json" ]
+  second_id="$(cat "$publish_result")"
+  [ "$second_id" != "$first_id" ]
+  jq -e --arg id "$second_id" '.message_id == $id' "$CONTROL_ROOT/.runtime/tmux-bus/inboxes/agent-a/job.json"
   run_bus publish --to agent-a --from-agent-id main-session --from-session-id main-session --from-role orchestrator --capability "$MAIN_CAPABILITY" --type job --correlation-id blocked --payload '{}' --timeout-ms 500
   [ "$status" -ne 0 ]
-  [[ "$output" == *"timed out waiting"* ]]
+  [[ "$output" == *"timed out waiting"* ]] || { printf '%s\n' "$output" >&3; return 1; }
 }
 
 @test "publish delivers through a recorded transaction, authenticates principals, serializes one inbox and honours backpressure" {
