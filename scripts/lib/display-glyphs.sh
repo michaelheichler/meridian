@@ -4,7 +4,7 @@ lbwc_glyphs_load() {
   _glyphs_scripts="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
   if [ -z "$_glyphs_planning" ]; then
     . "$_glyphs_scripts/lib/lbwc-config-root.sh"
-    find_lbwc_root
+    find_lbwc_root "${2:-$PWD}"
     _glyphs_planning="$LBWC_PLANNING_DIR"
   fi
   . "$_glyphs_scripts/lib/lbwc-settings.sh"
@@ -39,10 +39,26 @@ lbwc_glyph_text() {
     for _glyph_text_name in brand dirty done check running failed cross pending separator filled empty next next_up warning top_left top_right bottom_left bottom_right horizontal vertical rule; do
       lbwc_glyph _glyph_text_original "$_glyph_text_name" unicode
       lbwc_glyph _glyph_text_replacement "$_glyph_text_name" ascii
-      _glyph_text_value="${_glyph_text_value//"$_glyph_text_original"/"$_glyph_text_replacement"}"
+      _glyph_text_value="${_glyph_text_value//$_glyph_text_original/$_glyph_text_replacement}"
     done
   fi
   printf -v "$_glyph_text_target" '%s' "$_glyph_text_value"
+}
+
+lbwc_glyph_file() {
+  local _glyph_file_path="$1" _glyph_file_line=''
+  if [ "${LBWC_GLYPH_FORMAT:-unicode}" != ascii ]; then
+    cat "$_glyph_file_path"
+    return
+  fi
+  while IFS= read -r _glyph_file_line; do
+    lbwc_glyph_text _glyph_file_line "$_glyph_file_line"
+    printf '%s\n' "$_glyph_file_line"
+  done < "$_glyph_file_path"
+  if [ -n "$_glyph_file_line" ]; then
+    lbwc_glyph_text _glyph_file_line "$_glyph_file_line"
+    printf '%s' "$_glyph_file_line"
+  fi
 }
 
 lbwc_glyph_repeat() {

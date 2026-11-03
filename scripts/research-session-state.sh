@@ -292,6 +292,9 @@ ENDSESSION
     if [ ! -d "$PLANNING_DIR" ]; then
       exit 0
     fi
+    . "$(dirname "$0")/lib/display-glyphs.sh"
+    lbwc_glyphs_load "$PLANNING_DIR"
+    lbwc_glyph GLYPH_NEXT next
     MIGRATED=0
     for f in "$PLANNING_DIR"/RESEARCH-*.md; do
       [ -f "$f" ] && [ ! -L "$f" ] || continue
@@ -390,7 +393,7 @@ ENDSESSION
       fi
 
       MIGRATED=$((MIGRATED + 1))
-      echo "[research] Migrated $fname → research/$NEW_NAME" >&2
+      echo "[research] Migrated $fname $GLYPH_NEXT research/$NEW_NAME" >&2
     done
     echo "migrated=$MIGRATED"
     ;;

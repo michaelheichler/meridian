@@ -47,14 +47,14 @@ emit_stale_warning() {
   local file="$1" commit_count_str="$2" base_commit_short
   base_commit_short=$(frontmatter_base_commit "$file" | head -c 8)
   if [ "$commit_count_str" = "unknown" ] || [ "$base_commit_short" = "unknown" ]; then
-    echo "⚠ Staleness unknown, this research was migrated without a base commit. Verify findings against current code."
+    echo "${GLYPH_WARNING} Staleness unknown, this research was migrated without a base commit. Verify findings against current code."
     echo "[research] Using research with staleness warning: $(basename "$file") (base_commit unknown; staleness not computed)" >&2
   else
-    echo "⚠ ${commit_count_str} commits have landed since this research was created (${base_commit_short}..HEAD). Verify findings against current code."
+    echo "${GLYPH_WARNING} ${commit_count_str} commits have landed since this research was created (${base_commit_short}..HEAD). Verify findings against current code."
     echo "[research] Using research with staleness warning: $(basename "$file") (${commit_count_str} commits since)" >&2
   fi
   echo ""
-  cat "$file"
+  lbwc_glyph_file "$file"
 }
 
 emit_research() {
@@ -69,7 +69,7 @@ emit_research() {
   case "$staleness_status" in
     0)
       echo "[research] Using fresh research: $(basename "$file")" >&2
-      cat "$file"
+      lbwc_glyph_file "$file"
       ;;
     1)
       emit_stale_warning "$file" "$commit_count_str"

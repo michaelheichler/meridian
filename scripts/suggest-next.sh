@@ -51,7 +51,10 @@ if [ "$CMD" = "verify" ] && [ "$effective_result" = "issues_found" ] && [ -d "${
   resolve_verify_target
 fi
 
-echo "➜ Next Up"
+. "$SCRIPT_DIR/lib/display-glyphs.sh"
+lbwc_glyphs_load "$PLANNING_DIR"
+lbwc_glyph GLYPH_NEXT_UP next_up
+printf '%s Next Up\n' "$GLYPH_NEXT_UP"
 
 suggest_for_command
 suggest_map_hint
