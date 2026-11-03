@@ -22,6 +22,8 @@ SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd)"
 . "$SCRIPT_DIR/lib/workflow-manifest.sh" || fail "workflow manifest library failed to load"
 [ -f "$SCRIPT_DIR/lib/lbwc-control-root.sh" ] || fail "control root library is unavailable"
 . "$SCRIPT_DIR/lib/lbwc-control-root.sh" || fail "control root library failed to load"
+. "$SCRIPT_DIR/lib/lbwc-config-files.sh" || fail "config library failed to load"
+. "$SCRIPT_DIR/lib/worktree-isolation.sh" || fail "worktree isolation library failed to load"
 
 HAS_SCRIPT=$(echo "$INPUT" | jq -r '(.tool_input.script != null)' 2>/dev/null) \
   || fail "Workflow call input could not be parsed"
@@ -40,6 +42,9 @@ CANONICAL_SCRIPT_PATH=$(CDPATH='' cd -- "$(dirname "$SCRIPT_PATH")" 2>/dev/null 
 
 CONTROL_ROOT=$(lbwc_resolve_control_root "" "" "$PWD" 2>/dev/null || true)
 [ -n "$CONTROL_ROOT" ] || fail "generated workflow has no resolvable control root or manifest"
+if worktree_isolation_enabled "$CONTROL_ROOT"; then
+  fail 'worktree_isolation=on cannot run the workflow backend because its agent API has no verified isolation option'
+fi
 WORKFLOWS_DIR=$(lbwc_control_root_workflows_dir "$CONTROL_ROOT" 2>/dev/null || true)
 [ -n "$WORKFLOWS_DIR" ] || fail "generated workflow directory is unavailable"
 case "$CANONICAL_SCRIPT_PATH" in

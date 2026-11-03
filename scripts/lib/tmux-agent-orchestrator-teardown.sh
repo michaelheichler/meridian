@@ -33,16 +33,18 @@ stop_heartbeat_sender() {
 }
 
 persist_shutdown_agents() {
-  local registry="$1" agent_ids="$2" updated agent_id
+  local registry="$1" agent_ids="$2" updated agent_id preserve_worktrees=false
   updated=$(jq --argjson agent_ids "$agent_ids" '
     .main.agent_id as $main_id
     | .agents |= map(if (.agent_id as $agent_id | $agent_ids | index($agent_id)) then .state = "shutdown" | .tmux_pane_id = null else . end)
     | .routes |= with_entries(.key as $agent_id | select($agent_id == $main_id or ($agent_ids | index($agent_id) | not)))
   ' <<<"$registry") || return 1
   tmux_runtime_write_registry_route_bundle "$updated" || return 1
+  [ "$TMUX_CLEANUP_POLICY" != keep_panes ] || preserve_worktrees=true
   while IFS= read -r agent_id; do
     [ -n "$agent_id" ] || continue
     stop_heartbeat_sender "$agent_id"
+    cleanup_worker_worktree "$agent_id" "$preserve_worktrees" || return 1
     rm -rf "$(tmux_runtime_inbox "$agent_id")" || return 1
   done < <(jq -r '.[]' <<<"$agent_ids")
 }
