@@ -12,7 +12,7 @@ class BashBatch:
     def __init__(self, stdin_text):
         self.directory = tempfile.TemporaryDirectory(prefix="meridian-hooks-")
         self.root = Path(self.directory.name)
-        (self.root / "input").write_text(stdin_text)
+        (self.root / "input").write_text(stdin_text, errors="surrogateescape")
         scripts = Path(__file__).resolve().parent.parent / "scripts"
         environment = dict(os.environ)
         environment.pop("CDPATH", None)
@@ -24,6 +24,7 @@ class BashBatch:
             start_new_session=True,
         )
         self.guard_pid = None
+        self.broken = False
 
     def _target(self, name):
         plugin_root = os.environ.get("CLAUDE_PLUGIN_ROOT")
@@ -69,23 +70,50 @@ class BashBatch:
             self.guard_pid = None
         except TimeoutError:
             self._kill_guard()
-            self._line(time.monotonic() + 1)
+            self._drain_timeout()
             status = 124
         finally:
             self._kill_guard()
-        stdout = (self.root / "stdout").read_text(errors="replace")
-        stderr = (self.root / "stderr").read_text(errors="replace")
-        return status, stdout, stderr
+        return self._output(status)
 
-    def close(self) -> None:
-        self._kill_guard()
+    def _drain_timeout(self):
+        try:
+            self._line(time.monotonic() + 1)
+        except Exception:
+            self.broken = True
+
+    def _output(self, status):
+        try:
+            stdout = (self.root / "stdout").read_text(errors="replace")
+            stderr = (self.root / "stderr").read_text(errors="replace")
+            return status, stdout, stderr
+        except OSError:
+            return status, "", "meridian hook warning: hook-batch.sh output unavailable, call allowed\n"
+
+    def _stop_runner(self):
         if self.process.stdin:
             self.process.stdin.close()
         try:
             self.process.wait(timeout=1)
         except subprocess.TimeoutExpired:
-            os.killpg(self.process.pid, signal.SIGKILL)
+            try:
+                os.killpg(self.process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
             self.process.wait()
-        if self.process.stdout:
-            self.process.stdout.close()
-        self.directory.cleanup()
+
+    def _close_output(self):
+        try:
+            if self.process.stdout:
+                self.process.stdout.close()
+        finally:
+            self.directory.cleanup()
+
+    def close(self) -> None:
+        try:
+            self._kill_guard()
+        finally:
+            try:
+                self._stop_runner()
+            finally:
+                self._close_output()

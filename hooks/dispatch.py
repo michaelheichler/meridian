@@ -4,6 +4,7 @@ import io
 import json
 import signal
 import sys
+import time
 
 from hook_batch import BashBatch
 from hook_output import decode_output, merge_output
@@ -33,8 +34,20 @@ POSTTOOL = (
 EVENTS = {"PreToolUse": PRETOOL, "PostToolUse": POSTTOOL}
 
 
+class GuardTimeout(BaseException):
+    pass
+
+
+class DispatchTerminated(BaseException):
+    pass
+
+
 def _timeout(_signum, _frame):
-    raise TimeoutError("guard timed out")
+    raise GuardTimeout()
+
+
+def _terminate(_signum, _frame):
+    raise DispatchTerminated()
 
 
 def _python_call(name, text, event):
@@ -64,8 +77,10 @@ def _python_guard(spec, text, event):
             _python_call(name, text, event)
     except SystemExit as error:
         status = error.code if isinstance(error.code, int) else 1
-    except Exception as error:
-        status = 124 if isinstance(error, TimeoutError) else 1
+    except GuardTimeout:
+        status = 124
+    except Exception:
+        status = 1
     finally:
         signal.setitimer(signal.ITIMER_REAL, 0)
         signal.signal(signal.SIGALRM, previous)
@@ -78,8 +93,10 @@ def _warning(name, status):
 
 def _collect(result, outputs, name):
     status, stdout, stderr = result
-    sys.stderr.write(stderr)
-    outputs.extend(decode_output(stdout))
+    if status != 0:
+        sys.stderr.write(stderr)
+    if status == 0:
+        outputs.extend(decode_output(stdout))
     if status not in (0, 2):
         _warning(name, status)
     return status == 2
@@ -90,24 +107,81 @@ class GuardRunner:
         self.text = text
         self.event = event
         self.batch = None
-        self.failed = False
 
     def run(self, spec) -> tuple:
         if not spec[1].endswith(".sh"):
             return _python_guard(spec, self.text, self.event)
-        if self.failed:
-            return 1, "", ""
+        deadline = time.monotonic() + spec[2]
+        for _attempt in range(2):
+            try:
+                return self._bash_guard(spec, deadline)
+            except Exception:
+                self._reset()
+        return 1, "", ""
+
+    def _reset(self):
         try:
-            if self.batch is None:
-                self.batch = BashBatch(self.text)
-            return self.batch.run(spec[1], spec[2])
+            self.close()
         except Exception:
-            self.failed = True
-            return 1, "", ""
+            _warning("hook-batch.sh cleanup", 1)
+
+    def _bash_guard(self, spec, deadline):
+        if self.batch is not None and self.batch.broken:
+            self._reset()
+        if self.batch is None:
+            self.batch = BashBatch(self.text)
+        return self.batch.run(spec[1], max(0, deadline - time.monotonic()))
 
     def close(self) -> None:
-        if self.batch is not None:
-            self.batch.close()
+        batch, self.batch = self.batch, None
+        if batch is None:
+            return
+        batch.close()
+
+
+def _json_denied(outputs):
+    for output in outputs:
+        specific = output.get("hookSpecificOutput")
+        if isinstance(specific, dict) and specific.get("permissionDecision") == "deny":
+            return True
+    return False
+
+
+def _execute(runner, specs):
+    blocked, outputs, failed = False, [], False
+    try:
+        for spec in specs:
+            result = runner.run(spec)
+            blocked = result[0] == 2 or blocked
+            _collect(result, outputs, spec[1])
+    except (Exception, DispatchTerminated):
+        _warning("dispatch.py execution", 1)
+        failed = True
+    return blocked, outputs, failed
+
+
+def _finish(blocked, outputs, failed):
+    if failed:
+        return (2 if blocked or _json_denied(outputs) else 0), {}
+    try:
+        return (2 if blocked else 0), merge_output(outputs)
+    except (Exception, DispatchTerminated):
+        _warning("dispatch.py output", 1)
+        return (2 if blocked or _json_denied(outputs) else 0), {}
+
+
+def _dispatch_guards(runner, specs):
+    previous = signal.signal(signal.SIGTERM, _terminate)
+    blocked, outputs, failed = _execute(runner, specs)
+    try:
+        runner.close()
+    except (Exception, DispatchTerminated):
+        _warning("dispatch.py cleanup", 1)
+        failed = True
+    try:
+        return _finish(blocked, outputs, failed)
+    finally:
+        signal.signal(signal.SIGTERM, previous)
 
 
 def dispatch(text, event_hint="") -> tuple:
@@ -118,29 +192,25 @@ def dispatch(text, event_hint="") -> tuple:
     if not isinstance(data, dict):
         data = {}
     event = data.get("hook_event_name")
+    if not isinstance(event, str) or event not in EVENTS:
+        event = event_hint
     tool = data.get("tool_name")
-    if (not isinstance(event, str) or not event
-            or not isinstance(tool, str) or not tool
-            or (event_hint and event_hint != event)):
+    if not isinstance(tool, str) or not tool:
         sys.stderr.write("meridian hook warning: dispatch.py invalid routing data, call allowed\n")
         return 0, {}
     specs = [spec for spec in EVENTS.get(event, ()) if tool in spec[0].split()]
-    outputs = []
-    blocked = False
-    runner = GuardRunner(text, event)
-    try:
-        for spec in specs:
-            blocked = _collect(runner.run(spec), outputs, spec[1]) or blocked
-    finally:
-        runner.close()
-    return (2 if blocked else 0), merge_output(outputs)
+    return _dispatch_guards(GuardRunner(text, event), specs)
 
 
 def main() -> None:
     text = sys.stdin.read()
     status, output = dispatch(text, sys.argv[1] if len(sys.argv) > 1 else "")
-    if output:
-        print(json.dumps(output))
+    try:
+        if output:
+            print(json.dumps(output))
+    except Exception:
+        _warning("dispatch.py output", 1)
+        status = 2 if status == 2 or _json_denied([output]) else 0
     raise SystemExit(status)
 
 
