@@ -223,13 +223,9 @@ CASES
   assert_no_case_failures
 }
 
-@test "workflow spawn guard is registered with hooks.json" {
-  run jq -e '
-    .hooks.PreToolUse[]
-    | select(.matcher == "Workflow")
-    | .hooks[]
-    | select(.command | contains("workflow-spawn-guard.sh"))
-  ' "$PROJECT_ROOT/hooks/hooks.json"
-
-  [ "$status" -eq 0 ]
+@test "registered Workflow hook rejects a relative script path" {
+  local command
+  command=$(jq -r '.hooks.PreToolUse[] | select(.matcher | split("|") | index("Workflow")) | .hooks[].command' "$PROJECT_ROOT/hooks/hooks.json")
+  run env CLAUDE_PLUGIN_ROOT="$PROJECT_ROOT" bash -c "$command" <<< '{"hook_event_name":"PreToolUse","tool_name":"Workflow","tool_input":{"scriptPath":"workflows/unknown.js"}}'
+  [ "$status" -eq 2 ]
 }

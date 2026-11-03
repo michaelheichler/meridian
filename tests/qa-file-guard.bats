@@ -271,12 +271,9 @@ CASES
   expect_output_has jq-missing "jq not available"
 }
 
-@test "file-guard stays registered for Write, Edit, and NotebookEdit" {
-  run jq -e '
-    .hooks.PreToolUse[]
-    | select(.matcher == "Write|Edit|NotebookEdit")
-    | .hooks[]
-    | select(.command | contains("file-guard.sh"))
-  ' "$PROJECT_ROOT/hooks/hooks.json"
-  [ "$status" -eq 0 ]
+@test "registered Write hook denies traversal outside the workspace" {
+  local command
+  command=$(jq -r '.hooks.PreToolUse[] | select(.matcher | split("|") | index("Write")) | .hooks[].command' "$PROJECT_ROOT/hooks/hooks.json")
+  run env CLAUDE_PLUGIN_ROOT="$PROJECT_ROOT" bash -c "$command" <<< '{"hook_event_name":"PreToolUse","tool_name":"Write","tool_input":{"file_path":"../outside.py"}}'
+  [ "$status" -eq 2 ]
 }
