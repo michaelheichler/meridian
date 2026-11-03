@@ -18,52 +18,60 @@ normalize_slug() {
     sed 's/--*/-/g' | \
     sed 's/^-//;s/-$//'
 }
-derive_slug() {
-  local shipped="$DEFAULT_DIR/SHIPPED.md"
-  local slug=""
-  if [[ -f "$shipped" ]]; then
-    local shipped_content
-    shipped_content=$(cat "$shipped")
-    shipped_content="${shipped_content//$'\xE2\x80\x94'/-}"
-    shipped_content="${shipped_content//$'\xE2\x80\x93'/-}"
-    local title_name
-    title_name=$(printf '%s\n' "$shipped_content" | awk '
-      tolower($0) ~ /^#[[:space:]]*shipped:[[:space:]]*/ {
-        sub(/^#[[:space:]]*[Ss][Hh][Ii][Pp][Pp][Ee][Dd]:[[:space:]]*/, "", $0)
-        print
-        exit
-      }
-    ')
-    local title_name_lc
-    title_name_lc=$(printf '%s\n' "$title_name" | tr '[:upper:]' '[:lower:]')
-    if [[ -n "$title_name" && "$title_name_lc" != "default milestone" ]]; then
-      slug=$(normalize_slug "$title_name")
-    fi
-    if [[ -z "$slug" ]]; then
-      local phases
-      phases=$(printf '%s\n' "$shipped_content" | awk '
-        tolower($0) ~ /^##[[:space:]]+phases[[:space:]]*$/ { found=1; next }
-        found && /^## / { exit }
-        found && /^[-*] / {
-          sub(/^[-*] +(Phase [0-9]+: )?/, "")
-          sub(/ - .*/, "")
-          if (length > 0) print
-        }
-        found && /^[0-9]+\. / {
-          sub(/^[0-9]+\. +/, "")
-          gsub(/\*\*/, "")
-          sub(/ - .*/, "")
-          if (length > 0) print
-        }
-      ' | head -2)
-      if [[ -n "$phases" ]]; then
-        slug=$(echo "$phases" | tr '\n' ' ' | sed 's/ $//')
-        slug=$(normalize_slug "$slug")
-      fi
-    fi
+shipped_title_slug() {
+  local shipped_content="$1" title_name title_name_lc
+  title_name=$(printf '%s\n' "$shipped_content" | awk '
+    tolower($0) ~ /^#[[:space:]]*shipped:[[:space:]]*/ {
+      sub(/^#[[:space:]]*[Ss][Hh][Ii][Pp][Pp][Ee][Dd]:[[:space:]]*/, "", $0)
+      print
+      exit
+    }
+  ')
+  title_name_lc=$(printf '%s\n' "$title_name" | tr '[:upper:]' '[:lower:]')
+  [[ -n "$title_name" && "$title_name_lc" != "default milestone" ]] || return 0
+  normalize_slug "$title_name"
+}
+
+shipped_phases_slug() {
+  local shipped_content="$1" phases slug
+  phases=$(printf '%s\n' "$shipped_content" | awk '
+    tolower($0) ~ /^##[[:space:]]+phases[[:space:]]*$/ { found=1; next }
+    found && /^## / { exit }
+    found && /^[-*] / {
+      sub(/^[-*] +(Phase [0-9]+: )?/, "")
+      sub(/ - .*/, "")
+      if (length > 0) print
+    }
+    found && /^[0-9]+\. / {
+      sub(/^[0-9]+\. +/, "")
+      gsub(/\*\*/, "")
+      sub(/ - .*/, "")
+      if (length > 0) print
+    }
+  ' | head -2)
+  [[ -n "$phases" ]] || return 0
+  slug=$(echo "$phases" | tr '\n' ' ' | sed 's/ $//')
+  normalize_slug "$slug"
+}
+
+shipped_slug() {
+  local shipped="$DEFAULT_DIR/SHIPPED.md" shipped_content slug
+  [[ -f "$shipped" ]] || return 0
+  shipped_content=$(cat "$shipped")
+  shipped_content="${shipped_content//$'\xE2\x80\x94'/-}"
+  shipped_content="${shipped_content//$'\xE2\x80\x93'/-}"
+  slug=$(shipped_title_slug "$shipped_content")
+  if [[ -n "$slug" ]]; then
+    printf '%s\n' "$slug"
+    return 0
   fi
+  shipped_phases_slug "$shipped_content"
+}
+
+derive_slug() {
+  local slug phase_dirs
+  slug=$(shipped_slug)
   if [[ -z "$slug" && -d "$DEFAULT_DIR/phases" ]]; then
-    local phase_dirs
     phase_dirs=$(ls -1 "$DEFAULT_DIR/phases/" 2>/dev/null | head -2 | sed 's/^[0-9]*-//')
     if [[ -n "$phase_dirs" ]]; then
       slug=$(echo "$phase_dirs" | tr '\n' ' ' | sed 's/ $//')
