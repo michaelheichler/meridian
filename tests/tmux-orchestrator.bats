@@ -16,7 +16,7 @@ setup() {
   REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/.." && pwd -P)"
   ORCHESTRATOR="$REPO_ROOT/scripts/tmux-agent-orchestrator.sh"
   BUS="$REPO_ROOT/scripts/tmux-bus.sh"
-  TEST_ROOT="$(mktemp -d)"
+  TEST_ROOT="$(CDPATH='' cd -- "$(mktemp -d /tmp/mrd-tmux.XXXXXX)" && pwd -P)"
   PROJECT_ROOT="$TEST_ROOT/project"
   CONTROL_ROOT="$PROJECT_ROOT/.meridian"
   BIN_DIR="$TEST_ROOT/bin"

@@ -34,11 +34,14 @@ def main() -> None:
     root = Path(sys.argv[1])
     planning = Path.cwd() / ".meridian"
     published = []
+    previous_path = sys.path[:]
     sys.setprofile(publisher(root, planning, published))
     try:
         sys.argv = [str(root / "hooks/context_usage.py")]
+        sys.path.insert(0, str(root / "hooks"))
         runpy.run_path(sys.argv[0], run_name="__main__")
     finally:
+        sys.path[:] = previous_path
         sys.setprofile(None)
     assert published, "the native publisher never ran after staging closed"
     assert (planning / ".context-usage").read_text().strip() == "s1|72.5|1000000|statusline", (

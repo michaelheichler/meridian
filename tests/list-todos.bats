@@ -48,6 +48,13 @@ build_layout() {
   esac
 }
 
+expect_error_message() {
+  local label="$1" message="$2"
+  if [ "$message" != - ]; then
+    expect_json "$label" '.message | contains("'"$message"'")' true
+  fi
+}
+
 @test "list-todos lists root todos with stable mutation metadata and errors unless a writable root STATE.md exists" {
   create_state_with_todos ".meridian/STATE.md"
 
@@ -70,7 +77,7 @@ build_layout() {
     run bash "$SCRIPTS_DIR/list-todos.sh" $filter
     expect_status "$label" 0
     expect_json "$label" '.status' error
-    expect_json_unless_dash "$label" '.message | contains("'"$message"'")' true
+    expect_error_message "$label" "$message"
     [ ! -f .meridian/milestones/default/STATE.md ] || expect_file_has "$label" .meridian/milestones/default/STATE.md "Refactor auth module"
   done <<'CASES'
 archived-milestone-without-root|archived-milestone||Writable root STATE.md not found

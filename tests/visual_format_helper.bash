@@ -67,15 +67,45 @@ visual_ascii_expected() {
   perl -pe 's/✓|✔/[ok]/g; s/⚠/[!]/g; s/→|➜/->/g; s/✦/*/g; s/●/~/g; s/◐/[..]/g; s/✖|✗/[x]/g; s/○/-/g; s/ · / | /g; s/▮/#/g; s/▯/-/g; s/╔|╗|╚|╝/+/g; s/═|─/-/g; s/║/|/g' "$1"
 }
 
+visual_normalize_rename() {
+  perl -0777 -e '
+    use strict;
+    use warnings;
+    my ($map, $input) = @ARGV;
+    open my $rules, "<", $map or die "$map: $!";
+    my @rows = map { chomp; [split /\t/] } split /\n/, do { local $/; <$rules> };
+    open my $source, "<", $input or die "$input: $!";
+    my $text = do { local $/; <$source> } // "";
+    my @boxed_widths = map { length $_ } $text =~ /^║ .*║$/mg;
+    my @protected;
+    for my $row (@rows) {
+      my ($kind, $from, $to, $scope) = @$row;
+      next unless $scope =~ /^preserve /;
+      $text =~ s/\Q$from\E/push(@protected, $&); "\0" . $#protected . "\0"/ge;
+    }
+    for my $row (@rows) {
+      my ($kind, $from, $to, $scope) = @$row;
+      next unless $kind eq "content";
+      if ($scope eq "literal") { $text =~ s/\Q$from\E/$to/g; }
+      elsif ($scope eq "command") { $text =~ s/\Q$from\E(?![\w-])/$to/g; }
+      elsif ($scope eq "command-word") { $text =~ s/(?<![A-Za-z0-9])\Q$from\E(?![A-Za-z0-9])/$to/g; }
+    }
+    $text =~ s/\0(\d+)\0/$protected[$1]/ge;
+    $text =~ s/^(║ .*?)( +)(║)$/$1 . (" " x (shift(@boxed_widths) - length($1) - length($3))) . $3/gme;
+    print $text;
+  ' "$PROJECT_ROOT/scripts/dev/rename-map.tsv" "$1"
+}
+
 visual_check_bytes() {
   local stream="$1" expected="$ROW/expected-$1" grep_status
+  visual_normalize_rename "$ROW/old-$stream" > "$ROW/renamed-$stream"
   if [ "$MODE" = ascii ]; then
-    visual_ascii_expected "$ROW/old-$stream" > "$expected"
+    visual_ascii_expected "$ROW/renamed-$stream" > "$expected"
     grep_status=0
     LC_ALL=C grep -q $'[\x80-\xFF]' "$ROW/new-$stream" || grep_status=$?
     [ "$grep_status" -eq 1 ] || record_case_failure "$LABEL/$stream" "non-ASCII bytes or grep error $grep_status"
   else
-    cp "$ROW/old-$stream" "$expected"
+    cp "$ROW/renamed-$stream" "$expected"
   fi
   cmp -s "$expected" "$ROW/new-$stream" \
     || record_case_failure "$LABEL/$stream" "byte mismatch"
@@ -102,7 +132,7 @@ visual_check_row() {
   visual_check_bytes out
   visual_check_bytes err
   if [ "$MODE" = ascii ]; then
-    if cmp -s "$ROW/old-out" "$ROW/expected-out" && cmp -s "$ROW/old-err" "$ROW/expected-err"; then
+    if cmp -s "$ROW/renamed-out" "$ROW/expected-out" && cmp -s "$ROW/renamed-err" "$ROW/expected-err"; then
       record_case_failure "$LABEL" 'fixture did not exercise a converted glyph'
     fi
   fi
@@ -119,7 +149,7 @@ visual_row() {
   visual_config "$MODE"
   cp -Rp "$MERIDIAN_PLANNING_DIR" "$ROW/snapshot"
   old_status=0
-  visual_invoke "$BASELINE" > "$ROW/old-out" 2> "$ROW/old-err" || old_status=$?
+  LBWC_PLANNING_DIR="$MERIDIAN_PLANNING_DIR" visual_invoke "$BASELINE" > "$ROW/old-out" 2> "$ROW/old-err" || old_status=$?
   cp -Rp "$MERIDIAN_PLANNING_DIR" "$ROW/old-artifacts"
   rm -rf "$MERIDIAN_PLANNING_DIR"
   cp -Rp "$ROW/snapshot" "$MERIDIAN_PLANNING_DIR"
