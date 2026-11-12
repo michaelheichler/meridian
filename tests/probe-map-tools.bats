@@ -59,6 +59,23 @@ stub_bash_language_server() {
   PATH="$TEST_TEMP_DIR/bin:$PATH"
 }
 
+stub_tool() {
+  printf '%s\n' '#!/bin/sh' "[ \"\$*\" = \"$2\" ]" > "$TEST_TEMP_DIR/bin/$1"
+  chmod +x "$TEST_TEMP_DIR/bin/$1"
+}
+
+resolve_lsp_row() {
+  local label=$1 stack=$2 mapping_filter=$3 expected=$4 plugin="$TEST_TEMP_DIR/plugin"
+  rm -rf "$plugin"
+  mkdir -p "$plugin/config"
+  cp -R "$PROJECT_ROOT/scripts" "$plugin/scripts"
+  jq "$mapping_filter" "$PROJECT_ROOT/config/lsp-mappings.json" > "$plugin/config/lsp-mappings.json"
+  run bash "$plugin/scripts/resolve-lsp.sh" "$stack" "$TEST_TEMP_DIR/no-settings.json"
+  expect_status "$label" 0
+  [ "$(printf '%s' "$output" | jq -c '[.plugins[].binary_installed]')" = "[$expected]" ] \
+    || record_case_failure "$label" "expected binary_installed=$expected output=$output"
+}
+
 run_probe() {
   run bash "$SCRIPTS_DIR/probe-map-tools.sh"
 }
@@ -133,6 +150,15 @@ expect_map() {
   run_probe
   expect_status indexed-flag 0
   expect_map indexed-flag '.gitnexus.available == false and .gitnexus.indexed == true'
+
+  stub_tool sourcekit-lsp never
+  stub_tool xcrun 'sourcekit-lsp --help'
+  resolve_lsp_row swift-xcrun-fallback '["swift"]' . true
+  stub_tool opam 'exec -- ocamllsp --version'
+  resolve_lsp_row ocaml-multi-argument-check '["ocaml"]' . true
+  resolve_lsp_row mapping-shell-syntax-stays-inert '["bash"]' \
+    ".servers.bash.binary_check = \"bash-language-server --version; touch $TEST_TEMP_DIR/executed\"" true
+  [ ! -e "$TEST_TEMP_DIR/executed" ] || record_case_failure mapping-shell-syntax-stays-inert "mapping text ran as shell code"
 
   assert_no_case_failures
 }

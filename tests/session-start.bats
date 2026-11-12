@@ -212,6 +212,20 @@ apply_source_specific_compaction_policy() {
   expect_case startup-without-planning-dir 0
   [ ! -e "$PLANNING_DIR" ] || record_case_failure startup-without-planning-dir "planning dir was created"
 
+  local outer_planning="$PLANNING_DIR" conflict_output
+  PLANNING_DIR="$WORKDIR/.meridian"
+  seed_compaction_count 5
+  mkdir "$WORKDIR/.lbwc-planning"
+  conflict_output=$(run_session_start_with_input '{"source":"startup"}' 2>"$TEST_ROOT/conflict-stderr") \
+    || record_case_failure startup-with-both-planning-dirs "session start exited nonzero"
+  jq -e '.hookSpecificOutput.additionalContext | type == "string"' <<<"$conflict_output" >/dev/null \
+    || record_case_failure startup-with-both-planning-dirs "no SessionStart context: $conflict_output"
+  [ -s "$TEST_ROOT/conflict-stderr" ] || record_case_failure startup-with-both-planning-dirs "conflict warning missing"
+  [ -d "$WORKDIR/.lbwc-planning" ] || record_case_failure startup-with-both-planning-dirs "legacy dir removed"
+  [ "$(read_compaction_count)" = "0" ] || record_case_failure startup-with-both-planning-dirs "count=$(read_compaction_count) want 0"
+  rm -rf "$WORKDIR/.lbwc-planning" "$PLANNING_DIR"
+  PLANNING_DIR="$outer_planning"
+
   seed_compaction_count 9
   run run_session_start_with_input '{"source":"startup"}'
   expect_case near-limit-startup 0

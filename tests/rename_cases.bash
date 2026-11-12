@@ -79,6 +79,20 @@ migration_repeated() {
   migration_noop
 }
 
+migration_lost_race() {
+  local shim="$BATS_TEST_TMPDIR/race-bin"
+  seed_planning
+  snapshot .lbwc-planning > "$BATS_TEST_TMPDIR/before"
+  mkdir "$shim"
+  printf '#!/bin/sh\n/bin/mv "$@"\nexit 1\n' > "$shim/mv"
+  chmod +x "$shim/mv"
+  PATH="$shim:$PATH" run migrate
+  [ "$status" -eq 0 ]
+  [ ! -e .lbwc-planning ]
+  snapshot .meridian > "$BATS_TEST_TMPDIR/after"
+  cmp "$BATS_TEST_TMPDIR/before" "$BATS_TEST_TMPDIR/after"
+}
+
 migration_destination_file() {
   seed_planning
   printf 'do not overwrite\n' > .meridian

@@ -1,6 +1,9 @@
 import unittest
 from collections import Counter
+from pathlib import Path
+from unittest.mock import patch
 
+from hooks.hook_batch import BashBatch
 from hooks.dispatch_fixtures import DispatchProject, decision, warnings
 from hooks.dispatch_scenarios import AGGREGATION_CASES, aggregation_case, batching_case, policy_case
 
@@ -27,6 +30,29 @@ POST_ROUTES = {
     "Write": ("context_usage", "validate-summary.sh", "validate-frontmatter.sh", "state-updater.sh", "deviq-nudge.sh"),
     "Edit": ("context_usage", "validate-summary.sh", "validate-frontmatter.sh", "state-updater.sh", "deviq-nudge.sh"),
 }
+
+GUARD_MODULES = (
+    "hooks/scope_guard.py", "hooks/skill_gate.py", "hooks/message_scope_guard.py", "hooks/tmux_git_policy.py",
+    "hooks/tmux_restrictions.py", "hooks/context_usage.py", "hooks/rename_migration.py", "hooks/debug_logging.py",
+)
+PACKAGE_GUARD = Path("/package/scripts/bash-guard.sh")
+EXPLICIT_GUARD = Path("/explicit/scripts/bash-guard.sh")
+PLANTED_GUARD = Path("/tmp/.meridian-plugin-root-link-planted/scripts/bash-guard.sh")
+RESOLUTION_ROWS = (
+    ({}, {PACKAGE_GUARD, PLANTED_GUARD}, PACKAGE_GUARD),
+    ({"CLAUDE_PLUGIN_ROOT": "/explicit"}, {EXPLICIT_GUARD, PACKAGE_GUARD, PLANTED_GUARD}, EXPLICIT_GUARD),
+    ({"CLAUDE_PLUGIN_ROOT": "/explicit"}, {PACKAGE_GUARD, PLANTED_GUARD}, PACKAGE_GUARD),
+    ({}, {PLANTED_GUARD}, None),
+)
+
+
+# Because the public run path launches bash, resolution runs alone.
+def resolved_guard(environment: dict, existing: set) -> "Path | None":
+    batch = object.__new__(BashBatch)
+    batch.scripts = PACKAGE_GUARD.parent
+    with patch.dict("os.environ", environment, clear=True), patch("glob.glob", return_value=[str(PLANTED_GUARD)]):
+        with patch.object(Path, "is_file", lambda path: path in existing):
+            return batch._target(PACKAGE_GUARD.name)
 
 
 def malformed_rows() -> list:
@@ -58,11 +84,14 @@ class DispatcherTest(unittest.TestCase):
                 space.neutralize()
                 result, actual, expected = aggregation_case(space, kind)
                 self.assertEqual(actual, expected)
+        for environment, existing, expected in RESOLUTION_ROWS:
+            with self.subTest(resolution=environment, files=existing):
+                self.assertEqual(resolved_guard(environment, existing), expected)
 
     def test_registered_guards_keep_policy_and_decision_lifecycle(self) -> None:
         rows = ["engineer-message", "required-reading", "answer", "stale-answer"]
         rows += ["pending-" + tool for tool in ("Agent", "TaskCreate", "TaskUpdate", "Skill", "SendMessage", "Write", "Edit", "NotebookEdit", "Bash")]
-        rows += ["protected-" + path for path in ("hooks/dispatch.py", "hooks/hook_batch.py", "hooks/hook_output.py", "scripts/hook-batch.sh")]
+        rows += ["protected-" + path for path in ("hooks/dispatch.py", "hooks/hook_batch.py", "hooks/hook_output.py", "scripts/hook-batch.sh") + GUARD_MODULES]
         for row in rows:
             with self.subTest(policy=row):
                 space = DispatchProject(self)
@@ -70,6 +99,18 @@ class DispatcherTest(unittest.TestCase):
                 self.assertEqual((decision(result), state), (expected, {"answer": "resolved", "stale-answer": "cancelled"}.get(row)))
                 self.assertEqual(result.returncode, 0)
                 self.assertEqual(warnings(result), [])
+        for path in GUARD_MODULES:
+            with self.subTest(shell_write=path):
+                space = DispatchProject(self)
+                result = space.run(space.event("Bash", {"command": "printf x > " + path}))
+                self.assertEqual(decision(result), "deny")
+                self.assertEqual(result.returncode, 0)
+                self.assertEqual(warnings(result), [])
+        for path in GUARD_MODULES:
+            with self.subTest(shell_write=path):
+                space = DispatchProject(self)
+                result = space.run(space.event("Bash", {"command": "printf x > " + path}))
+                self.assertEqual((decision(result), result.returncode, warnings(result)), ("deny", 0, []))
 
     def test_batched_json_reads_preserve_file_scope_and_nudge_cooldown(self) -> None:
         rows = [("file", path) for path in ("src/app.py", "src/app.py\n", "src/tab\tname.py", "src/line\nbreak.py", "", "src/other.py")]

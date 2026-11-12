@@ -23,7 +23,7 @@ teardown() {
 
 @test "migration refuses unsafe destinations and preserves data on move failure" {
   run_scenario_cases migration_destination_file migration_destination_symlink \
-    migration_source_symlink migration_unwritable
+    migration_source_symlink migration_unwritable migration_lost_race
 }
 
 @test "Bash and Python legacy overrides fill only absent current values without chatter" {

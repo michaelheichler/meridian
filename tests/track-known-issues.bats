@@ -308,6 +308,16 @@ coded_error_row() {
   expect_digest_is "$label" "$before"
 }
 
+unserializable_error_row() {
+  local label="$1" command="$2" registry="$3" payload="$4" shim="$TEST_ROOT/jq-shim"
+  mkdir -p "$shim"
+  printf '%s\n' '#!/bin/bash' 'case "$*" in *status:?error?*) exit 5 ;; esac' "exec '$(command -v jq)' \"\$@\"" > "$shim/jq"
+  chmod +x "$shim/jq"
+  prepare_registry "$registry"
+  PATH="$shim:$PATH" run_with_stdin "$(payload_named "$payload")" "$SCRIPT" "$command" "$PHASE_DIR"
+  [ "$status" -ne 0 ] || record_case_failure "$label" "exit 0 with output=[$output]"
+}
+
 known_issues_lookup_and_suppress() {
   local phys_dir
   phys_dir="$(cd "$PHASE_DIR" && pwd -P)"
@@ -335,6 +345,8 @@ known_issues_lookup_and_suppress() {
   coded_error_row lookup-payload-not-an-object lookup-signature seeded array suppression_missing_signature
   coded_error_row suppress-test-absent suppress seeded no-test suppression_missing_signature
   coded_error_row suppress-error-not-a-string suppress seeded number-error suppression_missing_signature
+  unserializable_error_row lookup-error-unserializable lookup-signature missing transfer
+  unserializable_error_row suppress-error-unserializable suppress seeded unknown-via
 
   seed_registry
   local other_before target_before
