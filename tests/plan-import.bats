@@ -22,7 +22,7 @@ teardown() {
 
 fresh_project() {
   PROJECT="$TEST_TEMP_DIR/$1"
-  PLANNING="$PROJECT/.lbwc-planning"
+  PLANNING="$PROJECT/.meridian"
   mkdir -p "$PROJECT"
 }
 
@@ -157,7 +157,7 @@ stage_validated_imports_without_canonical_changes() {
   stage_gsd import-one
   expect_path stage-tree "$STAGE/ir.json"
   expect_path stage-tree "$STAGE/preview.json"
-  expect_path stage-tree "$STAGE/tree/.lbwc-planning/PROJECT.md"
+  expect_path stage-tree "$STAGE/tree/.meridian/PROJECT.md"
   run bash "$SCRIPT" validate-stage --project-root "$PROJECT" --stage "$STAGE"
   expect_status validate-stage 0
   expect_same_digest canonical-kept "$PLANNING/PROJECT.md" "$before"
@@ -170,10 +170,10 @@ stage_validated_imports_without_canonical_changes() {
   expect_status single-markdown 0
   expect_jq single-markdown "$STAGE/preview.json" '
     .source.trust_tier == "unverified-markdown" and
-    (.additions | index(".lbwc-planning/imported-markdown/solo.md") != null) and
+    (.additions | index(".meridian/imported-markdown/solo.md") != null) and
     (.unknowns | any(. == "solo.md"))'
-  expect_file_line single-markdown "$STAGE/tree/.lbwc-planning/imported-markdown/solo.md" 'unverified generic Markdown import'
-  expect_file_line single-markdown "$STAGE/tree/.lbwc-planning/imported-markdown/solo.md" 'Body text\.'
+  expect_file_line single-markdown "$STAGE/tree/.meridian/imported-markdown/solo.md" 'unverified generic Markdown import'
+  expect_file_line single-markdown "$STAGE/tree/.meridian/imported-markdown/solo.md" 'Body text\.'
 
   fresh_project semantic-preview
   mkdir -p "$PLANNING"
@@ -182,7 +182,7 @@ stage_validated_imports_without_canonical_changes() {
   expect_jq semantic-preview "$STAGE/preview.json" '
     ([.additions[], .overlaps[], .conflicts[].artifact, .unknowns[], .skipped[].path] | all(startswith("/") | not)) and
     (.conflicts | length == 1) and
-    (.conflicts[0].artifact == ".lbwc-planning/REQUIREMENTS.md") and
+    (.conflicts[0].artifact == ".meridian/REQUIREMENTS.md") and
     (.conflicts[0].detail.removed_ids == ["REQ-99"]) and
     (.conflicts[0].detail.changed_statuses | length == 2) and
     (.conflicts[0].source_digest | test("^[0-9a-f]{64}$")) and
@@ -246,35 +246,35 @@ promote_safely_and_restore_failed_destinations() {
   expect_path provenance "$promoted/imports/full-import/preview.json"
   expect_jq provenance "$promoted/imports/full-import/manifest.json" '.status == "promoted"'
 
-  run bash "$SCRIPTS_DIR/lbwc-config.sh" validate-config-json < "$promoted/config.json"
+  run bash "$SCRIPTS_DIR/meridian-config.sh" validate-config-json < "$promoted/config.json"
   expect_status config-valid 0
-  [ "$(jq -S . "$promoted/config.json")" = "$(bash "$SCRIPTS_DIR/lbwc-config.sh" default-config | jq -S .)" ] \
+  [ "$(jq -S . "$promoted/config.json")" = "$(bash "$SCRIPTS_DIR/meridian-config.sh" default-config | jq -S .)" ] \
     || record_case_failure config-defaults "config.json differs from init defaults"
   expect_jq config-shape "$promoted/config.json" '.schema_version == 1 and (.routing.profiles | keys | sort == ["balanced","quality","turbo"])'
-  run bash "$SCRIPTS_DIR/lbwc-config.sh" validate "$promoted"
+  run bash "$SCRIPTS_DIR/meridian-config.sh" validate "$promoted"
   expect_status config-validate 0
 
-  run bash -c 'cd "$1" && LBWC_PLANNING_DIR="$2" bash "$3"' _ "$PROJECT" "$promoted" "$SCRIPTS_DIR/verify-state-consistency.sh"
+  run bash -c 'cd "$1" && MERIDIAN_PLANNING_DIR="$2" bash "$3"' _ "$PROJECT" "$promoted" "$SCRIPTS_DIR/verify-state-consistency.sh"
   expect_case state-consistency 0 "state_consistency=ok"
 
   fresh_project guard-artifacts
   stage_gsd guard-import
   run bash "$SCRIPT" promote --project-root "$PROJECT" --stage "$STAGE"
   expect_status no-artifacts 1
-  run bash "$SCRIPT" promote --project-root "$PROJECT" --stage "$STAGE" --artifact '.lbwc-planning/../config.json'
+  run bash "$SCRIPT" promote --project-root "$PROJECT" --stage "$STAGE" --artifact '.meridian/../config.json'
   expect_status artifact-dotdot-config 1
   run bash "$SCRIPT" promote --project-root "$PROJECT" --stage "$STAGE" --artifact '../outside.md'
   expect_status artifact-parent 1
   run bash "$SCRIPT" promote --project-root "$PROJECT" --stage "$STAGE" --artifact '/absolute.md'
   expect_status artifact-absolute 1
-  run bash "$SCRIPT" promote --project-root "$PROJECT" --stage "$STAGE" --artifact '.lbwc-planning/config.json.md'
+  run bash "$SCRIPT" promote --project-root "$PROJECT" --stage "$STAGE" --artifact '.meridian/config.json.md'
   expect_status artifact-near-allowlist 1
   expect_no_path guard-artifacts "$PLANNING/config.json"
 
   fresh_project source-drift
   stage_gsd drift-import
   printf '%s\n' 'mutated after staging' > "$GSD_SOURCE/.source-marker"
-  run bash "$SCRIPT" promote --project-root "$PROJECT" --stage "$STAGE" --artifact .lbwc-planning/PROJECT.md
+  run bash "$SCRIPT" promote --project-root "$PROJECT" --stage "$STAGE" --artifact .meridian/PROJECT.md
   expect_case source-drift 1 "source changed after staging"
   expect_no_path source-drift "$PLANNING/PROJECT.md"
   expect_no_path source-drift "$PLANNING/imports/drift-import/manifest.json"
@@ -284,9 +284,9 @@ promote_safely_and_restore_failed_destinations() {
   printf '%s\n' '# Old project' > "$PLANNING/PROJECT.md"
   printf '%s\n' '# Old roadmap' > "$PLANNING/ROADMAP.md"
   stage_gsd rollback-import
-  run env LBWC_IMPORT_FAIL_AFTER=1 bash "$SCRIPT" promote --project-root "$PROJECT" --stage "$STAGE" \
-    --artifact .lbwc-planning/PROJECT.md --artifact .lbwc-planning/ROADMAP.md
-  expect_case fail-after-one 1 "promotion failed after artifact .lbwc-planning/PROJECT.md"
+  run env MERIDIAN_IMPORT_FAIL_AFTER=1 bash "$SCRIPT" promote --project-root "$PROJECT" --stage "$STAGE" \
+    --artifact .meridian/PROJECT.md --artifact .meridian/ROADMAP.md
+  expect_case fail-after-one 1 "promotion failed after artifact .meridian/PROJECT.md"
   expect_file_line fail-after-one "$PLANNING/PROJECT.md" '^# Old project$'
   expect_file_line fail-after-one "$PLANNING/ROADMAP.md" '^# Old roadmap$'
 
@@ -297,8 +297,8 @@ promote_safely_and_restore_failed_destinations() {
   before_project=$(digest_of "$PLANNING/PROJECT.md")
   before_state=$(digest_of "$PLANNING/STATE.md")
   stage_gsd fail-import
-  run env LBWC_IMPORT_FAIL_AFTER=2 bash "$SCRIPT" promote --project-root "$PROJECT" --stage "$STAGE" \
-    --artifact .lbwc-planning/PROJECT.md --artifact .lbwc-planning/STATE.md --artifact .lbwc-planning/REQUIREMENTS.md
+  run env MERIDIAN_IMPORT_FAIL_AFTER=2 bash "$SCRIPT" promote --project-root "$PROJECT" --stage "$STAGE" \
+    --artifact .meridian/PROJECT.md --artifact .meridian/STATE.md --artifact .meridian/REQUIREMENTS.md
   expect_status fail-after-two 1
   expect_same_digest fail-after-two "$PLANNING/PROJECT.md" "$before_project"
   expect_same_digest fail-after-two "$PLANNING/STATE.md" "$before_state"
@@ -312,9 +312,9 @@ promote_safely_and_restore_failed_destinations() {
   before_project=$(digest_of "$PLANNING/PROJECT.md")
   before_state=$(digest_of "$PLANNING/STATE.md")
   stage_gsd validate-fail-import
-  run env LBWC_IMPORT_FAIL_VALIDATION=1 bash "$SCRIPT" promote --project-root "$PROJECT" --stage "$STAGE" \
-    --artifact .lbwc-planning/PROJECT.md --artifact .lbwc-planning/STATE.md \
-    --artifact .lbwc-planning/REQUIREMENTS.md --artifact .lbwc-planning/config.json
+  run env MERIDIAN_IMPORT_FAIL_VALIDATION=1 bash "$SCRIPT" promote --project-root "$PROJECT" --stage "$STAGE" \
+    --artifact .meridian/PROJECT.md --artifact .meridian/STATE.md \
+    --artifact .meridian/REQUIREMENTS.md --artifact .meridian/config.json
   expect_case validation-fails 1 "post-promotion validation failed"
   expect_same_digest validation-fails "$PLANNING/PROJECT.md" "$before_project"
   expect_same_digest validation-fails "$PLANNING/STATE.md" "$before_state"
@@ -324,7 +324,7 @@ promote_safely_and_restore_failed_destinations() {
 
   fresh_project partial-without-config
   stage_gsd partial-import
-  run bash "$SCRIPT" promote --project-root "$PROJECT" --stage "$STAGE" --artifact .lbwc-planning/PROJECT.md
+  run bash "$SCRIPT" promote --project-root "$PROJECT" --stage "$STAGE" --artifact .meridian/PROJECT.md
   expect_case partial-without-config 1 "post-promotion validation failed"
   expect_no_path partial-without-config "$PLANNING/imports/partial-import/manifest.json"
   expect_no_path partial-without-config "$PLANNING"

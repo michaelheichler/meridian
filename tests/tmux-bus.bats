@@ -18,7 +18,7 @@ teardown() {
 
 use_control_root() {
   PROJECT_ROOT="$TEST_ROOT/$1"
-  CONTROL_ROOT="$PROJECT_ROOT/.lbwc-planning"
+  CONTROL_ROOT="$PROJECT_ROOT/.meridian"
   mkdir -p "$CONTROL_ROOT"
   printf '%s\n' '{}' > "$CONTROL_ROOT/config.json"
 }
@@ -34,7 +34,7 @@ run_bus() {
 }
 
 source_runtime() {
-  source "$REPO_ROOT/scripts/lib/lbwc-control-root.sh"
+  source "$REPO_ROOT/scripts/lib/meridian-control-root.sh"
   source "$REPO_ROOT/scripts/lib/tmux-runtime.sh"
   tmux_runtime_configure "$CONTROL_ROOT"
 }
@@ -79,14 +79,14 @@ plant_agent() {
       parent_id: .main.agent_id,
       contract_id: "contract-1",
       generated_name: $id,
-      tmux_target: "lbwc-test-main:0.1",
+      tmux_target: "meridian-test-main:0.1",
       tmux_pane_id: null,
       claude_session_id: $session,
       capability_hash: $hash,
       state: "registered",
       heartbeat_at_ms: null
     }]
-    | .routes[$id] = {inbox: $id, tmux_target: "lbwc-test-main:0.1"}
+    | .routes[$id] = {inbox: $id, tmux_target: "meridian-test-main:0.1"}
   ' <<<"$registry")
   tmux_runtime_write_registry_route_bundle "$updated"
   tmux_runtime_initialize_inbox "$agent_id"
@@ -442,7 +442,7 @@ bus_case_ack_resumes_interrupted_states() {
   message_id="$output"
   run_bus claim --agent-id agent-a --session-id child-session-a --capability "$AGENT_CAPABILITY" --type job --lease-ms 1000
   [ "$status" -eq 0 ]
-  run env LBWC_TMUX_FS_FAIL_AFTER_ACK_LINK=1 bash "$SCRIPT" --control-root "$CONTROL_ROOT" ack --agent-id agent-a --session-id child-session-a --capability "$AGENT_CAPABILITY" --message-id "$message_id"
+  run env MERIDIAN_TMUX_FS_FAIL_AFTER_ACK_LINK=1 bash "$SCRIPT" --control-root "$CONTROL_ROOT" ack --agent-id agent-a --session-id child-session-a --capability "$AGENT_CAPABILITY" --message-id "$message_id"
   [ "$status" -ne 0 ]
   [ -f "$CONTROL_ROOT/.runtime/tmux-bus/inboxes/agent-a/job.json" ]
   [ -f "$CONTROL_ROOT/.runtime/tmux-bus/inboxes/agent-a/acked/$message_id.json" ]

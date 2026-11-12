@@ -4,11 +4,11 @@ set -u
 config_fixture_setup() {
   local test_root
   REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/.." && pwd)"
-  SCRIPT="$REPO_ROOT/scripts/lbwc-config.sh"
+  SCRIPT="$REPO_ROOT/scripts/meridian-config.sh"
   MIGRATE="$REPO_ROOT/scripts/migrate-config.sh"
   test_root=$(mktemp -d)
   TEST_ROOT="$(cd "$test_root" && pwd -P)"
-  PLANNING_DIR="$TEST_ROOT/.lbwc-planning"
+  PLANNING_DIR="$TEST_ROOT/.meridian"
   reset_case_failures
 }
 

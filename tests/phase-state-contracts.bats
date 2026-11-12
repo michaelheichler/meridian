@@ -5,14 +5,14 @@ load gate_case_helper
 
 setup() {
   setup_temp_dir
-  mkdir -p "$TEST_TEMP_DIR/project/.lbwc-planning/phases"
+  mkdir -p "$TEST_TEMP_DIR/project/.meridian/phases"
   cd "$TEST_TEMP_DIR/project"
   git init -q
   git config user.email test@example.invalid
   git config user.name Test
   . "$SCRIPTS_DIR/summary-utils.sh"
   . "$SCRIPTS_DIR/phase-state-utils.sh"
-  PLANNING="$PWD/.lbwc-planning"
+  PLANNING="$PWD/.meridian"
   PHASES="$PLANNING/phases"
   ROADMAP="$PLANNING/ROADMAP.md"
   reset_case_failures

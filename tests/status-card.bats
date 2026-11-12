@@ -10,9 +10,9 @@ setup() {
   cd "$BATS_TEST_TMPDIR/repo"
   git init -q
   export HOME="$BATS_TEST_TMPDIR/home"
-  export LBWC_PLANNING_DIR="$PWD/.lbwc-planning"
-  mkdir -p "$HOME" "$LBWC_PLANNING_DIR"
-  printf '{}\n' > "$LBWC_PLANNING_DIR/config.json"
+  export MERIDIAN_PLANNING_DIR="$PWD/.meridian"
+  mkdir -p "$HOME" "$MERIDIAN_PLANNING_DIR"
+  printf '{}\n' > "$MERIDIAN_PLANNING_DIR/config.json"
   printf 'next_phase=build\nphase_detect_complete=true\nphase_detect_error=false\n' > phase
   jq -n '{status:"done",product:"Sample product",step:"Implement parser",plan:"Parser plan",changed_files:["parser.sh","parser.md"],lines_changed:{added:12,deleted:3},tests:"Parser checks pass",commands:[{command:"check parser",exit_code:0,main_session:true}],open_questions:[],next:{command:"/sample:qa",step:"Review parser"},cause:"hidden cause",details:["hidden detail"],fix:"hidden fix"}' > result
 }

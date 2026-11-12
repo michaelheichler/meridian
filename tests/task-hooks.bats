@@ -21,15 +21,15 @@ fixture_root() {
     --control-root "$CONTROL_ROOT" --write-capability directory:src/web)
   CONTRACT_ID="$(basename "$CONTRACT" .json)"
   jq -n --arg contract "$CONTRACT" --arg id "$CONTRACT_ID" --arg root "$TEST_ROOT" \
-    '{agents:{"lbwc-web-engineer-native":{
-      name:"lbwc-web-engineer-native", role:"web-engineer", state:"running",
+    '{agents:{"meridian-web-engineer-native":{
+      name:"meridian-web-engineer-native", role:"web-engineer", state:"running",
       project_root:$root, contract_enabled:true, contract_path:$contract,
       contract_id:$id, contract_digest:(input_filename | ""), task_identity:$id,
       schema_version:3, capabilities:[{access:"write",kind:"directory",path:"src/web"}],
       write_allowances:["src/web"], runtime_kind:"native-team", communication_policy:"native-team"
     }}}' /dev/null > "$CONTROL_ROOT/agent-manifest.json"
   CONTRACT_DIGEST=$(jq -r '.contract_digest' "$CONTRACT")
-  jq --arg digest "$CONTRACT_DIGEST" '.agents["lbwc-web-engineer-native"].contract_digest = $digest' \
+  jq --arg digest "$CONTRACT_DIGEST" '.agents["meridian-web-engineer-native"].contract_digest = $digest' \
     "$CONTROL_ROOT/agent-manifest.json" > "$CONTROL_ROOT/manifest.tmp"
   mv "$CONTROL_ROOT/manifest.tmp" "$CONTROL_ROOT/agent-manifest.json"
 }
@@ -49,7 +49,7 @@ task_event() {
 
 fire_hook() {
   local script="$1" event="$2" task_id="$3" subject="${4:-}"
-  task_event "$event" "$task_id" "$subject" | LBWC_CONTROL_ROOT="$CONTROL_ROOT" bash "$script" 2>&1
+  task_event "$event" "$task_id" "$subject" | MERIDIAN_CONTROL_ROOT="$CONTROL_ROOT" bash "$script" 2>&1
 }
 
 expect_manifest() {
@@ -76,11 +76,11 @@ expect_denied() {
 
 hook_raw() {
   local script="$1" payload="$2" root="${3:-}"
-  printf '%s' "$payload" | env -u LBWC_CONTROL_ROOT -u LBWC_PLANNING_DIR ${root:+LBWC_CONTROL_ROOT="$root"} bash "$script" 2>&1
+  printf '%s' "$payload" | env -u MERIDIAN_CONTROL_ROOT -u MERIDIAN_PLANNING_DIR ${root:+MERIDIAN_CONTROL_ROOT="$root"} bash "$script" 2>&1
 }
 
 hook_closed_stdin() {
-  LBWC_CONTROL_ROOT="$CONTROL_ROOT" bash "$1" < "$TEST_ROOT" 2>&1
+  MERIDIAN_CONTROL_ROOT="$CONTROL_ROOT" bash "$1" < "$TEST_ROOT" 2>&1
 }
 
 hook_without_jq() {
@@ -109,7 +109,7 @@ expect_ignored() {
 
 @test "TaskCreated binds a native task to one pending or dispatched schema 3 contract and denies every other invocation without touching the manifest" {
   fixture_root bind-pending
-  run bash -c 'jq -cn --arg cwd "$1" --arg id native-1 --arg subject "$2" '\''{hook_event_name:"TaskCreated",cwd:$cwd,task_id:$id,task_subject:$subject,task_description:"implement native task"}'\'' | LBWC_CONTROL_ROOT="$3" bash "$4"' _ "$TEST_ROOT" "$CONTRACT_ID" "$CONTROL_ROOT" "$ADMISSION"
+  run bash -c 'jq -cn --arg cwd "$1" --arg id native-1 --arg subject "$2" '\''{hook_event_name:"TaskCreated",cwd:$cwd,task_id:$id,task_subject:$subject,task_description:"implement native task"}'\'' | MERIDIAN_CONTROL_ROOT="$3" bash "$4"' _ "$TEST_ROOT" "$CONTRACT_ID" "$CONTROL_ROOT" "$ADMISSION"
   expect_run_status bind-pending 0
   expect_manifest bind-pending "$(printf '.tasks["native-1"].contract_id == "%s" and .tasks["native-1"].state == "created"' "$CONTRACT_ID")"
 
@@ -120,7 +120,7 @@ expect_ignored() {
   expect_manifest bind-dispatched '.tasks | keys == ["native-8"]'
 
   fixture_root uncontracted
-  run bash -c 'jq -cn --arg cwd "$1" '\''{hook_event_name:"TaskCreated",cwd:$cwd,task_id:"native-2",task_subject:"unrelated-task"}'\'' | LBWC_CONTROL_ROOT="$2" bash "$3"' _ "$TEST_ROOT" "$CONTROL_ROOT" "$ADMISSION"
+  run bash -c 'jq -cn --arg cwd "$1" '\''{hook_event_name:"TaskCreated",cwd:$cwd,task_id:"native-2",task_subject:"unrelated-task"}'\'' | MERIDIAN_CONTROL_ROOT="$2" bash "$3"' _ "$TEST_ROOT" "$CONTROL_ROOT" "$ADMISSION"
   expect_run_status uncontracted 2 "no pending native-team contract"
   expect_manifest uncontracted '(.tasks // {}) | has("native-2") | not'
 
@@ -139,7 +139,7 @@ expect_ignored() {
   fixture_root malformed-created
   expect_blocked "jq missing" "jq not available" hook_without_jq "$ADMISSION"
   expect_blocked "payload unreadable" "unable to read TaskCreated payload" hook_closed_stdin "$ADMISSION"
-  expect_blocked "no control root" "no resolvable LBWC control root" hook_raw "$ADMISSION" \
+  expect_blocked "no control root" "no resolvable MERIDIAN control root" hook_raw "$ADMISSION" \
     '{"hook_event_name":"TaskCreated","cwd":"'"$BATS_TEST_TMPDIR"'","task_id":"t","task_subject":"s"}'
   expect_blocked "task id missing" "missing task identity" hook_raw "$ADMISSION" \
     '{"hook_event_name":"TaskCreated","cwd":"'"$TEST_ROOT"'","task_subject":"s"}' "$CONTROL_ROOT"
@@ -151,19 +151,19 @@ expect_ignored() {
 @test "TaskCompleted records completion only for a verified bound contract and denies every other invocation without touching the manifest" {
   fixture_root unverified
   fire_hook "$ADMISSION" TaskCreated native-3 "$CONTRACT_ID" >/dev/null
-  run bash -c 'jq -cn --arg cwd "$1" '\''{hook_event_name:"TaskCompleted",cwd:$cwd,task_id:"native-3"}'\'' | LBWC_CONTROL_ROOT="$2" bash "$3"' _ "$TEST_ROOT" "$CONTROL_ROOT" "$COMPLETION"
+  run bash -c 'jq -cn --arg cwd "$1" '\''{hook_event_name:"TaskCompleted",cwd:$cwd,task_id:"native-3"}'\'' | MERIDIAN_CONTROL_ROOT="$2" bash "$3"' _ "$TEST_ROOT" "$CONTROL_ROOT" "$COMPLETION"
   expect_run_status unverified 2 "contract is not verified"
   expect_manifest unverified '.tasks["native-3"].state == "created"'
 
   fixture_root verified
   fire_hook "$ADMISSION" TaskCreated native-4 "$CONTRACT_ID" >/dev/null
   advance_contract dispatched running awaiting_review verified
-  run bash -c 'jq -cn --arg cwd "$1" '\''{hook_event_name:"TaskCompleted",cwd:$cwd,task_id:"native-4"}'\'' | LBWC_CONTROL_ROOT="$2" bash "$3"' _ "$TEST_ROOT" "$CONTROL_ROOT" "$COMPLETION"
+  run bash -c 'jq -cn --arg cwd "$1" '\''{hook_event_name:"TaskCompleted",cwd:$cwd,task_id:"native-4"}'\'' | MERIDIAN_CONTROL_ROOT="$2" bash "$3"' _ "$TEST_ROOT" "$CONTROL_ROOT" "$COMPLETION"
   expect_run_status verified 0
   expect_manifest verified '.tasks["native-4"].state == "completed"'
 
   fixture_root unusable-binding
-  expect_denied "task never bound" "$COMPLETION" TaskCompleted native-9 "" "has no LBWC contract binding"
+  expect_denied "task never bound" "$COMPLETION" TaskCompleted native-9 "" "has no MERIDIAN contract binding"
   fire_hook "$ADMISSION" TaskCreated native-10 "$CONTRACT_ID" >/dev/null
   jq '.tasks["native-10"].state = "completed"' "$CONTROL_ROOT/agent-manifest.json" > "$CONTROL_ROOT/m.tmp"
   mv "$CONTROL_ROOT/m.tmp" "$CONTROL_ROOT/agent-manifest.json"
@@ -176,7 +176,7 @@ expect_ignored() {
   fixture_root malformed-completed
   expect_blocked "jq missing" "jq not available" hook_without_jq "$COMPLETION"
   expect_blocked "payload unreadable" "unable to read TaskCompleted payload" hook_closed_stdin "$COMPLETION"
-  expect_blocked "no control root" "no resolvable LBWC control root" hook_raw "$COMPLETION" \
+  expect_blocked "no control root" "no resolvable MERIDIAN control root" hook_raw "$COMPLETION" \
     '{"hook_event_name":"TaskCompleted","cwd":"'"$BATS_TEST_TMPDIR"'","task_id":"t"}'
   expect_blocked "task id missing" "missing task identity" hook_raw "$COMPLETION" \
     '{"hook_event_name":"TaskCompleted","cwd":"'"$TEST_ROOT"'"}' "$CONTROL_ROOT"

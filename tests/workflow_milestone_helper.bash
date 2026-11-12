@@ -1,6 +1,6 @@
 workflow_milestone_location() {
   case "$1" in
-    custom-planning) mv .lbwc-planning "$planning" ;;
+    custom-planning) mv .meridian "$planning" ;;
     symlink)
       ln -s "$PWD" "$BATS_TEST_TMPDIR/project-link"
       cd "$BATS_TEST_TMPDIR/project-link" ;;
@@ -56,7 +56,7 @@ workflow_managed_changes() {
 }
 
 workflow_milestone() {
-  local row=$1 target before refs dirty action=start planning=.lbwc-planning slug=release
+  local row=$1 target before refs dirty action=start planning=.meridian slug=release
   local work_diff index_diff
   [ "$row" != custom-planning ] || planning='planning records'
   workflow_milestone_location "$row"
@@ -134,7 +134,7 @@ merge_target=$target" ]
     finish)
       [[ "$output" == *'branch_action=finished'* ]]
       [ -z "$(git branch --list milestone/release)" ]
-      [ ! -f "$(git rev-parse --git-path lbwc-milestone-release.json)" ]
+      [ ! -f "$(git rev-parse --git-path meridian-milestone-release.json)" ]
       [ "$(git symbolic-ref --short HEAD)" = "$target" ] ;;
   esac
 }

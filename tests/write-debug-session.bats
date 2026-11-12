@@ -4,10 +4,10 @@ load test_helper
 
 setup() {
   setup_temp_dir
-  export LBWC_PLANNING_DIR="$TEST_TEMP_DIR/.lbwc-planning"
-  mkdir -p "$LBWC_PLANNING_DIR"
+  export MERIDIAN_PLANNING_DIR="$TEST_TEMP_DIR/.meridian"
+  mkdir -p "$MERIDIAN_PLANNING_DIR"
 
-  eval "$(bash "$SCRIPTS_DIR/debug-session-state.sh" start "$LBWC_PLANNING_DIR" "write-test")"
+  eval "$(bash "$SCRIPTS_DIR/debug-session-state.sh" start "$MERIDIAN_PLANNING_DIR" "write-test")"
   export SESSION_FILE="$session_file"
   PRISTINE_FILE="$TEST_TEMP_DIR/pristine-session.md"
   cp "$SESSION_FILE" "$PRISTINE_FILE"

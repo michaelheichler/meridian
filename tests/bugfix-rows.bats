@@ -21,7 +21,7 @@ teardown() {
 }
 
 scan_heading() {
-  /bin/bash -c '. "$1/lib/claude-md-lbwc-sections.sh"; lbwc_markdown_has_heading_title "$2" "$3"' _ "$FIX_SCRIPTS" "$REPO/input.md" "$1"
+  /bin/bash -c '. "$1/lib/claude-md-meridian-sections.sh"; meridian_markdown_has_heading_title "$2" "$3"' _ "$FIX_SCRIPTS" "$REPO/input.md" "$1"
 }
 
 heading_row() {
@@ -55,8 +55,8 @@ heading_row() {
 }
 
 @test "staleness repair clears warnings when user examples contain shorter fences" {
-  mkdir -p .lbwc-planning
-  printf '%s\n' '# App' '## Examples' '````md' '```' '## LBWC Rules' '````' > CLAUDE.md
+  mkdir -p .meridian
+  printf '%s\n' '# App' '## Examples' '````md' '```' '## MERIDIAN Rules' '````' > CLAUDE.md
   run bash "$FIX_SCRIPTS/check-claude-md-staleness.sh" --fix
   expect_case repaired 0
   run bash "$FIX_SCRIPTS/check-claude-md-staleness.sh" --json
@@ -95,18 +95,18 @@ heading_row() {
   local root="$TEST_TEMP_DIR/cache" own other
   own=$(id -u)
   other=$((own + 1))
-  mkdir -p "$root/lbwc-dir-$own" "$root/lbwc-dir-$other"
-  printf payload > "$root/lbwc-dir-$own/entry"
-  touch "$root/lbwc-file-$own"
-  ln -s "$root/missing" "$root/lbwc-link-$own"
-  run env LBWC_TMP_CACHE_ROOT="$root" CLAUDE_CONFIG_DIR="$TEST_TEMP_DIR/config" bash "$FIX_SCRIPTS/cache-nuke.sh"
+  mkdir -p "$root/meridian-dir-$own" "$root/meridian-dir-$other"
+  printf payload > "$root/meridian-dir-$own/entry"
+  touch "$root/meridian-file-$own"
+  ln -s "$root/missing" "$root/meridian-link-$own"
+  run env MERIDIAN_TMP_CACHE_ROOT="$root" CLAUDE_CONFIG_DIR="$TEST_TEMP_DIR/config" bash "$FIX_SCRIPTS/cache-nuke.sh"
   expect_case cleanup 0
   expect_jq_output cleanup '.wiped.temp_caches == true'
-  expect_no_path owned-directory "$root/lbwc-dir-$own"
-  expect_no_path owned-file "$root/lbwc-file-$own"
-  [ ! -L "$root/lbwc-link-$own" ] || record_case_failure dangling-link 'link remains'
-  expect_path other-user "$root/lbwc-dir-$other"
-  run env LBWC_TMP_CACHE_ROOT="$root" CLAUDE_CONFIG_DIR="$TEST_TEMP_DIR/config" bash "$FIX_SCRIPTS/cache-nuke.sh"
+  expect_no_path owned-directory "$root/meridian-dir-$own"
+  expect_no_path owned-file "$root/meridian-file-$own"
+  [ ! -L "$root/meridian-link-$own" ] || record_case_failure dangling-link 'link remains'
+  expect_path other-user "$root/meridian-dir-$other"
+  run env MERIDIAN_TMP_CACHE_ROOT="$root" CLAUDE_CONFIG_DIR="$TEST_TEMP_DIR/config" bash "$FIX_SCRIPTS/cache-nuke.sh"
   expect_case empty-cleanup 0
   expect_jq_output empty-cleanup '.wiped.temp_caches == false'
   assert_no_case_failures
@@ -114,9 +114,9 @@ heading_row() {
 
 verification_row() {
   local shape="$1"
-  mkdir -p .lbwc-planning/phases/01-check
-  cp "$BATS_TEST_DIRNAME/fixtures/bugfix-verification-$shape.md" .lbwc-planning/phases/01-check/01-VERIFICATION.md
-  run bash "$FIX_SCRIPTS/extract-verified-items.sh" "$REPO/.lbwc-planning/phases/01-check"
+  mkdir -p .meridian/phases/01-check
+  cp "$BATS_TEST_DIRNAME/fixtures/bugfix-verification-$shape.md" .meridian/phases/01-check/01-VERIFICATION.md
+  run bash "$FIX_SCRIPTS/extract-verified-items.sh" "$REPO/.meridian/phases/01-check"
   expect_case "$shape" 0 '  PASS MH-01: Login works'
 }
 
@@ -177,18 +177,18 @@ workflow_row() {
 }
 
 @test "workflow rejects future timestamps as stale and reports their negative age" {
-  mkdir -p .lbwc-planning
-  printf '%s\n' '{"active":true,"mode":"debug"}' > .lbwc-planning/.delegated-workflow.json
-  touch -t 203501010000 .lbwc-planning/.delegated-workflow.json
+  mkdir -p .meridian
+  printf '%s\n' '{"active":true,"mode":"debug"}' > .meridian/.delegated-workflow.json
+  touch -t 203501010000 .meridian/.delegated-workflow.json
   workflow_row future-marker stale_marker
   expect_jq_output negative-marker-age '(.marker_age_seconds | tonumber) < 0'
-  printf '%s\n' '{"active":true,"mode":"execute","correlation_id":"c1"}' > .lbwc-planning/.delegated-workflow.json
-  touch .lbwc-planning/.delegated-workflow.json
-  printf '%s\n' '{"status":"running","correlation_id":"c1"}' > .lbwc-planning/.execution-state.json
-  touch -t 203501010000 .lbwc-planning/.execution-state.json
+  printf '%s\n' '{"active":true,"mode":"execute","correlation_id":"c1"}' > .meridian/.delegated-workflow.json
+  touch .meridian/.delegated-workflow.json
+  printf '%s\n' '{"status":"running","correlation_id":"c1"}' > .meridian/.execution-state.json
+  touch -t 203501010000 .meridian/.execution-state.json
   workflow_row future-execution stale_execution_state
   expect_jq_output negative-execution-age '(.execution_age_seconds | tonumber) < 0'
-  touch .lbwc-planning/.execution-state.json
+  touch .meridian/.execution-state.json
   workflow_row fresh-execution ok
   expect_jq_output fresh-execution '.live == true'
   assert_no_case_failures

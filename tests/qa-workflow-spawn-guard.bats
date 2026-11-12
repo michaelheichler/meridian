@@ -25,7 +25,7 @@ teardown() {
 generate_workflow() {
   local suffix="$1" project control_root contract task_id agen_out name wgen_out
   project="$TEST_TEMP_DIR/project-$suffix"
-  mkdir -p "$project/.lbwc-planning"
+  mkdir -p "$project/.meridian"
   control_root="$project/.temporary-agent-runfiles/runs/wf-$suffix"
   mkdir -p "$control_root"
   jq -n '{workflow_execution:{enabled:true}}' > "$control_root/config.json"
@@ -36,7 +36,7 @@ generate_workflow() {
     --control-root "$control_root" --requested-backend workflow --resolved-backend workflow \
     --write-capability directory:notes) || return 1
   task_id=$(basename "$contract" .json)
-  agen_out=$(LBWC_AGENT_RANDOM_SEED=$RANDOM bash "$SCRIPTS_DIR/agent-generator.sh" scout \
+  agen_out=$(MERIDIAN_AGENT_RANDOM_SEED=$RANDOM bash "$SCRIPTS_DIR/agent-generator.sh" scout \
     --job "guard fixture job $suffix" --contract "$contract" --task-id "$task_id" \
     --control-root "$control_root" --write-capability directory:notes \
     --execution-backend workflow 2>&1) || { printf '%s\n' "$agen_out" >&2; return 1; }
@@ -66,7 +66,7 @@ workflow_state() {
 }
 
 run_guard_in_root() {
-  run bash -c 'printf "%s" "$1" | LBWC_CONTROL_ROOT="$2" bash "$3"' _ "$1" "$CONTROL_ROOT" "$GUARD"
+  run bash -c 'printf "%s" "$1" | MERIDIAN_CONTROL_ROOT="$2" bash "$3"' _ "$1" "$CONTROL_ROOT" "$GUARD"
 }
 
 run_guard_plain() {
@@ -104,7 +104,7 @@ run_library_table() {
     cp "$GUARD" "$shadow/workflow-spawn-guard.sh"
     cp "$SCRIPTS_DIR/lib/tmux-agent-context.sh" "$shadow/lib/"
     write_library_stub "$manifest_stub" "$shadow/lib/workflow-manifest.sh"
-    write_library_stub "$root_stub" "$shadow/lib/lbwc-control-root.sh"
+    write_library_stub "$root_stub" "$shadow/lib/meridian-control-root.sh"
     run_guard_plain '{"tool_name":"Workflow","tool_input":{"scriptPath":"/tmp/whatever.js"}}' \
       "$shadow/workflow-spawn-guard.sh" </dev/null
     expect_case "$label" 2 "$message"
@@ -210,8 +210,8 @@ CASES
   expect_case malformed-manifest 2 "workflow manifest is unreadable or malformed"
 
   build_fixture noroot
-  rm -rf "$TEST_TEMP_DIR/.lbwc-planning"
-  run env -u LBWC_CONTROL_ROOT -u LBWC_PLANNING_DIR bash -c 'printf "%s" "$1" | bash "$2"' \
+  rm -rf "$TEST_TEMP_DIR/.meridian"
+  run env -u MERIDIAN_CONTROL_ROOT -u MERIDIAN_PLANNING_DIR bash -c 'printf "%s" "$1" | bash "$2"' \
     _ "$(workflow_call_json "$SCRIPT_PATH")" "$GUARD"
   expect_case unresolvable-control-root 2 "has no resolvable control root or manifest"
 

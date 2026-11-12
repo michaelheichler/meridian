@@ -9,7 +9,7 @@ setup() {
   PLUGIN_ROOT="$TEST_ROOT/plugin"
   PROJECT="$TEST_ROOT/init-project"
   TRACE="$TEST_ROOT/init-trace"
-  mkdir -p "$PLUGIN_ROOT/scripts" "$PROJECT/.lbwc-planning"
+  mkdir -p "$PLUGIN_ROOT/scripts" "$PROJECT/.meridian"
 }
 
 teardown() {
@@ -17,11 +17,11 @@ teardown() {
 }
 
 extract_init_bootstrap() {
-  # Template blocks come first, so skip to the lbwc-config.sh block.
+  # Template blocks come first, so skip to the meridian-config.sh block.
   awk '
     /^[[:space:]]*```bash$/ { capture = 1; block = ""; next }
     capture && /^[[:space:]]*```$/ {
-      if (block ~ /lbwc-config\.sh/) { printf "%s", block; exit }
+      if (block ~ /meridian-config\.sh/) { printf "%s", block; exit }
       capture = 0
       next
     }
@@ -40,22 +40,22 @@ write_tracing_stub() {
 
 expected_trace() {
   case "$1" in
-    config) printf '%s' 'lbwc-config:init .lbwc-planning' ;;
-    config-then-model) printf '%s\n%s' 'lbwc-config:init .lbwc-planning' 'lbwc-model:refresh .lbwc-planning' ;;
+    config) printf '%s' 'meridian-config:init .meridian' ;;
+    config-then-model) printf '%s\n%s' 'meridian-config:init .meridian' 'meridian-model:refresh .meridian' ;;
   esac
 }
 
 @test "init bootstrap runs configuration then one model refresh and fails closed on any failure" {
-  local bootstrap failure_message='LBWC model catalog and routing refresh failed.' printed
+  local bootstrap failure_message='MERIDIAN model catalog and routing refresh failed.' printed
 
   bootstrap=$(extract_init_bootstrap)
   [ -n "$bootstrap" ]
 
   while IFS='|' read -r label config_exit model_exit expected_status trace_kind shows_message; do
     [ -n "$label" ] || continue
-    rm -f "$TRACE" "$PLUGIN_ROOT/scripts/lbwc-model"
-    write_tracing_stub "$PLUGIN_ROOT/scripts/lbwc-config.sh" lbwc-config "$config_exit"
-    [ "$model_exit" = absent ] || write_tracing_stub "$PLUGIN_ROOT/scripts/lbwc-model" lbwc-model "$model_exit"
+    rm -f "$TRACE" "$PLUGIN_ROOT/scripts/meridian-model"
+    write_tracing_stub "$PLUGIN_ROOT/scripts/meridian-config.sh" meridian-config "$config_exit"
+    [ "$model_exit" = absent ] || write_tracing_stub "$PLUGIN_ROOT/scripts/meridian-model" meridian-model "$model_exit"
 
     run env CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" INIT_TRACE="$TRACE" bash -c "cd \"$PROJECT\" && $bootstrap" </dev/null
 

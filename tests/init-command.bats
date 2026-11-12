@@ -5,7 +5,7 @@ load test_helper
 generate_init_architect_workflow() {
   local project control_root contract task_id agen_out name wgen_out
   project="$TEST_TEMP_DIR/project-init"
-  mkdir -p "$project/.lbwc-planning"
+  mkdir -p "$project/.meridian"
   control_root="$project/.temporary-agent-runfiles/runs/init-architect"
   mkdir -p "$control_root"
   jq -n '{workflow_execution:{enabled:true}}' > "$control_root/config.json"

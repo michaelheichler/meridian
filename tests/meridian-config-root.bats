@@ -7,7 +7,7 @@ setup() {
   mkdir -p "$BATS_TEST_TMPDIR/work" "$BATS_TEST_TMPDIR/home"
   export HOME="$BATS_TEST_TMPDIR/home"
   WORK=$(CDPATH="" cd -- "$BATS_TEST_TMPDIR/work" && pwd -P)
-  LIB="$SCRIPTS_DIR/lib/lbwc-config-root.sh"
+  LIB="$SCRIPTS_DIR/lib/meridian-config-root.sh"
   reset_case_failures
 }
 
@@ -15,39 +15,39 @@ teardown() {
   await_git_ai
 }
 
-lbwc_project() {
-  mkdir -p "$1/.lbwc-planning"
-  printf '{}\n' > "$1/.lbwc-planning/config.json"
+meridian_project() {
+  mkdir -p "$1/.meridian"
+  printf '{}\n' > "$1/.meridian/config.json"
 }
 
 find_root_from() {
   local cwd=$1
   shift
-  run env -u LBWC_CONFIG_ROOT -u LBWC_PLANNING_DIR -u LBWC_CLAUDE_SIDECHAIN_HOST_ROOT \
+  run env -u MERIDIAN_CONFIG_ROOT -u MERIDIAN_PLANNING_DIR -u MERIDIAN_CLAUDE_SIDECHAIN_HOST_ROOT \
     bash -c 'CDPATH="" cd -- "$2" || exit 9
       . "$1"
       shift 2
-      find_lbwc_root "$@"
-      printf "%s|%s|%s" "$LBWC_CONFIG_ROOT" "$LBWC_PLANNING_DIR" "${LBWC_CLAUDE_SIDECHAIN_HOST_ROOT:-}"' \
+      find_meridian_root "$@"
+      printf "%s|%s|%s" "$MERIDIAN_CONFIG_ROOT" "$MERIDIAN_PLANNING_DIR" "${MERIDIAN_CLAUDE_SIDECHAIN_HOST_ROOT:-}"' \
     _ "$LIB" "$cwd" "$@"
 }
 
 expect_root() {
   local label=$1 root=$2 host=${3:-}
-  [ "$status" -eq 0 ] && [ "$output" = "$root|$root/.lbwc-planning|$host" ] \
-    || record_case_failure "$label" "status=$status output=[$output] want=[$root|$root/.lbwc-planning|$host]"
+  [ "$status" -eq 0 ] && [ "$output" = "$root|$root/.meridian|$host" ] \
+    || record_case_failure "$label" "status=$status output=[$output] want=[$root|$root/.meridian|$host]"
 }
 
-@test "find_lbwc_root resolves the project root from cwd, a start directory or a Claude worktree" {
+@test "find_meridian_root resolves the project root from cwd, a start directory or a Claude worktree" {
   local host_tree="$WORK/host/.claude/worktrees/agent-abc"
-  lbwc_project "$WORK/proj"
-  lbwc_project "$WORK/host"
-  lbwc_project "$host_tree"
+  meridian_project "$WORK/proj"
+  meridian_project "$WORK/host"
+  meridian_project "$host_tree"
   mkdir -p "$WORK/proj/src/deep" "$WORK/proj/agent-y" "$host_tree/sub" \
     "$WORK/fake/.claude/worktrees/agent-x" "$WORK/bare/dir"
 
-  run env LBWC_CONFIG_ROOT=/custom bash -c '. "$1"; find_lbwc_root; printf "%s|%s" "$LBWC_CONFIG_ROOT" "$LBWC_PLANNING_DIR"' _ "$LIB"
-  expect_case "preset-root-wins" 0 "/custom|/custom/.lbwc-planning"
+  run env MERIDIAN_CONFIG_ROOT=/custom bash -c '. "$1"; find_meridian_root; printf "%s|%s" "$MERIDIAN_CONFIG_ROOT" "$MERIDIAN_PLANNING_DIR"' _ "$LIB"
+  expect_case "preset-root-wins" 0 "/custom|/custom/.meridian"
 
   find_root_from "$WORK/proj/src/deep"
   expect_root "walks-up-from-cwd" "$WORK/proj"

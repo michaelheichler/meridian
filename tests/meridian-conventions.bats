@@ -5,10 +5,10 @@ load isolated_case_helper
 
 setup() {
   REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/.." && pwd)"
-  SCRIPT="$REPO_ROOT/scripts/lbwc-conventions.sh"
-  TEST_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/lbwc-conventions.XXXXXX")"
+  SCRIPT="$REPO_ROOT/scripts/meridian-conventions.sh"
+  TEST_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/meridian-conventions.XXXXXX")"
   PROJECT_DIR="$TEST_ROOT/project"
-  PLANNING_DIR="$PROJECT_DIR/.lbwc-planning"
+  PLANNING_DIR="$PROJECT_DIR/.meridian"
   ARTIFACT="$PLANNING_DIR/conventions.json"
   mkdir -p "$PLANNING_DIR/codebase"
   SEED_COUNT=0
@@ -88,7 +88,7 @@ add_conventions_and_resolve_conflicts() {
   reset_planning
   run_conventions add "$PLANNING_DIR" style "Use formatter"
   expect_case human-success 0
-  [[ "$output" == *$'\nNext: continue your current LBWC workflow.' ]] \
+  [[ "$output" == *$'\nNext: continue your current MERIDIAN workflow.' ]] \
     || record_case_failure human-success "output does not end with next guidance: $output"
 
   reset_planning
@@ -188,7 +188,7 @@ list_and_group_valid_conventions() {
   expect_exact_output artifact-without-schema-version "Error: invalid conventions artifact"
 
   reset_planning
-  run_conventions list "$PROJECT_DIR/child/../.lbwc-planning"
+  run_conventions list "$PROJECT_DIR/child/../.meridian"
   expect_case traversal 2 traversal
 
   mv "$PLANNING_DIR" "$PROJECT_DIR/real-planning"
@@ -196,9 +196,9 @@ list_and_group_valid_conventions() {
   run_conventions list "$PLANNING_DIR"
   expect_case symlinked-planning-directory 2 "symbolic link"
 
-  mkdir -p "$physical_project/.lbwc-planning"
+  mkdir -p "$physical_project/.meridian"
   ln -s "$physical_project" "$TEST_ROOT/linked-project"
-  run_conventions list "$TEST_ROOT/linked-project/.lbwc-planning"
+  run_conventions list "$TEST_ROOT/linked-project/.meridian"
   expect_case ancestor-symlink 2 "symbolic link paths are not allowed:"
   [[ "$output" == *"linked-project"* ]] \
     || record_case_failure ancestor-symlink "output does not name the linked ancestor: $output"

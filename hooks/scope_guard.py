@@ -54,7 +54,7 @@ def main() -> None:
     try:
         reason = verdict(sys.stdin.read())
     except Exception as exc:
-        print(f"Hook warning: test_scope_guard crashed ({exc!r}), call allowed.", file=sys.stderr)
+        print(f"Hook warning: scope_guard crashed ({exc!r}), call allowed.", file=sys.stderr)
         sys.exit(0)
     if reason is None:
         sys.exit(0)

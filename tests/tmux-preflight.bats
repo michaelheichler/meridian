@@ -9,7 +9,7 @@ setup() {
   SCRIPT="$REPO_ROOT/scripts/tmux-preflight.sh"
   TEST_ROOT="$(mktemp -d)"
   PROJECT_ROOT="$TEST_ROOT/project"
-  CONTROL_ROOT="$PROJECT_ROOT/.lbwc-planning"
+  CONTROL_ROOT="$PROJECT_ROOT/.meridian"
   BIN_DIR="$TEST_ROOT/bin"
   mkdir -p "$CONTROL_ROOT" "$BIN_DIR"
   printf '%s\n' '{}' > "$CONTROL_ROOT/config.json"

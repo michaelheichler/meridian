@@ -9,8 +9,8 @@ setup() {
   setup_temp_dir
   create_test_config
   cd "$TEST_TEMP_DIR"
-  DETAILS_PATH="$TEST_TEMP_DIR/.lbwc-planning/todo-details.json"
-  LEGACY_DIR="$TEST_TEMP_DIR/.lbwc-planning/todo-details"
+  DETAILS_PATH="$TEST_TEMP_DIR/.meridian/todo-details.json"
+  LEGACY_DIR="$TEST_TEMP_DIR/.meridian/todo-details"
 }
 
 teardown() {
@@ -45,9 +45,9 @@ seed_registry_with_keys() {
 
 write_state_with_refs() {
   local heading="$1" refs="$2" ref
-  printf '# State\n%s\n- Plain todo without a ref (added 2026-04-12)\n' "$heading" > "$TEST_TEMP_DIR/.lbwc-planning/STATE.md"
+  printf '# State\n%s\n- Plain todo without a ref (added 2026-04-12)\n' "$heading" > "$TEST_TEMP_DIR/.meridian/STATE.md"
   for ref in ${refs//,/ }; do
-    printf -- '- Todo (ref:%s)\n' "$ref" >> "$TEST_TEMP_DIR/.lbwc-planning/STATE.md"
+    printf -- '- Todo (ref:%s)\n' "$ref" >> "$TEST_TEMP_DIR/.meridian/STATE.md"
   done
 }
 
@@ -184,7 +184,7 @@ collect_unreferenced_details() {
     [ -n "$label" ] || continue
     write_state_with_refs "$heading" "$refs"
     seed_registry_with_keys "$keys"
-    details gc "$TEST_TEMP_DIR/.lbwc-planning/STATE.md" "$DETAILS_PATH"
+    details gc "$TEST_TEMP_DIR/.meridian/STATE.md" "$DETAILS_PATH"
     expect_status "$label" 0
     expect_json "$label" '.action' "$action"
     expect_registry "$label" '.items | keys | join(",")' "$kept_keys"

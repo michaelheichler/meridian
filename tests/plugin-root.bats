@@ -9,7 +9,7 @@ setup() {
   export CLAUDE_SESSION_ID="plugin-root-$$"
   export CLAUDE_CONFIG_DIR="$TEST_TEMP_DIR/.claude"
   mkdir -p "$CLAUDE_CONFIG_DIR"
-  export ROOT_LINK="/tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID}"
+  export ROOT_LINK="/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID}"
   rm -rf "$ROOT_LINK"
   PLUGIN_ROOT="$TEST_TEMP_DIR/plugin"
   reset_case_failures
@@ -53,12 +53,12 @@ expect_link_target() {
 }
 
 @test "resolve-plugin-root fails on a missing root, script, argument or link and otherwise prints the first valid root and links the session to it" {
-  local cache_root="$CLAUDE_CONFIG_DIR/plugins/cache/lbwc-marketplace/lbwc/local"
+  local cache_root="$CLAUDE_CONFIG_DIR/plugins/cache/meridian-marketplace/meridian/local"
   mkdir -p "$cache_root/scripts"
   touch "$cache_root/scripts/hook-wrapper.sh"
 
   run env -u CLAUDE_PLUGIN_ROOT bash "$SCRIPTS_DIR/resolve-plugin-root.sh"
-  expect_case plugin-cache-candidate-ignored 1 "LBWC: plugin root unavailable"
+  expect_case plugin-cache-candidate-ignored 1 "MERIDIAN: plugin root unavailable"
   [ ! -e "$ROOT_LINK" ] || record_case_failure plugin-cache-candidate-ignored "link was created for a cache candidate"
 
   run env -u CLAUDE_PLUGIN_ROOT bash "$SCRIPTS_DIR/resolve-plugin-root.sh" --nonfatal
@@ -67,7 +67,7 @@ expect_link_target() {
 
   make_plugin_root
   run env CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" bash "$SCRIPTS_DIR/resolve-plugin-root.sh" --require-script absent.sh
-  expect_case required-script-absent 1 "LBWC: plugin root unavailable"
+  expect_case required-script-absent 1 "MERIDIAN: plugin root unavailable"
 
   run env CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" bash "$SCRIPTS_DIR/resolve-plugin-root.sh" --require-script
   expect_case require-script-without-name 2 "Usage: resolve-plugin-root.sh"
@@ -80,7 +80,7 @@ expect_link_target() {
 
   install_failing_ln ""
   run env PATH="$TEST_TEMP_DIR/bin:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" bash "$SCRIPTS_DIR/resolve-plugin-root.sh"
-  expect_case link-cannot-be-created 1 "LBWC: plugin root link unavailable"
+  expect_case link-cannot-be-created 1 "MERIDIAN: plugin root link unavailable"
 
   run env PATH="$TEST_TEMP_DIR/bin:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" bash "$SCRIPTS_DIR/resolve-plugin-root.sh" --nonfatal
   expect_case nonfatal-link-failure 0 ""
@@ -134,8 +134,8 @@ expect_link_target() {
   run bash "$SCRIPTS_DIR/ensure-plugin-root-link.sh"
   expect_case missing-arguments 1 "Usage: ensure-plugin-root-link.sh"
 
-  run bash "$SCRIPTS_DIR/ensure-plugin-root-link.sh" "/tmp/.not-lbwc-plugin-root-link-${CLAUDE_SESSION_ID}" "$PLUGIN_ROOT"
-  expect_case non-lbwc-link-name 1 "unexpected link path basename"
+  run bash "$SCRIPTS_DIR/ensure-plugin-root-link.sh" "/tmp/.not-meridian-plugin-root-link-${CLAUDE_SESSION_ID}" "$PLUGIN_ROOT"
+  expect_case non-meridian-link-name 1 "unexpected link path basename"
 
   run bash "$SCRIPTS_DIR/ensure-plugin-root-link.sh" "$ROOT_LINK" "$TEST_TEMP_DIR/missing"
   expect_case target-directory-missing 1 "target directory does not exist"

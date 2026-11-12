@@ -6,7 +6,7 @@ load gate_case_files
 
 setup() {
   setup_temp_dir
-  PLANNING="$TEST_TEMP_DIR/.lbwc-planning"
+  PLANNING="$TEST_TEMP_DIR/.meridian"
   QUESTION_TEXT="Which review pace should this project use?"
   reset_case_failures
 }

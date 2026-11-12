@@ -10,10 +10,10 @@ setup() {
   REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/.." && pwd)"
   SCRIPT="$REPO_ROOT/scripts/track-known-issues.sh"
   TEST_ROOT="$(mktemp -d)"
-  PLANNING_DIR="$TEST_ROOT/.lbwc-planning"
+  PLANNING_DIR="$TEST_ROOT/.meridian"
   PHASE_DIR="$PLANNING_DIR/phases/03-test-phase"
   REGISTRY="$PHASE_DIR/known-issues.json"
-  SUPPRESS_VIA="/lbwc:list-todos"
+  SUPPRESS_VIA="/meridian:list-todos"
   mkdir -p "$PHASE_DIR"
   reset_case_failures
 }
@@ -97,10 +97,10 @@ registry_entry() {
 payload_named() {
   case "$1" in
     transfer) printf '%s' '{"test":"TransferTests","file":"tests/transfer.sh","error":"timeout"}' ;;
-    transfer-via) printf '%s' '{"test":"TransferTests","file":"tests/transfer.sh","error":"timeout","via":"/lbwc:list-todos"}' ;;
-    transfer-other-via) printf '%s' '{"test":"TransferTests","file":"tests/transfer.sh","error":"timeout","via":"/lbwc:fix"}' ;;
+    transfer-via) printf '%s' '{"test":"TransferTests","file":"tests/transfer.sh","error":"timeout","via":"/meridian:list-todos"}' ;;
+    transfer-other-via) printf '%s' '{"test":"TransferTests","file":"tests/transfer.sh","error":"timeout","via":"/meridian:fix"}' ;;
     unknown) printf '%s' '{"test":"NoSuchTest","file":"tests/none.sh","error":"gone"}' ;;
-    unknown-via) printf '%s' '{"test":"NoSuchTest","file":"tests/none.sh","error":"gone","via":"/lbwc:list-todos"}' ;;
+    unknown-via) printf '%s' '{"test":"NoSuchTest","file":"tests/none.sh","error":"gone","via":"/meridian:list-todos"}' ;;
     no-test) printf '%s' '{"file":"tests/transfer.sh","error":"timeout"}' ;;
     no-file) printf '%s' '{"test":"TransferTests","error":"timeout"}' ;;
     no-error) printf '%s' '{"test":"TransferTests","file":"tests/transfer.sh"}' ;;

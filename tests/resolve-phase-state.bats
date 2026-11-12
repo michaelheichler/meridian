@@ -6,14 +6,14 @@ load gate_case_helper
 setup() {
   setup_temp_dir
   SID_PREFIX="covw2-rps-$$-$BATS_TEST_NUMBER"
-  mkdir -p "$TEST_TEMP_DIR/project/.lbwc-planning"
+  mkdir -p "$TEST_TEMP_DIR/project/.meridian"
   cd "$TEST_TEMP_DIR/project"
   reset_case_failures
 }
 
 teardown() {
   cd "$PROJECT_ROOT"
-  rm -rf /tmp/.lbwc-plugin-root-link-"$SID_PREFIX"-* /tmp/.lbwc-phase-detect-"$SID_PREFIX"-* /tmp/.lbwc-phase-detect-live-"$SID_PREFIX"-*
+  rm -rf /tmp/.meridian-plugin-root-link-"$SID_PREFIX"-* /tmp/.meridian-phase-detect-"$SID_PREFIX"-* /tmp/.meridian-phase-detect-live-"$SID_PREFIX"-*
   teardown_temp_dir
 }
 
@@ -31,7 +31,7 @@ resolve_state() {
 }
 
 lock_dir() {
-  printf '/tmp/.lbwc-phase-detect-live-%s-%s.lock\n' "$SID_PREFIX" "$1"
+  printf '/tmp/.meridian-phase-detect-live-%s-%s.lock\n' "$SID_PREFIX" "$1"
 }
 
 @test "phase state resolution prints the session link and fresh detector output or an error marker" {
@@ -41,7 +41,7 @@ lock_dir() {
   flaky=$(fake_plugin flaky 'n=$(cat "$(dirname "$0")/calls" 2>/dev/null || echo 0); echo $((n + 1)) > "$(dirname "$0")/calls"; [ "$n" -ge 1 ] || exit 1; echo "next_phase_state=needs_execute"')
 
   run resolve_state healthy "$healthy"
-  expect_case healthy 0 "/tmp/.lbwc-plugin-root-link-$SID_PREFIX-healthy"$'\n'"next_phase_state=needs_plan"
+  expect_case healthy 0 "/tmp/.meridian-plugin-root-link-$SID_PREFIX-healthy"$'\n'"next_phase_state=needs_plan"
 
   run resolve_state failing "$failing"
   expect_case failing-detector 0 "phase_detect_error=true"
@@ -51,7 +51,7 @@ lock_dir() {
   expect_case_absent detector-recovers-on-retry "phase_detect_error"
 
   run resolve_state no-root "$TEST_TEMP_DIR/absent-plugin"
-  expect_case no-plugin-root 0 "/tmp/.lbwc-plugin-root-link-$SID_PREFIX-no-root"$'\n'"phase_detect_error=true"
+  expect_case no-plugin-root 0 "/tmp/.meridian-plugin-root-link-$SID_PREFIX-no-root"$'\n'"phase_detect_error=true"
 
   lock=$(lock_dir dead-owner)
   mkdir -p "$lock"

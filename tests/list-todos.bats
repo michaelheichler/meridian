@@ -17,7 +17,7 @@ create_state_with_todos() {
   local path="$1"
   mkdir -p "$(dirname "$path")"
   printf '%s\n' \
-    '# LBWC State' \
+    '# MERIDIAN State' \
     '' \
     '**Project:** Test' \
     '**Status:** Active' \
@@ -32,24 +32,24 @@ create_state_with_todos() {
 }
 
 build_layout() {
-  rm -rf .lbwc-planning state-source
-  mkdir -p .lbwc-planning
+  rm -rf .meridian state-source
+  mkdir -p .meridian
   case "$1" in
     archived-milestone)
-      create_state_with_todos ".lbwc-planning/milestones/default/STATE.md"
+      create_state_with_todos ".meridian/milestones/default/STATE.md"
       ;;
     milestones-without-state)
-      mkdir -p .lbwc-planning/milestones
+      mkdir -p .meridian/milestones
       ;;
     symlinked-root)
       create_state_with_todos "state-source/STATE.md"
-      ln -s "$TEST_TEMP_DIR/state-source/STATE.md" .lbwc-planning/STATE.md
+      ln -s "$TEST_TEMP_DIR/state-source/STATE.md" .meridian/STATE.md
       ;;
   esac
 }
 
 @test "list-todos lists root todos with stable mutation metadata and errors unless a writable root STATE.md exists" {
-  create_state_with_todos ".lbwc-planning/STATE.md"
+  create_state_with_todos ".meridian/STATE.md"
 
   run bash "$SCRIPTS_DIR/list-todos.sh"
   expect_status root 0
@@ -71,7 +71,7 @@ build_layout() {
     expect_status "$label" 0
     expect_json "$label" '.status' error
     expect_json_unless_dash "$label" '.message | contains("'"$message"'")' true
-    [ ! -f .lbwc-planning/milestones/default/STATE.md ] || expect_file_has "$label" .lbwc-planning/milestones/default/STATE.md "Refactor auth module"
+    [ ! -f .meridian/milestones/default/STATE.md ] || expect_file_has "$label" .meridian/milestones/default/STATE.md "Refactor auth module"
   done <<'CASES'
 archived-milestone-without-root|archived-milestone||Writable root STATE.md not found
 no-state-anywhere|milestones-without-state||-

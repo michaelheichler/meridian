@@ -5,14 +5,14 @@ load gate_case_helper
 
 setup() {
   setup_temp_dir
-  mkdir -p "$TEST_TEMP_DIR/project/.lbwc-planning/phases/01-work"
+  mkdir -p "$TEST_TEMP_DIR/project/.meridian/phases/01-work"
   cd "$TEST_TEMP_DIR/project"
   git init -q
   git config user.email test@example.invalid
   git config user.name Test
   git -c core.hooksPath=/dev/null commit --allow-empty -qm initial
-  PHASE="$(pwd -P)/.lbwc-planning/phases/01-work"
-  printf '{"max_uat_remediation_rounds":9}\n' > .lbwc-planning/config.json
+  PHASE="$(pwd -P)/.meridian/phases/01-work"
+  printf '{"max_uat_remediation_rounds":9}\n' > .meridian/config.json
   reset_case_failures
 }
 

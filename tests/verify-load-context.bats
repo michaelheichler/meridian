@@ -11,20 +11,20 @@ setup() {
   await_git_ai
   export CLAUDE_SESSION_ID="verify-load-$$-$RANDOM"
   export CLAUDE_PLUGIN_ROOT="$PROJECT_ROOT"
-  printf -v SESSION_LINK '/tmp/.lbwc-plugin-root-link-%s' "$CLAUDE_SESSION_ID"
-  printf -v DETECT_CACHE '/tmp/.lbwc-phase-detect-%s.txt' "$CLAUDE_SESSION_ID"
+  printf -v SESSION_LINK '/tmp/.meridian-plugin-root-link-%s' "$CLAUDE_SESSION_ID"
+  printf -v DETECT_CACHE '/tmp/.meridian-phase-detect-%s.txt' "$CLAUDE_SESSION_ID"
   ln -s "$PROJECT_ROOT" "$SESSION_LINK"
-  mkdir -p .lbwc-planning/phases/07-checkout
-  printf '%s\n' '{}' > .lbwc-planning/config.json
-  printf '%s\n' '# Checkout' > .lbwc-planning/PROJECT.md
-  printf '%s\n' 'Phase: 07' 'Status: ready for verification' > .lbwc-planning/STATE.md
-  printf '%s\n' '# Checkout plan' > .lbwc-planning/phases/07-checkout/07-01-PLAN.md
-  printf '%s\n' '---' 'status: complete' '---' > .lbwc-planning/phases/07-checkout/07-01-SUMMARY.md
+  mkdir -p .meridian/phases/07-checkout
+  printf '%s\n' '{}' > .meridian/config.json
+  printf '%s\n' '# Checkout' > .meridian/PROJECT.md
+  printf '%s\n' 'Phase: 07' 'Status: ready for verification' > .meridian/STATE.md
+  printf '%s\n' '# Checkout plan' > .meridian/phases/07-checkout/07-01-PLAN.md
+  printf '%s\n' '---' 'status: complete' '---' > .meridian/phases/07-checkout/07-01-SUMMARY.md
 }
 
 teardown() {
   rm -f "$SESSION_LINK" "$DETECT_CACHE"
-  rm -rf "/tmp/.lbwc-phase-detect-live-${CLAUDE_SESSION_ID}.lock"
+  rm -rf "/tmp/.meridian-phase-detect-live-${CLAUDE_SESSION_ID}.lock"
   await_git_ai
   cd "$PROJECT_ROOT" || return 1
   teardown_temp_dir
@@ -46,7 +46,7 @@ state_lines() {
 }
 
 phase_listing() {
-  mkdir -p .lbwc-planning/phases/11-receipts
+  mkdir -p .meridian/phases/11-receipts
   load_section phases
   [[ "$output" == *07-checkout* ]]
   [[ "$output" == *11-receipts* ]]
@@ -66,7 +66,7 @@ phase_detection_root_fallback() {
 }
 
 compact_warning() {
-  printf '%s|99|100000\n' "$CLAUDE_SESSION_ID" > .lbwc-planning/.context-usage
+  printf '%s|99|100000\n' "$CLAUDE_SESSION_ID" > .meridian/.context-usage
   load_section compact
   [[ "$output" == *99%* ]]
   [[ "$output" == *1000* ]]
@@ -75,7 +75,7 @@ compact_warning() {
 qa_results() {
   printf '%s\n' '---' 'result: passed' 'passed: 3' 'failed: 0' 'total: 3' '---' \
     '✓ **Checkout preserves cart**' \
-    > .lbwc-planning/phases/07-checkout/07-VERIFICATION.md
+    > .meridian/phases/07-checkout/07-VERIFICATION.md
   load_section qa-summary
   [[ "$output" == *'Checkout preserves cart'* ]]
   [[ "$output" == *'3/3'* ]]
@@ -110,10 +110,10 @@ resume_metadata() {
   printf '%s\n' '---' 'status: testing' '---' '### P1: Add an item' \
     '- **Result:** pass' '### P2: Submit checkout' \
     '- **Scenario:** Submit a saved cart' '- **Expected:** Receipt contains both items' \
-    > .lbwc-planning/phases/07-checkout/07-UAT.md
+    > .meridian/phases/07-checkout/07-UAT.md
   load_section uat-resume
   [[ "$output" == *uat_resume_target_slug=07-checkout* ]]
-  [[ "$output" == *uat_path=.lbwc-planning/phases/07-checkout/07-UAT.md* ]]
+  [[ "$output" == *uat_path=.meridian/phases/07-checkout/07-UAT.md* ]]
   [[ "$output" == *'uat_resume=P2 uat_completed=1 uat_total=2'* ]]
   [[ "$output" == *uat_resume_scenario='Submit a saved cart'* ]]
   [[ "$output" == *uat_resume_expected='Receipt contains both items'* ]]
@@ -131,14 +131,14 @@ resume_none() {
 }
 
 missing_state() {
-  rm .lbwc-planning/STATE.md
+  rm .meridian/STATE.md
   load_section state
   [ -n "$output" ]
   [[ "$output" != *'Phase: 07'* ]]
 }
 
 missing_phases() {
-  rm -rf .lbwc-planning/phases
+  rm -rf .meridian/phases
   load_section phases
   [ -n "$output" ]
   [[ "$output" != *07-checkout* ]]
@@ -178,7 +178,7 @@ unavailable_resume() {
 }
 
 resume_without_target() {
-  rm -rf .lbwc-planning/phases/07-checkout
+  rm -rf .meridian/phases/07-checkout
   load_section uat-resume
   [[ "$output" == *uat_resume=unavailable* ]]
 }

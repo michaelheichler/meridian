@@ -39,7 +39,7 @@ migration_rejections() {
     run bash "$SCRIPTS_DIR/migrate-config.sh" config.json
     expect_case "$label" 1
     cmp -s config.json before.json || record_case_failure "$label" 'failed migration changed source'
-    [ "$(find . -name '*.lbwc-migrate.*' | wc -l | tr -d ' ')" -eq 0 ] || record_case_failure "$label" 'staging file leaked'
+    [ "$(find . -name '*.meridian-migrate.*' | wc -l | tr -d ' ')" -eq 0 ] || record_case_failure "$label" 'staging file leaked'
   done
   assert_no_case_failures
 }

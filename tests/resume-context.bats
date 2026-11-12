@@ -6,9 +6,9 @@ load isolated_case_helper
 load resume_context_helper
 
 setup() {
-  unset LBWC_CONTROL_ROOT LBWC_PROJECT_ROOT LBWC_PLANNING_DIR
-  export LBWC_PLANNING_DIR="$BATS_TEST_TMPDIR/planning"
-  mkdir -p "$LBWC_PLANNING_DIR"
+  unset MERIDIAN_CONTROL_ROOT MERIDIAN_PROJECT_ROOT MERIDIAN_PLANNING_DIR
+  export MERIDIAN_PLANNING_DIR="$BATS_TEST_TMPDIR/planning"
+  mkdir -p "$MERIDIAN_PLANNING_DIR"
 }
 
 teardown() { await_git_ai; }

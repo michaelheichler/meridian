@@ -2,7 +2,7 @@
 
 fixture_watchdog_bus() {
   local hash registry
-  source "$REPO_ROOT/scripts/lib/lbwc-control-root.sh"
+  source "$REPO_ROOT/scripts/lib/meridian-control-root.sh"
   source "$REPO_ROOT/scripts/lib/tmux-runtime.sh"
   tmux_runtime_configure "$CONTROL_ROOT"
   tmux_runtime_ensure

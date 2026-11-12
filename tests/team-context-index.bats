@@ -88,28 +88,28 @@ write_settings_with_plans() {
   printf '%s\n' '# Plan' > "$PROJECT_DIR/plan.md"
   run_index
   expect_case no-planning-dir 0 ""
-  [ ! -d "$PROJECT_DIR/.lbwc-planning" ] || record_case_failure no-planning-dir-created ".lbwc-planning exists"
+  [ ! -d "$PROJECT_DIR/.meridian" ] || record_case_failure no-planning-dir-created ".meridian exists"
   [ -f "$RUN_DIR/plan-index.json" ] || record_case_failure no-planning-dir-plan-index "plan-index.json missing"
   [ -f "$RUN_DIR/codebase-index.json" ] || record_case_failure no-planning-dir-codebase-index "codebase-index.json missing"
 
   fresh_project digests
   printf '%s\n' '# Digest me' > "$PROJECT_DIR/plan.md"
-  mkdir -p "$PROJECT_DIR/.lbwc-planning/codebase"
+  mkdir -p "$PROJECT_DIR/.meridian/codebase"
   printf '%s\n' \
     'mapped_at: 2026-01-01T00:00:00Z' \
     'git_hash: 0000000000000000000000000000000000000000' \
     'file_count: 1' \
-    > "$PROJECT_DIR/.lbwc-planning/codebase/META.md"
-  printf '%s\n' '# Stack' > "$PROJECT_DIR/.lbwc-planning/codebase/STACK.md"
+    > "$PROJECT_DIR/.meridian/codebase/META.md"
+  printf '%s\n' '# Stack' > "$PROJECT_DIR/.meridian/codebase/STACK.md"
   run_index
   expect_case digests 0 ""
   digest=$(shasum -a 256 "$PROJECT_DIR/plan.md" | awk '{print $1}')
-  map_digest=$(shasum -a 256 "$PROJECT_DIR/.lbwc-planning/codebase/META.md" | awk '{print $1}')
+  map_digest=$(shasum -a 256 "$PROJECT_DIR/.meridian/codebase/META.md" | awk '{print $1}')
   expect_index digests-plan-path-and-digest "$RUN_DIR/plan-index.json" \
     --arg path "$(cd "$PROJECT_DIR" && pwd -P)/plan.md" --arg digest "sha256:$digest" \
     '.candidates[0].canonical_path == $path and .candidates[0].digest == $digest'
   expect_index digests-stale-codebase-map "$RUN_DIR/codebase-index.json" \
-    --arg path "$(cd "$PROJECT_DIR/.lbwc-planning/codebase" && pwd -P)/META.md" --arg digest "sha256:$map_digest" \
+    --arg path "$(cd "$PROJECT_DIR/.meridian/codebase" && pwd -P)/META.md" --arg digest "sha256:$map_digest" \
     '.artifacts | any(.canonical_path == $path and .digest == $digest and .freshness == "stale")'
 
   assert_no_case_failures

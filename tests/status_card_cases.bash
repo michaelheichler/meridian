@@ -54,7 +54,7 @@ card_ascii() {
   card_edit ".status=\"$state\""
   card_render
   printf '%s\n' "$output" > unicode-output
-  printf '{"visual_format":"ascii"}\n' > "$LBWC_PLANNING_DIR/config.json"
+  printf '{"visual_format":"ascii"}\n' > "$MERIDIAN_PLANNING_DIR/config.json"
   card_render
   [ "$status" -eq "$wanted" ]
   [[ "${lines[0]}" == *"$ascii Implement parser"* ]]

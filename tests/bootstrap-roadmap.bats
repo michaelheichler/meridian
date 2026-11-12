@@ -37,7 +37,7 @@ teardown() {
 }
 
 @test "bootstrap-roadmap writes one linked section and one directory per phase" {
-  local out="$WORK/.lbwc-planning/ROADMAP.md"
+  local out="$WORK/.meridian/ROADMAP.md"
   write_text "$WORK/phases.json" '[
     {"name": "Core API", "goal": "Serve data", "requirements": ["REQ-01", "REQ-02"],
      "success_criteria": ["Returns 200", "Logs requests"]},
@@ -54,8 +54,8 @@ teardown() {
   expect_exact_line "criteria-bullets" "$out" "- Logs requests"
   expect_exact_line "first-phase-has-no-dependency" "$out" "**Dependencies:** None"
   expect_exact_line "later-phase-depends-on-previous" "$out" "**Dependencies:** Phase 1"
-  expect_path "first-phase-directory" "$WORK/.lbwc-planning/phases/01-core-api"
-  expect_path "second-phase-directory" "$WORK/.lbwc-planning/phases/02-ui-polish"
+  expect_path "first-phase-directory" "$WORK/.meridian/phases/01-core-api"
+  expect_path "second-phase-directory" "$WORK/.meridian/phases/02-ui-polish"
 
   assert_no_case_failures
 }

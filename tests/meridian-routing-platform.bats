@@ -3,7 +3,7 @@
 load test_helper
 load gate_case_helper
 
-ROUTING="${LBWC_ROUTING_UNDER_TEST:-${SCRIPTS_DIR}/lbwc-routing.sh}"
+ROUTING="${MERIDIAN_ROUTING_UNDER_TEST:-${SCRIPTS_DIR}/meridian-routing.sh}"
 
 setup() {
   setup_temp_dir

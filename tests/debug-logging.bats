@@ -10,13 +10,13 @@ setup() {
   cd "$BATS_TEST_TMPDIR/repo"
   git init -q
   export HOME="$BATS_TEST_TMPDIR/home"
-  export LBWC_PLANNING_DIR="$PWD/.lbwc-planning"
-  mkdir -p "$HOME" "$LBWC_PLANNING_DIR"
-  printf '{"debug_logging":true}\n' > "$LBWC_PLANNING_DIR/config.json"
+  export MERIDIAN_PLANNING_DIR="$PWD/.meridian"
+  mkdir -p "$HOME" "$MERIDIAN_PLANNING_DIR"
+  printf '{"debug_logging":true}\n' > "$MERIDIAN_PLANNING_DIR/config.json"
 }
 
 teardown() {
-  chmod -R u+w "$LBWC_PLANNING_DIR" 2>/dev/null || true
+  chmod -R u+w "$MERIDIAN_PLANNING_DIR" 2>/dev/null || true
   await_git_ai
 }
 

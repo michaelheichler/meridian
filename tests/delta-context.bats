@@ -15,7 +15,7 @@ teardown() {
 
 build_workspace() {
   local root=$1 plan_title=${2:-Test Plan} planning
-  planning="$root/.lbwc-planning"
+  planning="$root/.meridian"
   mkdir -p "$planning/phases/02-test-phase"
   printf '%s\n' '{}' > "$planning/config.json"
   printf '%s\n' '# Test Roadmap' '## Phase 2: Test Phase' '**Goal:** Test goal' \
@@ -28,8 +28,8 @@ build_workspace() {
 init_repo() {
   mkdir -p "$1"
   git -C "$1" init -q
-  git -C "$1" config user.name "LBWC Test"
-  git -C "$1" config user.email "lbwc-tests@example.com"
+  git -C "$1" config user.name "MERIDIAN Test"
+  git -C "$1" config user.email "meridian-tests@example.com"
 }
 
 commit_all() {
@@ -49,8 +49,8 @@ expect_exact_output() {
   [ "$output" = "$want" ] || record_case_failure "$label" "output=[$output] want=[$want]"
 }
 
-phase_of() { printf '%s\n' "$1/.lbwc-planning/phases/02-test-phase"; }
-plan_of() { printf '%s\n' "$1/.lbwc-planning/phases/02-test-phase/02-01-PLAN.md"; }
+phase_of() { printf '%s\n' "$1/.meridian/phases/02-test-phase"; }
+plan_of() { printf '%s\n' "$1/.meridian/phases/02-test-phase/02-01-PLAN.md"; }
 
 @test "delta-files picks summaries, worktree changes, last tag or recent commits for the target scope" {
   local root phase unrelated nested step
@@ -61,12 +61,12 @@ plan_of() { printf '%s\n' "$1/.lbwc-planning/phases/02-test-phase/02-01-PLAN.md"
   write_summary "$phase" '- scripts/test.sh' '- config/test.json (new)'
   printf '%s\n' '## Files Modified' '- scripts/test.sh' '- docs/extra.md' > "$phase/02-02-SUMMARY.md"
   cd "$root" || return 1
-  run bash "$SCRIPTS_DIR/delta-files.sh" ".lbwc-planning/phases/02-test-phase"
+  run bash "$SCRIPTS_DIR/delta-files.sh" ".meridian/phases/02-test-phase"
   expect_case "union-sorted-deduped-suffix-stripped" 0 ""
   expect_exact_output "union-sorted-deduped-suffix-stripped" $'config/test.json\ndocs/extra.md\nscripts/test.sh'
 
   rm -f "$phase/02-01-SUMMARY.md" "$phase/02-02-SUMMARY.md"
-  run bash "$SCRIPTS_DIR/delta-files.sh" ".lbwc-planning/phases/02-test-phase"
+  run bash "$SCRIPTS_DIR/delta-files.sh" ".meridian/phases/02-test-phase"
   expect_case_silent "no-summary-files" 0
 
   run bash "$SCRIPTS_DIR/delta-files.sh" "$root/absent-phase"
@@ -170,8 +170,8 @@ plan_of() { printf '%s\n' "$1/.lbwc-planning/phases/02-test-phase/02-01-PLAN.md"
   write_summary "$(phase_of "$root")" '- sample.txt'
   printf 'sample body\n' > "$root/sample.txt"
   cd "$unrelated" || return 1
-  run env LBWC_PLANNING_DIR="$root/.lbwc-planning" bash "$SCRIPTS_DIR/compile-context.sh" 02 dev \
-    "$root/.lbwc-planning/phases" "$(plan_of "$root")"
+  run env MERIDIAN_PLANNING_DIR="$root/.meridian" bash "$SCRIPTS_DIR/compile-context.sh" 02 dev \
+    "$root/.meridian/phases" "$(plan_of "$root")"
   context="$(phase_of "$root")/.context-dev.md"
   expect_status "summary-target" 0
   expect_file_line "summary-target-heading" "$context" '#### `sample.txt`'
@@ -185,8 +185,8 @@ plan_of() { printf '%s\n' "$1/.lbwc-planning/phases/02-test-phase/02-01-PLAN.md"
   printf 'v2 body\n' > "$root/sample.txt"
   commit_all "$root" update
   cd "$unrelated" || return 1
-  run env LBWC_PLANNING_DIR="$root/.lbwc-planning" bash "$SCRIPTS_DIR/compile-context.sh" 02 dev \
-    "$root/.lbwc-planning/phases" "$(plan_of "$root")"
+  run env MERIDIAN_PLANNING_DIR="$root/.meridian" bash "$SCRIPTS_DIR/compile-context.sh" 02 dev \
+    "$root/.meridian/phases" "$(plan_of "$root")"
   context="$(phase_of "$root")/.context-dev.md"
   expect_status "git-target" 0
   expect_file_line "git-target-list" "$context" '- `sample.txt`'
@@ -202,7 +202,7 @@ plan_of() { printf '%s\n' "$1/.lbwc-planning/phases/02-test-phase/02-01-PLAN.md"
   printf 'v2 body\n' > "$nested/apps/proj/sample.txt"
   commit_all "$nested" update
   cd "$unrelated" || return 1
-  run bash "$SCRIPTS_DIR/compile-context.sh" 02 dev "$nested/apps/proj/.lbwc-planning/phases" \
+  run bash "$SCRIPTS_DIR/compile-context.sh" 02 dev "$nested/apps/proj/.meridian/phases" \
     "$(plan_of "$nested/apps/proj")"
   context="$(phase_of "$nested/apps/proj")/.context-dev.md"
   expect_status "nested-target" 0
@@ -212,10 +212,10 @@ plan_of() { printf '%s\n' "$1/.lbwc-planning/phases/02-test-phase/02-01-PLAN.md"
 
   root="$TEST_TEMP_DIR/lead-target"
   build_workspace "$root"
-  printf '%s\n' '## Requirements' '- [REQ-01] Test requirement' > "$root/.lbwc-planning/REQUIREMENTS.md"
+  printf '%s\n' '## Requirements' '- [REQ-01] Test requirement' > "$root/.meridian/REQUIREMENTS.md"
   cd "$unrelated" || return 1
 
-  run bash "$SCRIPTS_DIR/compile-context.sh" 02 lead "$root/.lbwc-planning/phases" "$(plan_of "$root")"
+  run bash "$SCRIPTS_DIR/compile-context.sh" 02 lead "$root/.meridian/phases" "$(plan_of "$root")"
 
   context="$(phase_of "$root")/.context-lead.md"
   expect_status "lead" 0
@@ -226,7 +226,7 @@ plan_of() { printf '%s\n' "$1/.lbwc-planning/phases/02-test-phase/02-01-PLAN.md"
   write_summary "$(phase_of "$root")" '- scripts/delta-test.sh'
   cd "$root" || return 1
 
-  run bash "$SCRIPTS_DIR/compile-context.sh" 02 dev ".lbwc-planning/phases" ".lbwc-planning/phases/02-test-phase/02-01-PLAN.md"
+  run bash "$SCRIPTS_DIR/compile-context.sh" 02 dev ".meridian/phases" ".meridian/phases/02-test-phase/02-01-PLAN.md"
 
   context="$(phase_of "$root")/.context-dev.md"
   expect_status "active-plan" 0

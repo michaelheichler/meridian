@@ -20,7 +20,7 @@ teardown() {
 }
 
 planning() {
-  PLANNING="$TEST_ROOT/$1/.lbwc-planning"
+  PLANNING="$TEST_ROOT/$1/.meridian"
   STATE="$PLANNING/STATE.md"
   mkdir -p "$PLANNING/phases"
 }

@@ -39,7 +39,7 @@ expect_exact_output() {
   local dir project
   dir=$(fresh_dir project)
 
-  project="$dir/.lbwc-planning/PROJECT.md"
+  project="$dir/.meridian/PROJECT.md"
   run bash "$SCRIPTS_DIR/bootstrap/bootstrap-project.sh" "$project" "Example Project" "Example description"
   expect_case "default-core-value" 0 ""
   expect_path "default-core-value-file" "$project"
@@ -155,13 +155,13 @@ CASES
   while IFS='|' read -r label roadmap state phases expected; do
     [ -n "$label" ] || continue
     dir=$(fresh_dir "slug-$label")
-    mkdir -p "$dir/.lbwc-planning"
-    printf '%b' "$roadmap" > "$dir/.lbwc-planning/ROADMAP.md"
-    [ -z "$state" ] || printf '%b' "$state" > "$dir/.lbwc-planning/STATE.md"
+    mkdir -p "$dir/.meridian"
+    printf '%b' "$roadmap" > "$dir/.meridian/ROADMAP.md"
+    [ -z "$state" ] || printf '%b' "$state" > "$dir/.meridian/STATE.md"
     for phase in $phases; do
-      mkdir -p "$dir/.lbwc-planning/phases/$phase"
+      mkdir -p "$dir/.meridian/phases/$phase"
     done
-    run bash "$SCRIPTS_DIR/derive-milestone-slug.sh" "$dir/.lbwc-planning"
+    run bash "$SCRIPTS_DIR/derive-milestone-slug.sh" "$dir/.meridian"
     expect_case "$label" 0 "$expected"
     expect_exact_output "$label" "$expected"
   done <<'CASES'
@@ -177,15 +177,15 @@ long-names-truncate-at-word|## Phase 1: aaaaaaaaaaaaaaaaaaaa\n## Phase 2: bbbbbb
 CASES
 
   dir=$(fresh_dir slug-dated)
-  mkdir -p "$dir/.lbwc-planning"
-  printf '%s\n' 'prose only' > "$dir/.lbwc-planning/ROADMAP.md"
+  mkdir -p "$dir/.meridian"
+  printf '%s\n' 'prose only' > "$dir/.meridian/ROADMAP.md"
 
-  run bash "$SCRIPTS_DIR/derive-milestone-slug.sh" "$dir/.lbwc-planning"
+  run bash "$SCRIPTS_DIR/derive-milestone-slug.sh" "$dir/.meridian"
 
   expect_case "dated" 0 "01-milestone-$(date +%Y%m%d)"
 
   dir=$(fresh_dir slug-collide)
-  plan="$dir/.lbwc-planning"
+  plan="$dir/.meridian"
   mkdir -p "$plan/milestones/01-old" "$plan/milestones/02-other"
   printf '%s\n' '## Phase 1: Fresh work' > "$plan/ROADMAP.md"
 
@@ -201,7 +201,7 @@ CASES
 
 
   dir=$(fresh_dir slug-fail)
-  plan="$dir/.lbwc-planning"
+  plan="$dir/.meridian"
   mkdir -p "$plan"
 
   run bash "$SCRIPTS_DIR/derive-milestone-slug.sh" "$plan"
@@ -224,6 +224,8 @@ CASES
 write_phase_detect_stub() {
   local dir=$1 kv=$2
   cp "$SCRIPTS_DIR/archive-uat-guard.sh" "$dir/archive-uat-guard.sh"
+  mkdir -p "$dir/lib"
+  cp "$SCRIPTS_DIR/lib/rename-migration.sh" "$dir/lib/"
   { echo '#!/usr/bin/env bash'; echo "printf '%s\\n' $kv"; } > "$dir/phase-detect.sh"
 }
 
@@ -265,7 +267,7 @@ guard_blocks() {
 }
 
 @test "normalize-plan-filenames renames bare plans and keeps existing destinations" {
-  local phase="$TEST_ROOT/.lbwc-planning/phases/01-bootstrap"
+  local phase="$TEST_ROOT/.meridian/phases/01-bootstrap"
   mkdir -p "$phase"
   printf '%s\n' '# Existing' > "$phase/01-PLAN.md"
   printf '%s\n' '# Source' > "$phase/PLAN-1.md"
@@ -282,11 +284,11 @@ guard_blocks() {
   assert_no_case_failures
 }
 
-@test "migrate-config writes an LBWC configuration version" {
+@test "migrate-config writes an MERIDIAN configuration version" {
   local dir config
   dir=$(fresh_dir migrate)
-  config="$dir/.lbwc-planning/config.json"
-  mkdir -p "$dir/.lbwc-planning"
+  config="$dir/.meridian/config.json"
+  mkdir -p "$dir/.meridian"
   printf '%s\n' '{"config_version":1}' > "$config"
 
   run bash "$SCRIPTS_DIR/migrate-config.sh" "$config"
@@ -296,13 +298,13 @@ guard_blocks() {
   assert_no_case_failures
 }
 
-@test "suggest-next uses LBWC command names" {
+@test "suggest-next uses MERIDIAN command names" {
   local dir
   dir=$(fresh_dir suggest)
-  mkdir -p "$dir/.lbwc-planning"
+  mkdir -p "$dir/.meridian"
 
-  run env LBWC_PLANNING_DIR="$dir/.lbwc-planning" bash "$SCRIPTS_DIR/suggest-next.sh"
+  run env MERIDIAN_PLANNING_DIR="$dir/.meridian" bash "$SCRIPTS_DIR/suggest-next.sh"
 
-  expect_case "suggest" 0 "/lbwc:"
+  expect_case "suggest" 0 "/meridian:"
   assert_no_case_failures
 }

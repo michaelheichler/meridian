@@ -7,10 +7,10 @@ setup() {
   SCRIPT="$REPO_ROOT/scripts/agent-lifecycle.sh"
   TEST_ROOT="$(mktemp -d)"
   TEST_ROOT="$(cd "$TEST_ROOT" && pwd -P)"
-  PLANNING_DIR="$TEST_ROOT/.lbwc-planning"
+  PLANNING_DIR="$TEST_ROOT/.meridian"
   MANIFEST="$PLANNING_DIR/.agent-manifest.json"
-  ENGINEER=lbwc-python-engineer-calm-fox
-  CRITIC=lbwc-python-critic-calm-owl
+  ENGINEER=meridian-python-engineer-calm-fox
+  CRITIC=meridian-python-critic-calm-owl
   mkdir -p "$PLANNING_DIR/.contracts/tasks"
 }
 
@@ -26,7 +26,7 @@ event_payload() {
 run_lifecycle() {
   local payload="$1"
   shift
-  run --separate-stderr env LBWC_PLANNING_DIR="$PLANNING_DIR" "$@" <<< "$payload"
+  run --separate-stderr env MERIDIAN_PLANNING_DIR="$PLANNING_DIR" "$@" <<< "$payload"
 }
 
 agent_state() {
@@ -62,7 +62,7 @@ write_idle_sleep_shim() {
   cat > "$bin/sleep" <<'EOF'
 #!/usr/bin/env bash
 [ "$1" = "120" ] || exit 9
-printf '%s\n' "$1" > "$LBWC_TEST_SLEEP_LOG"
+printf '%s\n' "$1" > "$MERIDIAN_TEST_SLEEP_LOG"
 EOF
   chmod +x "$bin/sleep"
   printf '%s\n' "$bin"
@@ -92,11 +92,11 @@ prepare_planning_dir() {
     mkdir -p "$PLANNING_DIR"
     rm -f "$MANIFEST"
   done <<'CASES'
-idle-without-planning-dir@absent@idle@TeammateIdle@lbwc-python-engineer-calm-fox
-check-without-planning-dir@absent@check@TeammateIdle@lbwc-python-engineer-calm-fox
-touch-start-without-planning-dir@absent@touch start@SubagentStart@lbwc-python-engineer-calm-fox
-touch-stop-without-planning-dir@absent@touch stop@SubagentStop@lbwc-python-engineer-calm-fox
-touch-start-without-manifest@no-manifest@touch start@SubagentStart@lbwc-python-engineer-calm-fox
+idle-without-planning-dir@absent@idle@TeammateIdle@meridian-python-engineer-calm-fox
+check-without-planning-dir@absent@check@TeammateIdle@meridian-python-engineer-calm-fox
+touch-start-without-planning-dir@absent@touch start@SubagentStart@meridian-python-engineer-calm-fox
+touch-stop-without-planning-dir@absent@touch stop@SubagentStop@meridian-python-engineer-calm-fox
+touch-start-without-manifest@no-manifest@touch start@SubagentStart@meridian-python-engineer-calm-fox
 touch-for-unknown-agent@empty-manifest@touch@SubagentStart@unknown-agent
 CASES
 
@@ -117,13 +117,13 @@ CASES
   rm -f "$MANIFEST"
   mkdir -p "$shim_dir"
   cp "$SCRIPT" "$shim_dir/agent-lifecycle.sh"
-  run env LBWC_PLANNING_DIR="$PLANNING_DIR" bash "$shim_dir/agent-lifecycle.sh" sweep
+  run env MERIDIAN_PLANNING_DIR="$PLANNING_DIR" bash "$shim_dir/agent-lifecycle.sh" sweep
   [ "$status" -ne 0 ]
   [ "$output" = "agent_manifest_status=unavailable" ]
 
   [ "$(id -u)" -ne 0 ] || skip "root ignores directory permissions"
   chmod 000 "$PLANNING_DIR"
-  run --separate-stderr env LBWC_PLANNING_DIR="$PLANNING_DIR" bash "$SCRIPT" sweep
+  run --separate-stderr env MERIDIAN_PLANNING_DIR="$PLANNING_DIR" bash "$SCRIPT" sweep
   [ "$status" -eq 1 ]
   [ -z "$output" ]
   [ "$stderr" = "agent_manifest_status=unavailable" ]
@@ -134,13 +134,13 @@ CASES
   while IFS='@' read -r label payload expected; do
     [ -n "$label" ] || continue
     write_contract_and_manifest registered
-    run_lifecycle "$payload" LBWC_LIFECYCLE_NOW=1786280400 bash "$SCRIPT" touch start
+    run_lifecycle "$payload" MERIDIAN_LIFECYCLE_NOW=1786280400 bash "$SCRIPT" touch start
     [ "$status" -eq 0 ] || { echo "case=$label status=$status stdout=$output stderr=$stderr" >&2; return 1; }
     [ "$(agent_state "$ENGINEER")" = "$expected" ] \
       || { echo "case=$label state=$(agent_state "$ENGINEER") expected=$expected" >&2; return 1; }
   done <<'CASES'
-native-start-event@{"hook_event_name":"SubagentStart","agent_type":"lbwc-python-engineer-calm-fox"}@running
-self-reported-state@{"agent_type":"lbwc-python-engineer-calm-fox","state":"running"}@registered
+native-start-event@{"hook_event_name":"SubagentStart","agent_type":"meridian-python-engineer-calm-fox"}@running
+self-reported-state@{"agent_type":"meridian-python-engineer-calm-fox","state":"running"}@registered
 CASES
 }
 
@@ -165,8 +165,8 @@ CASES
     printf 'generated definition\n' > "$TEST_ROOT/.claude/agents/$name.md"
     rm -f "$sleep_log"
 
-    run_lifecycle "$(event_payload TeammateIdle "$name")" PATH="$bin:$PATH" LBWC_TEST_SLEEP_LOG="$sleep_log" \
-      LBWC_LIFECYCLE_NOW=1786280400 bash "$SCRIPT" idle
+    run_lifecycle "$(event_payload TeammateIdle "$name")" PATH="$bin:$PATH" MERIDIAN_TEST_SLEEP_LOG="$sleep_log" \
+      MERIDIAN_LIFECYCLE_NOW=1786280400 bash "$SCRIPT" idle
 
     [ "$status" -eq 0 ] || { echo "case=$label status=$status stdout=$output stderr=$stderr" >&2; return 1; }
     [ "$(jq -r '.continue' <<< "$output")" = "false" ] || { echo "case=$label output=$output" >&2; return 1; }
@@ -177,8 +177,8 @@ CASES
     [ -f "$TEST_ROOT/.claude/agents/$name.md" ] || { echo "case=$label definition was removed" >&2; return 1; }
     [ "$(cat "$sleep_log")" = "120" ] || { echo "case=$label sleep log=$(cat "$sleep_log")" >&2; return 1; }
   done <<'CASES'
-solo-engineer@lbwc-python-engineer-calm-fox@python-engineer@solo@["scripts/owned.sh"]
-paired-critic@lbwc-python-critic-calm-owl@python-critic@pair@[]
+solo-engineer@meridian-python-engineer-calm-fox@python-engineer@solo@["scripts/owned.sh"]
+paired-critic@meridian-python-critic-calm-owl@python-critic@pair@[]
 CASES
 
   write_contract_and_manifest running
@@ -186,14 +186,14 @@ CASES
   cat > "$active_bin/sleep" <<'EOF'
 #!/usr/bin/env bash
 [ "$1" = "120" ] || exit 9
-printf '%s\n' "$1" > "$LBWC_TEST_SLEEP_LOG"
-tmp="${LBWC_TEST_MANIFEST}.tmp"
-jq 'del(.agents["lbwc-python-engineer-calm-fox"].idle_observation_token) | .agents["lbwc-python-engineer-calm-fox"].last_activity_at = "2026-08-09T13:00:01Z"' "$LBWC_TEST_MANIFEST" > "$tmp" && mv "$tmp" "$LBWC_TEST_MANIFEST"
+printf '%s\n' "$1" > "$MERIDIAN_TEST_SLEEP_LOG"
+tmp="${MERIDIAN_TEST_MANIFEST}.tmp"
+jq 'del(.agents["meridian-python-engineer-calm-fox"].idle_observation_token) | .agents["meridian-python-engineer-calm-fox"].last_activity_at = "2026-08-09T13:00:01Z"' "$MERIDIAN_TEST_MANIFEST" > "$tmp" && mv "$tmp" "$MERIDIAN_TEST_MANIFEST"
 EOF
   chmod +x "$active_bin/sleep"
   rm -f "$sleep_log"
-  run_lifecycle "$(event_payload TeammateIdle "$ENGINEER")" PATH="$active_bin:$PATH" LBWC_TEST_SLEEP_LOG="$sleep_log" \
-    LBWC_TEST_MANIFEST="$MANIFEST" LBWC_LIFECYCLE_NOW=1786280400 bash "$SCRIPT" idle
+  run_lifecycle "$(event_payload TeammateIdle "$ENGINEER")" PATH="$active_bin:$PATH" MERIDIAN_TEST_SLEEP_LOG="$sleep_log" \
+    MERIDIAN_TEST_MANIFEST="$MANIFEST" MERIDIAN_LIFECYCLE_NOW=1786280400 bash "$SCRIPT" idle
   [ "$status" -eq 0 ]
   [ -z "$output" ]
   [ "$(agent_state "$ENGINEER")" = "running" ]
@@ -204,7 +204,7 @@ EOF
   jq '.created_by = "worker"' "$contract_path" > "$TEST_ROOT/contract.tmp"
   mv "$TEST_ROOT/contract.tmp" "$contract_path"
 
-  run env LBWC_PLANNING_DIR="$PLANNING_DIR" bash "$SCRIPT" idle <<< "$(event_payload TeammateIdle "$ENGINEER")"
+  run env MERIDIAN_PLANNING_DIR="$PLANNING_DIR" bash "$SCRIPT" idle <<< "$(event_payload TeammateIdle "$ENGINEER")"
 
   [ "$status" -ne 0 ]
   [ "$output" = "agent_contract_status=invalid" ]
@@ -212,16 +212,16 @@ EOF
 }
 
 @test "agent-lifecycle: tmux session start fails closed on a malformed runtime registry and heartbeats a bound agent" {
-  local control_root="$TEST_ROOT/control" bound_root="$TEST_ROOT/project/.lbwc-planning"
+  local control_root="$TEST_ROOT/control" bound_root="$TEST_ROOT/project/.meridian"
   mkdir -p "$control_root/.runtime/tmux-bus"
   printf '{not valid json\n' > "$control_root/.runtime/tmux-bus/registry.json"
 
   run env \
-    LBWC_CONTROL_ROOT="$control_root" \
-    LBWC_TMUX_AGENT=1 \
-    LBWC_TMUX_AGENT_ID=agent-a \
-    LBWC_TMUX_CONTRACT_ID=contract-a \
-    LBWC_TMUX_CAPABILITY=0123456789abcdef0123456789abcdef \
+    MERIDIAN_CONTROL_ROOT="$control_root" \
+    MERIDIAN_TMUX_AGENT=1 \
+    MERIDIAN_TMUX_AGENT_ID=agent-a \
+    MERIDIAN_TMUX_CONTRACT_ID=contract-a \
+    MERIDIAN_TMUX_CAPABILITY=0123456789abcdef0123456789abcdef \
     CLAUDE_SESSION_ID=agent-session-a \
     bash "$SCRIPT" tmux-session-start
 
@@ -230,9 +230,9 @@ EOF
 
   build_tmux_registry_fixture "$bound_root"
   run env \
-    LBWC_CONTROL_ROOT="$bound_root" \
-    LBWC_TMUX_AGENT=1 \
-    LBWC_TMUX_AGENT_ID=agent-a \
+    MERIDIAN_CONTROL_ROOT="$bound_root" \
+    MERIDIAN_TMUX_AGENT=1 \
+    MERIDIAN_TMUX_AGENT_ID=agent-a \
     CLAUDE_SESSION_ID=agent-session-a \
     bash "$SCRIPT" tmux-session-start
   [ "$status" -eq 0 ]
@@ -245,7 +245,7 @@ build_tmux_registry_fixture() {
   local control_root="$1" hash registry capability
   mkdir -p "$control_root"
   printf '%s\n' '{}' > "$control_root/config.json"
-  source "$REPO_ROOT/scripts/lib/lbwc-control-root.sh"
+  source "$REPO_ROOT/scripts/lib/meridian-control-root.sh"
   source "$REPO_ROOT/scripts/lib/tmux-runtime.sh"
   tmux_runtime_configure "$control_root"
   tmux_runtime_ensure
@@ -265,10 +265,10 @@ build_tmux_registry_fixture() {
     tmux: {session: null, orchestrator_target: null, orchestrator_pane: null, topology: "pending", managed_session: false, ownership_token: null},
     agents: [{
       agent_id: "agent-a", parent_id: $main, contract_id: "contract-a", generated_name: "agent-a",
-      tmux_target: "lbwc-test:0.1", tmux_pane_id: null, claude_session_id: "agent-session-a",
+      tmux_target: "meridian-test:0.1", tmux_pane_id: null, claude_session_id: "agent-session-a",
       capability_hash: $agent_hash, state: "registered", heartbeat_at_ms: null
     }],
-    routes: {($main): {inbox: $main, tmux_target: null}, "agent-a": {inbox: "agent-a", tmux_target: "lbwc-test:0.1"}}
+    routes: {($main): {inbox: $main, tmux_target: null}, "agent-a": {inbox: "agent-a", tmux_target: "meridian-test:0.1"}}
   }')
   tmux_runtime_write_registry_route_bundle "$registry"
   tmux_runtime_initialize_inbox main-session

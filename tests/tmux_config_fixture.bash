@@ -1,5 +1,5 @@
 config_test_repo() {
-  unset LBWC_CONTROL_ROOT LBWC_PLANNING_DIR
+  unset MERIDIAN_CONTROL_ROOT MERIDIAN_PLANNING_DIR
   git init -q "$TEST_ROOT"
   await_git_ai
   cd "$TEST_ROOT"
@@ -28,7 +28,7 @@ config_name_row() {
   local prefix basename expected override name session
   IFS=';' read -r prefix basename expected override <<<"$1"
   PROJECT_ROOT="$TEST_ROOT/$basename"
-  CONTROL_ROOT="$PROJECT_ROOT/.lbwc-planning"
+  CONTROL_ROOT="$PROJECT_ROOT/.meridian"
   mkdir -p "$CONTROL_ROOT"
   jq -n --arg prefix "$prefix" 'if $prefix == "missing" then {} else {tmux_execution:{session_name_prefix:$prefix}} end' > "$CONTROL_ROOT/config.json"
   if [ "$override" != none ]; then
@@ -77,12 +77,12 @@ config_policy_row() {
 }
 
 config_policy_split() {
-  export LBWC_TEST_FOCUS_LOG="$TEST_ROOT/focus.log"
-  : > "$LBWC_TEST_FOCUS_LOG"
+  export MERIDIAN_TEST_FOCUS_LOG="$TEST_ROOT/focus.log"
+  : > "$MERIDIAN_TEST_FOCUS_LOG"
   split_group "$SESSION" "$definitions"
   [ "$status" -eq 0 ]
   config_policy_focus "$policy"
-  unset LBWC_TEST_FOCUS_LOG
+  unset MERIDIAN_TEST_FOCUS_LOG
 }
 
 config_client_resolution() {
@@ -95,9 +95,9 @@ config_client_resolution() {
 }
 
 config_layout_rollback() {
-  export LBWC_TEST_FAIL_PANE_LAYOUT=1
+  export MERIDIAN_TEST_FAIL_PANE_LAYOUT=1
   split_group "$SESSION" "$definitions"
-  unset LBWC_TEST_FAIL_PANE_LAYOUT
+  unset MERIDIAN_TEST_FAIL_PANE_LAYOUT
   [ "$status" -ne 0 ]
   [ "$(pane_count "$SESSION")" = 1 ]
   [ "$(bus_state_digest)" = "$before" ]
@@ -112,13 +112,13 @@ config_policy_focus() {
   if [ "$policy" = visible_grid ]; then
     expected=$(jq -r '.agents[-1].tmux_pane_id' "$(registry_file)")
     [ "$active" = "$expected" ]
-    jq -s -e 'length > 0 and all(.[]; .active == .target and .aligned)' "$LBWC_TEST_FOCUS_LOG"
+    jq -s -e 'length > 0 and all(.[]; .active == .target and .aligned)' "$MERIDIAN_TEST_FOCUS_LOG"
     widths=$(tmux_on_test_server list-panes -t "$SESSION" -F '#{pane_top} #{pane_width}')
     awk 'NR == 1 {top=$1; width=$2} $1 != top || $2 < width-1 || $2 > width+1 {exit 1}' <<<"$widths"
   else
     expected=$(tmux_on_test_server display-message -p -t "$(jq -r '.tmux.orchestrator_target' "$(registry_file)")" '#{pane_id}')
     [ "$active" = "$expected" ]
-    jq -s -e --arg expected "$expected" 'length > 0 and all(.[]; .active == $expected)' "$LBWC_TEST_FOCUS_LOG"
+    jq -s -e --arg expected "$expected" 'length > 0 and all(.[]; .active == $expected)' "$MERIDIAN_TEST_FOCUS_LOG"
   fi
 }
 
@@ -126,11 +126,11 @@ config_bound_agent() {
   local target pane
   provision_main
   SESSION=$(provisioned_session)
-  source "$REPO_ROOT/scripts/lib/lbwc-control-root.sh"
+  source "$REPO_ROOT/scripts/lib/meridian-control-root.sh"
   source "$REPO_ROOT/scripts/lib/tmux-runtime.sh"
   tmux_runtime_configure "$CONTROL_ROOT"
   pane=$(tmux_on_test_server split-window -d -t "$SESSION" -P -F '#{pane_id}' \
-    /usr/bin/env "PATH=$LBWC_TEST_CHILD_PATH" "$LBWC_TEST_CHILD_SHELL" --noprofile --norc -c 'exec tail -f /dev/null')
+    /usr/bin/env "PATH=$MERIDIAN_TEST_CHILD_PATH" "$MERIDIAN_TEST_CHILD_SHELL" --noprofile --norc -c 'exec tail -f /dev/null')
   target=$(tmux_on_test_server display-message -p -t "$pane" '#{session_name}:#{window_index}.#{pane_index}')
   plant_bound_agent "$target" "$pane"
   printf '%s\n' "$AGENT_CAPABILITY" > "$TEST_ROOT/capability"
@@ -159,7 +159,7 @@ config_heartbeat_row() {
   local kind interval threshold state
   IFS=';' read -r kind interval threshold state <<<"$1"
   if [ "$kind" = defaults ]; then
-    run bash -c '. "$1/scripts/lib/lbwc-config-files.sh"; . "$1/scripts/lib/tmux-heartbeat-settings.sh"; tmux_heartbeat_settings "$2" && printf "%s %s\n" "$TMUX_HEARTBEAT_INTERVAL" "$TMUX_HEARTBEAT_STALE_MS"' _ "$REPO_ROOT" "$CONTROL_ROOT"
+    run bash -c '. "$1/scripts/lib/meridian-config-files.sh"; . "$1/scripts/lib/tmux-heartbeat-settings.sh"; tmux_heartbeat_settings "$2" && printf "%s %s\n" "$TMUX_HEARTBEAT_INTERVAL" "$TMUX_HEARTBEAT_STALE_MS"' _ "$REPO_ROOT" "$CONTROL_ROOT"
     [ "$status" -eq 0 ]
     [ "$output" = '30 90000' ]
     return

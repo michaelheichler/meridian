@@ -223,10 +223,10 @@ teardown() {
 @h Key Link Checks
 | %N | ID | Link | Status | Evidence |
 |---|-----|------|--------|----------|
-| 1 | KL-01 | qa-result-gate.sh → vibe.md routing | FAIL | Routing drift |
+| 1 | KL-01 | qa-result-gate.sh → transit.md routing | FAIL | Routing drift |
 | 2 | KL-02 | qa-result-gate.sh → execute-protocol.md routing | PASS | Aligned |
 ?+ FAIL_ID: KL-01
-?+ qa-result-gate.sh → vibe.md routing
+?+ qa-result-gate.sh → transit.md routing
 ?- FAIL_ID: KL-02
 == no-phase-verification-emits-no-status-block
 @plan 03-01-PLAN.md|01|Test plan|Item one

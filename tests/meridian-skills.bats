@@ -7,18 +7,18 @@ load doc_fragment_helper
 
 setup() {
   REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/.." && pwd)"
-  REAL_SCRIPT="$REPO_ROOT/scripts/lbwc-skills.sh"
-  TEST_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/lbwc-skills.XXXXXX")
+  REAL_SCRIPT="$REPO_ROOT/scripts/meridian-skills.sh"
+  TEST_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/meridian-skills.XXXXXX")
   PLUGIN_ROOT="$TEST_ROOT/plugin"
   PROJECT_ROOT="$TEST_ROOT/project"
-  PLANNING_DIR="$PROJECT_ROOT/.lbwc-planning"
+  PLANNING_DIR="$PROJECT_ROOT/.meridian"
   DETECTOR_RESPONSE="$TEST_ROOT/detector.json"
   DETECTOR_TRACE="$TEST_ROOT/detector.trace"
   mkdir -p "$PLUGIN_ROOT/scripts" "$PLANNING_DIR"
   if [ -f "$REAL_SCRIPT" ]; then
-    copy_script_with_libs "$REAL_SCRIPT" "$PLUGIN_ROOT/scripts/lbwc-skills.sh"
+    copy_script_with_libs "$REAL_SCRIPT" "$PLUGIN_ROOT/scripts/meridian-skills.sh"
   fi
-  SCRIPT="$PLUGIN_ROOT/scripts/lbwc-skills.sh"
+  SCRIPT="$PLUGIN_ROOT/scripts/meridian-skills.sh"
   reset_skills_fixture
   reset_case_failures
 }
@@ -32,8 +32,8 @@ reset_skills_fixture() {
   printf '%s\n' \
     '#!/usr/bin/env bash' \
     'set -euo pipefail' \
-    'printf "%s\n" "$1" >> "$LBWC_DETECTOR_TRACE"' \
-    'cat "$LBWC_DETECTOR_RESPONSE"' \
+    'printf "%s\n" "$1" >> "$MERIDIAN_DETECTOR_TRACE"' \
+    'cat "$MERIDIAN_DETECTOR_RESPONSE"' \
     > "$PLUGIN_ROOT/scripts/detect-stack.sh"
   chmod +x "$PLUGIN_ROOT/scripts/detect-stack.sh"
   write_config true false true
@@ -75,8 +75,8 @@ write_detector() {
 run_skills() {
   rm -f "$DETECTOR_TRACE"
   run env \
-    LBWC_DETECTOR_RESPONSE="$DETECTOR_RESPONSE" \
-    LBWC_DETECTOR_TRACE="$DETECTOR_TRACE" \
+    MERIDIAN_DETECTOR_RESPONSE="$DETECTOR_RESPONSE" \
+    MERIDIAN_DETECTOR_TRACE="$DETECTOR_TRACE" \
     bash "$SCRIPT" "$@"
 }
 
@@ -174,7 +174,7 @@ fail_closed_row() {
   reset_skills_fixture
 
   printf '%s\n' '{"suggestions":"not-an-array"}' > "$DETECTOR_RESPONSE"
-  fail_closed_row malformed-detector-output 'detector output is not a valid LBWC stack result'
+  fail_closed_row malformed-detector-output 'detector output is not a valid MERIDIAN stack result'
 
   printf '%s\n' '{' > "$PLANNING_DIR/config.json"
   fail_closed_row invalid-json-configuration 'skill discovery configuration is invalid'
@@ -259,10 +259,10 @@ supporting-category|category: supporting
 allowed-tools-block|allowed-tools:
 read-tool|  - Read
 question-tool|  - AskUserQuestion
-helper-script-tool|  - Bash("${CLAUDE_PLUGIN_ROOT}/scripts/lbwc-skills.sh" *)
+helper-script-tool|  - Bash("${CLAUDE_PLUGIN_ROOT}/scripts/meridian-skills.sh" *)
 main-session-only|main session only
 subagent-prohibition|A generated agent or subagent must not run this flow
-category-is-metadata|`category` is LBWC project metadata
+category-is-metadata|`category` is MERIDIAN project metadata
 options-heading|Options:
 skip-all-option|1. Skip all
 show-table-option|2. Show the table again
@@ -273,7 +273,7 @@ FRAGMENTS
   expect_case frontmatter-has-no-name 0
   [ -z "$output" ] || record_case_failure frontmatter-has-no-name "name entry found: $output"
 
-  run grep -E 'npx skills add|allowed-tools:.*(WebFetch|WebSearch|Agent)|bash "\$\{CLAUDE_PLUGIN_ROOT\}/scripts/lbwc-skills\.sh"|\.vbw-planning' "$command_file"
+  run grep -E 'npx skills add|allowed-tools:.*(WebFetch|WebSearch|Agent)|bash "\$\{CLAUDE_PLUGIN_ROOT\}/scripts/meridian-skills\.sh"|\.vbw-planning' "$command_file"
   [ "$status" -ne 0 ] || record_case_failure forbidden-patterns "forbidden pattern present: $output"
 
   assert_no_case_failures

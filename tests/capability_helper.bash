@@ -3,7 +3,7 @@ setup_capability_sandbox() {
   SCRIPT="$REPO_ROOT/scripts/claude-capabilities.sh"
   test_root="$(mktemp -d)"
   TEST_ROOT="$(cd "$test_root" && pwd -P)"
-  PLANNING_DIR="$TEST_ROOT/project/.lbwc-planning"
+  PLANNING_DIR="$TEST_ROOT/project/.meridian"
   CATALOG="$PLANNING_DIR/claude-capabilities.json"
   INVOCATION_MARKER="$TEST_ROOT/model-invoked"
   mkdir -p "$PLANNING_DIR"

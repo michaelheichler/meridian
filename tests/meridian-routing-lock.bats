@@ -5,7 +5,7 @@ load gate_case_helper
 load rejection_case_helper
 load routing_fixture
 
-ROUTING="${LBWC_ROUTING_UNDER_TEST:-${SCRIPTS_DIR}/lbwc-routing.sh}"
+ROUTING="${MERIDIAN_ROUTING_UNDER_TEST:-${SCRIPTS_DIR}/meridian-routing.sh}"
 
 system_platform() {
   if [ -x /usr/bin/uname ]; then
@@ -29,7 +29,7 @@ rewrite_fixture_sources() {
 create_routing_failure_fixture() {
   local mode="$1"
   local fixture_root="$TEST_TEMP_DIR/routing-$mode"
-  local fixture="$fixture_root/scripts/lbwc-routing.sh"
+  local fixture="$fixture_root/scripts/meridian-routing.sh"
   local denied="$fixture_root/unavailable"
   mkdir -p "$fixture_root/scripts" "$fixture_root/templates/agent-roles"
   copy_script_with_libs "$ROUTING" "$fixture"
@@ -66,7 +66,7 @@ create_od_fixture() {
   local tag="$1"
   local stub_dir="$TEST_TEMP_DIR/$tag-bin"
   local fixture_root="$TEST_TEMP_DIR/routing-$tag"
-  local fixture="$fixture_root/scripts/lbwc-routing.sh"
+  local fixture="$fixture_root/scripts/meridian-routing.sh"
   mkdir -p "$fixture_root/templates/agent-roles"
   cp -R "$PROJECT_ROOT/scripts" "$fixture_root/scripts"
   cp "$ROUTING" "$fixture"
@@ -243,7 +243,7 @@ plant_live_owner() {
 contention_row() {
   local label="$1" fragment="$2" expected_owner="$3" before
   before=$(config_digest)
-  run_operation "$ROUTING" set LBWC_ROUTING_LOCK_WAIT_ATTEMPTS=3
+  run_operation "$ROUTING" set MERIDIAN_ROUTING_LOCK_WAIT_ATTEMPTS=3
   expect_rejected "$label" "$fragment"
   expect_digest "$label" "$before" "$(config_digest)"
   [ "$(<"$PLANNING/.routing.lock/owner")" = "$expected_owner" ] \
@@ -268,7 +268,7 @@ contention_row() {
   restore_planning
 
   mkdir "$PLANNING/.routing.lock"
-  run_operation "$ROUTING" set LBWC_ROUTING_LOCK_WAIT_ATTEMPTS=3
+  run_operation "$ROUTING" set MERIDIAN_ROUTING_LOCK_WAIT_ATTEMPTS=3
   expect_rejected unowned-lock-never-reclaimed ""
   [ -d "$PLANNING/.routing.lock" ] || record_case_failure unowned-lock-never-reclaimed "lock directory was removed"
   restore_planning
@@ -276,7 +276,7 @@ contention_row() {
   start_blocked_writer
   writer_pid=$!
   owner_record=$(<"$PLANNING/.routing.lock/owner")
-  env LBWC_ROUTING_LOCK_WAIT_ATTEMPTS=3 \
+  env MERIDIAN_ROUTING_LOCK_WAIT_ATTEMPTS=3 \
     bash "$ROUTING" set "$PLANNING" balanced architect nova-route '"deliberate"' \
     >/dev/null 2>&1 || waiter_rc=$?
   [ "$waiter_rc" -ne 0 ] || record_case_failure waiter-cannot-take-live-lock "waiter succeeded"

@@ -3,7 +3,7 @@
 load gate_case_helper
 load isolated_case_helper
 load rejection_case_helper
-load lbwc_config_helper
+load meridian_config_helper
 
 setup() {
   config_fixture_setup
@@ -35,7 +35,7 @@ SHIM
 }
 
 initialize_defaults_and_migrate_legacy_settings() {
-  local legacy_dir="$TEST_ROOT/legacy/.lbwc-planning"
+  local legacy_dir="$TEST_ROOT/legacy/.meridian"
 
   init_config "$PLANNING_DIR"
   expect_config_jq fresh-routing-defaults "$PLANNING_DIR" '
@@ -113,7 +113,7 @@ initialize_with_platform_bash() {
 @test "init accepts the macOS var temporary directory alias" {
   local logical_planning
   [[ "$TEST_ROOT" == "/private/var/"* ]] || skip 'temporary directory is not under /private/var'
-  logical_planning="/var/${TEST_ROOT#/private/var/}/.lbwc-planning"
+  logical_planning="/var/${TEST_ROOT#/private/var/}/.meridian"
 
   run_config init "$logical_planning"
 
@@ -225,7 +225,7 @@ VALUES
 }
 
 config_row_dir() {
-  printf '%s\n' "$TEST_ROOT/$1/.lbwc-planning"
+  printf '%s\n' "$TEST_ROOT/$1/.meridian"
 }
 
 reject_invalid_configuration_without_changes() {
@@ -290,7 +290,7 @@ VALUES
   reject_unchanged_row unexpected-routing-profile "$dir" "invalid configuration" validate "$dir"
 
   mkdir -p "$external"
-  dir="$TEST_ROOT/linked-planning/.lbwc-planning"
+  dir="$TEST_ROOT/linked-planning/.meridian"
   mkdir -p "$(dirname "$dir")"
   ln -s "$external" "$dir"
   run_config init "$dir"
@@ -298,7 +298,7 @@ VALUES
   [ ! -e "$external/config.json" ] || record_case_failure symlinked-planning-directory "target was written"
 
   ln -s "$external" "$TEST_ROOT/linked-parent"
-  run_config init "$TEST_ROOT/linked-parent/project/.lbwc-planning"
+  run_config init "$TEST_ROOT/linked-parent/project/.meridian"
   expect_rejected symlinked-intermediate-directory "symbolic link"
   [ ! -e "$external/project" ] || record_case_failure symlinked-intermediate-directory "target was created"
 

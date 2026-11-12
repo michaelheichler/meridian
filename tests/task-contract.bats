@@ -9,7 +9,7 @@ setup() {
   ROOT_CANON="$(cd "$ROOT" && pwd -P)"
   PLAN="$ROOT/PLAN.md"
   SCRIPT="$BATS_TEST_DIRNAME/../scripts/task-contract.sh"
-  PLAN_CONTRACT="$ROOT/.lbwc-planning/.contracts/tasks/09-PLAN-write-contract.json"
+  PLAN_CONTRACT="$ROOT/.meridian/.contracts/tasks/09-PLAN-write-contract.json"
   PLAN_ID="09-PLAN-write-contract"
   reset_case_failures
   cat >"$PLAN" <<'PLAN'
@@ -51,7 +51,7 @@ issue_team() {
 }
 
 written_contracts() {
-  find "$ROOT/.lbwc-planning/.contracts/tasks" "$ROOT/.temporary-agent-runfiles" -name '*.json' -type f 2>/dev/null || true
+  find "$ROOT/.meridian/.contracts/tasks" "$ROOT/.temporary-agent-runfiles" -name '*.json' -type f 2>/dev/null || true
 }
 
 expect_rejected() {
@@ -88,10 +88,10 @@ expect_tamper_rejected() {
 }
 
 contract_open_plan() {
-  mkdir -p "$ROOT/real-tasks" "$ROOT/.lbwc-planning"
-  ln -s "$ROOT/real-tasks" "$ROOT/.lbwc-planning/.contracts"
+  mkdir -p "$ROOT/real-tasks" "$ROOT/.meridian"
+  ln -s "$ROOT/real-tasks" "$ROOT/.meridian/.contracts"
   expect_rejected symlinked-contracts "symlink" open_plan
-  rm "$ROOT/.lbwc-planning/.contracts"
+  rm "$ROOT/.meridian/.contracts"
 
   cp "$PLAN" "$ROOT/bad.md"
   perl -pi -e 's#</task>##' "$ROOT/bad.md"
@@ -205,8 +205,8 @@ contract_issue_exact_allowances() {
     scripts/file-guard.sh \
     scripts/task-contract.sh \
     scripts/agent-lifecycle.sh \
-    .lbwc-planning/.agent-manifest.json \
-    .lbwc-planning/.contracts/tasks/forged.json \
+    .meridian/.agent-manifest.json \
+    .meridian/.contracts/tasks/forged.json \
     .claude/agents/forged.md
   do
     expect_rejected "protected-$protected" "protected path" \
@@ -249,7 +249,7 @@ contract_issue_typed_capabilities() {
   contract=$(issue_team team-state --control-root "$CONTROL_ROOT" --write-capability directory:src/web)
   run bash "$SCRIPT" state "$ROOT" "$(basename "$contract" .json)" dispatched
   expect_accepted schema3-state
-  [ ! -e "$ROOT/.lbwc-planning" ] || record_case_failure schema3-state "planning directory was created"
+  [ ! -e "$ROOT/.meridian" ] || record_case_failure schema3-state "planning directory was created"
   [ ! -e "$CONTROL_ROOT/contracts/.lock" ] || record_case_failure schema3-state "control root lock remained"
 
   make_control_root team-one

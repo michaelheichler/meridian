@@ -5,7 +5,7 @@ load test_helper
 generate_research_scout_workflow() {
   local facet="$1" project control_root contract task_id agen_out name wgen_out
   project="$TEST_TEMP_DIR/project-$facet"
-  mkdir -p "$project/.lbwc-planning"
+  mkdir -p "$project/.meridian"
   control_root="$project/.temporary-agent-runfiles/runs/research-$facet"
   mkdir -p "$control_root"
   jq -n '{workflow_execution:{enabled:true}}' > "$control_root/config.json"

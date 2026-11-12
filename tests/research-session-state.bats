@@ -6,8 +6,8 @@ load isolated_case_helper
 
 setup() {
   setup_temp_dir
-  export LBWC_PLANNING_DIR="$TEST_TEMP_DIR/.lbwc-planning"
-  mkdir -p "$LBWC_PLANNING_DIR"
+  export MERIDIAN_PLANNING_DIR="$TEST_TEMP_DIR/.meridian"
+  mkdir -p "$MERIDIAN_PLANNING_DIR"
   git -C "$TEST_TEMP_DIR" init --quiet 2>/dev/null || true
   git -C "$TEST_TEMP_DIR" config user.email "test@test.com" 2>/dev/null || true
   git -C "$TEST_TEMP_DIR" config user.name "Test" 2>/dev/null || true
@@ -61,25 +61,25 @@ fm_get() {
 
 start_session() {
   cd "$TEST_TEMP_DIR"
-  eval "$(rss start "$LBWC_PLANNING_DIR" "$1")"
+  eval "$(rss start "$MERIDIAN_PLANNING_DIR" "$1")"
 }
 
 write_session() {
-  mkdir -p "$LBWC_PLANNING_DIR/research"
-  printf -- '---\ntitle: %s\nstatus: %s\n---\n' "$2" "$3" > "$LBWC_PLANNING_DIR/research/$1.md"
+  mkdir -p "$MERIDIAN_PLANNING_DIR/research"
+  printf -- '---\ntitle: %s\nstatus: %s\n---\n' "$2" "$3" > "$MERIDIAN_PLANNING_DIR/research/$1.md"
 }
 
 research_start() {
   local head_commit label input expected slug_part
-  printf '# Legacy Research\nOld findings.\n' > "$LBWC_PLANNING_DIR/RESEARCH-legacy.md"
+  printf '# Legacy Research\nOld findings.\n' > "$MERIDIAN_PLANNING_DIR/RESEARCH-legacy.md"
   start_session "new-session"
-  [ ! -f "$LBWC_PLANNING_DIR/RESEARCH-legacy.md" ] || fail_case legacy-migrated "legacy file removed" "present"
+  [ ! -f "$MERIDIAN_PLANNING_DIR/RESEARCH-legacy.md" ] || fail_case legacy-migrated "legacy file removed" "present"
   [ -f "$research_file" ] || fail_case legacy-migrated "session file exists" "$research_file"
-  expect_eq "files in research/" "2" "$(find "$LBWC_PLANNING_DIR/research" -name '*.md' | wc -l | tr -d ' ')"
+  expect_eq "files in research/" "2" "$(find "$MERIDIAN_PLANNING_DIR/research" -name '*.md' | wc -l | tr -d ' ')"
 
   cd "$TEST_TEMP_DIR"
   head_commit=$(git rev-parse HEAD)
-  run rss start "$LBWC_PLANNING_DIR" "test-topic"
+  run rss start "$MERIDIAN_PLANNING_DIR" "test-topic"
   expect_eq "start status" "0" "$status"
   expect_has "output ids" "research_id=" "$output"
   expect_has "output file" "research_file=" "$output"
@@ -93,7 +93,7 @@ research_start() {
   while IFS='|' read -r label input expected; do
     [ -n "$label" ] || continue
     cd "$TEST_TEMP_DIR"
-    run rss start "$LBWC_PLANNING_DIR" "$input"
+    run rss start "$MERIDIAN_PLANNING_DIR" "$input"
     [ "$status" -eq 0 ] || fail_case "$label" "status=0" "status=$status output=$output"
     eval "$output"
     slug_part="${research_id#*-*-}"
@@ -110,7 +110,7 @@ CASES
 research_complete() {
   start_session "complete-test"
 
-  run rss complete "$LBWC_PLANNING_DIR" "$research_id"
+  run rss complete "$MERIDIAN_PLANNING_DIR" "$research_id"
   [ "$status" -eq 0 ]
   expect_eq "output" "complete" "$output"
   expect_eq "frontmatter status" "complete" "$(fm_get "$research_file" status)"
@@ -121,19 +121,19 @@ research_complete() {
 research_get() {
   local migrated_file session_id
   start_session "get-test"
-  run rss get "$LBWC_PLANNING_DIR" "$research_id"
+  run rss get "$MERIDIAN_PLANNING_DIR" "$research_id"
   expect_eq "get status" "0" "$status"
   expect_has "id" "research_id=" "$output"
   expect_has "status" "research_status=active" "$output"
   expect_has "base commit" "research_base_commit=" "$output"
 
-  printf -- '---\ntitle: Only Title\n---\n\nBody.\n' > "$LBWC_PLANNING_DIR/RESEARCH-roundtrip.md"
-  run rss migrate "$LBWC_PLANNING_DIR"
+  printf -- '---\ntitle: Only Title\n---\n\nBody.\n' > "$MERIDIAN_PLANNING_DIR/RESEARCH-roundtrip.md"
+  run rss migrate "$MERIDIAN_PLANNING_DIR"
   expect_eq "roundtrip migrate status" "0" "$status"
-  migrated_file=$(find "$LBWC_PLANNING_DIR/research" -name '*-roundtrip.md')
+  migrated_file=$(find "$MERIDIAN_PLANNING_DIR/research" -name '*-roundtrip.md')
   session_id="${migrated_file##*/}"
   session_id="${session_id%.md}"
-  run rss get "$LBWC_PLANNING_DIR" "$session_id"
+  run rss get "$MERIDIAN_PLANNING_DIR" "$session_id"
   expect_eq "roundtrip get status" "0" "$status"
   eval "$output"
   expect_eq "roundtrip status" "complete" "$research_status"
@@ -149,7 +149,7 @@ research_rejects_bad_input() {
   start_session "reject-fixture"
   while IFS='|' read -r label args fragment; do
     [ -n "$label" ] || continue
-    args="${args//@PD@/$LBWC_PLANNING_DIR}"
+    args="${args//@PD@/$MERIDIAN_PLANNING_DIR}"
     run rss $args
     [ "$status" -eq 1 ] || fail_case "$label" "status=1" "status=$status output=$output"
     expect_has "$label" "$fragment" "$output"
@@ -175,12 +175,12 @@ research_list() {
   local label setup_kind args want_lines present absent
   while IFS='|' read -r label setup_kind args want_lines present absent; do
     [ -n "$label" ] || continue
-    rm -rf "$LBWC_PLANNING_DIR/research"
+    rm -rf "$MERIDIAN_PLANNING_DIR/research"
     if [ "$setup_kind" = "sessions" ]; then
       write_session "20200101-000000-one" "one" "active"
       write_session "20200102-000000-two" "two" "complete"
     fi
-    run rss list "$LBWC_PLANNING_DIR" $args
+    run rss list "$MERIDIAN_PLANNING_DIR" $args
     [ "$status" -eq 0 ] || fail_case "$label" "status=0" "status=$status output=$output"
     if [ "$want_lines" = "0" ]; then
       expect_eq "$label output" "" "$output"
@@ -203,9 +203,9 @@ research_latest() {
   local label prepare field
   while IFS='|' read -r label prepare; do
     [ -n "$label" ] || continue
-    rm -rf "$LBWC_PLANNING_DIR/research"
-    [ "$prepare" != "empty-dir" ] || mkdir -p "$LBWC_PLANNING_DIR/research"
-    run rss latest "$LBWC_PLANNING_DIR"
+    rm -rf "$MERIDIAN_PLANNING_DIR/research"
+    [ "$prepare" != "empty-dir" ] || mkdir -p "$MERIDIAN_PLANNING_DIR/research"
+    run rss latest "$MERIDIAN_PLANNING_DIR"
     [ "$status" -eq 0 ] || fail_case "$label" "status=0" "status=$status output=$output"
     for field in id file title status confidence base_commit created updated; do
       printf '%s\n' "$output" | grep -qx "research_$field=" \
@@ -218,7 +218,7 @@ CASES
 
   write_session "20200101-000000-zzz" "older" "active"
   write_session "20210101-000000-aaa" "newer" "active"
-  run rss latest "$LBWC_PLANNING_DIR"
+  run rss latest "$MERIDIAN_PLANNING_DIR"
   expect_eq "newest status" "0" "$status"
   expect_has "newest id" "research_id=20210101-000000-aaa" "$output"
   expect_lacks "older id" "20200101-000000-zzz" "$output"
@@ -236,26 +236,26 @@ research_migrate() {
   while IFS='|' read -r label files; do
     [ -n "$label" ] || continue
     for file in $files; do
-      echo "content" > "$LBWC_PLANNING_DIR/$file"
+      echo "content" > "$MERIDIAN_PLANNING_DIR/$file"
     done
-    run rss migrate "$LBWC_PLANNING_DIR"
+    run rss migrate "$MERIDIAN_PLANNING_DIR"
     [ "$status" -eq 0 ] || fail_case "$label" "status=0" "status=$status output=$output"
     expect_has "$label" "migrated=0" "$output"
     for file in $files; do
-      [ -f "$LBWC_PLANNING_DIR/$file" ] || fail_case "$label" "$file kept in place" "$(ls "$LBWC_PLANNING_DIR")"
+      [ -f "$MERIDIAN_PLANNING_DIR/$file" ] || fail_case "$label" "$file kept in place" "$(ls "$MERIDIAN_PLANNING_DIR")"
     done
-    find "$LBWC_PLANNING_DIR" -maxdepth 1 -name '*.md' -delete
+    find "$MERIDIAN_PLANNING_DIR" -maxdepth 1 -name '*.md' -delete
   done <<'CASES'
 empty-dir|
 non-research-files|STATE.md OTHER-topic.md
 CASES
 
-  printf '# My Custom Title\nSome content here.\n' > "$LBWC_PLANNING_DIR/RESEARCH-titled.md"
-  run rss migrate "$LBWC_PLANNING_DIR"
+  printf '# My Custom Title\nSome content here.\n' > "$MERIDIAN_PLANNING_DIR/RESEARCH-titled.md"
+  run rss migrate "$MERIDIAN_PLANNING_DIR"
   expect_eq "titled status" "0" "$status"
   expect_has "count" "migrated=1" "$output"
-  [ ! -f "$LBWC_PLANNING_DIR/RESEARCH-titled.md" ] || fail_case "titled source" "removed" "present"
-  migrated_file=$(find "$LBWC_PLANNING_DIR/research" -name '*.md')
+  [ ! -f "$MERIDIAN_PLANNING_DIR/RESEARCH-titled.md" ] || fail_case "titled source" "removed" "present"
+  migrated_file=$(find "$MERIDIAN_PLANNING_DIR/research" -name '*.md')
   expect_eq "files in research/" "1" "$(printf '%s\n' "$migrated_file" | wc -l | tr -d ' ')"
   expect_eq "first line" "---" "$(head -1 "$migrated_file")"
   expect_eq "title" '"My Custom Title"' "$(fm_get "$migrated_file" title)"
@@ -265,12 +265,12 @@ CASES
 
   while IFS='|' read -r label slug content expectations; do
     [ -n "$label" ] || continue
-    printf '%b' "$content" > "$LBWC_PLANNING_DIR/RESEARCH-$slug.md"
-    run rss migrate "$LBWC_PLANNING_DIR"
+    printf '%b' "$content" > "$MERIDIAN_PLANNING_DIR/RESEARCH-$slug.md"
+    run rss migrate "$MERIDIAN_PLANNING_DIR"
     [ "$status" -eq 0 ] || fail_case "$label" "status=0" "status=$status output=$output"
     expect_has "$label count" "migrated=1" "$output"
-    migrated_file=$(find "$LBWC_PLANNING_DIR/research" -name "*-$slug.md")
-    [ -f "$migrated_file" ] || fail_case "$label" "migrated file for $slug" "$(ls "$LBWC_PLANNING_DIR/research")"
+    migrated_file=$(find "$MERIDIAN_PLANNING_DIR/research" -name "*-$slug.md")
+    [ -f "$migrated_file" ] || fail_case "$label" "migrated file for $slug" "$(ls "$MERIDIAN_PLANNING_DIR/research")"
     expect_eq "$label first line" "---" "$(head -1 "$migrated_file")"
     for pair in $(printf '%s' "$expectations" | tr ';' '\n' | tr ' ' '_'); do
       field="${pair%%=*}"

@@ -10,7 +10,7 @@ setup() {
   setup_unrelated_git_repo "$REPO"
   cd "$REPO" || return 1
   SCRIPT="$SCRIPTS_DIR/extract-verified-items.sh"
-  PHASES="$REPO/.lbwc-planning/phases"
+  PHASES="$REPO/.meridian/phases"
   HEADER="QA-VERIFIED ITEMS (do NOT generate UAT checkpoints for these):"
   EM_DASH=$'\xE2\x80\x94'
 }

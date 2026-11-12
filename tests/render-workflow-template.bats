@@ -19,17 +19,17 @@ render_pair() {
   local autonomy="$1" job="${2:-job}"
   run bash "$SCRIPT" pair NAME=probe-pair DESCRIPTION=desc \
     "JOB=$job" TASK_ID=task-2 "AUTONOMY=$autonomy" \
-    ENGINEER_AGENT_TYPE=lbwc-eng-a ENGINEER_MODEL=sonnet ENGINEER_EFFORT=balanced \
-    CRITIC_AGENT_TYPE=lbwc-crit-a CRITIC_MODEL=sonnet CRITIC_EFFORT=fast
+    ENGINEER_AGENT_TYPE=meridian-eng-a ENGINEER_MODEL=sonnet ENGINEER_EFFORT=balanced \
+    CRITIC_AGENT_TYPE=meridian-crit-a CRITIC_MODEL=sonnet CRITIC_EFFORT=fast
 }
 
 render_trio() {
   local autonomy="$1" job="${2:-job}"
   run bash "$SCRIPT" trio NAME=probe-trio DESCRIPTION=desc \
     "JOB=$job" TASK_ID=task-3 "AUTONOMY=$autonomy" \
-    ENGINEER_AGENT_TYPE=lbwc-eng-a ENGINEER_MODEL=sonnet ENGINEER_EFFORT=balanced \
-    CRITIC_AGENT_TYPE=lbwc-crit-a CRITIC_MODEL=sonnet CRITIC_EFFORT=fast \
-    TESTDEV_AGENT_TYPE=lbwc-td-a TESTDEV_MODEL=sonnet TESTDEV_EFFORT=fast
+    ENGINEER_AGENT_TYPE=meridian-eng-a ENGINEER_MODEL=sonnet ENGINEER_EFFORT=balanced \
+    CRITIC_AGENT_TYPE=meridian-crit-a CRITIC_MODEL=sonnet CRITIC_EFFORT=fast \
+    TESTDEV_AGENT_TYPE=meridian-td-a TESTDEV_MODEL=sonnet TESTDEV_EFFORT=fast
 }
 
 run_workflow() {
@@ -96,7 +96,7 @@ decode_const() {
 
 render_solo() {
   run bash "$SCRIPT" solo NAME=probe DESCRIPTION=desc \
-    "JOB=$1" TASK_ID=task-1 ROLE=scout AGENT_TYPE=lbwc-scout-a MODEL=sonnet EFFORT=balanced
+    "JOB=$1" TASK_ID=task-1 ROLE=scout AGENT_TYPE=meridian-scout-a MODEL=sonnet EFFORT=balanced
 }
 
 expect_eq() {
@@ -128,7 +128,7 @@ render_fixture_template() {
   make_script_fixture
   printf '%b' "$1" > "$fixture_dir/templates/workflows/solo.js.tpl"
   run bash "$fixture_dir/scripts/render-workflow-template.sh" solo NAME=probe DESCRIPTION=desc \
-    JOB=job TASK_ID=task-1 ROLE=scout AGENT_TYPE=lbwc-scout-a MODEL=sonnet EFFORT=balanced
+    JOB=job TASK_ID=task-1 ROLE=scout AGENT_TYPE=meridian-scout-a MODEL=sonnet EFFORT=balanced
   rm -rf "$fixture_dir"
 }
 
@@ -156,14 +156,14 @@ render_fixture_template() {
   expect_call_field scout-passes-effort '.agentCalls[0].hasEffort' true
 
   run bash "$SCRIPT" solo NAME=probe DESCRIPTION=desc \
-    JOB=job TASK_ID=task-1 ROLE=qa AGENT_TYPE=lbwc-qa-a MODEL=sonnet EFFORT=balanced
+    JOB=job TASK_ID=task-1 ROLE=qa AGENT_TYPE=meridian-qa-a MODEL=sonnet EFFORT=balanced
   save_render qa
   run_workflow "$OUT_DIR/qa.mjs" '[{"result":"PASS"}]'
   expect_case qa-runs 0 ""
   expect_call_field qa-has-schema '.agentCalls[0].hasSchema' true
 
   run bash "$SCRIPT" solo NAME=probe DESCRIPTION=desc \
-    JOB=job TASK_ID=task-1 ROLE=scout AGENT_TYPE=lbwc-scout-a MODEL=sonnet EFFORT=
+    JOB=job TASK_ID=task-1 ROLE=scout AGENT_TYPE=meridian-scout-a MODEL=sonnet EFFORT=
   save_render no-effort
   expect_file_fragment no-effort-null-const "$OUT_DIR/no-effort.mjs" "const EFFORT = null;"
   expect_valid_js no-effort-valid-js "$OUT_DIR/no-effort.mjs"
@@ -197,8 +197,8 @@ render_fixture_template() {
 
   run bash "$SCRIPT" pair NAME=probe-pair DESCRIPTION=desc \
     JOB=job TASK_ID=task-2 AUTONOMY=standard \
-    ENGINEER_AGENT_TYPE=lbwc-eng-a ENGINEER_MODEL=sonnet ENGINEER_EFFORT= \
-    CRITIC_AGENT_TYPE=lbwc-crit-a CRITIC_MODEL=sonnet CRITIC_EFFORT=
+    ENGINEER_AGENT_TYPE=meridian-eng-a ENGINEER_MODEL=sonnet ENGINEER_EFFORT= \
+    CRITIC_AGENT_TYPE=meridian-crit-a CRITIC_MODEL=sonnet CRITIC_EFFORT=
   save_render pair-no-effort
   expect_file_fragment pair-engineer-null-const "$OUT_DIR/pair-no-effort.mjs" "const ENGINEER_EFFORT = null;"
   expect_file_fragment pair-critic-null-const "$OUT_DIR/pair-no-effort.mjs" "const CRITIC_EFFORT = null;"
@@ -232,20 +232,20 @@ render_fixture_template() {
   local first
 
   run bash "$SCRIPT" solo NAME=probe DESCRIPTION=desc \
-    JOB=job TASK_ID=task-1 ROLE=scout AGENT_TYPE=lbwc-scout-a MODEL=sonnet
+    JOB=job TASK_ID=task-1 ROLE=scout AGENT_TYPE=meridian-scout-a MODEL=sonnet
   expect_case solo-missing-effort 1 "missing required field EFFORT"
 
   run bash "$SCRIPT" pair NAME=probe-pair DESCRIPTION=desc \
     JOB=job TASK_ID=task-2 AUTONOMY=standard \
-    ENGINEER_AGENT_TYPE=lbwc-eng-a ENGINEER_MODEL=sonnet ENGINEER_EFFORT=balanced \
-    CRITIC_AGENT_TYPE=lbwc-crit-a CRITIC_MODEL=sonnet
+    ENGINEER_AGENT_TYPE=meridian-eng-a ENGINEER_MODEL=sonnet ENGINEER_EFFORT=balanced \
+    CRITIC_AGENT_TYPE=meridian-crit-a CRITIC_MODEL=sonnet
   expect_case pair-missing-critic-effort 1 "missing required field CRITIC_EFFORT"
 
   run bash "$SCRIPT" quad NAME=probe DESCRIPTION=desc
   expect_case unknown-shape 1 "unknown shape"
 
   run bash "$SCRIPT" solo NAME=probe DESCRIPTION=desc \
-    JOB=job TASK_ID=task-1 ROLE=scout AGENT_TYPE=lbwc-scout-a MODEL=sonnet EFFORT=balanced \
+    JOB=job TASK_ID=task-1 ROLE=scout AGENT_TYPE=meridian-scout-a MODEL=sonnet EFFORT=balanced \
     TASKID=task-1
   expect_case unknown-field 1 "unknown field 'TASKID'"
 

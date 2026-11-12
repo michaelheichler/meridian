@@ -1,17 +1,28 @@
-"""Acceptance checks for Claude Code native AskUserQuestion responses."""
-
 import json
 import tempfile
 import unittest
 from pathlib import Path
 
 from hooks import user_question_guard
+from hooks.decision_records import record_digest
+
+
+def seed_awaiting_freeform(planning_dir: Path, record: dict[str, object]) -> None:
+    directory = planning_dir / ".runtime" / "decisions"
+    session_id = str(record["session_id"])
+    transition_id = str(record["transition_id"])
+    record["status"] = "awaiting_freeform"
+    record["record_digest"] = record_digest(record)
+    authority = {key: record[key] for key in ("record_digest", "session_id", "transition_id")}
+    (directory / f"{session_id}.json").write_text(json.dumps(record), encoding="utf-8")
+    authority_path = directory / ".hook-transitions" / session_id / f"{transition_id}.json"
+    authority_path.write_text(json.dumps(authority), encoding="utf-8")
 
 
 class NativeQuestionContractTest(unittest.TestCase):
     def setUp(self) -> None:
         self.root = Path(tempfile.mkdtemp())
-        (self.root / ".lbwc-planning").mkdir()
+        (self.root / ".meridian").mkdir()
         self.session_id = "native-question-session"
 
     def hook(self, event: dict[str, object], event_name: str) -> str | None:
@@ -60,7 +71,7 @@ class NativeQuestionContractTest(unittest.TestCase):
             ]
         }
         self.assertIn("two to four choices", self.hook(event, "pretool") or "")
-        store = user_question_guard.DecisionStore(self.root / ".lbwc-planning")
+        store = user_question_guard.DecisionStore(self.root / ".meridian")
         self.assertEqual(store.state(self.session_id), "none")
 
     def test_native_other_does_not_require_a_duplicate_visible_option(self) -> None:
@@ -73,29 +84,19 @@ class NativeQuestionContractTest(unittest.TestCase):
         }
 
         self.assertIsNone(self.hook(response, "posttool"))
-        store = user_question_guard.DecisionStore(self.root / ".lbwc-planning")
+        store = user_question_guard.DecisionStore(self.root / ".meridian")
         record = store.record(self.session_id)
         self.assertEqual(record["status"], "resolved")
         self.assertEqual(record["response"], {"kind": "freeform", "received": True})
         self.assertNotIn("Use a calm", json.dumps(record))
 
     def test_prompt_hook_drains_a_pre_upgrade_awaiting_freeform_record(self) -> None:
-        """A record persisted by a pre-fix build can still land in "awaiting_freeform".
-
-        The two-step sentinel-based state machine this contract replaces no longer
-        writes that status, but an on-disk record from before the upgrade can still
-        carry it. The UserPromptSubmit hook must still drain it to "resolved" so an
-        old pending decision does not block the session forever.
-        """
-        planning_dir = self.root / ".lbwc-planning"
+        planning_dir = self.root / ".meridian"
         store = user_question_guard.DecisionStore(planning_dir)
         self.assertIsNone(self.hook(self.question_event(), "pretool"))
         record = store.record(self.session_id)
         fingerprint = record["state_fingerprint"]
-        path = store._record_path(self.session_id, create=True)
-        assert path is not None
-        record["status"] = "awaiting_freeform"
-        store._persist(path, record)
+        seed_awaiting_freeform(planning_dir, record)
         self.assertEqual(store.state(self.session_id), "awaiting_freeform")
 
         prompt_event: dict[str, object] = {

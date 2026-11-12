@@ -9,21 +9,21 @@ export CONFIG_DIR="${PROJECT_ROOT}/config"
 setup_temp_dir() {
   export TEST_TEMP_DIR="$(mktemp -d)"
   export _ORIG_HOME="${HOME:-}"
-  export _ORIG_LBWC_PLANNING_DIR="${LBWC_PLANNING_DIR:-}"
+  export _ORIG_MERIDIAN_PLANNING_DIR="${MERIDIAN_PLANNING_DIR:-}"
   export HOME="$TEST_TEMP_DIR"
-  unset LBWC_PLANNING_DIR CLAUDE_SESSION_ID 2>/dev/null || true
-  mkdir -p "$TEST_TEMP_DIR/.lbwc-planning"
+  unset MERIDIAN_PLANNING_DIR CLAUDE_SESSION_ID 2>/dev/null || true
+  mkdir -p "$TEST_TEMP_DIR/.meridian"
 }
 
 teardown_temp_dir() {
   [ -n "${TEST_TEMP_DIR:-}" ] && rm -rf "$TEST_TEMP_DIR"
   export HOME="$_ORIG_HOME"
-  if [ -n "${_ORIG_LBWC_PLANNING_DIR:-}" ]; then
-    export LBWC_PLANNING_DIR="$_ORIG_LBWC_PLANNING_DIR"
+  if [ -n "${_ORIG_MERIDIAN_PLANNING_DIR:-}" ]; then
+    export MERIDIAN_PLANNING_DIR="$_ORIG_MERIDIAN_PLANNING_DIR"
   else
-    unset LBWC_PLANNING_DIR 2>/dev/null || true
+    unset MERIDIAN_PLANNING_DIR 2>/dev/null || true
   fi
-  unset _ORIG_HOME _ORIG_LBWC_PLANNING_DIR
+  unset _ORIG_HOME _ORIG_MERIDIAN_PLANNING_DIR
 }
 
 # Close bats fds so that a spawned daemon cannot keep the run open.
@@ -34,7 +34,7 @@ await_git_ai() {
 }
 
 create_test_config() {
-  local dir="${1:-.lbwc-planning}"
+  local dir="${1:-.meridian}"
   echo '{}' > "$TEST_TEMP_DIR/$dir/config.json"
 }
 
@@ -89,8 +89,8 @@ setup_unrelated_git_repo() {
   (
     cd "$repo_dir" || exit 1
     git init -q
-    git config user.name "LBWC Test"
-    git config user.email "lbwc-tests@example.com"
+    git config user.name "MERIDIAN Test"
+    git config user.email "meridian-tests@example.com"
     echo "initial" > unrelated.txt
     git add unrelated.txt
     git commit -qm "init"

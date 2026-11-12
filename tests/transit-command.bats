@@ -4,9 +4,9 @@ load test_helper
 
 setup() {
   REPO_ROOT="$BATS_TEST_DIRNAME/.."
-  COMMAND="$REPO_ROOT/commands/vibe.md"
+  COMMAND="$REPO_ROOT/commands/transit.md"
 }
 
-@test "vibe command allows Workflow in frontmatter" {
+@test "transit command allows Workflow in frontmatter" {
   grep -E '^allowed-tools:.*\bWorkflow\b' "$COMMAND"
 }

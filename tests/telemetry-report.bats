@@ -8,7 +8,7 @@ setup() {
   setup_temp_dir
   cd "$TEST_TEMP_DIR"
   TELEMETRY="$PROJECT_ROOT/scripts/lib/session-telemetry.py"
-  JOURNAL=".lbwc-planning/telemetry/session.jsonl"
+  JOURNAL=".meridian/telemetry/session.jsonl"
   reset_case_failures
 }
 

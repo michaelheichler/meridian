@@ -6,7 +6,7 @@ load isolated_case_helper
 load rejection_case_helper
 load routing_fixture
 
-ROUTING="${LBWC_ROUTING_UNDER_TEST:-${SCRIPTS_DIR}/lbwc-routing.sh}"
+ROUTING="${MERIDIAN_ROUTING_UNDER_TEST:-${SCRIPTS_DIR}/meridian-routing.sh}"
 
 setup() {
   routing_fixture_setup
@@ -283,22 +283,22 @@ boundary_rejected_row() {
 
 reject_paths_outside_planning_boundary() {
   local other="$TEST_TEMP_DIR/not-planning"
-  local target="$TEST_TEMP_DIR/real/.lbwc-planning"
-  local linked="$TEST_TEMP_DIR/linked/.lbwc-planning" before
+  local target="$TEST_TEMP_DIR/real/.meridian"
+  local linked="$TEST_TEMP_DIR/linked/.meridian" before
   mkdir -p "$other" "$target" "$(dirname "$linked")"
   cp "$PLANNING/config.json" "$PLANNING/claude-capabilities.json" "$other/"
   cp "$PLANNING/config.json" "$PLANNING/claude-capabilities.json" "$target/"
   ln -s "$target" "$linked"
   before=$(config_digest "$target")
 
-  boundary_rejected_row outside-set "must end with .lbwc-planning" set "$other" quality docs ember-path '"swift"'
-  boundary_rejected_row outside-copy "must end with .lbwc-planning" copy "$other" quality turbo
-  boundary_rejected_row outside-activate "must end with .lbwc-planning" activate "$other" turbo
-  boundary_rejected_row outside-migrate "must end with .lbwc-planning" migrate "$other"
-  boundary_rejected_row outside-resolve "must end with .lbwc-planning" resolve "$other" docs
-  boundary_rejected_row outside-check "must end with .lbwc-planning" check "$other" ember-path '"swift"'
-  boundary_rejected_row outside-validate "must end with .lbwc-planning" validate "$other"
-  boundary_rejected_row traversal "traversal is not allowed" validate "$PLANNING/../.lbwc-planning"
+  boundary_rejected_row outside-set "must end with .meridian" set "$other" quality docs ember-path '"swift"'
+  boundary_rejected_row outside-copy "must end with .meridian" copy "$other" quality turbo
+  boundary_rejected_row outside-activate "must end with .meridian" activate "$other" turbo
+  boundary_rejected_row outside-migrate "must end with .meridian" migrate "$other"
+  boundary_rejected_row outside-resolve "must end with .meridian" resolve "$other" docs
+  boundary_rejected_row outside-check "must end with .meridian" check "$other" ember-path '"swift"'
+  boundary_rejected_row outside-validate "must end with .meridian" validate "$other"
+  boundary_rejected_row traversal "traversal is not allowed" validate "$PLANNING/../.meridian"
   boundary_rejected_row symlinked-planning "must not be a symbolic link" \
     set "$linked" quality docs ember-path '"swift"'
   expect_digest symlinked-planning "$before" "$(config_digest "$target")"
@@ -308,11 +308,11 @@ reject_paths_outside_planning_boundary() {
 
 @test "planning boundary accepts the macOS var ancestor alias" {
   [ -L /var ] || skip "macOS /var alias is unavailable"
-  VAR_TEST_DIR=$(mktemp -d /private/var/tmp/lbwc-routing-alias.XXXXXX)
-  local aliased="/var/tmp/${VAR_TEST_DIR##*/}/.lbwc-planning"
-  mkdir -p "$VAR_TEST_DIR/.lbwc-planning"
-  cp "$PLANNING/config.json" "$VAR_TEST_DIR/.lbwc-planning/config.json"
-  cp "$PLANNING/claude-capabilities.json" "$VAR_TEST_DIR/.lbwc-planning/claude-capabilities.json"
+  VAR_TEST_DIR=$(mktemp -d /private/var/tmp/meridian-routing-alias.XXXXXX)
+  local aliased="/var/tmp/${VAR_TEST_DIR##*/}/.meridian"
+  mkdir -p "$VAR_TEST_DIR/.meridian"
+  cp "$PLANNING/config.json" "$VAR_TEST_DIR/.meridian/config.json"
+  cp "$PLANNING/claude-capabilities.json" "$VAR_TEST_DIR/.meridian/claude-capabilities.json"
 
   run bash "$ROUTING" validate "$aliased"
 
@@ -333,13 +333,13 @@ serialize_route_writers_and_reject_forged_transactions() {
   before=$(config_digest "$planning")
 
   run env \
-    LBWC_CONFIG_TRANSACTION_ACTIVE=1 \
-    LBWC_CONFIG_TRANSACTION_PLANNING_DIR="$planning" \
-    LBWC_CONFIG_TRANSACTION_LOCK_DIR="$planning/.routing.lock" \
-    LBWC_CONFIG_TRANSACTION_LOCK_IDENTITY='1:1' \
-    LBWC_CONFIG_TRANSACTION_GUARD="$planning/.routing.lock.guard" \
-    LBWC_CONFIG_TRANSACTION_FD=999 \
-    LBWC_CONFIG_TRANSACTION_OWNER='forged' \
+    MERIDIAN_CONFIG_TRANSACTION_ACTIVE=1 \
+    MERIDIAN_CONFIG_TRANSACTION_PLANNING_DIR="$planning" \
+    MERIDIAN_CONFIG_TRANSACTION_LOCK_DIR="$planning/.routing.lock" \
+    MERIDIAN_CONFIG_TRANSACTION_LOCK_IDENTITY='1:1' \
+    MERIDIAN_CONFIG_TRANSACTION_GUARD="$planning/.routing.lock.guard" \
+    MERIDIAN_CONFIG_TRANSACTION_FD=999 \
+    MERIDIAN_CONFIG_TRANSACTION_OWNER='forged' \
     bash "$ROUTING" set "$planning" balanced docs ember-path '"swift"'
   expect_rejected forged-inherited-transaction 'inherited configuration transaction descriptor is unavailable'
   expect_digest forged-inherited-transaction "$before" "$(config_digest "$planning")"

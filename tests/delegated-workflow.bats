@@ -8,11 +8,11 @@ setup() {
   setup_temp_dir
   REPO="$TEST_TEMP_DIR/repo"
   setup_unrelated_git_repo "$REPO"
-  mkdir -p "$REPO/.lbwc-planning"
+  mkdir -p "$REPO/.meridian"
   cd "$REPO" || return 1
   SCRIPT="$SCRIPTS_DIR/delegated-workflow.sh"
-  MARKER="$REPO/.lbwc-planning/.delegated-workflow.json"
-  EXEC_STATE="$REPO/.lbwc-planning/.execution-state.json"
+  MARKER="$REPO/.meridian/.delegated-workflow.json"
+  EXEC_STATE="$REPO/.meridian/.execution-state.json"
   NOJQ_BIN="$TEST_TEMP_DIR/nojq-bin"
   mkdir -p "$NOJQ_BIN"
   local tool
@@ -127,8 +127,8 @@ expect_no_marker() {
   expect_case set-without-mode 1 "Usage: delegated-workflow.sh set <mode>"
   expect_no_marker set-without-mode
 
-  run env LBWC_PLANNING_DIR="$REPO/absent" bash "$SCRIPT" set debug
-  expect_case set-without-planning-dir 1 "No .lbwc-planning/ directory"
+  run env MERIDIAN_PLANNING_DIR="$REPO/absent" bash "$SCRIPT" set debug
+  expect_case set-without-planning-dir 1 "No .meridian/ directory"
 
   run bash "$SCRIPT" set fix
   expect_case_silent set-default-effort 0
@@ -154,8 +154,8 @@ expect_no_marker() {
   expect_marker set-with-unreadable-execution-state "mode=debug active=true effort=balanced delegation= team= session=s9 correlation="
   [ "$(cat "$EXEC_STATE")" = '{broken' ] \
     || record_case_failure set-with-unreadable-execution-state "execution state rewritten: $(cat "$EXEC_STATE")"
-  [ -z "$(find "$REPO/.lbwc-planning" -name '*.tmp.*')" ] \
-    || record_case_failure set-with-unreadable-execution-state "temp file left: $(ls -a "$REPO/.lbwc-planning")"
+  [ -z "$(find "$REPO/.meridian" -name '*.tmp.*')" ] \
+    || record_case_failure set-with-unreadable-execution-state "temp file left: $(ls -a "$REPO/.meridian")"
 
   workflow_world - now - now
   run env PATH="$NOJQ_BIN" bash "$SCRIPT" set debug fast

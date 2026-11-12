@@ -45,13 +45,13 @@ write_route_catalog() {
 
 routing_fixture_setup() {
   local temporary_root="${TMPDIR:-/tmp}"
-  TEST_TEMP_DIR=$(mktemp -d "${temporary_root%/}/lbwc-routing.XXXXXX")
+  TEST_TEMP_DIR=$(mktemp -d "${temporary_root%/}/meridian-routing.XXXXXX")
   export TEST_TEMP_DIR
   export _ORIG_HOME="${HOME:-}"
-  export _ORIG_LBWC_PLANNING_DIR="${LBWC_PLANNING_DIR:-}"
+  export _ORIG_MERIDIAN_PLANNING_DIR="${MERIDIAN_PLANNING_DIR:-}"
   export HOME="$TEST_TEMP_DIR"
-  unset LBWC_PLANNING_DIR CLAUDE_SESSION_ID 2>/dev/null || true
-  PLANNING="$TEST_TEMP_DIR/.lbwc-planning"
+  unset MERIDIAN_PLANNING_DIR CLAUDE_SESSION_ID 2>/dev/null || true
+  PLANNING="$TEST_TEMP_DIR/.meridian"
   mkdir -p "$PLANNING"
   ROUTE_BINARY="$TEST_TEMP_DIR/claude-route-fixture"
   printf '%s\n' '#!/usr/bin/env bash' 'printf "%s\\n" "fixture"' > "$ROUTE_BINARY"

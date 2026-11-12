@@ -41,7 +41,7 @@ class QuestionFixture(unittest.TestCase):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
-        self.planning_dir = self.root / ".lbwc-planning"
+        self.planning_dir = self.root / ".meridian"
         self.planning_dir.mkdir()
         self.session_id = "session-1"
 
@@ -92,7 +92,7 @@ class QuestionFixture(unittest.TestCase):
         selected = [command for command in arguments
                     if event_name == "Stop" or guard_path in command or dispatcher_path in command]
         event = {**event, "hook_event_name": event_name}
-        environment = {**os.environ, "CLAUDE_PLUGIN_ROOT": str(PROJECT_ROOT), "LBWC_PLANNING_DIR": str(self.planning_dir), "CDPATH": ""}
+        environment = {**os.environ, "CLAUDE_PLUGIN_ROOT": str(PROJECT_ROOT), "MERIDIAN_PLANNING_DIR": str(self.planning_dir), "CDPATH": ""}
         return [subprocess.run(command, input=json.dumps(event) + "\n", cwd=self.root,
                                env=environment, capture_output=True, text=True, check=False)
                 for command in selected]
@@ -231,7 +231,7 @@ class QuestionValidationTest(QuestionFixture):
     def test_generated_agent_cannot_present_a_user_question(self) -> None:
         self.prepare_project()
         event = question_event(self.session_id, self.root)
-        event["agent_id"] = "lbwc-worker"
+        event["agent_id"] = "meridian-worker"
         missing_session = {key: value for key, value in event.items() if key not in {"agent_id", "session_id"}}
         other_reasons = (None, self.hook(missing_session, "pretool"), user_question_guard.RESERVED_RUNTIME,
                          user_question_guard.PENDING_ORCHESTRATION_REASON, decision_common.INVALID_RECORD,
@@ -305,7 +305,7 @@ class QuestionValidationTest(QuestionFixture):
         mutation = {"cwd": str(self.root), "tool_name": "Write", "tool_input": {"file_path": "src/app.py", "content": "x"}}
         mutation_reason = self.hook(mutation, "pretool")
         stop_reason = self.hook({"cwd": str(self.root)}, "stop")
-        generated_question = {**question, "session_id": self.session_id, "agent_id": "lbwc-worker"}
+        generated_question = {**question, "session_id": self.session_id, "agent_id": "meridian-worker"}
         other_reasons = (None, user_question_guard.RESERVED_RUNTIME, user_question_guard.PENDING_ORCHESTRATION_REASON,
                          decision_common.INVALID_RECORD, decision_common.INVALID_STATE, decision_common.INTEGRITY_FAILED,
                          user_question_guard.MALFORMED_INPUT, self.hook(generated_question, "pretool"))
@@ -323,7 +323,7 @@ class QuestionValidationTest(QuestionFixture):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         linked_root = Path(temporary.name)
-        (linked_root / ".lbwc-planning").symlink_to(self.planning_dir, target_is_directory=True)
+        (linked_root / ".meridian").symlink_to(self.planning_dir, target_is_directory=True)
         mutation = {"session_id": self.session_id, "cwd": str(linked_root), "tool_name": "Write", "tool_input": {"file_path": "src/app.py", "content": "x"}}
         self.assertEqual(self.hook(mutation, "pretool"), decision_common.INVALID_STATE)
         self.assertIn(decision_common.INVALID_STATE, self.hook({"session_id": self.session_id, "cwd": str(linked_root)}, "stop") or "")
@@ -342,9 +342,9 @@ class QuestionValidationTest(QuestionFixture):
     def test_runtime_paths_are_reserved_without_a_pending_record(self) -> None:
         self.prepare_project()
         rows = (
-            (self.event("Bash", {"command": "mkdir -p .lbwc-planning/.runtime/decisions"}), user_question_guard.RESERVED_RUNTIME),
-            (self.event("Bash", {"command": "bash scripts/pending-decision.sh create .lbwc-planning session-1"}), user_question_guard.RESERVED_RUNTIME),
-            (self.event("Write", {"file_path": ".lbwc-planning/.runtime/decisions/forged.json", "content": "{}"}), user_question_guard.RESERVED_RUNTIME),
+            (self.event("Bash", {"command": "mkdir -p .meridian/.runtime/decisions"}), user_question_guard.RESERVED_RUNTIME),
+            (self.event("Bash", {"command": "bash scripts/pending-decision.sh create .meridian session-1"}), user_question_guard.RESERVED_RUNTIME),
+            (self.event("Write", {"file_path": ".meridian/.runtime/decisions/forged.json", "content": "{}"}), user_question_guard.RESERVED_RUNTIME),
         )
         for event, expected_reason in rows:
             with self.subTest(event=event):
@@ -359,9 +359,9 @@ class QuestionValidationTest(QuestionFixture):
         runtime_alias = self.root / "runtime-alias"
         runtime_alias.symlink_to(runtime, target_is_directory=True)
         rows = (
-            (f"bash {script_alias} create .lbwc-planning session-1", user_question_guard.RESERVED_RUNTIME),
+            (f"bash {script_alias} create .meridian session-1", user_question_guard.RESERVED_RUNTIME),
             (f"mkdir -p {runtime_alias}/decisions", user_question_guard.RESERVED_RUNTIME),
-            ("mkdir -p .lbwc-planning/cache/../.runtime/decisions", user_question_guard.RESERVED_RUNTIME),
+            ("mkdir -p .meridian/cache/../.runtime/decisions", user_question_guard.RESERVED_RUNTIME),
         )
         for command, expected_reason in rows:
             with self.subTest(command=command):

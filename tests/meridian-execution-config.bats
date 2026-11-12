@@ -1,7 +1,7 @@
 #!/usr/bin/env bats
 
 load gate_case_helper
-load lbwc_config_helper
+load meridian_config_helper
 
 setup() {
   config_fixture_setup
@@ -34,7 +34,7 @@ reject_in_process_switch_row() {
   expect_config_jq defaults "$PLANNING_DIR" '
     .agent_execution_mode == "ask"
     and .tmux_execution.enabled == false
-    and .tmux_execution.session_name_prefix == "lbwc"
+    and .tmux_execution.session_name_prefix == "meridian"
     and .tmux_execution.max_agents == 3
     and .tmux_execution.attach_policy == "orchestrator_only"
     and (.tmux_execution | has("session_timeout_seconds") | not)
@@ -73,7 +73,7 @@ reject_in_process_switch_row() {
     '.tmux_execution.cleanup_policy == "keep_panes"'
 
   for state in registered idle failed shutdown; do
-    state_dir="$TEST_ROOT/$state/.lbwc-planning"
+    state_dir="$TEST_ROOT/$state/.meridian"
     init_config "$state_dir"
     set_accepted_row "registry-$state-mode" "$state_dir" agent_execution_mode '"tmux"' '.agent_execution_mode == "tmux"'
     mark_executing "$state_dir"
@@ -82,7 +82,7 @@ reject_in_process_switch_row() {
       '.agent_execution_mode == "in_process"'
   done
 
-  PLANNING_DIR="$TEST_ROOT/rejections/.lbwc-planning"
+  PLANNING_DIR="$TEST_ROOT/rejections/.meridian"
   init_config "$PLANNING_DIR"
 
   reject_unchanged_row invalid-mode "$PLANNING_DIR" "invalid configuration" \

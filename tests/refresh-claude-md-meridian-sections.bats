@@ -11,7 +11,7 @@ setup() {
   export HOME="$BATS_TEST_TMPDIR/home"
   git init -q "$WORK"
   cd "$WORK"
-  REFRESH="$SCRIPTS_DIR/refresh-claude-md-lbwc-sections.sh"
+  REFRESH="$SCRIPTS_DIR/refresh-claude-md-meridian-sections.sh"
   reset_case_failures
 }
 
@@ -19,13 +19,13 @@ teardown() {
   await_git_ai
 }
 
-@test "refresh-claude-md-lbwc-sections rewrites only LBWC-owned sections" {
+@test "refresh-claude-md-meridian-sections rewrites only MERIDIAN-owned sections" {
   local file before
 
   run bash "$REFRESH"
-  expect_case "no-argument" 1 "Usage: refresh-claude-md-lbwc-sections.sh"
+  expect_case "no-argument" 1 "Usage: refresh-claude-md-meridian-sections.sh"
   run bash "$REFRESH" "$WORK/a.md" "$WORK/b.md"
-  expect_case "two-arguments" 1 "Usage: refresh-claude-md-lbwc-sections.sh"
+  expect_case "two-arguments" 1 "Usage: refresh-claude-md-meridian-sections.sh"
   run bash "$REFRESH" "$WORK/absent.md"
   expect_status "missing-file" 1
   expect_no_path "missing-file-not-created" "$WORK/absent.md"
@@ -39,20 +39,20 @@ teardown() {
 
   file="$WORK/legacy.md"
   write_text "$file" "# App" "" \
-    "## State" "" 'Planning directory: `.lbwc-planning/`' "" \
-    "## Project Conventions" "" "None yet. Run /lbwc:teach to add project conventions." "" \
-    "## Commands" "" "Run /lbwc:status for current progress." "Run /lbwc:help for all available commands." "" \
+    "## State" "" 'Planning directory: `.meridian/`' "" \
+    "## Project Conventions" "" "None yet. Run /meridian:teach to add project conventions." "" \
+    "## Commands" "" "Run /meridian:status for current progress." "Run /meridian:help for all available commands." "" \
     "## Active Context" "" "old context" "" \
-    "## Deploy" "" "ship it" '````md' "## LBWC Rules" '```' "still fenced" '````' "" \
-    "## Runbook" "" "Run /lbwc:status for current progress." "" \
+    "## Deploy" "" "ship it" '````md' "## MERIDIAN Rules" '```' "still fenced" '````' "" \
+    "## Runbook" "" "Run /meridian:status for current progress." "" \
     "## Team State" "" "our state machine"
   run bash "$REFRESH" "$file"
   expect_case_silent "legacy" 0
   expect_headings "legacy-strips-generated-sections" "$file" \
-    $'## Deploy\n## LBWC Rules\n## Runbook\n## Team State\n## Active Context\n## LBWC Rules\n## Code Intelligence\n## Plugin Isolation'
+    $'## Deploy\n## MERIDIAN Rules\n## Runbook\n## Team State\n## Active Context\n## MERIDIAN Rules\n## Code Intelligence\n## Plugin Isolation'
   expect_exact_line "legacy-keeps-title" "$file" "# App"
   expect_exact_line "legacy-keeps-fence-body" "$file" "still fenced"
-  expect_exact_line "legacy-keeps-user-runbook" "$file" "Run /lbwc:status for current progress."
+  expect_exact_line "legacy-keeps-user-runbook" "$file" "Run /meridian:status for current progress."
   expect_no_exact_line "legacy-drops-old-context" "$file" "old context"
   expect_no_file_line "legacy-drops-planning-state" "$file" "Planning directory"
   expect_no_file_line "legacy-drops-convention-template" "$file" "None yet"
@@ -71,7 +71,7 @@ teardown() {
   expect_no_exact_line "owned-old-isolation-replaced" "$file" "old isolation"
 
   file="$WORK/variant.md"
-  write_text "$file" "# App" "" "### LBWC Rules" "" "custom rules" "" "Prefer LSP over grep for lookups."
+  write_text "$file" "# App" "" "### MERIDIAN Rules" "" "custom rules" "" "Prefer LSP over grep for lookups."
   run bash "$REFRESH" "$file"
   expect_case_silent "variant-titles" 0
   expect_no_exact_line "variant-prose-replaces-code-intelligence" "$file" "## Code Intelligence"

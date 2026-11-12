@@ -13,8 +13,8 @@ setup() {
   git init -q "$WORK"
   cd "$WORK"
   BOOT="$SCRIPTS_DIR/bootstrap/bootstrap-claude.sh"
-  REFRESH="$SCRIPTS_DIR/refresh-claude-md-lbwc-sections.sh"
-  ALL_SECTIONS=$'## Active Context\n## LBWC Rules\n## Code Intelligence\n## Plugin Isolation'
+  REFRESH="$SCRIPTS_DIR/refresh-claude-md-meridian-sections.sh"
+  ALL_SECTIONS=$'## Active Context\n## MERIDIAN Rules\n## Code Intelligence\n## Plugin Isolation'
   reset_case_failures
 }
 
@@ -62,7 +62,7 @@ bootstrap_preserving_user_content() {
   write_text "$WORK/strong/CLAUDE.md" "# My App" "" "Intro line." "" \
     "## Active Context" "" "stale context line" "" "## Build" "" "make build" "" \
     "## Codebase Intelligence" "" "gsd stuff" "" "## Context" "" "soft gsd context" "" \
-    "## LBWC Rules" "" "old rule"
+    "## MERIDIAN Rules" "" "old rule"
   merge_existing "$WORK/strong"
   expect_case_silent "strong-gsd" 0
   expect_exact_line "strong-keeps-title" "$WORK/strong/CLAUDE.md" "# My App"
@@ -102,11 +102,11 @@ bootstrap_preserving_user_content() {
 migrate_decisions_and_archive_notes() {
   write_decisions_claude_md "$WORK/boundary"
   printf '%s\n' "Note kept for later." "" >> "$WORK/boundary/CLAUDE.md"
-  write_text "$WORK/boundary/.lbwc-planning/STATE.md" "# State" "" "## Key Decisions" "" \
+  write_text "$WORK/boundary/.meridian/STATE.md" "# State" "" "## Key Decisions" "" \
     "| Decision | Rationale |" "|----------|-----------|" "| Use REST | Simple |" "" "## Todos" "" "- none"
   merge_existing "$WORK/boundary"
   expect_status "boundary" 0
-  expect_file_equals "boundary-rows-before-next-section" "$WORK/boundary/.lbwc-planning/STATE.md" \
+  expect_file_equals "boundary-rows-before-next-section" "$WORK/boundary/.meridian/STATE.md" \
     "$(printf '%s\n' "# State" "" "## Key Decisions" "" "| Decision | Rationale |" "|----------|-----------|" \
       "| Use REST | Simple |" "| Use Postgres | Mature |" "" "## Todos" "" "- none")"
   expect_no_exact_line "boundary-removes-row" "$WORK/boundary/CLAUDE.md" "| Use Postgres | Mature |"
@@ -115,22 +115,22 @@ migrate_decisions_and_archive_notes() {
   expect_exact_line "boundary-keeps-user-notes" "$WORK/boundary/CLAUDE.md" "user notes"
 
   write_decisions_claude_md "$WORK/at-end"
-  write_text "$WORK/at-end/.lbwc-planning/STATE.md" "# State" "" "## Key Decisions" "" \
+  write_text "$WORK/at-end/.meridian/STATE.md" "# State" "" "## Key Decisions" "" \
     "| Decision | Rationale |" "|----------|-----------|"
   merge_existing "$WORK/at-end"
   expect_status "at-end" 0
-  expect_file_equals "at-end-rows-appended" "$WORK/at-end/.lbwc-planning/STATE.md" \
+  expect_file_equals "at-end-rows-appended" "$WORK/at-end/.meridian/STATE.md" \
     "$(printf '%s\n' "# State" "" "## Key Decisions" "" "| Decision | Rationale |" "|----------|-----------|" \
       "| Use Postgres | Mature |" "| Use REST | Simple |")"
 
   write_decisions_claude_md "$WORK/duplicates"
-  write_text "$WORK/duplicates/.lbwc-planning/STATE.md" "## Key Decisions" "" \
+  write_text "$WORK/duplicates/.meridian/STATE.md" "## Key Decisions" "" \
     "| Decision | Rationale |" "|---|---|" "| Use  Postgres |  Mature |" "| Use REST | Simple |"
   local before
-  before=$(file_digest "$WORK/duplicates/.lbwc-planning/STATE.md")
+  before=$(file_digest "$WORK/duplicates/.meridian/STATE.md")
   merge_existing "$WORK/duplicates"
   expect_status "duplicates" 0
-  expect_same_digest "duplicates-leave-state-alone" "$WORK/duplicates/.lbwc-planning/STATE.md" "$before"
+  expect_same_digest "duplicates-leave-state-alone" "$WORK/duplicates/.meridian/STATE.md" "$before"
   expect_no_file_line "duplicates-drop-section" "$WORK/duplicates/CLAUDE.md" "Key Decisions"
 
   write_text "$WORK/template/CLAUDE.md" "# App" "" "## Key Decisions" "" \
@@ -163,21 +163,21 @@ retain_decisions_when_state_cannot_accept_them() {
   expect_exact_line "no-state-keeps-row" "$WORK/no-state/CLAUDE.md" "| Use Postgres | Mature |"
 
   write_decisions_claude_md "$WORK/no-section"
-  write_text "$WORK/no-section/.lbwc-planning/STATE.md" "# State" "" "## Todos"
-  before=$(file_digest "$WORK/no-section/.lbwc-planning/STATE.md")
+  write_text "$WORK/no-section/.meridian/STATE.md" "# State" "" "## Todos"
+  before=$(file_digest "$WORK/no-section/.meridian/STATE.md")
   merge_existing "$WORK/no-section"
   expect_status "no-section" 0
   expect_output_nonempty "no-section-warns"
-  expect_same_digest "no-section-state-untouched" "$WORK/no-section/.lbwc-planning/STATE.md" "$before"
+  expect_same_digest "no-section-state-untouched" "$WORK/no-section/.meridian/STATE.md" "$before"
   expect_exact_line "no-section-keeps-row" "$WORK/no-section/CLAUDE.md" "| Use REST | Simple |"
 
   write_decisions_claude_md "$WORK/no-table"
-  write_text "$WORK/no-table/.lbwc-planning/STATE.md" "# State" "" "## Key Decisions" "" "_(No decisions yet)_"
-  before=$(file_digest "$WORK/no-table/.lbwc-planning/STATE.md")
+  write_text "$WORK/no-table/.meridian/STATE.md" "# State" "" "## Key Decisions" "" "_(No decisions yet)_"
+  before=$(file_digest "$WORK/no-table/.meridian/STATE.md")
   merge_existing "$WORK/no-table"
   expect_status "no-table" 0
   expect_output_nonempty "no-table-warns"
-  expect_same_digest "no-table-state-untouched" "$WORK/no-table/.lbwc-planning/STATE.md" "$before"
+  expect_same_digest "no-table-state-untouched" "$WORK/no-table/.meridian/STATE.md" "$before"
   expect_exact_line "no-table-keeps-heading" "$WORK/no-table/CLAUDE.md" "## Key Decisions"
 
   assert_no_case_failures

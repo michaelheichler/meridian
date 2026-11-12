@@ -21,7 +21,7 @@ teardown() {
 }
 
 fresh_phase() {
-  PHASE_DIR="$TEST_ROOT/$1/.lbwc-planning/phases/01-checkout"
+  PHASE_DIR="$TEST_ROOT/$1/.meridian/phases/01-checkout"
   ROUND_STATE="$PHASE_DIR/remediation/uat/.uat-remediation-stage"
   PHASE_STATE="$PHASE_DIR/.uat-remediation-stage"
   REMED_STATE="$PHASE_DIR/remediation/.uat-remediation-stage"
@@ -112,9 +112,9 @@ state() {
   expect_no_path reset "$ROUND_STATE"
   expect_no_path reset "$PHASE_STATE"
 
-  run bash "$STATE_SCRIPT" reset "$TEST_ROOT/reset/.lbwc-planning/phases/07-gone"
+  run bash "$STATE_SCRIPT" reset "$TEST_ROOT/reset/.meridian/phases/07-gone"
   expect_case reset-missing-phase 0 none
-  expect_no_path reset-missing-phase "$TEST_ROOT/reset/.lbwc-planning/phases/07-gone"
+  expect_no_path reset-missing-phase "$TEST_ROOT/reset/.meridian/phases/07-gone"
 
   assert_no_case_failures
 }
@@ -122,21 +122,21 @@ state() {
 @test "uat-remediation-state accepts only active phase directories and known commands" {
   fresh_phase relative
   write_lines "$ROUND_STATE" stage=execute round=01 layout=round-dir
-  run bash "$STATE_SCRIPT" get relative/.lbwc-planning/phases/01-checkout
+  run bash "$STATE_SCRIPT" get relative/.meridian/phases/01-checkout
   expect_case relative-path 0 execute
 
-  run bash "$STATE_SCRIPT" get "$TEST_ROOT/relative/.lbwc-planning/phases/09-new"
+  run bash "$STATE_SCRIPT" get "$TEST_ROOT/relative/.meridian/phases/09-new"
   expect_case missing-phase-with-parent 0 none
 
-  run bash "$STATE_SCRIPT" get "$TEST_ROOT/nowhere/.lbwc-planning/phases/01-x"
+  run bash "$STATE_SCRIPT" get "$TEST_ROOT/nowhere/.meridian/phases/01-x"
   expect_case missing-parent 0 none
 
-  run bash "$STATE_SCRIPT" get "$TEST_ROOT/x/.lbwc-planning/milestones/m1/phases/01-old"
+  run bash "$STATE_SCRIPT" get "$TEST_ROOT/x/.meridian/milestones/m1/phases/01-old"
   expect_case milestone 1 "refusing to operate on archived milestone path"
 
   mkdir -p "$TEST_ROOT/plain/01-checkout"
   run bash "$STATE_SCRIPT" get "$TEST_ROOT/plain/01-checkout"
-  expect_case outside-phases 1 "must be under active .lbwc-planning/phases/"
+  expect_case outside-phases 1 "must be under active .meridian/phases/"
 
   run bash "$STATE_SCRIPT" get
   expect_case missing-phase-arg 1 "Usage: uat-remediation-state.sh"

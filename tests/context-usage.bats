@@ -6,10 +6,10 @@ load gate_case_helper
 setup() {
   setup_temp_dir
   PROJECT_DIR="$TEST_TEMP_DIR/project"
-  mkdir -p "$PROJECT_DIR/.lbwc-planning"
+  mkdir -p "$PROJECT_DIR/.meridian"
   cd "$PROJECT_DIR"
   HOOK="$PROJECT_ROOT/hooks/context_usage.py"
-  USAGE_FILE="$PROJECT_DIR/.lbwc-planning/.context-usage"
+  USAGE_FILE="$PROJECT_DIR/.meridian/.context-usage"
   git init -q
   reset_case_failures
 }
@@ -21,7 +21,7 @@ teardown() {
 }
 
 resolve_level() {
-  bash -c ". '$PROJECT_ROOT/scripts/lib/resolve-caveman-level.sh' && resolve_caveman_level '$1' '$PROJECT_DIR/.lbwc-planning' && printf '%s' \"\$RESOLVED_CAVEMAN_LEVEL\""
+  bash -c ". '$PROJECT_ROOT/scripts/lib/resolve-caveman-level.sh' && resolve_caveman_level '$1' '$PROJECT_DIR/.meridian' && printf '%s' \"\$RESOLVED_CAVEMAN_LEVEL\""
 }
 
 run_hook_with_transcript() {
@@ -34,8 +34,8 @@ EOF
 
 record_row() {
   local label="$1" transcript_chars="$2" window_config="$3" expected_record="$4" record
-  rm -f "$USAGE_FILE" "$PROJECT_DIR/.lbwc-planning/config.json"
-  [ -z "$window_config" ] || printf '{"context_window_tokens": %s}\n' "$window_config" > "$PROJECT_DIR/.lbwc-planning/config.json"
+  rm -f "$USAGE_FILE" "$PROJECT_DIR/.meridian/config.json"
+  [ -z "$window_config" ] || printf '{"context_window_tokens": %s}\n' "$window_config" > "$PROJECT_DIR/.meridian/config.json"
   [ -z "${5:-}" ] || printf '%s\n' "$5" > "$USAGE_FILE"
   run_hook_with_transcript "$transcript_chars"
   expect_case "$label" 0
@@ -86,7 +86,7 @@ EOF
 compact_usage_row() {
   local label=$1 record=$2 expected=$3
   printf '%s\n' "$record" > "$USAGE_FILE"
-  run env CLAUDE_SESSION_ID=s1 LBWC_PLANNING_DIR="$PROJECT_DIR/.lbwc-planning" bash "$SCRIPTS_DIR/suggest-compact.sh" execute
+  run env CLAUDE_SESSION_ID=s1 MERIDIAN_PLANNING_DIR="$PROJECT_DIR/.meridian" bash "$SCRIPTS_DIR/suggest-compact.sh" execute
   expect_case "$label" 0
   case "$expected" in
     suggest) [ -n "$output" ] || record_case_failure "$label" 'missing context warning' ;;
@@ -124,7 +124,7 @@ compact_usage_row() {
 
 compact_fixture() {
   local transcript="$PROJECT_DIR/transcript.jsonl"
-  rm -f "$PROJECT_DIR/.lbwc-planning/.context-usage-reset"
+  rm -f "$PROJECT_DIR/.meridian/.context-usage-reset"
   printf '%s\n' 's1|95|200000' > "$USAGE_FILE"
   python3 -c 'import sys; open(sys.argv[1], "w").write("x" * 400000)' "$transcript"
   jq -cn --arg cwd "$PROJECT_DIR" --arg transcript "$transcript" \
@@ -142,7 +142,7 @@ compact_reset_row() {
   run bash "$SCRIPTS_DIR/post-compact.sh" <<< "$payload"
   expect_case "$label" 0
   [ ! -e "$USAGE_FILE" ] || record_case_failure "$label" 'stale usage survived'
-  [ "$(cat "$PROJECT_DIR/.lbwc-planning/.context-usage-reset")" = "$baseline" ] \
+  [ "$(cat "$PROJECT_DIR/.meridian/.context-usage-reset")" = "$baseline" ] \
     || record_case_failure "$label" 'wrong transcript baseline'
 }
 
@@ -169,10 +169,10 @@ compact_estimate_row() {
 
 compaction_style_row() {
   local style=$1 expected context
-  rm -f "$USAGE_FILE" "$PROJECT_DIR/.lbwc-planning/.compaction-count"
-  printf '{"caveman_style":"%s"}\n' "$style" > "$PROJECT_DIR/.lbwc-planning/config.json"
+  rm -f "$USAGE_FILE" "$PROJECT_DIR/.meridian/.compaction-count"
+  printf '{"caveman_style":"%s"}\n' "$style" > "$PROJECT_DIR/.meridian/config.json"
   expected=$(bash "$SCRIPTS_DIR/compaction-instructions.sh" <<< '{}')
-  rm -f "$PROJECT_DIR/.lbwc-planning/.compaction-count"
+  rm -f "$PROJECT_DIR/.meridian/.compaction-count"
   printf '%s\n' 's1|95|200000' > "$USAGE_FILE"
   run bash "$SCRIPTS_DIR/compaction-instructions.sh" <<< '{}'
   expect_case_exact "precompact-$style-independent-of-old-usage" 0 "$expected"

@@ -20,7 +20,7 @@ stage_team() {
   local shape="$1" role="$2" project contract
   project="$TEST_TEMP_DIR/project-$shape"
   CONTROL_ROOT="$project/.temporary-agent-runfiles/runs/wf-$shape"
-  mkdir -p "$project/.lbwc-planning" "$CONTROL_ROOT"
+  mkdir -p "$project/.meridian" "$CONTROL_ROOT"
   jq -n '{workflow_execution:{enabled:true}}' > "$CONTROL_ROOT/config.json"
   jq -n '{workflow:{available:true, unavailable_reasons:[]}}' > "$CONTROL_ROOT/claude-capabilities.json"
   contract=$(bash "$SCRIPTS_DIR/task-contract.sh" issue "$project" "$shape" \
@@ -29,7 +29,7 @@ stage_team() {
     --resolved-backend workflow --write-capability directory:notes) || return 1
   TASK_ID=$(basename "$contract" .json)
   CONTRACT=$contract
-  AGENT_OUTPUT=$(LBWC_AGENT_RANDOM_SEED=$RANDOM bash "$SCRIPTS_DIR/agent-generator.sh" "--$shape" "$role" \
+  AGENT_OUTPUT=$(MERIDIAN_AGENT_RANDOM_SEED=$RANDOM bash "$SCRIPTS_DIR/agent-generator.sh" "--$shape" "$role" \
     --job "team fixture $shape" --contract "$contract" --task-id "$TASK_ID" \
     --control-root "$CONTROL_ROOT" --write-capability directory:notes \
     --execution-backend workflow 2>&1) || { printf '%s\n' "$AGENT_OUTPUT" >&2; return 1; }

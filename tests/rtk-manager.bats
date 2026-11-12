@@ -13,10 +13,10 @@ setup() {
   export RTK_TEST_ROOT="$(cd "$TEST_TEMP_DIR/project" && pwd -P)"
   copy_script_with_libs "$SCRIPTS_DIR/rtk-manager.sh" "$RTK_TEST_ROOT/scripts/rtk-manager.sh"
   chmod +x "$RTK_TEST_ROOT/scripts/rtk-manager.sh"
-  export LBWC_RTK_DIR="$RTK_TEST_ROOT/.lbwc-planning/tools/rtk"
-  export LBWC_RTK_BINARY="$LBWC_RTK_DIR/rtk"
-  export LBWC_RTK_RECEIPT="$LBWC_RTK_DIR/rtk-install.json"
-  export LBWC_RTK_BACKUPS="$LBWC_RTK_DIR/backups"
+  export MERIDIAN_RTK_DIR="$RTK_TEST_ROOT/.meridian/tools/rtk"
+  export MERIDIAN_RTK_BINARY="$MERIDIAN_RTK_DIR/rtk"
+  export MERIDIAN_RTK_RECEIPT="$MERIDIAN_RTK_DIR/rtk-install.json"
+  export MERIDIAN_RTK_BACKUPS="$MERIDIAN_RTK_DIR/backups"
   export RTK_REPO_API='https://fixture.invalid/release.json'
   export CLAUDE_CONFIG_DIR="$TEST_TEMP_DIR/claude config"
   export XDG_CONFIG_HOME="$TEST_TEMP_DIR/xdg"
@@ -48,14 +48,14 @@ manager() {
 }
 
 reset_rtk() {
-  rm -rf "$LBWC_RTK_DIR"
-  export LBWC_RTK_BACKUPS="$LBWC_RTK_DIR/backups"
+  rm -rf "$MERIDIAN_RTK_DIR"
+  export MERIDIAN_RTK_BACKUPS="$MERIDIAN_RTK_DIR/backups"
   unset RTK_FIXTURE_PROXY_FAILURE
   prepare_release
 }
 
 count_files_named() {
-  find "$LBWC_RTK_BACKUPS" -type f -name "$1" 2>/dev/null | wc -l | tr -d '[:space:]'
+  find "$MERIDIAN_RTK_BACKUPS" -type f -name "$1" 2>/dev/null | wc -l | tr -d '[:space:]'
 }
 
 target_name() {
@@ -159,14 +159,14 @@ expect_needs_yes() {
   reset_rtk
   run manager "$1"
   expect_case "$1-needs-yes" 2 "$1 requires --yes"
-  expect_no_path "$1-needs-yes-installs-nothing" "$LBWC_RTK_BINARY"
+  expect_no_path "$1-needs-yes-installs-nothing" "$MERIDIAN_RTK_BINARY"
 }
 
 @test "rtk-manager usage and guards: reports status, rejects bad invocations, demands --yes and keeps state inside the project" {
   run manager status --json
   expect_status status-missing 0
   expect_jq_output status-missing '.installed == false'
-  expect_output_has status-missing "$LBWC_RTK_BINARY"
+  expect_output_has status-missing "$MERIDIAN_RTK_BINARY"
 
   run manager
   expect_case no-command 2 "Usage: rtk-manager.sh"
@@ -187,12 +187,12 @@ expect_needs_yes() {
   expect_needs_yes update
   expect_needs_yes uninstall
 
-  run env LBWC_RTK_DIR="$TEST_TEMP_DIR/outside" bash "$RTK_TEST_ROOT/scripts/rtk-manager.sh" status
+  run env MERIDIAN_RTK_DIR="$TEST_TEMP_DIR/outside" bash "$RTK_TEST_ROOT/scripts/rtk-manager.sh" status
   expect_case state-outside-project 2 "state must stay inside this project"
 
   mkdir -p "$TEST_TEMP_DIR/outside"
   ln -s "$TEST_TEMP_DIR/outside" "$RTK_TEST_ROOT/escape"
-  run env -u LBWC_RTK_BINARY -u LBWC_RTK_RECEIPT -u LBWC_RTK_BACKUPS LBWC_RTK_DIR="$RTK_TEST_ROOT/escape/rtk" bash "$RTK_TEST_ROOT/scripts/rtk-manager.sh" install --yes
+  run env -u MERIDIAN_RTK_BINARY -u MERIDIAN_RTK_RECEIPT -u MERIDIAN_RTK_BACKUPS MERIDIAN_RTK_DIR="$RTK_TEST_ROOT/escape/rtk" bash "$RTK_TEST_ROOT/scripts/rtk-manager.sh" install --yes
   expect_case symlink-traversal 2 "may not traverse symbolic links"
   expect_no_path symlink-traversal "$TEST_TEMP_DIR/outside/rtk"
 
@@ -203,14 +203,14 @@ expect_needs_yes() {
   reset_rtk
   run manager install --yes --dry-run
   expect_case dry-run 0 "dry-run: install RTK v9.9.9"
-  expect_no_path dry-run "$LBWC_RTK_BINARY"
-  expect_no_path dry-run "$LBWC_RTK_RECEIPT"
+  expect_no_path dry-run "$MERIDIAN_RTK_BINARY"
+  expect_no_path dry-run "$MERIDIAN_RTK_RECEIPT"
 
   run manager install --yes
   expect_status install 0
-  [ -x "$LBWC_RTK_BINARY" ] || record_case_failure install "binary is not executable"
-  expect_path install "$LBWC_RTK_RECEIPT"
-  expect_jq install "$LBWC_RTK_RECEIPT" '.release.tag == "v9.9.9" and .claude_code_smoke == "available"'
+  [ -x "$MERIDIAN_RTK_BINARY" ] || record_case_failure install "binary is not executable"
+  expect_path install "$MERIDIAN_RTK_RECEIPT"
+  expect_jq install "$MERIDIAN_RTK_RECEIPT" '.release.tag == "v9.9.9" and .claude_code_smoke == "available"'
 
   run manager verify --json
   expect_status verify 0
@@ -224,19 +224,19 @@ expect_needs_yes() {
   printf '%064d  rtk-%s.tar.gz\n' 0 "$(target_name)" > "$TEST_TEMP_DIR/release/checksums.txt"
   run manager install --yes
   expect_case checksum-mismatch 2 "checksum mismatch"
-  expect_no_path checksum-mismatch "$LBWC_RTK_BINARY"
+  expect_no_path checksum-mismatch "$MERIDIAN_RTK_BINARY"
 
   reset_rtk
   build_archive_with_entry 'dir/../rtk'
   run manager install --yes
   expect_case archive-parent-traversal 2 "unsafe or empty paths"
-  expect_no_path archive-parent-traversal "$LBWC_RTK_BINARY"
+  expect_no_path archive-parent-traversal "$MERIDIAN_RTK_BINARY"
 
   reset_rtk
   build_archive_with_entry '/rtk'
   run manager install --yes
   expect_case archive-absolute-path 2 "unsafe or empty paths"
-  expect_no_path archive-absolute-path "$LBWC_RTK_BINARY"
+  expect_no_path archive-absolute-path "$MERIDIAN_RTK_BINARY"
 
   assert_no_case_failures
 }
@@ -246,35 +246,35 @@ expect_needs_yes() {
 
   reset_rtk
   manager install --yes
-  printf 'old binary\n' > "$LBWC_RTK_BINARY"
-  chmod +x "$LBWC_RTK_BINARY"
+  printf 'old binary\n' > "$MERIDIAN_RTK_BINARY"
+  chmod +x "$MERIDIAN_RTK_BINARY"
   run manager update --yes
   expect_status update-backup 0
   [ "$(count_files_named rtk)" = 1 ] || record_case_failure update-backup "expected one backed up binary"
   [ "$(count_files_named rtk-install.json)" = 1 ] || record_case_failure update-backup "expected one backed up receipt"
-  run "$LBWC_RTK_BINARY" --version
+  run "$MERIDIAN_RTK_BINARY" --version
   expect_case update-backup-runs 0 "rtk 9.9.9"
 
   reset_rtk
   manager install --yes
-  before_binary="$(sha256_value "$LBWC_RTK_BINARY")"
-  before_receipt="$(sha256_value "$LBWC_RTK_RECEIPT")"
-  printf 'blocked\n' > "$LBWC_RTK_DIR/blocked"
-  export LBWC_RTK_BACKUPS="$LBWC_RTK_DIR/blocked"
+  before_binary="$(sha256_value "$MERIDIAN_RTK_BINARY")"
+  before_receipt="$(sha256_value "$MERIDIAN_RTK_RECEIPT")"
+  printf 'blocked\n' > "$MERIDIAN_RTK_DIR/blocked"
+  export MERIDIAN_RTK_BACKUPS="$MERIDIAN_RTK_DIR/blocked"
   run manager update --yes
   expect_case backup-failure 2 "could not create a backup"
-  expect_same_digest backup-failure "$LBWC_RTK_BINARY" "$before_binary"
-  expect_same_digest backup-failure "$LBWC_RTK_RECEIPT" "$before_receipt"
+  expect_same_digest backup-failure "$MERIDIAN_RTK_BINARY" "$before_binary"
+  expect_same_digest backup-failure "$MERIDIAN_RTK_RECEIPT" "$before_receipt"
 
   reset_rtk
   manager install --yes
-  before_binary="$(sha256_value "$LBWC_RTK_BINARY")"
-  before_receipt="$(sha256_value "$LBWC_RTK_RECEIPT")"
+  before_binary="$(sha256_value "$MERIDIAN_RTK_BINARY")"
+  before_receipt="$(sha256_value "$MERIDIAN_RTK_RECEIPT")"
   export RTK_FIXTURE_PROXY_FAILURE=true
   run manager update --yes
   expect_case smoke-failure 2 "compatibility smoke check"
-  expect_same_digest smoke-failure "$LBWC_RTK_BINARY" "$before_binary"
-  expect_same_digest smoke-failure "$LBWC_RTK_RECEIPT" "$before_receipt"
+  expect_same_digest smoke-failure "$MERIDIAN_RTK_BINARY" "$before_binary"
+  expect_same_digest smoke-failure "$MERIDIAN_RTK_RECEIPT" "$before_receipt"
 
   assert_no_case_failures
 }
@@ -295,12 +295,12 @@ expect_needs_yes() {
   manager install --yes
   run manager uninstall --yes --dry-run
   expect_status uninstall-dry-run 0
-  [ -x "$LBWC_RTK_BINARY" ] || record_case_failure uninstall-dry-run "dry run removed the binary"
+  [ -x "$MERIDIAN_RTK_BINARY" ] || record_case_failure uninstall-dry-run "dry run removed the binary"
 
   run manager uninstall --yes
   expect_case uninstall 0 "uninstall: removed project-local RTK install"
-  expect_no_path uninstall "$LBWC_RTK_BINARY"
-  expect_no_path uninstall "$LBWC_RTK_RECEIPT"
+  expect_no_path uninstall "$MERIDIAN_RTK_BINARY"
+  expect_no_path uninstall "$MERIDIAN_RTK_RECEIPT"
   [ "$(count_files_named rtk)" = 1 ] || record_case_failure uninstall "expected one backed up binary"
 
   assert_no_case_failures

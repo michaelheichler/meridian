@@ -6,10 +6,10 @@ load isolated_case_helper
 load journal_writers_helper
 
 setup() {
-  unset LBWC_CONTROL_ROOT LBWC_PROJECT_ROOT LBWC_PLANNING_DIR
-  export LBWC_PLANNING_DIR="$BATS_TEST_TMPDIR/planning"
-  mkdir -p "$LBWC_PLANNING_DIR"
-  JOURNAL="$LBWC_PLANNING_DIR/EXPLORER-JOURNAL.md"
+  unset MERIDIAN_CONTROL_ROOT MERIDIAN_PROJECT_ROOT MERIDIAN_PLANNING_DIR
+  export MERIDIAN_PLANNING_DIR="$BATS_TEST_TMPDIR/planning"
+  mkdir -p "$MERIDIAN_PLANNING_DIR"
+  JOURNAL="$MERIDIAN_PLANNING_DIR/EXPLORER-JOURNAL.md"
 }
 
 teardown() { await_git_ai; }
@@ -36,7 +36,7 @@ seed_entries() {
 }
 
 archive_then_live() {
-  cat "$LBWC_PLANNING_DIR/journal-archive/"*.md "$JOURNAL"
+  cat "$MERIDIAN_PLANNING_DIR/journal-archive/"*.md "$JOURNAL"
 }
 
 rotation_preserves_order() {
@@ -48,7 +48,7 @@ rotation_preserves_order() {
   archive_then_live > "$BATS_TEST_TMPDIR/all"
   cmp "$BATS_TEST_TMPDIR/expected" "$BATS_TEST_TMPDIR/all"
   [ "$(grep -c '^## ' "$BATS_TEST_TMPDIR/all")" -eq 4 ]
-  [ "$(grep -c '^## ' "$LBWC_PLANNING_DIR/journal-archive/EXPLORER-JOURNAL-2001-02-03.md")" -gt 0 ]
+  [ "$(grep -c '^## ' "$MERIDIAN_PLANNING_DIR/journal-archive/EXPLORER-JOURNAL-2001-02-03.md")" -gt 0 ]
   [ "$(wc -c < "$JOURNAL")" -lt 8192 ]
 }
 
@@ -75,8 +75,8 @@ concurrent_rotation_preserves_requests() {
 
 same_date_archive_accumulates() {
   seed_entries
-  mkdir -p "$LBWC_PLANNING_DIR/journal-archive"
-  local archive="$LBWC_PLANNING_DIR/journal-archive/EXPLORER-JOURNAL-2001-02-03.md"
+  mkdir -p "$MERIDIAN_PLANNING_DIR/journal-archive"
+  local archive="$MERIDIAN_PLANNING_DIR/journal-archive/EXPLORER-JOURNAL-2001-02-03.md"
   printf '## 2001-02-03T00:00:00Z pause\n    archived-earlier\n' > "$archive"
   cat "$archive" "$JOURNAL" > "$BATS_TEST_TMPDIR/before"
   journal append --trigger pause --request "latest $(printf '%01800d' 0)"
@@ -95,7 +95,7 @@ oversized_newest_survives() {
   assert_field 'Original request' "$payload"
   [ "$(grep -c '^## ' "$JOURNAL")" -eq 1 ]
   [ "$(wc -c < "$JOURNAL")" -gt 8192 ]
-  cat "$LBWC_PLANNING_DIR/journal-archive/"*.md > "$BATS_TEST_TMPDIR/archive"
+  cat "$MERIDIAN_PLANNING_DIR/journal-archive/"*.md > "$BATS_TEST_TMPDIR/archive"
   cmp "$BATS_TEST_TMPDIR/earlier" "$BATS_TEST_TMPDIR/archive"
 }
 
@@ -173,33 +173,33 @@ planning_override() {
   journal append --trigger pause --request redirected
   journal current > "$BATS_TEST_TMPDIR/current"
   cmp "$JOURNAL" "$BATS_TEST_TMPDIR/current"
-  [ ! -e .lbwc-planning/EXPLORER-JOURNAL.md ]
+  [ ! -e .meridian/EXPLORER-JOURNAL.md ]
 }
 
 ancestor_discovery() {
-  unset LBWC_PLANNING_DIR
-  mkdir -p .lbwc-planning nested/child
-  printf '{}\n' > .lbwc-planning/config.json
-  JOURNAL="$PWD/.lbwc-planning/EXPLORER-JOURNAL.md"
+  unset MERIDIAN_PLANNING_DIR
+  mkdir -p .meridian nested/child
+  printf '{}\n' > .meridian/config.json
+  JOURNAL="$PWD/.meridian/EXPLORER-JOURNAL.md"
   cd nested/child
   journal append --trigger pause --request discovered
   journal current > "$BATS_TEST_TMPDIR/current"
   cmp "$JOURNAL" "$BATS_TEST_TMPDIR/current"
   assert_field 'Original request' discovered
-  [ ! -e .lbwc-planning/EXPLORER-JOURNAL.md ]
+  [ ! -e .meridian/EXPLORER-JOURNAL.md ]
 }
 
 held_lock_prevents_writes() {
-  local lock="$LBWC_PLANNING_DIR/.explorer-journal.lock"
+  local lock="$MERIDIAN_PLANNING_DIR/.explorer-journal.lock"
   . "$SCRIPTS_DIR/lib/manifest-lock.sh"
   journal append --trigger pause --request original
   cp "$JOURNAL" "$BATS_TEST_TMPDIR/before"
   manifest_lock_acquire "$lock" EXPLORER_JOURNAL
-  run env LBWC_EXPLORER_JOURNAL_LOCK_TIMEOUT=0 bash -x "$SCRIPTS_DIR/explorer-journal.sh" append --trigger pause --request rejected
+  run env MERIDIAN_EXPLORER_JOURNAL_LOCK_TIMEOUT=0 bash -x "$SCRIPTS_DIR/explorer-journal.sh" append --trigger pause --request rejected
   manifest_lock_release "$lock"
   [ "$status" -ne 0 ]
   cmp "$BATS_TEST_TMPDIR/before" "$JOURNAL"
-  [ ! -d "$LBWC_PLANNING_DIR/journal-archive" ]
+  [ ! -d "$MERIDIAN_PLANNING_DIR/journal-archive" ]
 }
 
 reject_arguments() {

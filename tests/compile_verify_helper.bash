@@ -4,7 +4,7 @@ cvc_set() {
 
 cvc_setup() {
   setup_temp_dir
-  cvc_set PHASE_DIR "$TEST_TEMP_DIR/.lbwc-planning/phases/03-test-phase"
+  cvc_set PHASE_DIR "$TEST_TEMP_DIR/.meridian/phases/03-test-phase"
   mkdir -p "$PHASE_DIR"
 }
 

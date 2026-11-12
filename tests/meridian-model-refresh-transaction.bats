@@ -24,20 +24,20 @@ fresh_model_sandbox() {
 make_traced_cli() {
   local fixture_root="$TEST_ROOT/traced-plugin"
   mkdir -p "$fixture_root/scripts" "$fixture_root/templates/agent-roles"
-  copy_script_with_libs "$SCRIPT" "$fixture_root/scripts/lbwc-model"
+  copy_script_with_libs "$SCRIPT" "$fixture_root/scripts/meridian-model"
   cp "$REPO_ROOT/templates/agent-roles/defaults.json" "$fixture_root/templates/agent-roles/defaults.json"
   printf '%s\n' \
     '#!/usr/bin/env bash' \
     'set -euo pipefail' \
-    'printf "capabilities:%s:%s\\n" "$1" "$2" >> "$LBWC_MODEL_TRACE"' \
+    'printf "capabilities:%s:%s\\n" "$1" "$2" >> "$MERIDIAN_MODEL_TRACE"' \
     'exec "$REAL_CAPABILITIES" "$@"' > "$fixture_root/scripts/claude-capabilities.sh"
   printf '%s\n' \
     '#!/usr/bin/env bash' \
     'set -euo pipefail' \
-    'printf "routing:%s:%s\\n" "$1" "$2" >> "$LBWC_MODEL_TRACE"' \
-    'exec "$REAL_ROUTING" "$@"' > "$fixture_root/scripts/lbwc-routing.sh"
+    'printf "routing:%s:%s\\n" "$1" "$2" >> "$MERIDIAN_MODEL_TRACE"' \
+    'exec "$REAL_ROUTING" "$@"' > "$fixture_root/scripts/meridian-routing.sh"
   chmod +x "$fixture_root/scripts/"*
-  printf '%s\n' "$fixture_root/scripts/lbwc-model"
+  printf '%s\n' "$fixture_root/scripts/meridian-model"
 }
 
 assert_state_unchanged() {
@@ -61,8 +61,8 @@ expect_true() {
 tool_path() {
   case "$1" in
     model) printf '%s\n' "$SCRIPT" ;;
-    config) printf '%s\n' "$REPO_ROOT/scripts/lbwc-config.sh" ;;
-    routing) printf '%s\n' "$REPO_ROOT/scripts/lbwc-routing.sh" ;;
+    config) printf '%s\n' "$REPO_ROOT/scripts/meridian-config.sh" ;;
+    routing) printf '%s\n' "$REPO_ROOT/scripts/meridian-routing.sh" ;;
     capabilities) printf '%s\n' "$REPO_ROOT/scripts/claude-capabilities.sh" ;;
   esac
 }
@@ -72,18 +72,18 @@ tool_path() {
   traced_cli=$(make_traced_cli)
 
   run env \
-    LBWC_MODEL_TRACE="$trace" \
+    MERIDIAN_MODEL_TRACE="$trace" \
     REAL_CAPABILITIES="$REPO_ROOT/scripts/claude-capabilities.sh" \
-    REAL_ROUTING="$REPO_ROOT/scripts/lbwc-routing.sh" \
+    REAL_ROUTING="$REPO_ROOT/scripts/meridian-routing.sh" \
     CLAUDE_CODE_EXECPATH="$CLAUDE_FIXTURE" \
     bash "$traced_cli" --json refresh "$PLANNING_DIR"
 
   [ "$status" -eq 0 ]
   [ "$(sed -n '1p' "$trace")" = "routing:transaction:$PLANNING_DIR" ]
   [ "$(sed -n '2p' "$trace")" = "routing:assert-transaction:$PLANNING_DIR" ]
-  [[ "$(sed -n '3p' "$trace")" == capabilities:refresh:*'/.lbwc-planning' ]]
-  [[ "$(sed -n '4p' "$trace")" == routing:migrate:*'/.lbwc-planning' ]]
-  [[ "$(sed -n '5p' "$trace")" == routing:validate:*'/.lbwc-planning' ]]
+  [[ "$(sed -n '3p' "$trace")" == capabilities:refresh:*'/.meridian' ]]
+  [[ "$(sed -n '4p' "$trace")" == routing:migrate:*'/.meridian' ]]
+  [[ "$(sed -n '5p' "$trace")" == routing:validate:*'/.meridian' ]]
   [ "$(sed -n '6p' "$trace")" = "routing:validate:$(physical_planning_dir)" ]
   [ "$(wc -l < "$trace" | tr -d ' ')" -eq 6 ]
   [ "$output" = '{"operation":"refresh","status":"ok"}' ]
@@ -94,12 +94,12 @@ tool_path() {
   local config_ready="$TEST_ROOT/config-setter-ready"
   local refresh_output="$TEST_ROOT/refresh-output" config_output="$TEST_ROOT/config-output"
   local refresh_pid config_pid refresh_status=0 config_status=0
-  bash "$REPO_ROOT/scripts/lbwc-config.sh" init "$PLANNING_DIR" >/dev/null
+  bash "$REPO_ROOT/scripts/meridian-config.sh" init "$PLANNING_DIR" >/dev/null
   install_shim "$TEST_ROOT/race-bin" cp <<'SHIM'
 source_path=${1:-}
 destination=${2:-}
 "$REAL_CP" "$@"
-if [[ "$source_path" == */.lbwc-model-refresh.pending/config.after ]] &&
+if [[ "$source_path" == */.meridian-model-refresh.pending/config.after ]] &&
   [[ "$destination" == "$MODEL_RACE_CONFIG".model-refresh.* ]]; then
   : > "$MODEL_RACE_READY"
   while [ ! -e "$MODEL_RACE_RELEASE" ]; do sleep 0.01; done
@@ -126,9 +126,9 @@ SHIM
   env \
     PATH="$TEST_ROOT/config-race-bin:$PATH" \
     REAL_BASH="$REAL_BASH" \
-    MODEL_RACE_ROUTING="$REPO_ROOT/scripts/lbwc-routing.sh" \
+    MODEL_RACE_ROUTING="$REPO_ROOT/scripts/meridian-routing.sh" \
     MODEL_CONFIG_SETTER_READY="$config_ready" \
-    "$REAL_BASH" "$REPO_ROOT/scripts/lbwc-config.sh" set "$PLANNING_DIR" effort '"turbo"' \
+    "$REAL_BASH" "$REPO_ROOT/scripts/meridian-config.sh" set "$PLANNING_DIR" effort '"turbo"' \
     > "$config_output" 2>&1 &
   config_pid=$!
   wait_for_path "$config_ready"
@@ -164,7 +164,7 @@ SHIM
 
   expect_refresh_failed_unchanged second-commit-rename-fails "$status" "$config_before" "$catalog_before"
   expect_true second-commit-rename-fails "pending journal remained" \
-    test ! -e "$PLANNING_DIR/.lbwc-model-refresh.pending"
+    test ! -e "$PLANNING_DIR/.meridian-model-refresh.pending"
 }
 
 catchable_interruption_case() {
@@ -176,7 +176,7 @@ catchable_interruption_case() {
 source_path=${1:-}
 destination=${2:-}
 "$REAL_CP" "$@"
-if [[ "$source_path" == */.lbwc-model-refresh.pending/config.after ]] &&
+if [[ "$source_path" == */.meridian-model-refresh.pending/config.after ]] &&
   [[ "$destination" == "$MODEL_INTERRUPT_PREFIX".model-refresh.* ]]; then
   printf '%s\n' "$PPID" > "$MODEL_INTERRUPT_CHILD_PID"
   : > "$MODEL_INTERRUPT_READY"
@@ -201,7 +201,7 @@ SHIM
 
   expect_refresh_failed_unchanged catchable-interruption "$refresh_status" "$config_before" "$catalog_before"
   expect_true catchable-interruption "pending journal remained" \
-    test ! -e "$PLANNING_DIR/.lbwc-model-refresh.pending"
+    test ! -e "$PLANNING_DIR/.meridian-model-refresh.pending"
   expect_true catchable-interruption "routing lock remained" test ! -e "$PLANNING_DIR/.routing.lock"
 }
 
@@ -217,7 +217,7 @@ swapped_journal_directory_case() {
   local config_before catalog_before external_sha marker="$TEST_ROOT/journal-directory-swapped"
   local attacker="$TEST_ROOT/attacker-journal" external_catalog="$TEST_ROOT/external-catalog"
   local pending label=swapped-journal-directory
-  pending="$(physical_planning_dir)/.lbwc-model-refresh.pending"
+  pending="$(physical_planning_dir)/.meridian-model-refresh.pending"
   mkdir -p "$attacker"
   cp "$PLANNING_DIR/config.json" "$attacker/config.before"
   jq '.effort = "turbo"' "$PLANNING_DIR/config.json" > "$attacker/config.after"
@@ -256,13 +256,13 @@ SHIM
   expect_true "$label" "swap never ran" test -e "$marker"
   expect_refresh_failed_unchanged "$label" "$status" "$config_before" "$catalog_before"
   expect_true "$label" "external catalog changed" test "$external_sha" = "$(file_sha_of "$external_catalog")"
-  expect_true "$label" "pending journal is gone" test -e "$PLANNING_DIR/.lbwc-model-refresh.pending"
+  expect_true "$label" "pending journal is gone" test -e "$PLANNING_DIR/.meridian-model-refresh.pending"
 }
 
 symlinked_journal_boundary_case() {
   local config_before catalog_before attacker_sha marker="$TEST_ROOT/journal-symlink-swapped"
   local attacker="$TEST_ROOT/external-journal" pending real_ln label=symlinked-journal-boundary
-  pending="$(physical_planning_dir)/.lbwc-model-refresh.pending"
+  pending="$(physical_planning_dir)/.meridian-model-refresh.pending"
   real_ln=$(command -v ln)
   mkdir -p "$attacker"
   cp "$PLANNING_DIR/config.json" "$attacker/config.before"
@@ -301,14 +301,14 @@ SHIM
 
   expect_refresh_failed_unchanged "$label" "$status" "$config_before" "$catalog_before"
   expect_true "$label" "swap never ran" test -e "$marker"
-  expect_true "$label" "pending journal is not the planted symlink" test -L "$PLANNING_DIR/.lbwc-model-refresh.pending"
+  expect_true "$label" "pending journal is not the planted symlink" test -L "$PLANNING_DIR/.meridian-model-refresh.pending"
   expect_true "$label" "attacker journal changed" test "$attacker_sha" = "$(file_sha_of "$attacker/config.after")"
 }
 
 swapped_after_image_case() {
   local config_before catalog_before external_sha marker="$TEST_ROOT/journal-after-swapped"
   local external_config="$TEST_ROOT/external-config-after" pending label=swapped-after-image
-  pending="$(physical_planning_dir)/.lbwc-model-refresh.pending"
+  pending="$(physical_planning_dir)/.meridian-model-refresh.pending"
   jq '.effort = "turbo"' "$PLANNING_DIR/config.json" > "$external_config"
   external_sha=$(file_sha_of "$external_config")
   install_shim "$TEST_ROOT/journal-after-swap-bin" cp <<'SHIM'
@@ -336,13 +336,13 @@ SHIM
   expect_refresh_failed_unchanged "$label" "$status" "$config_before" "$catalog_before"
   expect_true "$label" "swap never ran" test -e "$marker"
   expect_true "$label" "external config changed" test "$external_sha" = "$(file_sha_of "$external_config")"
-  expect_true "$label" "pending journal is gone" test -e "$PLANNING_DIR/.lbwc-model-refresh.pending"
+  expect_true "$label" "pending journal is gone" test -e "$PLANNING_DIR/.meridian-model-refresh.pending"
 }
 
 swapped_before_image_case() {
   local config_before catalog_before external_sha marker="$TEST_ROOT/journal-before-swapped"
   local external_config="$TEST_ROOT/external-config-before" pending label=swapped-before-image-during-rollback
-  pending="$(physical_planning_dir)/.lbwc-model-refresh.pending"
+  pending="$(physical_planning_dir)/.meridian-model-refresh.pending"
   jq '.effort = "turbo"' "$PLANNING_DIR/config.json" > "$external_config"
   external_sha=$(file_sha_of "$external_config")
   install_shim "$TEST_ROOT/journal-before-swap-bin" mv <<'SHIM'
@@ -373,7 +373,7 @@ SHIM
   expect_refresh_failed_unchanged "$label" "$status" "$config_before" "$catalog_before"
   expect_true "$label" "swap never ran" test -e "$marker"
   expect_true "$label" "external config changed" test "$external_sha" = "$(file_sha_of "$external_config")"
-  expect_true "$label" "pending journal is gone" test -e "$PLANNING_DIR/.lbwc-model-refresh.pending"
+  expect_true "$label" "pending journal is gone" test -e "$PLANNING_DIR/.meridian-model-refresh.pending"
 }
 
 @test "refresh rejects a swapped journal directory, symlink, after image or before image without changing either state file" {
@@ -390,7 +390,7 @@ SHIM
 
 @test "a surviving refresh marker blocks every model writer and trusted state entry point" {
   local config_before catalog_before
-  mkdir "$PLANNING_DIR/.lbwc-model-refresh.pending"
+  mkdir "$PLANNING_DIR/.meridian-model-refresh.pending"
   catalog_before=$(catalog_sha)
   config_before=$(config_sha)
 

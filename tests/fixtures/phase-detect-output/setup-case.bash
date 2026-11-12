@@ -2,9 +2,9 @@
 set -u
 
 phase_detect_fixture_write_project() {
-  mkdir -p .lbwc-planning/phases
-  printf '# Fixture Project\n' > .lbwc-planning/PROJECT.md
-  printf '{}\n' > .lbwc-planning/config.json
+  mkdir -p .meridian/phases
+  printf '# Fixture Project\n' > .meridian/PROJECT.md
+  printf '{}\n' > .meridian/config.json
 }
 
 phase_detect_fixture_write_plan() {
@@ -92,7 +92,7 @@ plan: R01
 status: complete
 files_modified:
   - README.md
-  - .lbwc-planning/phases/05-remediated/remediation/qa/round-01/R01-SUMMARY.md
+  - .meridian/phases/05-remediated/remediation/qa/round-01/R01-SUMMARY.md
 deviations: []
 ---
 EOF
@@ -109,7 +109,7 @@ phase_detect_fixture_write_remediation_round() {
 }
 
 phase_detect_fixture_setup_remediated() {
-  local phase_dir=".lbwc-planning/phases/05-remediated"
+  local phase_dir=".meridian/phases/05-remediated"
   local round_dir="$phase_dir/remediation/qa/round-01"
   local round_anchor current_commit
 
@@ -126,7 +126,7 @@ phase_detect_fixture_setup_remediated() {
 }
 
 phase_detect_fixture_setup_stale_pass() {
-  local phase_dir=".lbwc-planning/phases/05-remediated"
+  local phase_dir=".meridian/phases/05-remediated"
   local round_one="$phase_dir/remediation/qa/round-01"
   local round_two="$phase_dir/remediation/qa/round-02"
   local current_commit
@@ -141,7 +141,7 @@ phase_detect_fixture_setup_stale_pass() {
 }
 
 phase_detect_fixture_setup_failed_remediation() {
-  local phase_dir=".lbwc-planning/phases/05-remediated"
+  local phase_dir=".meridian/phases/05-remediated"
   local round_dir="$phase_dir/remediation/qa/round-01"
   local current_commit
 
@@ -155,16 +155,16 @@ phase_detect_fixture_setup_failed_remediation() {
 
 phase_detect_fixture_setup_unplanned() {
   phase_detect_fixture_write_project
-  mkdir -p .lbwc-planning/phases/01-unplanned
+  mkdir -p .meridian/phases/01-unplanned
 }
 
 phase_detect_fixture_setup_incomplete() {
   phase_detect_fixture_write_project
-  phase_detect_fixture_write_plan ".lbwc-planning/phases/01-incomplete" "01-01"
+  phase_detect_fixture_write_plan ".meridian/phases/01-incomplete" "01-01"
 }
 
 phase_detect_fixture_setup_all_done() {
-  local phase_dir=".lbwc-planning/phases/01-complete"
+  local phase_dir=".meridian/phases/01-complete"
 
   phase_detect_fixture_write_project
   phase_detect_fixture_write_plan "$phase_dir" "01-01"
@@ -172,7 +172,7 @@ phase_detect_fixture_setup_all_done() {
 }
 
 phase_detect_fixture_setup_uat_issues() {
-  local phase_dir=".lbwc-planning/phases/01-uat-issues"
+  local phase_dir=".meridian/phases/01-uat-issues"
 
   phase_detect_fixture_write_project
   phase_detect_fixture_write_plan "$phase_dir" "01-01"
@@ -181,7 +181,7 @@ phase_detect_fixture_setup_uat_issues() {
 }
 
 phase_detect_fixture_setup_qa_remediation() {
-  local phase_dir=".lbwc-planning/phases/01-qa-remediation"
+  local phase_dir=".meridian/phases/01-qa-remediation"
 
   phase_detect_fixture_write_project
   phase_detect_fixture_write_plan "$phase_dir" "01-01"
@@ -192,11 +192,11 @@ phase_detect_fixture_setup_qa_remediation() {
 }
 
 phase_detect_fixture_setup_milestone_recovery() {
-  local phase_dir=".lbwc-planning/milestones/m01-shipped/phases/01-archived"
+  local phase_dir=".meridian/milestones/m01-shipped/phases/01-archived"
 
   phase_detect_fixture_write_project
   mkdir -p "$phase_dir"
-  printf '# Shipped\n' > .lbwc-planning/milestones/m01-shipped/SHIPPED.md
+  printf '# Shipped\n' > .meridian/milestones/m01-shipped/SHIPPED.md
   phase_detect_fixture_write_plan "$phase_dir" "01-01"
   phase_detect_fixture_write_summary "$phase_dir" "01-01" "complete"
   phase_detect_fixture_write_uat_issues "$phase_dir" "01"
@@ -205,7 +205,7 @@ phase_detect_fixture_setup_milestone_recovery() {
 setup_phase_detect_output_case() {
   local case_name="$1"
 
-  rm -rf .lbwc-planning README.md
+  rm -rf .meridian README.md
   phase_detect_fixture_setup_git
   case "$case_name" in
     no-planning) : ;;

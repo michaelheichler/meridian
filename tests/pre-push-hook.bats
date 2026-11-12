@@ -36,13 +36,13 @@ push_in() {
   run bash -c 'CDPATH="" cd -- "$1" && bash "$2" origin' _ "$1" "$HOOK"
 }
 
-@test "pre-push-hook blocks a push only when the lbwc version files disagree" {
+@test "pre-push-hook blocks a push only when the meridian version files disagree" {
   mkdir -p "$WORK/plain"
   push_in "$WORK/plain"
   expect_status "outside-repo" 0
   expect_output_nonempty "outside-repo-warns"
 
-  push_in "$(plugin_repo no-verifier lbwc none)"
+  push_in "$(plugin_repo no-verifier meridian none)"
   expect_case_silent "no-version-bump-script" 0
 
   push_in "$(plugin_repo no-manifest "" mismatch)"
@@ -51,10 +51,10 @@ push_in() {
   push_in "$(plugin_repo other-plugin other mismatch)"
   expect_case_silent "other-plugin" 0
 
-  push_in "$(plugin_repo in-sync lbwc pass)"
+  push_in "$(plugin_repo in-sync meridian pass)"
   expect_case_silent "versions-in-sync" 0
 
-  push_in "$(plugin_repo out-of-sync lbwc mismatch)"
+  push_in "$(plugin_repo out-of-sync meridian mismatch)"
   expect_case "versions-out-of-sync" 1 "MISMATCH: VERSION 1.0.1 vs plugin.json 1.0.0"
 
   assert_no_case_failures

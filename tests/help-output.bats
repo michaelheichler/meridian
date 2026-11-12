@@ -9,8 +9,8 @@ setup() {
   TEST_ROOT="$(mktemp -d)"
   PLUGIN_ROOT="$TEST_ROOT/plugin"
   mkdir -p "$PLUGIN_ROOT/.claude-plugin" "$PLUGIN_ROOT/commands"
-  jq -n '{name: "lbwc", version: "test"}' > "$PLUGIN_ROOT/.claude-plugin/plugin.json"
-  cat > "$PLUGIN_ROOT/commands/vibe.md" <<'EOF'
+  jq -n '{name: "meridian", version: "test"}' > "$PLUGIN_ROOT/.claude-plugin/plugin.json"
+  cat > "$PLUGIN_ROOT/commands/transit.md" <<'EOF'
 ---
 category: lifecycle
 description: Continue the project workflow.
@@ -37,11 +37,11 @@ teardown() {
 
 @test "help-output: groups manifest-named commands by category and exits 1 when commands or manifest name are missing" {
   run bash "$HELP_OUTPUT" "$PLUGIN_ROOT"
-  expect_case manifest-and-filenames 0 "/lbwc:vibe '[brief]'"
-  expect_output_has manifest-and-filenames '/lbwc:list-todos'
-  expect_output_lacks manifest-and-filenames '/lbwc:lbwc:vibe'
-  [ "$(printf '%s\n' "$output" | grep -c '^  /lbwc:vibe ')" -eq 1 ] \
-    || record_case_failure manifest-and-filenames "vibe is not listed exactly once"
+  expect_case manifest-and-filenames 0 "/meridian:transit '[brief]'"
+  expect_output_has manifest-and-filenames '/meridian:list-todos'
+  expect_output_lacks manifest-and-filenames '/meridian:meridian:transit'
+  [ "$(printf '%s\n' "$output" | grep -c '^  /meridian:transit ')" -eq 1 ] \
+    || record_case_failure manifest-and-filenames "transit is not listed exactly once"
   [[ "$output" == *"Lifecycle, "*"Supporting, "* ]] || record_case_failure category-order "lifecycle must precede supporting output=$output"
   expect_output_lacks empty-sections "Advanced, "
   expect_output_lacks no-version-header ", v"
@@ -60,10 +60,10 @@ description: Has no category.
 EOF
   printf '9.9.9\n' > "$PLUGIN_ROOT/VERSION"
   run bash "$HELP_OUTPUT" "$PLUGIN_ROOT"
-  expect_case hidden-uncategorized-and-version 0 "/lbwc:misc"
+  expect_case hidden-uncategorized-and-version 0 "/meridian:misc"
   expect_output_has hidden-uncategorized-and-version "Other, Uncategorized"
-  expect_output_has hidden-uncategorized-and-version "LBWC Help, v9.9.9"
-  expect_output_lacks hidden-command-skipped "/lbwc:secret"
+  expect_output_has hidden-uncategorized-and-version "MERIDIAN Help, v9.9.9"
+  expect_output_lacks hidden-command-skipped "/meridian:secret"
   expect_output_lacks hidden-command-section "Advanced, "
 
   mv "$PLUGIN_ROOT/commands" "$PLUGIN_ROOT/commands-away"

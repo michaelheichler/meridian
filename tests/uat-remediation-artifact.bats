@@ -20,7 +20,7 @@ teardown() {
 }
 
 phase_dir() {
-  printf '%s/%s/.lbwc-planning/phases/01-checkout\n' "$TEST_ROOT" "$1"
+  printf '%s/%s/.meridian/phases/01-checkout\n' "$TEST_ROOT" "$1"
 }
 
 research_lines() {
@@ -107,7 +107,7 @@ validate() {
 
   write_doc "$round_dir/R01-RESEARCH.md" research_lines
   ln -s "$TEST_ROOT/rd" "$TEST_ROOT/rd-link"
-  validate research "$TEST_ROOT/rd-link/.lbwc-planning/phases/01-checkout/remediation/uat/round-01/R01-RESEARCH.md"
+  validate research "$TEST_ROOT/rd-link/.meridian/phases/01-checkout/remediation/uat/round-01/R01-RESEARCH.md"
   expect_case symlinked-dir 1 "artifact path must be the exact canonical host path"
 
   write_doc "$round_dir/notes.md" research_lines
@@ -124,8 +124,8 @@ validate() {
   validate research "$round_dir/R07-RESEARCH.md"
   expect_case link-loop 1 "parent directory does not exist or cannot be canonicalized"
 
-  write_doc "$TEST_ROOT/side/.claude/worktrees/agent-x1/.lbwc-planning/phases/01-c/remediation/uat/round-01/R01-RESEARCH.md" research_lines
-  validate research "$TEST_ROOT/side/.claude/worktrees/agent-x1/.lbwc-planning/phases/01-c/remediation/uat/round-01/R01-RESEARCH.md"
+  write_doc "$TEST_ROOT/side/.claude/worktrees/agent-x1/.meridian/phases/01-c/remediation/uat/round-01/R01-RESEARCH.md" research_lines
+  validate research "$TEST_ROOT/side/.claude/worktrees/agent-x1/.meridian/phases/01-c/remediation/uat/round-01/R01-RESEARCH.md"
   expect_case sidechain 1 "artifact path points at a Claude sidechain"
 
   write_doc "$(phase_dir rd)/remediation/uat/round-1/R01-RESEARCH.md" research_lines
@@ -172,7 +172,7 @@ validate() {
 
   write_doc "$TEST_ROOT/loose/R01-RESEARCH.md" research_lines
   validate research "$TEST_ROOT/loose/R01-RESEARCH.md"
-  expect_case outside-phases 1 "artifact path must point at an active .lbwc-planning/phases/ artifact"
+  expect_case outside-phases 1 "artifact path must point at an active .meridian/phases/ artifact"
 
   validate notes "$round_dir/R01-RESEARCH.md"
   expect_case unknown-type 1 "Usage: validate-uat-remediation-artifact.sh"

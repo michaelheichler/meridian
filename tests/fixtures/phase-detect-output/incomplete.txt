@@ -1,7 +1,7 @@
 jq_available=true
 planning_dir_exists=true
 project_exists=true
-phases_dir=.lbwc-planning/phases
+phases_dir=.meridian/phases
 has_shipped_milestones=false
 needs_milestone_rename=false
 phase_count=1

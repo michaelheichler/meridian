@@ -12,8 +12,8 @@ build_sandbox() {
   cp "$BATS_TEST_DIRNAME/../scripts/rtk-manager.sh" "$SANDBOX/scripts/rtk-manager.sh"
   chmod +x "$SANDBOX/scripts/version-bump.sh" "$SANDBOX/scripts/release-verify.sh" "$SANDBOX/scripts/rtk-manager.sh"
   printf '1.0.0\n' > "$SANDBOX/VERSION"
-  printf '{"name":"lbwc","version":"1.0.0"}\n' > "$SANDBOX/.claude-plugin/plugin.json"
-  printf '{"name":"lbwc-marketplace","version":"1.0.0","owner":{"name":"Test"},"plugins":[{"name":"lbwc","source":".","version":"1.0.0"}]}\n' > "$SANDBOX/.claude-plugin/marketplace.json"
+  printf '{"name":"meridian","version":"1.0.0"}\n' > "$SANDBOX/.claude-plugin/plugin.json"
+  printf '{"name":"meridian-marketplace","version":"1.0.0","owner":{"name":"Test"},"plugins":[{"name":"meridian","source":".","version":"1.0.0"}]}\n' > "$SANDBOX/.claude-plugin/marketplace.json"
   printf '%s\n' '# Changelog' '' '## [1.0.0] - 2026-08-09' '' '### Added' '' '- Initial release candidate.' > "$SANDBOX/CHANGELOG.md"
 }
 
@@ -71,7 +71,7 @@ expect_sandbox_version() {
     || record_case_failure set-confirmed "marketplace plugin version is not 1.0.1"
 
   build_sandbox
-  printf '{"name":"lbwc","version":"1.0.1"}\n' > "$SANDBOX/.claude-plugin/plugin.json"
+  printf '{"name":"meridian","version":"1.0.1"}\n' > "$SANDBOX/.claude-plugin/plugin.json"
   run version_bump --verify
   expect_case plugin-drift 2 'does not match VERSION'
 

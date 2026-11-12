@@ -1,10 +1,10 @@
 writer_fixture() {
-  export LBWC_PLANNING_DIR="$PWD/.lbwc-planning"
-  mkdir -p "$LBWC_PLANNING_DIR/phases/01-demo"
-  printf '{}\n' > "$LBWC_PLANNING_DIR/config.json"
-  printf 'Phase: 1\nStatus: in_progress\nPlans: 0/1\nProgress: 0%%\n' > "$LBWC_PLANNING_DIR/STATE.md"
-  printf '# Plan\n' > "$LBWC_PLANNING_DIR/phases/01-demo/PLAN.md"
-  printf -v JOURNAL '%s' "$LBWC_PLANNING_DIR/EXPLORER-JOURNAL.md"
+  export MERIDIAN_PLANNING_DIR="$PWD/.meridian"
+  mkdir -p "$MERIDIAN_PLANNING_DIR/phases/01-demo"
+  printf '{}\n' > "$MERIDIAN_PLANNING_DIR/config.json"
+  printf 'Phase: 1\nStatus: in_progress\nPlans: 0/1\nProgress: 0%%\n' > "$MERIDIAN_PLANNING_DIR/STATE.md"
+  printf '# Plan\n' > "$MERIDIAN_PLANNING_DIR/phases/01-demo/PLAN.md"
+  printf -v JOURNAL '%s' "$MERIDIAN_PLANNING_DIR/EXPLORER-JOURNAL.md"
 }
 
 writer_hook() {
@@ -13,17 +13,17 @@ writer_hook() {
 
 hold_journal_lock() {
   . "$SCRIPTS_DIR/lib/manifest-lock.sh"
-  manifest_lock_acquire "$LBWC_PLANNING_DIR/.explorer-journal.lock" EXPLORER_JOURNAL
+  manifest_lock_acquire "$MERIDIAN_PLANNING_DIR/.explorer-journal.lock" EXPLORER_JOURNAL
 }
 
 release_journal_lock() {
-  manifest_lock_release "$LBWC_PLANNING_DIR/.explorer-journal.lock"
+  manifest_lock_release "$MERIDIAN_PLANNING_DIR/.explorer-journal.lock"
 }
 
 precompact_fixture() {
   writer_fixture
   printf -v WRITER_INPUT '%s' "$1"
-  run env LBWC_PLANNING_DIR="$PWD/uninitialized" bash "$SCRIPTS_DIR/compaction-instructions.sh" <<< "$WRITER_INPUT"
+  run env MERIDIAN_PLANNING_DIR="$PWD/uninitialized" bash "$SCRIPTS_DIR/compaction-instructions.sh" <<< "$WRITER_INPUT"
   [ "$status" -eq 0 ]
   printf '%s\n' "$output" > "$BATS_TEST_TMPDIR/expected-json"
 }
@@ -105,16 +105,16 @@ pause_literal_notes() { pause_with_notes 'quotes " and '\'' plus $(touch notes-e
 phase_writer_fixture() {
   writer_fixture
   local artifact="${1:-VERIFICATION.md}" result="${2:-PASS}" phase="${3:-01-demo}" input
-  mkdir -p "$LBWC_PLANNING_DIR/phases/$phase"
-  printf -- '---\nresult: %s\n---\n' "$result" > "$LBWC_PLANNING_DIR/phases/$phase/$artifact"
-  input=$(jq -nc --arg path "$LBWC_PLANNING_DIR/phases/$phase/$artifact" '{tool_input:{file_path:$path}}')
+  mkdir -p "$MERIDIAN_PLANNING_DIR/phases/$phase"
+  printf -- '---\nresult: %s\n---\n' "$result" > "$MERIDIAN_PLANNING_DIR/phases/$phase/$artifact"
+  input=$(jq -nc --arg path "$MERIDIAN_PLANNING_DIR/phases/$phase/$artifact" '{tool_input:{file_path:$path}}')
   printf -v WRITER_INPUT '%s' "$input"
 }
 
 wait_for_saved_completion() {
   local attempt
   for attempt in $(seq 1 100); do
-    grep -q '^Status: complete$' "$LBWC_PLANNING_DIR/STATE.md" && return 0
+    grep -q '^Status: complete$' "$MERIDIAN_PLANNING_DIR/STATE.md" && return 0
     sleep 0.01
   done
   return 1
@@ -134,21 +134,21 @@ phase_completion_saves_before_journal() {
 }
 
 phase_custom_directory() {
-  export LBWC_PLANNING_DIR="$PWD/custom planning"
-  mkdir -p "$LBWC_PLANNING_DIR/phases/01-demo"
-  printf 'Phase: 1\nStatus: in_progress\nPlans: 0/1\nProgress: 0%%\n' > "$LBWC_PLANNING_DIR/STATE.md"
-  printf '# Plan\n' > "$LBWC_PLANNING_DIR/phases/01-demo/PLAN.md"
-  printf -- '---\nresult: PASS\n---\n' > "$LBWC_PLANNING_DIR/phases/01-demo/VERIFICATION.md"
+  export MERIDIAN_PLANNING_DIR="$PWD/custom planning"
+  mkdir -p "$MERIDIAN_PLANNING_DIR/phases/01-demo"
+  printf 'Phase: 1\nStatus: in_progress\nPlans: 0/1\nProgress: 0%%\n' > "$MERIDIAN_PLANNING_DIR/STATE.md"
+  printf '# Plan\n' > "$MERIDIAN_PLANNING_DIR/phases/01-demo/PLAN.md"
+  printf -- '---\nresult: PASS\n---\n' > "$MERIDIAN_PLANNING_DIR/phases/01-demo/VERIFICATION.md"
   local input
-  input=$(jq -nc --arg path "$LBWC_PLANNING_DIR/phases/01-demo/VERIFICATION.md" '{tool_input:{file_path:$path}}')
+  input=$(jq -nc --arg path "$MERIDIAN_PLANNING_DIR/phases/01-demo/VERIFICATION.md" '{tool_input:{file_path:$path}}')
   printf -v WRITER_INPUT '%s' "$input"
-  printf -v JOURNAL '%s' "$LBWC_PLANNING_DIR/EXPLORER-JOURNAL.md"
-  unset LBWC_PLANNING_DIR
+  printf -v JOURNAL '%s' "$MERIDIAN_PLANNING_DIR/EXPLORER-JOURNAL.md"
+  unset MERIDIAN_PLANNING_DIR
   run writer_hook state-updater
   [ "$status" -eq 0 ]
   assert_writer_entry phase-end
   grep -q '^Status: complete$' "$PWD/custom planning/STATE.md"
-  [ ! -e "$PWD/.lbwc-planning/EXPLORER-JOURNAL.md" ]
+  [ ! -e "$PWD/.meridian/EXPLORER-JOURNAL.md" ]
 }
 
 phase_does_not_append() {
@@ -162,7 +162,7 @@ phase_does_not_append() {
 
 phase_repeat_pass() {
   phase_writer_fixture
-  printf 'Phase: 1\nStatus: complete\nPlans: 0/1\nProgress: 0%%\n' > "$LBWC_PLANNING_DIR/STATE.md"
+  printf 'Phase: 1\nStatus: complete\nPlans: 0/1\nProgress: 0%%\n' > "$MERIDIAN_PLANNING_DIR/STATE.md"
   journal append --trigger phase-end
   cp "$JOURNAL" "$BATS_TEST_TMPDIR/before-journal"
   run writer_hook state-updater
@@ -179,23 +179,23 @@ phase_other() { phase_does_not_append VERIFICATION.md PASS 02-other; }
 
 phase_save_failure() {
   phase_writer_fixture
-  cp "$LBWC_PLANNING_DIR/STATE.md" "$BATS_TEST_TMPDIR/before-state"
-  chmod u-w "$LBWC_PLANNING_DIR"
+  cp "$MERIDIAN_PLANNING_DIR/STATE.md" "$BATS_TEST_TMPDIR/before-state"
+  chmod u-w "$MERIDIAN_PLANNING_DIR"
   run writer_hook state-updater
-  chmod u+w "$LBWC_PLANNING_DIR"
+  chmod u+w "$MERIDIAN_PLANNING_DIR"
   [ "$status" -eq 0 ]
-  cmp "$BATS_TEST_TMPDIR/before-state" "$LBWC_PLANNING_DIR/STATE.md"
+  cmp "$BATS_TEST_TMPDIR/before-state" "$MERIDIAN_PLANNING_DIR/STATE.md"
   [ ! -e "$JOURNAL" ]
 }
 
 phase_journal_failure_keeps_completion() {
   phase_writer_fixture
   hold_journal_lock
-  export LBWC_EXPLORER_JOURNAL_LOCK_TIMEOUT=0
+  export MERIDIAN_EXPLORER_JOURNAL_LOCK_TIMEOUT=0
   run writer_hook state-updater
   release_journal_lock
   [ "$status" -eq 0 ]
-  grep -q '^Status: complete$' "$LBWC_PLANNING_DIR/STATE.md"
+  grep -q '^Status: complete$' "$MERIDIAN_PLANNING_DIR/STATE.md"
   [ "$(wc -l < "$BATS_TEST_TMPDIR/stderr")" -eq 1 ]
   [ ! -e "$JOURNAL" ]
 }
