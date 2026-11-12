@@ -76,6 +76,17 @@ while IFS= read -r item; do
   fi
 done < <(echo "$DETECTED_STACK" | jq -r '.[]' 2>/dev/null)
 
+binary_available() {
+  if [[ "$1" = swift ]]; then
+    sourcekit-lsp --help || xcrun sourcekit-lsp --help
+    return
+  fi
+  local binary_args=()
+  IFS=' ' read -r -a binary_args <<< "$2"
+  [ "${#binary_args[@]}" -gt 0 ] || return 1
+  "${binary_args[@]}"
+}
+
 PLUGINS="[]"
 for key in $RESOLVED_KEYS; do
   plugin=$(echo "$SERVERS" | jq -r --arg k "$key" '.[$k].plugin // empty')
@@ -87,7 +98,7 @@ for key in $RESOLVED_KEYS; do
   install_url=$(echo "$SERVERS" | jq -r --arg k "$key" '.[$k].install_url // empty')
 
   binary_installed=false
-  if eval "$binary_check" >/dev/null 2>&1; then
+  if binary_available "$key" "$binary_check" >/dev/null 2>&1; then
     binary_installed=true
   fi
 

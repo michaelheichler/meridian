@@ -1,5 +1,3 @@
-#!/usr/bin/env bash
-
 printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${BASH_SOURCE[0]}"
 case "$MERIDIAN_MIGRATION_SOURCE" in
   *"/"*) printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${MERIDIAN_MIGRATION_SOURCE%"/"*}" ;;

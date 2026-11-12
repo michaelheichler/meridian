@@ -21,6 +21,8 @@ meridian_migrate_planning() {
       printf '%s\n' 'Meridian warning, .lbwc-planning is a symlink, leaving it unchanged.' >&2
     elif move_error=$(mv "$old_dir" "$new_dir" 2>&1); then
       printf '%s\n' 'Meridian moved .lbwc-planning to .meridian.' >&2
+    elif [ ! -e "$old_dir" ] && [ ! -L "$old_dir" ] && [ -d "$new_dir" ] && [ ! -L "$new_dir" ]; then
+      return 0
     else
       move_error="${move_error//$'\n'/ }"
       move_error="${move_error//$'\r'/ }"

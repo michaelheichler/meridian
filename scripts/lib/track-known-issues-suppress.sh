@@ -2,7 +2,10 @@ SUPPRESS_ENTRY=''
 SUPPRESS_ERROR=''
 
 suppress_fail() {
-  printf -v SUPPRESS_ERROR '%s' "$(jq -cn --arg code "$1" --arg message "$2" '{status:"error", code:$code, message:$message}')"
+  local error_json
+  printf -v SUPPRESS_ERROR '%s' ''
+  error_json=$(jq -cn --arg code "$1" --arg message "$2" '{status:"error", code:$code, message:$message}') || return 1
+  printf -v SUPPRESS_ERROR '%s' "$error_json"
 }
 
 suppress_payload_signature() {
@@ -27,7 +30,7 @@ suppress_resolve_entry() {
 cmd_lookup_signature() {
   local payload
   payload=$(cat)
-  suppress_resolve_entry "$payload" || { printf '%s\n' "$SUPPRESS_ERROR"; return 0; }
+  suppress_resolve_entry "$payload" || { [ -n "$SUPPRESS_ERROR" ] || return 1; printf '%s\n' "$SUPPRESS_ERROR"; return 0; }
   jq -cn --arg phase "$(phase_number_label)" --arg phase_dir "$PHASE_DIR" --argjson entry "$SUPPRESS_ENTRY" --argjson query "$payload" '
     {status:"ok", signature:{
       phase: ($entry.phase // $phase),
@@ -53,12 +56,12 @@ write_suppression() {
 cmd_suppress() {
   local payload signature via action
   payload=$(cat)
-  suppress_resolve_entry "$payload" || { printf '%s\n' "$SUPPRESS_ERROR"; return 0; }
+  suppress_resolve_entry "$payload" || { [ -n "$SUPPRESS_ERROR" ] || return 1; printf '%s\n' "$SUPPRESS_ERROR"; return 0; }
   signature=$(jq -r '.signature' <<< "$SUPPRESS_ENTRY")
   via=$(jq -r '.via // "unknown"' <<< "$payload")
   action="already_suppressed"
   if jq -e '(.suppressed // null) == null' <<< "$SUPPRESS_ENTRY" >/dev/null; then
-    write_suppression "$signature" "$via" || { suppress_fail "suppression_write_failed" "Known-issue registry could not be updated. The todo was removed, but it may be re-promoted."; printf '%s\n' "$SUPPRESS_ERROR"; return 0; }
+    write_suppression "$signature" "$via" || { suppress_fail "suppression_write_failed" "Known-issue registry could not be updated. The todo was removed, but it may be re-promoted." || return 1; printf '%s\n' "$SUPPRESS_ERROR"; return 0; }
     action="suppressed"
   fi
   jq -cn --arg signature "$signature" --arg action "$action" '{status:"ok", action:$action, signature:$signature}'
