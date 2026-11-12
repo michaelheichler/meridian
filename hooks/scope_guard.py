@@ -3,6 +3,8 @@ import sys
 
 from debug_logging import trace_decision
 from skill_gate import (
+    INVALID_MANIFEST,
+    InvalidManifest,
     _agent_identifier,
     _parse_pretool_input,
     _role_for_identifier,
@@ -38,13 +40,17 @@ def verdict(stdin_text, cwd=None) -> "str | None":
     tool_name = data.get("tool_name") or ""
     if tool_name not in WRITE_TOOLS:
         return None
-    file_path = str((data.get("tool_input") or {}).get("file_path", ""))
-    if not file_path or not _is_test_path(file_path):
+    tool_input = data["tool_input"]
+    paths = (tool_input.get("file_path"), tool_input.get("notebook_path"))
+    if not any(isinstance(path, str) and _is_test_path(path) for path in paths):
         return None
     identifier = _agent_identifier(data)
     if not identifier:
         return None
-    role = _role_for_identifier(identifier, cwd or data.get("cwd"))
+    try:
+        role = _role_for_identifier(identifier, cwd or data.get("cwd"))
+    except InvalidManifest:
+        return INVALID_MANIFEST
     if role not in ENGINEER_ROLES:
         return None
     return blocked()

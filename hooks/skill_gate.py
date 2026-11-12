@@ -106,7 +106,8 @@ def _has_satisfied(key, identifier, requirement):
 def _find_project_root(start):
     current = os.path.abspath(start or os.getcwd())
     while True:
-        if os.path.isdir(os.path.join(current, ".meridian")):
+        if any(os.path.isdir(os.path.join(current, name))
+               for name in (".meridian", ".lbwc-planning")):
             return current
         parent = os.path.dirname(current)
         if parent == current:
@@ -114,18 +115,42 @@ def _find_project_root(start):
         current = parent
 
 
+class InvalidManifest(ValueError):
+    pass
+
+
+INVALID_MANIFEST = "Agent manifest is unreadable or malformed. Repair it before retrying this action."
+
+
+def _read_manifest_entry(manifest_path, identifier):
+    try:
+        with open(manifest_path) as manifest_file:
+            manifest = json.load(manifest_file)
+    except FileNotFoundError:
+        return None
+    except (OSError, ValueError) as exc:
+        raise InvalidManifest(INVALID_MANIFEST) from exc
+    if not isinstance(manifest, dict) or not isinstance(manifest.get("agents"), dict):
+        raise InvalidManifest(INVALID_MANIFEST)
+    agents = manifest["agents"]
+    if identifier not in agents:
+        return None
+    entry = agents[identifier]
+    if not isinstance(entry, dict) or not isinstance(entry.get("role"), str) or not entry["role"]:
+        raise InvalidManifest(INVALID_MANIFEST)
+    return entry
+
+
 def _manifest_entry_for_identifier(identifier, cwd) -> "dict | None":
     root = _find_project_root(cwd)
     if not root:
         return None
-    manifest_path = os.path.join(root, ".meridian", ".agent-manifest.json")
-    try:
-        with open(manifest_path) as manifest_file:
-            manifest = json.load(manifest_file)
-    except (OSError, ValueError):
-        return None
-    entry = manifest.get("agents", {}).get(identifier)
-    return entry if isinstance(entry, dict) else None
+    for directory in (".meridian", ".lbwc-planning"):
+        manifest_path = os.path.join(root, directory, ".agent-manifest.json")
+        entry = _read_manifest_entry(manifest_path, identifier)
+        if entry is not None:
+            return entry
+    return None
 
 
 def _role_for_identifier(identifier, cwd) -> "str | None":
@@ -201,7 +226,10 @@ def verdict(stdin_text, cwd=None) -> "str | None":
     if tool_name not in WRITE_TOOLS:
         return None
 
-    role = _role_for_identifier(identifier, cwd or data.get("cwd"))
+    try:
+        role = _role_for_identifier(identifier, cwd or data.get("cwd"))
+    except InvalidManifest:
+        return INVALID_MANIFEST
     requirement = _required_reading(role)
     if requirement is None or _has_satisfied(state_key, identifier, requirement):
         return None

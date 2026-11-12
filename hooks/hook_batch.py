@@ -1,4 +1,3 @@
-import glob
 import os
 from pathlib import Path
 import select
@@ -30,8 +29,6 @@ class BashBatch:
     def _target(self, name):
         plugin_root = os.environ.get("CLAUDE_PLUGIN_ROOT")
         candidates = [Path(plugin_root) / "scripts" / name] if plugin_root else []
-        candidates.extend(Path(path) for path in sorted(glob.glob(
-            "/tmp/.meridian-plugin-root-link-*/scripts/" + name)))
         candidates.append(self.scripts / name)
         return next((path for path in candidates if path.is_file()), None)
 

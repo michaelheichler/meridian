@@ -3,11 +3,11 @@ import sys
 
 from debug_logging import trace_decision
 from skill_gate import (
+    INVALID_MANIFEST,
+    InvalidManifest,
     _agent_identifier,
-    _pair_id_for_identifier,
     _manifest_entry_for_identifier,
     _parse_pretool_input,
-    _role_for_identifier,
     emit_pretool_denial,
 )
 
@@ -50,12 +50,14 @@ def verdict(stdin_text, cwd=None) -> "str | None":
     if not identifier:
         return None
     resolved_cwd = cwd or data.get("cwd")
-    role = _role_for_identifier(identifier, resolved_cwd)
-    entry = _manifest_entry_for_identifier(identifier, resolved_cwd)
+    try:
+        entry = _manifest_entry_for_identifier(identifier, resolved_cwd)
+    except InvalidManifest:
+        return INVALID_MANIFEST
+    role = entry.get("role") if entry else None
     if role is None or _may_report_to_main(entry, role):
         return None
-    pair_id = _pair_id_for_identifier(identifier, cwd or data.get("cwd"))
-    if not pair_id:
+    if not entry.get("pair_id"):
         return None
     return blocked()
 
