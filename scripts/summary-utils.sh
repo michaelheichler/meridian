@@ -1,7 +1,15 @@
 #!/bin/bash
 
-. "$(CDPATH="" cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/lib/rename-migration.sh"
-meridian_migrate_environment
+printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${BASH_SOURCE[0]}"
+case "$MERIDIAN_MIGRATION_SOURCE" in
+  *"/"*) printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${MERIDIAN_MIGRATION_SOURCE%"/"*}" ;;
+  *) printf -v MERIDIAN_MIGRATION_SOURCE '%s' . ;;
+esac
+if [ -f "$MERIDIAN_MIGRATION_SOURCE/lib/rename-migration.sh" ]; then
+  . "$MERIDIAN_MIGRATION_SOURCE/lib/rename-migration.sh"
+  meridian_migrate_environment
+fi
+unset MERIDIAN_MIGRATION_SOURCE
 
 : 'The status-counting hot path stays in bash without external process dependencies. Deviation extraction helpers intentionally use awk, find plus path filters, and sort/sort -V.'
 

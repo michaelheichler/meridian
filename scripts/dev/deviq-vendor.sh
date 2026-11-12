@@ -1,7 +1,15 @@
 #!/usr/bin/env bash
 
-. "$(CDPATH="" cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/../lib/rename-migration.sh"
-meridian_migrate_environment
+printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${BASH_SOURCE[0]}"
+case "$MERIDIAN_MIGRATION_SOURCE" in
+  *"/"*) printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${MERIDIAN_MIGRATION_SOURCE%"/"*}" ;;
+  *) printf -v MERIDIAN_MIGRATION_SOURCE '%s' . ;;
+esac
+if [ -f "$MERIDIAN_MIGRATION_SOURCE/../lib/rename-migration.sh" ]; then
+  . "$MERIDIAN_MIGRATION_SOURCE/../lib/rename-migration.sh"
+  meridian_migrate_environment
+fi
+unset MERIDIAN_MIGRATION_SOURCE
 # Dev-time script: vendor the DevIQ corpus markdown into references/deviq-corpus/.
 # Copies content/<category>/<slug>.md from the source corpus (skipping _index.md),
 # writes references/deviq-corpus/MANIFEST.json, then verifies every vendored

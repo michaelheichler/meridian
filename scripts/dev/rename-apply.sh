@@ -76,7 +76,20 @@ def wire_environment(text, path):
     if "meridian_migrate_environment" in text:
         return text
     shim = posixpath.relpath("scripts/lib/rename-migration.sh", posixpath.dirname(path))
-    startup = "\n. \"$(CDPATH=\"\" cd -- \"$(dirname \"${BASH_SOURCE[0]}\")\" && pwd -P)/%s\"\nmeridian_migrate_environment\n" % shim
+    startup = "\n".join([
+        "",
+        "printf -v MERIDIAN_MIGRATION_SOURCE \"%s\" \"${BASH_SOURCE[0]}\"",
+        "case \"$MERIDIAN_MIGRATION_SOURCE\" in",
+        "  *\"/\"*) printf -v MERIDIAN_MIGRATION_SOURCE \"%s\" \"${MERIDIAN_MIGRATION_SOURCE%\"/\"*}\" ;;",
+        "  *) printf -v MERIDIAN_MIGRATION_SOURCE \"%s\" . ;;",
+        "esac",
+        "if [ -f \"$MERIDIAN_MIGRATION_SOURCE/" + shim + "\" ]; then",
+        "  . \"$MERIDIAN_MIGRATION_SOURCE/" + shim + "\"",
+        "  meridian_migrate_environment",
+        "fi",
+        "unset MERIDIAN_MIGRATION_SOURCE",
+        "",
+    ])
     header, separator, body = text.partition("\n")
     return header + separator + startup + body
 

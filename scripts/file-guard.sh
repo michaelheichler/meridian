@@ -1,7 +1,15 @@
 #!/bin/bash
 
-. "$(CDPATH="" cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/lib/rename-migration.sh"
-meridian_migrate_environment
+printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${BASH_SOURCE[0]}"
+case "$MERIDIAN_MIGRATION_SOURCE" in
+  *"/"*) printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${MERIDIAN_MIGRATION_SOURCE%"/"*}" ;;
+  *) printf -v MERIDIAN_MIGRATION_SOURCE '%s' . ;;
+esac
+if [ -f "$MERIDIAN_MIGRATION_SOURCE/lib/rename-migration.sh" ]; then
+  . "$MERIDIAN_MIGRATION_SOURCE/lib/rename-migration.sh"
+  meridian_migrate_environment
+fi
+unset MERIDIAN_MIGRATION_SOURCE
 set -u
 . "$(CDPATH='' cd -- "${BASH_SOURCE[0]%/*}" 2>/dev/null && pwd)/lib/debug-logging.sh" 2>/dev/null || true
 debug_logging_gate file-guard.sh PreToolUse 2>/dev/null || true

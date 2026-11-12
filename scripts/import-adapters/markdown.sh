@@ -1,7 +1,15 @@
 #!/usr/bin/env bash
 
-. "$(CDPATH="" cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/../lib/rename-migration.sh"
-meridian_migrate_environment
+printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${BASH_SOURCE[0]}"
+case "$MERIDIAN_MIGRATION_SOURCE" in
+  *"/"*) printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${MERIDIAN_MIGRATION_SOURCE%"/"*}" ;;
+  *) printf -v MERIDIAN_MIGRATION_SOURCE '%s' . ;;
+esac
+if [ -f "$MERIDIAN_MIGRATION_SOURCE/../lib/rename-migration.sh" ]; then
+  . "$MERIDIAN_MIGRATION_SOURCE/../lib/rename-migration.sh"
+  meridian_migrate_environment
+fi
+unset MERIDIAN_MIGRATION_SOURCE
 
 import_adapter_markdown_normalize() {
   local source="$1" output="$2" plans='[]' provenance='[]' warnings='["unverified generic Markdown adapter"]' skipped='[]' selected=0 total_selected_bytes=0 path relative size title plan_json content root_label

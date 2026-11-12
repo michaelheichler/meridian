@@ -39,6 +39,7 @@ content	hooks/rename_migration.py	hooks/rename_migration.py	exclude compatibilit
 content	commands/init.md	commands/init.md	exclude-block <!-- rename-migration:start --> <!-- rename-migration:end -->
 content	.git	.git	exclude tree
 content	.claude/worktrees	.claude/worktrees	exclude tree
+content	LBWC_TMUX_FS_FAIL_AFTER_ACK_LINK	LBWC_TMUX_FS_FAIL_AFTER_ACK_LINK	preserve legacy acknowledgement interruption option
 content	pure-vibe	pure-vibe	preserve persisted autonomy value
 content	Pure-Vibe	Pure-Vibe	preserve autonomy label
 content	vibe-better-with-claude-code-lbwc	vibe-better-with-claude-code-lbwc	preserve remote repository slug until owner authorizes GitHub rename
