@@ -6,7 +6,7 @@ load gate_case_files
 
 setup() {
   WRAPPER_ROOT="$(mktemp -d)"
-  SESSION_LINK="/tmp/.lbwc-plugin-root-link-hook-wrapper-$$"
+  SESSION_LINK="/tmp/.meridian-plugin-root-link-hook-wrapper-$$"
   mkdir -p "$WRAPPER_ROOT/scripts"
   printf 'exit 0\n' > "$WRAPPER_ROOT/scripts/stub-0.sh"
   printf 'exit 1\n' > "$WRAPPER_ROOT/scripts/stub-1.sh"

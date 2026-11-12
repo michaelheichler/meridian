@@ -8,7 +8,7 @@ from pathlib import Path
 
 from hooks import skill_gate
 
-HOOK_FILES = ("skill_gate.py", "message_scope_guard.py", "test_scope_guard.py")
+HOOK_FILES = ("skill_gate.py", "message_scope_guard.py", "scope_guard.py")
 
 
 def run_hook(filename: str, stdin_text: str, mode: str = "") -> subprocess.CompletedProcess[str]:
@@ -22,7 +22,7 @@ def run_hook(filename: str, stdin_text: str, mode: str = "") -> subprocess.Compl
 def project_for(case: unittest.TestCase, role: str) -> str:
     temporary = tempfile.TemporaryDirectory()
     case.addCleanup(temporary.cleanup)
-    planning = Path(temporary.name) / ".lbwc-planning"
+    planning = Path(temporary.name) / ".meridian"
     planning.mkdir()
     (planning / ".agent-manifest.json").write_text(json.dumps({"agents": {"worker": {"role": role}}}))
     return temporary.name
@@ -61,11 +61,11 @@ class PretoolInputContractTest(unittest.TestCase):
 class PolicyDenyStillDeniesTest(unittest.TestCase):
     def test_role_and_target_determine_the_hook_permission_decision(self) -> None:
         rows = (
-            ("test_scope_guard.py", "python-engineer", "worker", {"file_path": "/repo/tests/test_feature.py", "content": "x"}, "deny", ""),
-            ("test_scope_guard.py", "python-engineer", "worker", {}, None, ""),
-            ("test_scope_guard.py", "python-engineer", "worker", {"file_path": "/repo/app.py"}, None, ""),
-            ("test_scope_guard.py", "python-engineer", "", {"file_path": "/repo/tests/test_feature.py"}, None, ""),
-            ("test_scope_guard.py", "test-dev", "worker", {"file_path": "/repo/tests/test_feature.py"}, None, ""),
+            ("scope_guard.py", "python-engineer", "worker", {"file_path": "/repo/tests/test_feature.py", "content": "x"}, "deny", ""),
+            ("scope_guard.py", "python-engineer", "worker", {}, None, ""),
+            ("scope_guard.py", "python-engineer", "worker", {"file_path": "/repo/app.py"}, None, ""),
+            ("scope_guard.py", "python-engineer", "", {"file_path": "/repo/tests/test_feature.py"}, None, ""),
+            ("scope_guard.py", "test-dev", "worker", {"file_path": "/repo/tests/test_feature.py"}, None, ""),
             ("skill_gate.py", "lead", "worker", {"file_path": "/repo/PLAN.md"}, "deny", ""),
             ("user_question_guard.py", "", "", {"file_path": "src/app.py", "content": "x"}, "deny", "pretool"),
             ("user_question_guard.py", "", "", {}, "block", "stop"),

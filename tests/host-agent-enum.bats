@@ -7,7 +7,7 @@ load rejection_case_helper
 
 setup() {
   setup_capability_sandbox
-  ROUTING="$REPO_ROOT/scripts/lbwc-routing.sh"
+  ROUTING="$REPO_ROOT/scripts/meridian-routing.sh"
   BINARY="$TEST_ROOT/claude"
   CUSTOM_ID='leverframe:openai-oauth:codex-auto-review'
 }

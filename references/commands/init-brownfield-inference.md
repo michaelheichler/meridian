@@ -1,7 +1,7 @@
 For Step 6b, if SCENARIO=BROWNFIELD, follow the brownfield branch.
 
-- Run `bash "{plugin-root}/scripts/infer-project-context.sh" .lbwc-planning/codebase/ "$(pwd)"`.
-- Capture the JSON output to `.lbwc-planning/inference.json` via Bash.
+- Run `bash "{plugin-root}/scripts/infer-project-context.sh" .meridian/codebase/ "$(pwd)"`.
+- Capture the JSON output to `.meridian/inference.json` via Bash.
 - Parse the JSON and display the inferred fields.
 
   ```text
@@ -31,4 +31,4 @@ Do not format the field list as a structured options array.
 For each selected field, use AskUserQuestion to ask for the corrected value.
 Update the inference JSON with those values.
 After all corrections, display the updated summary and proceed to Step 7 with the corrected data.
-Write the final confirmed or corrected data to `.lbwc-planning/inference.json` for Step 7.
+Write the final confirmed or corrected data to `.meridian/inference.json` for Step 7.

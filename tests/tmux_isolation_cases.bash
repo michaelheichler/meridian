@@ -168,7 +168,7 @@ kept_reuse() {
 }
 
 kept_active() {
-  tmux_on_test_server set-option -t "$SESSION" @lbwc_kept_panes true
+  tmux_on_test_server set-option -t "$SESSION" @meridian_kept_panes true
   provision_attempt
   [ "$status" -ne 0 ]
   [[ "$output" == *'active agents'* ]]
@@ -252,18 +252,18 @@ config_isolation_rollback_row() {
   [ "$(bus_state_digest)" = "$before" ]
   [ "$(pane_count "$SESSION")" = 1 ]
   [ ! -d "$CONTROL_ROOT/.runtime/worker-worktrees/worker-a" ]
-  git -C "$PROJECT_ROOT" show-ref --verify --quiet refs/heads/lbwc-worker/worker-a
+  git -C "$PROJECT_ROOT" show-ref --verify --quiet refs/heads/meridian-worker/worker-a
 }
 
 config_poll_row() {
   local kind="$1" started elapsed
   isolation_tmux_prepare kill_on_complete off
   rm -f "$TEST_ROOT/delayed-pane" "$TEST_ROOT/delayed-pane.count"
-  export LBWC_TEST_PANE_DELAY="$TEST_ROOT/delayed-pane"
-  export LBWC_TEST_PANE_DELAY_PROBES=3
+  export MERIDIAN_TEST_PANE_DELAY="$TEST_ROOT/delayed-pane"
+  export MERIDIAN_TEST_PANE_DELAY_PROBES=3
   case "$kind" in
     absent) tmux_on_test_server kill-pane -t "$AGENT_PANE" ;;
-    timeout) export LBWC_TEST_PANE_DELAY_PROBES=1000 ;;
+    timeout) export MERIDIAN_TEST_PANE_DELAY_PROBES=1000 ;;
   esac
   started=$(date +%s)
   isolation_kill_agent
@@ -273,9 +273,9 @@ config_poll_row() {
   else
     isolation_success
     isolation_shutdown_state
-    [ "$kind" != absent ] || [ ! -e "$LBWC_TEST_PANE_DELAY.count" ]
+    [ "$kind" != absent ] || [ ! -e "$MERIDIAN_TEST_PANE_DELAY.count" ]
   fi
-  unset LBWC_TEST_PANE_DELAY LBWC_TEST_PANE_DELAY_PROBES
+  unset MERIDIAN_TEST_PANE_DELAY MERIDIAN_TEST_PANE_DELAY_PROBES
 }
 
 poll_timeout() {
@@ -284,7 +284,7 @@ poll_timeout() {
   [ "$elapsed" -ge 3 ] && [ "$elapsed" -lt 12 ]
   jq -e '.state == "prepared"' "$CONTROL_ROOT/.runtime/tmux-bus/transactions/teardown-worker-a.json"
   jq -e '.agents[] | select(.agent_id == "worker-a") | .state != "shutdown"' "$(registry_file)"
-  unset LBWC_TEST_PANE_DELAY LBWC_TEST_PANE_DELAY_PROBES
+  unset MERIDIAN_TEST_PANE_DELAY MERIDIAN_TEST_PANE_DELAY_PROBES
   isolation_kill_agent
   isolation_success
   isolation_shutdown_state

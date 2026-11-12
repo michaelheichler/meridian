@@ -6,7 +6,7 @@ Issue the contract as read-only.
 
 ```bash
 PROJECT_ROOT=$(pwd)
-CONTROL_ROOT="$PROJECT_ROOT/.lbwc-planning"
+CONTROL_ROOT="$PROJECT_ROOT/.meridian"
 ARCHITECT_BRIEF="draft initial requirements and roadmap"
 CONTRACT_PATH=$(bash "{plugin-root}/scripts/task-contract.sh" issue "$PROJECT_ROOT" "init-architect" --command init --role architect --team solo --job "$ARCHITECT_BRIEF" --control-root "$CONTROL_ROOT" --requested-backend workflow --resolved-backend workflow --read-only-role architect) || exit 1
 TASK_ID=$(basename "$CONTRACT_PATH" .json)

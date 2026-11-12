@@ -13,16 +13,16 @@ setup() {
 render_pair() {
   run bash "$SCRIPT" pair NAME=probe-pair DESCRIPTION=desc \
     JOB=job TASK_ID=task-2 "AUTONOMY=$1" \
-    ENGINEER_AGENT_TYPE=lbwc-eng-a ENGINEER_MODEL=sonnet ENGINEER_EFFORT=balanced \
-    CRITIC_AGENT_TYPE=lbwc-crit-a CRITIC_MODEL=sonnet CRITIC_EFFORT=fast
+    ENGINEER_AGENT_TYPE=meridian-eng-a ENGINEER_MODEL=sonnet ENGINEER_EFFORT=balanced \
+    CRITIC_AGENT_TYPE=meridian-crit-a CRITIC_MODEL=sonnet CRITIC_EFFORT=fast
 }
 
 render_trio() {
   run bash "$SCRIPT" trio NAME=probe-trio DESCRIPTION=desc \
     JOB=job TASK_ID=task-3 "AUTONOMY=$1" \
-    ENGINEER_AGENT_TYPE=lbwc-eng-a ENGINEER_MODEL=sonnet ENGINEER_EFFORT=balanced \
-    CRITIC_AGENT_TYPE=lbwc-crit-a CRITIC_MODEL=sonnet CRITIC_EFFORT=fast \
-    TESTDEV_AGENT_TYPE=lbwc-td-a TESTDEV_MODEL=sonnet TESTDEV_EFFORT=fast
+    ENGINEER_AGENT_TYPE=meridian-eng-a ENGINEER_MODEL=sonnet ENGINEER_EFFORT=balanced \
+    CRITIC_AGENT_TYPE=meridian-crit-a CRITIC_MODEL=sonnet CRITIC_EFFORT=fast \
+    TESTDEV_AGENT_TYPE=meridian-td-a TESTDEV_MODEL=sonnet TESTDEV_EFFORT=fast
 }
 
 run_gate_loop() {

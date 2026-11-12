@@ -1,5 +1,16 @@
 #!/usr/bin/env bash
 
+printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${BASH_SOURCE[0]}"
+case "$MERIDIAN_MIGRATION_SOURCE" in
+  *"/"*) printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${MERIDIAN_MIGRATION_SOURCE%"/"*}" ;;
+  *) printf -v MERIDIAN_MIGRATION_SOURCE '%s' . ;;
+esac
+if [ -f "$MERIDIAN_MIGRATION_SOURCE/lib/rename-migration.sh" ]; then
+  . "$MERIDIAN_MIGRATION_SOURCE/lib/rename-migration.sh"
+  meridian_migrate_environment
+fi
+unset MERIDIAN_MIGRATION_SOURCE
+
 set -euo pipefail
 
 STALE_WARN_THRESHOLD=10   # Past this many commits research is skipped because it no longer matches the code
@@ -14,8 +25,8 @@ shift
 SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd)"
 . "$SCRIPT_DIR/lib/compile-research-emit.sh"
 . "$SCRIPT_DIR/lib/display-glyphs.sh"
-lbwc_glyphs_load "$PLANNING_DIR"
-lbwc_glyph GLYPH_WARNING warning
+meridian_glyphs_load "$PLANNING_DIR"
+meridian_glyph GLYPH_WARNING warning
 
 EXPLICIT_FILE=""
 DESCRIPTION=""
@@ -47,7 +58,7 @@ if [ -n "$EXPLICIT_FILE" ]; then
     exit 0
   fi
   echo "[research] Using explicitly specified research: $(basename "$EXPLICIT_FILE")" >&2
-  lbwc_glyph_file "$EXPLICIT_FILE"
+  meridian_glyph_file "$EXPLICIT_FILE"
   exit 0
 fi
 

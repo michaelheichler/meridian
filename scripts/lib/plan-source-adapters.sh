@@ -1,5 +1,16 @@
 #!/usr/bin/env bash
 
+printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${BASH_SOURCE[0]}"
+case "$MERIDIAN_MIGRATION_SOURCE" in
+  *"/"*) printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${MERIDIAN_MIGRATION_SOURCE%"/"*}" ;;
+  *) printf -v MERIDIAN_MIGRATION_SOURCE '%s' . ;;
+esac
+if [ -f "$MERIDIAN_MIGRATION_SOURCE/rename-migration.sh" ]; then
+  . "$MERIDIAN_MIGRATION_SOURCE/rename-migration.sh"
+  meridian_migrate_environment
+fi
+unset MERIDIAN_MIGRATION_SOURCE
+
 plan_source_canonical_file() {
   local path="$1" canonical directory filename
   [ -f "$path" ] || return 1
@@ -113,9 +124,9 @@ plan_source_detection_evidence() {
   jq -Rsc 'split("\n") | map(select(length > 0))' <<< "$evidence"
 }
 
-plan_source_collect_lbwc() {
+plan_source_collect_meridian() {
   local project_root="$1" planning_dir
-  planning_dir="$project_root/.lbwc-planning"
+  planning_dir="$project_root/.meridian"
   [ -d "$planning_dir" ] || return 0
   find "$planning_dir" \
     \( -path "$planning_dir/.cache" -o -path "$planning_dir/milestones" \) -prune -o \
@@ -168,7 +179,7 @@ plan_source_collect_generic_markdown() {
       printf '%s\t%s\t%s\n' "$epoch" "$size" "$path"
     done < <(
       find "$project_root" \
-        \( -path "$project_root/.git" -o -path "$project_root/.lbwc-planning" \
+        \( -path "$project_root/.git" -o -path "$project_root/.meridian" \
            -o -path "$project_root/.temporary-agent-runfiles" -o -path "$project_root/.planning" \
            -o -path "$project_root/.claude" -o -path "$project_root/node_modules" \
            -o -path "$project_root/.kilo" -o -path "$project_root/vendor" \

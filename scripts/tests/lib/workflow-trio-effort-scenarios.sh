@@ -10,7 +10,7 @@ CONTRACT_C=$(bash "$TASK_CONTRACT" issue "$PROJECT_C" trio-1 \
   --write-capability directory:src)
 TASK_ID_C=$(basename "$CONTRACT_C" .json)
 
-AGEN_OUTPUT_C=$(LBWC_AGENT_RANDOM_SEED=707 run_with_modern_bash "$AGENT_GENERATOR" --trio web-engineer \
+AGEN_OUTPUT_C=$(MERIDIAN_AGENT_RANDOM_SEED=707 run_with_modern_bash "$AGENT_GENERATOR" --trio web-engineer \
   --job "trio job" --contract "$CONTRACT_C" --task-id "$TASK_ID_C" \
   --control-root "$CONTROL_ROOT_C" --write-capability directory:src \
   --execution-backend workflow 2>&1)
@@ -62,7 +62,7 @@ CONTRACT_G=$(bash "$TASK_CONTRACT" issue "$PROJECT_G" effort-1 \
   --control-root "$CONTROL_ROOT_G" --requested-backend workflow --resolved-backend workflow \
   --write-capability directory:notes)
 TASK_ID_G=$(basename "$CONTRACT_G" .json)
-AGEN_OUT_G=$(LBWC_AGENT_RANDOM_SEED=808 run_with_modern_bash "$AGENT_GENERATOR" scout \
+AGEN_OUT_G=$(MERIDIAN_AGENT_RANDOM_SEED=808 run_with_modern_bash "$AGENT_GENERATOR" scout \
   --job "unresolved effort job" --contract "$CONTRACT_G" --task-id "$TASK_ID_G" \
   --control-root "$CONTROL_ROOT_G" --write-capability directory:notes \
   --execution-backend workflow 2>&1)

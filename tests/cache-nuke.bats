@@ -6,7 +6,7 @@ load gate_case_helper
 setup() {
   setup_temp_dir
   CLAUDE_HOME="$TEST_TEMP_DIR/claude-config"
-  PLUGIN_CACHE="$CLAUDE_HOME/plugins/cache/lbwc-marketplace/lbwc"
+  PLUGIN_CACHE="$CLAUDE_HOME/plugins/cache/meridian-marketplace/meridian"
   TMP_ROOT="$TEST_TEMP_DIR/tmp-root"
   OWN_UID=$(id -u)
   OTHER_UID=$((OWN_UID + 1))
@@ -29,14 +29,14 @@ reset_caches() {
 }
 
 plant_temp_caches() {
-  : > "$TMP_ROOT/lbwc-phase-$OWN_UID-abc"
-  : > "$TMP_ROOT/lbwc-map-$OWN_UID"
-  : > "$TMP_ROOT/lbwc-update-check-$OWN_UID"
-  : > "$TMP_ROOT/lbwc-phase-$OTHER_UID-abc"
+  : > "$TMP_ROOT/meridian-phase-$OWN_UID-abc"
+  : > "$TMP_ROOT/meridian-map-$OWN_UID"
+  : > "$TMP_ROOT/meridian-update-check-$OWN_UID"
+  : > "$TMP_ROOT/meridian-phase-$OTHER_UID-abc"
 }
 
 nuke_and_list() {
-  env HOME="$TEST_TEMP_DIR" CLAUDE_CONFIG_DIR="$CLAUDE_HOME" LBWC_TMP_CACHE_ROOT="$TMP_ROOT" \
+  env HOME="$TEST_TEMP_DIR" CLAUDE_CONFIG_DIR="$CLAUDE_HOME" MERIDIAN_TMP_CACHE_ROOT="$TMP_ROOT" \
     bash "$SCRIPTS_DIR/cache-nuke.sh" "$@" || return
   printf 'versions-left=%s;\n' "$(ls "$PLUGIN_CACHE" 2>/dev/null | tr '\n' ',')"
   printf 'temp-left=%s;\n' "$(ls -A "$TMP_ROOT" | tr '\n' ',')"
@@ -52,7 +52,7 @@ nuke_and_list() {
   run nuke_and_list
   expect_case full-wipe 0 '{"wiped":{"plugin_cache":true,"temp_caches":true,"versions_removed":2}}'
   expect_case full-wipe 0 "versions-left=;"
-  expect_case full-wipe 0 "temp-left=lbwc-phase-$OTHER_UID-abc,;"
+  expect_case full-wipe 0 "temp-left=meridian-phase-$OTHER_UID-abc,;"
 
   reset_caches 1.0.9 1.0.10 1.0.2
   run nuke_and_list --keep-latest

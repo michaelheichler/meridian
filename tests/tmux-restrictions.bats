@@ -9,11 +9,11 @@ setup() {
   cd "$BATS_TEST_TMPDIR/repo"
   git init -q
   export HOME="$BATS_TEST_TMPDIR/home"
-  export LBWC_PLANNING_DIR="$PWD/.lbwc-planning"
-  export LBWC_TMUX_CONTROL_ROOT="$LBWC_PLANNING_DIR"
-  export LBWC_TMUX_AGENT=1 TMUX=fixture TMUX_PANE=%42
-  unset LBWC_TMUX_AGENT_ID
-  mkdir -p "$HOME" "$LBWC_PLANNING_DIR/phases/one"
+  export MERIDIAN_PLANNING_DIR="$PWD/.meridian"
+  export MERIDIAN_TMUX_CONTROL_ROOT="$MERIDIAN_PLANNING_DIR"
+  export MERIDIAN_TMUX_AGENT=1 TMUX=fixture TMUX_PANE=%42
+  unset MERIDIAN_TMUX_AGENT_ID
+  mkdir -p "$HOME" "$MERIDIAN_PLANNING_DIR/phases/one"
 }
 
 teardown() {

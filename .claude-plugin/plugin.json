@@ -1,13 +1,13 @@
 {
-  "name": "lbwc",
+  "name": "meridian",
   "version": "1.0.5",
-  "description": "LBWC (Love Better With Claude) combines a plan, build, QA, and UAT pipeline with dynamically generated role agents, plan-tracked milestones, and hook-enforced skill and scope gates.",
+  "description": "Meridian combines a plan, build, QA, and UAT pipeline with dynamically generated role agents, plan-tracked milestones, and hook-enforced skill and scope gates.",
   "author": {
     "name": "Michael Heichler"
   },
   "license": "GPL-3.0-only",
-  "homepage": "https://github.com/michaelheichler/lbwc",
-  "repository": "https://github.com/michaelheichler/lbwc",
+  "homepage": "https://github.com/michaelheichler/meridian",
+  "repository": "https://github.com/michaelheichler/meridian",
   "keywords": [
     "claude-code",
     "orchestration",

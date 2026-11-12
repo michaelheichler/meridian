@@ -1,4 +1,15 @@
 #!/bin/bash
+
+printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${BASH_SOURCE[0]}"
+case "$MERIDIAN_MIGRATION_SOURCE" in
+  *"/"*) printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${MERIDIAN_MIGRATION_SOURCE%"/"*}" ;;
+  *) printf -v MERIDIAN_MIGRATION_SOURCE '%s' . ;;
+esac
+if [ -f "$MERIDIAN_MIGRATION_SOURCE/lib/rename-migration.sh" ]; then
+  . "$MERIDIAN_MIGRATION_SOURCE/lib/rename-migration.sh"
+  meridian_migrate_environment
+fi
+unset MERIDIAN_MIGRATION_SOURCE
 set -u
 . "$(CDPATH='' cd -- "${BASH_SOURCE[0]%/*}" 2>/dev/null && pwd)/lib/debug-logging.sh" 2>/dev/null || true
 debug_logging_gate task-admission-guard.sh TaskCreated 2>/dev/null || true
@@ -6,15 +17,15 @@ debug_logging_gate task-admission-guard.sh TaskCreated 2>/dev/null || true
 command -v jq >/dev/null 2>&1 || { echo "Blocked: jq not available, cannot validate native task" >&2; exit 2; }
 SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname "$0")" && pwd -P)
 . "$SCRIPT_DIR/lib/agent-manifest.sh" 2>/dev/null || { echo "Blocked: agent manifest library unavailable" >&2; exit 2; }
-. "$SCRIPT_DIR/lib/lbwc-control-root.sh" 2>/dev/null || { echo "Blocked: control root resolver unavailable" >&2; exit 2; }
+. "$SCRIPT_DIR/lib/meridian-control-root.sh" 2>/dev/null || { echo "Blocked: control root resolver unavailable" >&2; exit 2; }
 
 INPUT=$(cat 2>/dev/null) || { echo "Blocked: unable to read TaskCreated payload" >&2; exit 2; }
 [ "$(jq -r '.hook_event_name // empty' <<< "$INPUT" 2>/dev/null)" = "TaskCreated" ] || exit 0
 CWD=$(jq -r '.cwd // empty' <<< "$INPUT")
 [ -n "$CWD" ] || CWD="$PWD"
-CONTROL_ROOT=$(lbwc_resolve_control_root "${LBWC_CONTROL_ROOT:-}" "" "$CWD" 2>/dev/null || true)
-[ -n "$CONTROL_ROOT" ] || { echo "Blocked: TaskCreated has no resolvable LBWC control root" >&2; exit 2; }
-PROJECT_ROOT=$(lbwc_control_root_project_root "$CONTROL_ROOT" 2>/dev/null || true)
+CONTROL_ROOT=$(meridian_resolve_control_root "${MERIDIAN_CONTROL_ROOT:-}" "" "$CWD" 2>/dev/null || true)
+[ -n "$CONTROL_ROOT" ] || { echo "Blocked: TaskCreated has no resolvable MERIDIAN control root" >&2; exit 2; }
+PROJECT_ROOT=$(meridian_control_root_project_root "$CONTROL_ROOT" 2>/dev/null || true)
 [ -n "$PROJECT_ROOT" ] || { echo "Blocked: TaskCreated project root is unavailable" >&2; exit 2; }
 TASK_ID=$(jq -r '.task_id // .taskId // empty' <<< "$INPUT")
 TASK_SUBJECT=$(jq -r '.task_subject // .subject // .task_description // empty' <<< "$INPUT")

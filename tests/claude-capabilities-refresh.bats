@@ -33,7 +33,7 @@ refresh_binary() {
 }
 
 compose_catalog() {
-  env -u CDPATH bash -c '. "$1"; lbwc_compose_model_catalog "$2" "$3" "$4"' _ \
+  env -u CDPATH bash -c '. "$1"; meridian_compose_model_catalog "$2" "$3" "$4"' _ \
     "$REPO_ROOT/scripts/lib/compose-model-catalog.sh" "$1" "$2" "$3"
 }
 

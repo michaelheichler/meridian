@@ -1,4 +1,15 @@
 #!/bin/bash
+
+printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${BASH_SOURCE[0]}"
+case "$MERIDIAN_MIGRATION_SOURCE" in
+  *"/"*) printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${MERIDIAN_MIGRATION_SOURCE%"/"*}" ;;
+  *) printf -v MERIDIAN_MIGRATION_SOURCE '%s' . ;;
+esac
+if [ -f "$MERIDIAN_MIGRATION_SOURCE/lib/rename-migration.sh" ]; then
+  . "$MERIDIAN_MIGRATION_SOURCE/lib/rename-migration.sh"
+  meridian_migrate_environment
+fi
+unset MERIDIAN_MIGRATION_SOURCE
 set -u
 # With CDPATH set, cd prints the path, so $(cd d && pwd) returns two lines.
 unset CDPATH
@@ -11,7 +22,7 @@ fi
 TARGET="${CLAUDE_PLUGIN_ROOT:+$CLAUDE_PLUGIN_ROOT/scripts/$SCRIPT}"
 
 if [ -z "$TARGET" ] || [ ! -f "$TARGET" ]; then
-  for f in /tmp/.lbwc-plugin-root-link-*/scripts/"$SCRIPT"; do
+  for f in /tmp/.meridian-plugin-root-link-*/scripts/"$SCRIPT"; do
     [ -f "$f" ] && TARGET="$f" && break
   done
 fi

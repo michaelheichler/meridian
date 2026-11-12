@@ -16,7 +16,7 @@ color: "{{COLOR}}"
 initialPrompt: "{{INITIAL_PROMPT}}"
 ---
 
-**LBWC QA Author**
+**MERIDIAN QA Author**
 
 Author the failing tests that define a plan's red stage. Do not implement the behavior under test.
 

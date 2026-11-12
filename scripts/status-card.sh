@@ -1,4 +1,15 @@
 #!/usr/bin/env bash
+
+printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${BASH_SOURCE[0]}"
+case "$MERIDIAN_MIGRATION_SOURCE" in
+  *"/"*) printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${MERIDIAN_MIGRATION_SOURCE%"/"*}" ;;
+  *) printf -v MERIDIAN_MIGRATION_SOURCE '%s' . ;;
+esac
+if [ -f "$MERIDIAN_MIGRATION_SOURCE/lib/rename-migration.sh" ]; then
+  . "$MERIDIAN_MIGRATION_SOURCE/lib/rename-migration.sh"
+  meridian_migrate_environment
+fi
+unset MERIDIAN_MIGRATION_SOURCE
 set -euo pipefail
 
 SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname "$0")" && pwd)
@@ -22,7 +33,7 @@ row() {
 
 failure_card() {
   local reason="$1" failed_glyph
-  lbwc_glyph failed_glyph failed
+  meridian_glyph failed_glyph failed
   row "$failed_glyph failed" 'Feedback unavailable'
   printf '| --- | --- |\n'
   row Cause "$reason"
@@ -33,7 +44,7 @@ failure_card() {
 }
 
 command -v jq >/dev/null 2>&1 || failure_card 'jq is required to validate result JSON'
-lbwc_glyphs_load
+meridian_glyphs_load
 [ "$#" -eq 2 ] || failure_card 'Usage status-card.sh PHASE_FILE RESULT_JSON_FILE'
 [ -r "$1" ] || failure_card 'Cannot read phase-detect output'
 [ -r "$2" ] || failure_card 'Cannot read result JSON'
@@ -50,10 +61,10 @@ done < "$1"
 [ -n "$phase" ] || failure_card 'Missing next_phase in phase-detect output'
 [ "$phase_complete" = true ] && [ "$phase_error" != true ] || failure_card 'Incomplete or failed phase-detect output'
 
-lbwc_glyph done_glyph done
-lbwc_glyph running_glyph running
-lbwc_glyph needs_you_glyph needs_you
-lbwc_glyph failed_glyph failed
+meridian_glyph done_glyph done
+meridian_glyph running_glyph running
+meridian_glyph needs_you_glyph needs_you
+meridian_glyph failed_glyph failed
 output=$(jq -rse --rawfile detector "$1" --arg done "$done_glyph" --arg running "$running_glyph" --arg needs_you "$needs_you_glyph" --arg failed "$failed_glyph" '
   def text: type == "string" and test("[^\\s]");
   def count: type == "number" and . >= 0 and floor == .;

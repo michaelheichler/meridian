@@ -26,8 +26,8 @@ setup() {
   cp "$SCRIPT" "$PLUGIN_DIR/indexer-sync.sh"
   cp "$REPO_ROOT/scripts/ensure-plugin-root-link.sh" "$PLUGIN_DIR/ensure-plugin-root-link.sh"
   cp "$REPO_ROOT/scripts/resolve-plugin-root.sh" "$PLUGIN_DIR/resolve-plugin-root.sh"
-  copy_script_with_libs "$REPO_ROOT/scripts/lib/lbwc-control-root.sh" "$PLUGIN_DIR/lib/lbwc-control-root.sh"
-  cp "$REPO_ROOT/scripts/lib/lbwc-target-root.sh" "$PLUGIN_DIR/lib/lbwc-target-root.sh"
+  copy_script_with_libs "$REPO_ROOT/scripts/lib/meridian-control-root.sh" "$PLUGIN_DIR/lib/meridian-control-root.sh"
+  cp "$REPO_ROOT/scripts/lib/meridian-target-root.sh" "$PLUGIN_DIR/lib/meridian-target-root.sh"
   cat > "$TEST_ROOT/probe-stub.sh" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -50,7 +50,7 @@ case "${2:-}" in
     printf '%s\n' \
       'Repository indexed successfully (6.6s)' \
       '6,864 nodes | 8,200 edges | 138 clusters | 90 flows' \
-      '/Users/michael/dev/skills/lbwc'
+      '/Users/michael/dev/skills/meridian'
     ;;
   status)
     case "${INDEXER_STATUS_MODE:-fresh}" in
@@ -78,10 +78,10 @@ esac
 EOF
   chmod +x "$FAKE_BIN/node"
   COMMAND_SESSION_ID="indexer-sync-${BATS_TEST_NUMBER}-$$"
-  ROOT_LINK="/tmp/.lbwc-plugin-root-link-${COMMAND_SESSION_ID}"
+  ROOT_LINK="/tmp/.meridian-plugin-root-link-${COMMAND_SESSION_ID}"
   rm -rf "$ROOT_LINK"
   export NODE_LOG PROJECT_DIR CURRENT_COMMIT INDEXED_COMMIT="$CURRENT_COMMIT" COMMAND_SESSION_ID ROOT_LINK
-  SYNC_JSON="$PROJECT_DIR/.lbwc-planning/.runtime/indexer-sync.json"
+  SYNC_JSON="$PROJECT_DIR/.meridian/.runtime/indexer-sync.json"
   cd "$PROJECT_DIR"
   reset_case_failures
   reset_row
@@ -95,7 +95,7 @@ teardown() {
 }
 
 reset_row() {
-  rm -rf "$PROJECT_DIR/.lbwc-planning" "$PROJECT_DIR/.gitnexus" "$NODE_LOG" "$FAKE_BIN/jq"
+  rm -rf "$PROJECT_DIR/.meridian" "$PROJECT_DIR/.gitnexus" "$NODE_LOG" "$FAKE_BIN/jq"
   cp "$TEST_ROOT/probe-stub.sh" "$PLUGIN_DIR/probe-map-tools.sh"
   unset INDEXER_STATUS_MODE INDEXER_ANALYZE_MODE PROBE_FAIL
   set_probe false false grep-only
@@ -114,14 +114,14 @@ set_probe() {
 }
 
 initialize_planning() {
-  mkdir -p "$PROJECT_DIR/.lbwc-planning"
-  printf '%s\n' '{}' > "$PROJECT_DIR/.lbwc-planning/config.json"
+  mkdir -p "$PROJECT_DIR/.meridian"
+  printf '%s\n' '{}' > "$PROJECT_DIR/.meridian/config.json"
 }
 
 run_sync() {
   run env \
     PATH="$FAKE_BIN:$PATH" \
-    LBWC_PLANNING_DIR="$PROJECT_DIR/.lbwc-planning" \
+    MERIDIAN_PLANNING_DIR="$PROJECT_DIR/.meridian" \
     bash "$PLUGIN_DIR/indexer-sync.sh" --project-root "$PROJECT_DIR" "$@"
 }
 
@@ -173,7 +173,7 @@ run_resolved_build_gate() {
 
   run env \
     PATH="$FAKE_BIN:$PATH" \
-    LBWC_PLANNING_DIR="$PROJECT_DIR/.lbwc-planning" \
+    MERIDIAN_PLANNING_DIR="$PROJECT_DIR/.meridian" \
     bash -c "cd \"$PROJECT_DIR\" && $gate"
 }
 
@@ -181,15 +181,15 @@ run_resolved_build_gate() {
   set_probe false false grep-only
   run_sync
   expect_status fresh-project-grep-only 0
-  expect_no_path fresh-project-grep-only "$PROJECT_DIR/.lbwc-planning"
+  expect_no_path fresh-project-grep-only "$PROJECT_DIR/.meridian"
   expect_no_path fresh-project-grep-only "$NODE_LOG"
 
   reset_row
-  mkdir -p "$PROJECT_DIR/.lbwc-planning"
+  mkdir -p "$PROJECT_DIR/.meridian"
   run_sync
   expect_status uninitialized-planning 0
-  expect_no_path uninitialized-planning "$PROJECT_DIR/.lbwc-planning/MAP-TOOLS.json"
-  expect_no_path uninitialized-planning "$PROJECT_DIR/.lbwc-planning/.runtime"
+  expect_no_path uninitialized-planning "$PROJECT_DIR/.meridian/MAP-TOOLS.json"
+  expect_no_path uninitialized-planning "$PROJECT_DIR/.meridian/.runtime"
 
   reset_row
   initialize_planning
@@ -346,7 +346,7 @@ EOF
   rm -f "$PLUGIN_DIR/probe-map-tools.sh"
   run_sync
   expect_case probe-unavailable-uninitialized 2 "required map-tools probe is unavailable"
-  expect_no_path probe-unavailable-uninitialized "$PROJECT_DIR/.lbwc-planning"
+  expect_no_path probe-unavailable-uninitialized "$PROJECT_DIR/.meridian"
 
   run bash "$PLUGIN_DIR/indexer-sync.sh" --help
   expect_case help-flag 0 "Usage:"
@@ -363,29 +363,29 @@ EOF
   assert_no_case_failures
 }
 
-@test "indexer-sync command gates: vibe, team and build run the helper and stop when it fails" {
-  run_command_gate vibe
-  expect_status vibe-gate 0
+@test "indexer-sync command gates: transit, team and build run the helper and stop when it fails" {
+  run_command_gate transit
+  expect_status transit-gate 0
   run_command_gate team
   expect_status team-gate 0
-  expect_no_path command-gates "$PROJECT_DIR/.lbwc-planning"
+  expect_no_path command-gates "$PROJECT_DIR/.meridian"
 
   [ "$(grep -c '^!`' "$REPO_ROOT/commands/build.md")" = 1 ] || record_case_failure build-directive "build.md must hold exactly one context directive"
   run_resolved_build_gate
   expect_status build-gate 0
   [ "$RESOLVED_LINK" = "$PLUGIN_ROOT" ] || record_case_failure build-gate "resolved plugin root is $RESOLVED_LINK"
   [ "$RESOLVED_PROJECT_ROOT" = "$PROJECT_DIR" ] || record_case_failure build-gate "resolved project root is $RESOLVED_PROJECT_ROOT"
-  expect_no_path build-gate "$PROJECT_DIR/.lbwc-planning"
+  expect_no_path build-gate "$PROJECT_DIR/.meridian"
 
   reset_row
   rm -f "$PLUGIN_DIR/probe-map-tools.sh"
-  run_command_gate vibe
-  expect_case vibe-gate-helper-fails 2 "required map-tools probe is unavailable"
+  run_command_gate transit
+  expect_case transit-gate-helper-fails 2 "required map-tools probe is unavailable"
   run_command_gate team
   expect_case team-gate-helper-fails 2 "required map-tools probe is unavailable"
   run_resolved_build_gate
   expect_case build-gate-helper-fails 2 "required map-tools probe is unavailable"
-  expect_no_path command-gates-helper-fails "$PROJECT_DIR/.lbwc-planning"
+  expect_no_path command-gates-helper-fails "$PROJECT_DIR/.meridian"
 
   assert_no_case_failures
 }
@@ -394,7 +394,7 @@ EOF
   local gate_line enable_line preflight_line catalog_line phase_line plan_line
 
   gate_line="$(grep -n 'indexer-sync.sh' "$REPO_ROOT/commands/team.md" | cut -d: -f1)"
-  catalog_line="$(grep -n 'lbwc-model" refresh' "$REPO_ROOT/commands/team.md" | cut -d: -f1)"
+  catalog_line="$(grep -n 'meridian-model" refresh' "$REPO_ROOT/commands/team.md" | cut -d: -f1)"
   enable_line="$(grep -n 'agent-teams-enable --approved' "$REPO_ROOT/commands/team.md" | cut -d: -f1)"
   preflight_line="$(grep -n '\*\*Preflight (read-only)\.\*\*' "$REPO_ROOT/commands/team.md" | cut -d: -f1)"
   [ "$gate_line" -lt "$enable_line" ] || record_case_failure team-before-enable "gate=$gate_line enable=$enable_line"

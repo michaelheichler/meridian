@@ -145,7 +145,7 @@ PY
 import sys
 
 path = sys.argv[1]
-text = open(path, encoding="utf-8").read().replace("---\ncategory:", "---\nname: lbwc:beta\ncategory:")
+text = open(path, encoding="utf-8").read().replace("---\ncategory:", "---\nname: meridian:beta\ncategory:")
 open(path, "w", encoding="utf-8").write(text)
 PY
 }

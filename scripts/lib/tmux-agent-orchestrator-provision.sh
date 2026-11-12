@@ -59,8 +59,8 @@ provision_create_session() {
   pane_target=$(tmux display-message -p -t "$session:0.0" '#{session_name}:#{window_index}.#{pane_index}') || { rollback_provision true "$session" "$new_flag" '' "$runtime_flag" "$original"; fail 'cannot resolve detached orchestrator pane'; }
   pane_index=$(tmux display-message -p -t "$pane_target" '#{pane_index}') || { rollback_provision true "$session" "$new_flag" '' "$runtime_flag" "$original"; fail 'cannot resolve detached orchestrator pane index'; }
   token=$(tmux_runtime_capability)
-  tmux set-option -t "$session" @lbwc_ownership_token "$token" || { rollback_provision true "$session" "$new_flag" '' "$runtime_flag" "$original"; fail 'cannot mark owned tmux session'; }
-  tmux select-pane -t "$pane_target" -T 'LBWC orchestrator' || { rollback_provision true "$session" "$new_flag" '' "$runtime_flag" "$original"; fail 'cannot label orchestrator pane'; }
+  tmux set-option -t "$session" @meridian_ownership_token "$token" || { rollback_provision true "$session" "$new_flag" '' "$runtime_flag" "$original"; fail 'cannot mark owned tmux session'; }
+  tmux select-pane -t "$pane_target" -T 'MERIDIAN orchestrator' || { rollback_provision true "$session" "$new_flag" '' "$runtime_flag" "$original"; fail 'cannot label orchestrator pane'; }
   printf -v "$out_target" '%s' "$pane_target"
   printf -v "$out_pane" '%s' "$pane_index"
   printf -v "$out_ownership" '%s' "$token"

@@ -1,4 +1,15 @@
 #!/usr/bin/env bash
+
+printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${BASH_SOURCE[0]}"
+case "$MERIDIAN_MIGRATION_SOURCE" in
+  *"/"*) printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${MERIDIAN_MIGRATION_SOURCE%"/"*}" ;;
+  *) printf -v MERIDIAN_MIGRATION_SOURCE '%s' . ;;
+esac
+if [ -f "$MERIDIAN_MIGRATION_SOURCE/lib/rename-migration.sh" ]; then
+  . "$MERIDIAN_MIGRATION_SOURCE/lib/rename-migration.sh"
+  meridian_migrate_environment
+fi
+unset MERIDIAN_MIGRATION_SOURCE
 set -euo pipefail
 
 SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd)"
@@ -76,10 +87,10 @@ case "$ACTION" in
     ;;
   open)
     CONFIG="$PHASE_DIR"
-    while [ "$CONFIG" != "/" ] && [ ! -f "$CONFIG/.lbwc-planning/config.json" ]; do
+    while [ "$CONFIG" != "/" ] && [ ! -f "$CONFIG/.meridian/config.json" ]; do
       CONFIG=$(dirname "$CONFIG")
     done
-    CONFIG_FILE="$CONFIG/.lbwc-planning/config.json"
+    CONFIG_FILE="$CONFIG/.meridian/config.json"
     if [ -f "$STATE_FILE" ]; then
       CURRENT_ROUND=$(state_get round)
       CURRENT_ROUND="${CURRENT_ROUND:-01}"

@@ -5,13 +5,13 @@ load gate_case_helper
 
 setup() {
   setup_temp_dir
-  mkdir -p "$TEST_TEMP_DIR/project/.lbwc-planning/phases/01-work"
+  mkdir -p "$TEST_TEMP_DIR/project/.meridian/phases/01-work"
   cd "$TEST_TEMP_DIR/project"
   git init -q
   git config user.email test@example.invalid
   git config user.name Test
   git -c core.hooksPath=/dev/null commit --allow-empty -qm initial
-  PHASE="$(pwd -P)/.lbwc-planning/phases/01-work"
+  PHASE="$(pwd -P)/.meridian/phases/01-work"
   STATE="$PHASE/remediation/qa/.qa-remediation-stage"
   SCRIPT="$SCRIPTS_DIR/qa-remediation-state.sh"
   reset_case_failures
@@ -101,7 +101,7 @@ CASES
   local label current maximum expected_status expected_round
   while IFS='|' read -r label current maximum expected_status expected_round; do
     state_fixture "$current"
-    printf '{"max_uat_remediation_rounds":%s}\n' "$maximum" > .lbwc-planning/config.json
+    printf '{"max_uat_remediation_rounds":%s}\n' "$maximum" > .meridian/config.json
     run bash "$SCRIPT" open "$PHASE"
     expect_case "$label" "$expected_status"
     run bash "$SCRIPT" get "$PHASE"
@@ -133,12 +133,12 @@ CASES
 
 @test "QA read and mutation commands refuse paths outside active planning phases" {
   local label path
-  mkdir -p "$TEST_TEMP_DIR/project/.lbwc-planning/milestones/v1/phases/01-old" "$TEST_TEMP_DIR/project/elsewhere"
+  mkdir -p "$TEST_TEMP_DIR/project/.meridian/milestones/v1/phases/01-old" "$TEST_TEMP_DIR/project/elsewhere"
   while IFS='|' read -r label path; do
     run bash "$SCRIPT" init "$TEST_TEMP_DIR/project/$path"
     expect_case "$label" 1
   done <<'CASES'
-archived-milestone|.lbwc-planning/milestones/v1/phases/01-old
+archived-milestone|.meridian/milestones/v1/phases/01-old
 outside-planning|elsewhere
 CASES
   assert_no_case_failures

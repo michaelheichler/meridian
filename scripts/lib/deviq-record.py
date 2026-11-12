@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""DevIQ-lite append-only hash-chained JSONL recorder."""
 
 import argparse
 import fcntl
@@ -9,7 +8,11 @@ import math
 import os
 import sys
 import time
+from collections.abc import Iterable, Iterator
 from datetime import datetime, timezone
+from typing import Any
+
+NumberedLine = tuple[int, str]
 
 KIND_TO_FILE = {
     "decision": "decisions.jsonl",
@@ -17,7 +20,6 @@ KIND_TO_FILE = {
     "block": "blocks.jsonl",
 }
 
-# ponytail: fixed cap, configurable only if a real project needs more than 8
 MAX_OPEN_BLOCKS_PER_PHASE = 8
 DEFAULT_LOCK_TIMEOUT_SECONDS = 0.25
 MAX_LOCK_TIMEOUT_SECONDS = 1.0
@@ -67,7 +69,11 @@ def _write_chained_line(fileobj, record: dict) -> str:
 
 
 def lock_timeout_seconds() -> float:
-    raw_timeout = os.environ.get("LBWC_DEVIQ_RECORD_LOCK_TIMEOUT")
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+    from hooks.rename_migration import migrate_environment
+    migrate_environment()
+    raw_timeout = os.environ.get("MERIDIAN_DEVIQ_RECORD_LOCK_TIMEOUT")
     if raw_timeout is None:
         return DEFAULT_LOCK_TIMEOUT_SECONDS
     try:
@@ -113,8 +119,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--field", action="append", default=[], dest="fields")
     parser.add_argument(
         "--root",
-        default=".lbwc-planning/deviq",
-        help="directory holding the jsonl files (default: .lbwc-planning/deviq)",
+        default=".meridian/deviq",
+        help="directory holding the jsonl files (default: .meridian/deviq)",
     )
     return parser.parse_args(argv)
 
@@ -138,18 +144,19 @@ def compute_block_id(phase: str, trigger: str) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:12]
 
 
-def _iter_json_records(path: str):
+def _parse_json_line(line: str) -> Iterator[Any]:
+    try:
+        yield json.loads(line.strip())
+    except json.JSONDecodeError:
+        return
+
+
+def _iter_json_records(path: str) -> Iterator[Any]:
     if not os.path.isfile(path):
         return
     with open(path) as fileobj:
         for line in fileobj:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                yield json.loads(line)
-            except json.JSONDecodeError:
-                continue
+            yield from _parse_json_line(line)
 
 
 def latest_open_block_ids(path: str, phase: str) -> set[str]:
@@ -172,11 +179,10 @@ def apply_block_id(args: argparse.Namespace, extra_fields: dict) -> str:
     return block_id
 
 
-def check_block_open_limits(
-    args: argparse.Namespace, extra_fields: dict, target_path: str, block_id: str
-) -> "int | None":
+def check_block_open_limits(args: argparse.Namespace, extra_fields: dict, target_path: str) -> int | None:
     if extra_fields.get("status") != "open":
         return None
+    block_id = extra_fields["id"]
     open_ids = latest_open_block_ids(target_path, args.phase)
     if block_id in open_ids:
         print(block_id)
@@ -192,7 +198,8 @@ def check_block_open_limits(
     return 1
 
 
-def _verify_line(path: str, line_no: int, line: str, prev_sha256: "str | None") -> "str | None":
+def _verify_line(path: str, numbered_line: NumberedLine, prev_sha256: str | None) -> str | None:
+    line_no, line = numbered_line
     try:
         record = json.loads(line)
         stored_sha256 = record["sha256"]
@@ -205,18 +212,22 @@ def _verify_line(path: str, line_no: int, line: str, prev_sha256: "str | None") 
     return None
 
 
-def _verify_file(path: str) -> "str | None":
+def _verify_records(path: str, lines: Iterable[str]) -> str | None:
     prev_sha256 = None
-    with open(path) as fileobj:
-        for line_no, raw_line in enumerate(fileobj, start=1):
-            line = raw_line.strip()
-            if not line:
-                continue
-            error = _verify_line(path, line_no, line, prev_sha256)
-            if error is not None:
-                return error
-            prev_sha256 = json.loads(line)["sha256"]
+    for line_no, raw_line in enumerate(lines, start=1):
+        line = raw_line.strip()
+        if not line:
+            continue
+        error = _verify_line(path, (line_no, line), prev_sha256)
+        if error is not None:
+            return error
+        prev_sha256 = json.loads(line)["sha256"]
     return None
+
+
+def _verify_file(path: str) -> str | None:
+    with open(path) as fileobj:
+        return _verify_records(path, fileobj)
 
 
 def verify_chain(root: str) -> int:
@@ -235,15 +246,15 @@ def parse_verify_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="deviq-record.py verify")
     parser.add_argument(
         "--root",
-        default=".lbwc-planning/deviq",
-        help="directory holding the jsonl files (default: .lbwc-planning/deviq)",
+        default=".meridian/deviq",
+        help="directory holding the jsonl files (default: .meridian/deviq)",
     )
     return parser.parse_args(argv)
 
 
-def _prepare_block(args: argparse.Namespace, extra_fields: dict, target_path: str) -> "int | None":
-    block_id = apply_block_id(args, extra_fields)
-    return check_block_open_limits(args, extra_fields, target_path, block_id)
+def _prepare_block(args: argparse.Namespace, extra_fields: dict, target_path: str) -> int | None:
+    apply_block_id(args, extra_fields)
+    return check_block_open_limits(args, extra_fields, target_path)
 
 
 def _write_record(args: argparse.Namespace, extra_fields: dict, target_path: str) -> int:
@@ -253,7 +264,7 @@ def _write_record(args: argparse.Namespace, extra_fields: dict, target_path: str
     except RecordLockTimeoutError:
         sys.stderr.write("deviq-record: timed out waiting for record lock\n")
         return LOCK_TIMEOUT_EXIT_CODE
-    except Exception as error:  # noqa: BLE001 - fail-fast CLI, report and exit non-zero
+    except Exception as error:
         print(f"deviq-record: failed to write record: {error}", file=sys.stderr)
         return 1
     print(extra_fields.get("id", digest) if args.kind == "block" else digest)

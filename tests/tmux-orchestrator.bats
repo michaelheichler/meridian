@@ -16,43 +16,43 @@ setup() {
   REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/.." && pwd -P)"
   ORCHESTRATOR="$REPO_ROOT/scripts/tmux-agent-orchestrator.sh"
   BUS="$REPO_ROOT/scripts/tmux-bus.sh"
-  TEST_ROOT="$(mktemp -d)"
+  TEST_ROOT="$(CDPATH='' cd -- "$(mktemp -d /tmp/mrd-tmux.XXXXXX)" && pwd -P)"
   PROJECT_ROOT="$TEST_ROOT/project"
-  CONTROL_ROOT="$PROJECT_ROOT/.lbwc-planning"
+  CONTROL_ROOT="$PROJECT_ROOT/.meridian"
   BIN_DIR="$TEST_ROOT/bin"
   TMUX_TMPDIR="$TEST_ROOT/tmux"
-  TMUX_SERVER="lbwc-$RANDOM-$$"
+  TMUX_SERVER="meridian-$RANDOM-$$"
   command -v tmux >/dev/null 2>&1 || skip "tmux is unavailable"
   command -v jq >/dev/null 2>&1 || skip "jq is unavailable"
   mkdir -p "$CONTROL_ROOT" "$BIN_DIR" "$TMUX_TMPDIR"
-  export LBWC_TEST_CHILD_PATH="$BIN_DIR:$PATH"
-  export LBWC_TEST_CHILD_SHELL="$(command -v bash)"
+  export MERIDIAN_TEST_CHILD_PATH="$BIN_DIR:$PATH"
+  export MERIDIAN_TEST_CHILD_SHELL="$(command -v bash)"
   printf '%s\n' '{}' > "$CONTROL_ROOT/config.json"
   cat > "$BIN_DIR/claude" <<'SCRIPT'
 #!/usr/bin/env bash
-if [ -n "${LBWC_TEST_FAST_CHILD_ENV:-}" ]; then
+if [ -n "${MERIDIAN_TEST_FAST_CHILD_ENV:-}" ]; then
   set -a
-  . "$LBWC_TEST_FAST_CHILD_ENV"
+  . "$MERIDIAN_TEST_FAST_CHILD_ENV"
   set +a
-  [ -n "${LBWC_TMUX_AGENT:-}" ] && [ -n "${LBWC_TMUX_CONTROL_ROOT:-}" ] && [ -n "${LBWC_TMUX_AGENT_ID:-}" ] && [ -n "${LBWC_TMUX_CONTRACT_ID:-}" ] || exit 1
-  [ -z "${LBWC_TMUX_CAPABILITY:-}" ] && [ -z "${LBWC_TMUX_BINDING_TOKEN:-}" ] && [ -z "${LBWC_TMUX_BOOTSTRAP_ID:-}" ] || exit 1
-  registry="$LBWC_TMUX_CONTROL_ROOT/.runtime/tmux-bus/registry.json"
+  [ -n "${MERIDIAN_TMUX_AGENT:-}" ] && [ -n "${MERIDIAN_TMUX_CONTROL_ROOT:-}" ] && [ -n "${MERIDIAN_TMUX_AGENT_ID:-}" ] && [ -n "${MERIDIAN_TMUX_CONTRACT_ID:-}" ] || exit 1
+  [ -z "${MERIDIAN_TMUX_CAPABILITY:-}" ] && [ -z "${MERIDIAN_TMUX_BINDING_TOKEN:-}" ] && [ -z "${MERIDIAN_TMUX_BOOTSTRAP_ID:-}" ] || exit 1
+  registry="$MERIDIAN_TMUX_CONTROL_ROOT/.runtime/tmux-bus/registry.json"
   child_status=1
-  if [ -d "$LBWC_TMUX_CONTROL_ROOT/.runtime/tmux-bus/inboxes/$LBWC_TMUX_AGENT_ID/acked" ] && jq -e --arg agent_id "$LBWC_TMUX_AGENT_ID" --arg contract_id "$LBWC_TMUX_CONTRACT_ID" 'any(.agents[]; .agent_id == $agent_id and .contract_id == $contract_id and .claude_session_id == null) and .routes[$agent_id].inbox == $agent_id' "$registry" >/dev/null 2>&1; then
+  if [ -d "$MERIDIAN_TMUX_CONTROL_ROOT/.runtime/tmux-bus/inboxes/$MERIDIAN_TMUX_AGENT_ID/acked" ] && jq -e --arg agent_id "$MERIDIAN_TMUX_AGENT_ID" --arg contract_id "$MERIDIAN_TMUX_CONTRACT_ID" 'any(.agents[]; .agent_id == $agent_id and .contract_id == $contract_id and .claude_session_id == null) and .routes[$agent_id].inbox == $agent_id' "$registry" >/dev/null 2>&1; then
     child_status=0
   fi
   export CLAUDE_SESSION_ID=fast-child-session
-  printf '%s\n' "$TMUX_PANE" > "$LBWC_TEST_FAST_CHILD_PANE"
-  bash "$LBWC_TEST_SESSION_START" > "$LBWC_TEST_FAST_CHILD_OUTPUT" 2>&1 || child_status=1
-  printf '%s\n' "$child_status" > "$LBWC_TEST_FAST_CHILD_STATUS"
+  printf '%s\n' "$TMUX_PANE" > "$MERIDIAN_TEST_FAST_CHILD_PANE"
+  bash "$MERIDIAN_TEST_SESSION_START" > "$MERIDIAN_TEST_FAST_CHILD_OUTPUT" 2>&1 || child_status=1
+  printf '%s\n' "$child_status" > "$MERIDIAN_TEST_FAST_CHILD_STATUS"
   [ "$child_status" -eq 0 ] || exit 1
-  printf '%s\n' started > "$LBWC_TEST_FAST_CHILD_STARTED"
-  trap 'printf "%s\n" stopped > "$LBWC_TEST_FAST_CHILD_EXIT"; exit 0' HUP INT TERM
-  printf '%s\n' ready > "$LBWC_TEST_FAST_CHILD_READY"
-  while [ ! -e "$LBWC_TEST_FAST_CHILD_RELEASE" ]; do
+  printf '%s\n' started > "$MERIDIAN_TEST_FAST_CHILD_STARTED"
+  trap 'printf "%s\n" stopped > "$MERIDIAN_TEST_FAST_CHILD_EXIT"; exit 0' HUP INT TERM
+  printf '%s\n' ready > "$MERIDIAN_TEST_FAST_CHILD_READY"
+  while [ ! -e "$MERIDIAN_TEST_FAST_CHILD_RELEASE" ]; do
     sleep 0.05
   done
-  printf '%s\n' released > "$LBWC_TEST_FAST_CHILD_EXIT"
+  printf '%s\n' released > "$MERIDIAN_TEST_FAST_CHILD_EXIT"
   exit 0
 fi
 exec sleep 600
@@ -60,39 +60,39 @@ SCRIPT
   chmod +x "$BIN_DIR/claude"
   cp "$BATS_TEST_DIRNAME/tmux_orchestrator_proxy.bash" "$BIN_DIR/tmux"
   chmod +x "$BIN_DIR/tmux"
-  export LBWC_TEST_JQ_BINARY="$(command -v jq)"
+  export MERIDIAN_TEST_JQ_BINARY="$(command -v jq)"
   cat > "$BIN_DIR/jq" <<'SCRIPT'
 #!/usr/bin/env bash
-if [ -n "${LBWC_TEST_JQ_FAIL_MATCH:-}" ]; then
+if [ -n "${MERIDIAN_TEST_JQ_FAIL_MATCH:-}" ]; then
   case "$*" in
-    *"$LBWC_TEST_JQ_FAIL_MATCH"*)
+    *"$MERIDIAN_TEST_JQ_FAIL_MATCH"*)
       count=0
-      [ -f "$LBWC_TEST_JQ_COUNTER" ] && count=$(cat "$LBWC_TEST_JQ_COUNTER")
+      [ -f "$MERIDIAN_TEST_JQ_COUNTER" ] && count=$(cat "$MERIDIAN_TEST_JQ_COUNTER")
       count=$((count + 1))
-      printf '%s\n' "$count" > "$LBWC_TEST_JQ_COUNTER"
-      [ "$count" -ne "$LBWC_TEST_JQ_FAIL_NTH" ] || exit 1
+      printf '%s\n' "$count" > "$MERIDIAN_TEST_JQ_COUNTER"
+      [ "$count" -ne "$MERIDIAN_TEST_JQ_FAIL_NTH" ] || exit 1
       ;;
   esac
 fi
-exec "$LBWC_TEST_JQ_BINARY" "$@"
+exec "$MERIDIAN_TEST_JQ_BINARY" "$@"
 SCRIPT
   chmod +x "$BIN_DIR/jq"
-  export LBWC_TEST_TMUX_BINARY="$(command -v tmux)"
-  export LBWC_TEST_TMUX_SERVER="$TMUX_SERVER"
-  export LBWC_TEST_PYTHON3="$(command -v python3)"
+  export MERIDIAN_TEST_TMUX_BINARY="$(command -v tmux)"
+  export MERIDIAN_TEST_TMUX_SERVER="$TMUX_SERVER"
+  export MERIDIAN_TEST_PYTHON3="$(command -v python3)"
   cat > "$BIN_DIR/python3" <<'SCRIPT'
 #!/usr/bin/env bash
-if [ "${LBWC_TEST_FAIL_WRITE:-}" = registry ]; then
+if [ "${MERIDIAN_TEST_FAIL_WRITE:-}" = registry ]; then
   for arg in "$@"; do
     case "$arg" in registry.json) exit 1 ;; esac
   done
 fi
-if [ "${LBWC_TEST_FAIL_WRITE:-}" = routing ]; then
+if [ "${MERIDIAN_TEST_FAIL_WRITE:-}" = routing ]; then
   for arg in "$@"; do
     case "$arg" in routing-table.json) exit 1 ;; esac
   done
 fi
-exec "$LBWC_TEST_PYTHON3" "$@"
+exec "$MERIDIAN_TEST_PYTHON3" "$@"
 SCRIPT
   chmod +x "$BIN_DIR/python3"
 }
@@ -191,7 +191,7 @@ prepare_world() {
 mutate_none() { :; }
 
 mutate_extra_definition_key() {
-  DEFINITIONS=$(jq '.[0].messaging_socket = "/tmp/lbwc-worker-a.sock"' <<<"$DEFINITIONS")
+  DEFINITIONS=$(jq '.[0].messaging_socket = "/tmp/meridian-worker-a.sock"' <<<"$DEFINITIONS")
 }
 
 mutate_generated_name() {
@@ -224,23 +224,23 @@ inject_failure() {
   case "$spec" in
     split-counter)
       rm -f "$TEST_ROOT/split-count"
-      export LBWC_TEST_SPLIT_COUNTER="$TEST_ROOT/split-count" ;;
+      export MERIDIAN_TEST_SPLIT_COUNTER="$TEST_ROOT/split-count" ;;
     send-keys)
       rm -f "$TEST_ROOT/send-keys-count"
-      export LBWC_TEST_SEND_KEYS_COUNTER="$TEST_ROOT/send-keys-count" LBWC_TEST_FAIL_SEND_KEYS_AFTER=1 ;;
-    routing-write) export LBWC_TEST_FAIL_WRITE=routing ;;
-    registry-write) export LBWC_TEST_FAIL_WRITE=registry ;;
-    layout-select) export LBWC_TEST_FAIL_LAYOUT=1 ;;
+      export MERIDIAN_TEST_SEND_KEYS_COUNTER="$TEST_ROOT/send-keys-count" MERIDIAN_TEST_FAIL_SEND_KEYS_AFTER=1 ;;
+    routing-write) export MERIDIAN_TEST_FAIL_WRITE=routing ;;
+    registry-write) export MERIDIAN_TEST_FAIL_WRITE=registry ;;
+    layout-select) export MERIDIAN_TEST_FAIL_LAYOUT=1 ;;
     jq:*)
       jq_spec="${spec#jq:}"
       rm -f "$TEST_ROOT/jq-count"
-      export LBWC_TEST_JQ_FAIL_MATCH="${jq_spec%@*}" LBWC_TEST_JQ_FAIL_NTH="${jq_spec##*@}" LBWC_TEST_JQ_COUNTER="$TEST_ROOT/jq-count" ;;
+      export MERIDIAN_TEST_JQ_FAIL_MATCH="${jq_spec%@*}" MERIDIAN_TEST_JQ_FAIL_NTH="${jq_spec##*@}" MERIDIAN_TEST_JQ_COUNTER="$TEST_ROOT/jq-count" ;;
   esac
 }
 
 clear_failures() {
-  unset LBWC_TEST_SPLIT_COUNTER LBWC_TEST_SEND_KEYS_COUNTER LBWC_TEST_FAIL_SEND_KEYS_AFTER LBWC_TEST_FAIL_WRITE \
-    LBWC_TEST_FAIL_LAYOUT LBWC_TEST_JQ_FAIL_MATCH LBWC_TEST_JQ_FAIL_NTH LBWC_TEST_JQ_COUNTER
+  unset MERIDIAN_TEST_SPLIT_COUNTER MERIDIAN_TEST_SEND_KEYS_COUNTER MERIDIAN_TEST_FAIL_SEND_KEYS_AFTER MERIDIAN_TEST_FAIL_WRITE \
+    MERIDIAN_TEST_FAIL_LAYOUT MERIDIAN_TEST_JQ_FAIL_MATCH MERIDIAN_TEST_JQ_FAIL_NTH MERIDIAN_TEST_JQ_COUNTER
 }
 
 assert_exit_status() {
@@ -275,9 +275,9 @@ split_agent() {
   expect_no_path unknown-cancel-flag-mints-no-registry "$(registry_file)"
 
   reset_world
-  export LBWC_TEST_FAIL_WRITE=registry
+  export MERIDIAN_TEST_FAIL_WRITE=registry
   provision_attempt
-  unset LBWC_TEST_FAIL_WRITE
+  unset MERIDIAN_TEST_FAIL_WRITE
   expect_rejected registry-write-fails ""
   expect_no_path registry-write-fails-removes-runtime "$CONTROL_ROOT/.runtime"
 
@@ -360,9 +360,9 @@ CASES
   [ "$status" -eq 0 ]
   target="$(jq -r '.agents[] | select(.agent_id == "worker-a") | .tmux_target' "$(registry_file)")"
 
-  export LBWC_TEST_FAIL_WRITE=registry
+  export MERIDIAN_TEST_FAIL_WRITE=registry
   run_orchestrator kill-agent --project-root "$PROJECT_ROOT" --control-root "$CONTROL_ROOT" --target "$target"
-  unset LBWC_TEST_FAIL_WRITE
+  unset MERIDIAN_TEST_FAIL_WRITE
   [ "$status" -ne 0 ]
   [ -f "$CONTROL_ROOT/.runtime/tmux-bus/transactions/teardown-worker-a.json" ]
   run jq -e '.agents[] | select(.agent_id == "worker-a") | .state != "shutdown"' "$(registry_file)"
@@ -408,15 +408,15 @@ CASES
 }
 
 @test "child SessionStart binds once and keeps publishing periodic heartbeats" {
-  export LBWC_TEST_FAST_CHILD_ENV="$TEST_ROOT/fast-child.env"
-  export LBWC_TEST_FAST_CHILD_STATUS="$TEST_ROOT/fast-child.status"
-  export LBWC_TEST_FAST_CHILD_OUTPUT="$TEST_ROOT/fast-child.output"
-  export LBWC_TEST_FAST_CHILD_READY="$TEST_ROOT/fast-child.ready"
-  export LBWC_TEST_FAST_CHILD_RELEASE="$TEST_ROOT/fast-child.release"
-  export LBWC_TEST_FAST_CHILD_PANE="$TEST_ROOT/fast-child.pane"
-  export LBWC_TEST_FAST_CHILD_STARTED="$TEST_ROOT/fast-child.started"
-  export LBWC_TEST_FAST_CHILD_EXIT="$TEST_ROOT/fast-child.exit"
-  export LBWC_TEST_SESSION_START="$REPO_ROOT/scripts/session-start.sh"
+  export MERIDIAN_TEST_FAST_CHILD_ENV="$TEST_ROOT/fast-child.env"
+  export MERIDIAN_TEST_FAST_CHILD_STATUS="$TEST_ROOT/fast-child.status"
+  export MERIDIAN_TEST_FAST_CHILD_OUTPUT="$TEST_ROOT/fast-child.output"
+  export MERIDIAN_TEST_FAST_CHILD_READY="$TEST_ROOT/fast-child.ready"
+  export MERIDIAN_TEST_FAST_CHILD_RELEASE="$TEST_ROOT/fast-child.release"
+  export MERIDIAN_TEST_FAST_CHILD_PANE="$TEST_ROOT/fast-child.pane"
+  export MERIDIAN_TEST_FAST_CHILD_STARTED="$TEST_ROOT/fast-child.started"
+  export MERIDIAN_TEST_FAST_CHILD_EXIT="$TEST_ROOT/fast-child.exit"
+  export MERIDIAN_TEST_SESSION_START="$REPO_ROOT/scripts/session-start.sh"
   printf '%s\n' '{"tmux_execution":{"heartbeat_interval_seconds":1}}' > "$CONTROL_ROOT/config.json"
   provision_main
   local session definitions
@@ -426,16 +426,16 @@ CASES
   split_group "$session" "$definitions"
 
   [ "$status" -eq 0 ]
-  wait_for_result "$LBWC_TEST_FAST_CHILD_STATUS"
-  [ "$(cat "$LBWC_TEST_FAST_CHILD_STATUS")" = 0 ] || { cat "$LBWC_TEST_FAST_CHILD_OUTPUT" >&3; false; }
-  wait_for_binding worker-a || { cat "$LBWC_TEST_FAST_CHILD_OUTPUT" >&3; false; }
+  wait_for_result "$MERIDIAN_TEST_FAST_CHILD_STATUS"
+  [ "$(cat "$MERIDIAN_TEST_FAST_CHILD_STATUS")" = 0 ] || { cat "$MERIDIAN_TEST_FAST_CHILD_OUTPUT" >&3; false; }
+  wait_for_binding worker-a || { cat "$MERIDIAN_TEST_FAST_CHILD_OUTPUT" >&3; false; }
   run jq -e '.agents[] | select(.agent_id == "worker-a") | .state == "running" and (.heartbeat_at_ms | type == "number")' "$(registry_file)"
   [ "$status" -eq 0 ]
   [ ! -e "$CONTROL_ROOT/.runtime/tmux-bus/credentials/worker-a.json" ]
   config_wait_periodic_heartbeat
-  : > "$LBWC_TEST_FAST_CHILD_RELEASE"
-  wait_for_result "$LBWC_TEST_FAST_CHILD_EXIT"
-  unset LBWC_TEST_FAST_CHILD_ENV LBWC_TEST_FAST_CHILD_STATUS LBWC_TEST_FAST_CHILD_OUTPUT LBWC_TEST_FAST_CHILD_READY LBWC_TEST_FAST_CHILD_RELEASE LBWC_TEST_FAST_CHILD_PANE LBWC_TEST_FAST_CHILD_STARTED LBWC_TEST_FAST_CHILD_EXIT LBWC_TEST_SESSION_START
+  : > "$MERIDIAN_TEST_FAST_CHILD_RELEASE"
+  wait_for_result "$MERIDIAN_TEST_FAST_CHILD_EXIT"
+  unset MERIDIAN_TEST_FAST_CHILD_ENV MERIDIAN_TEST_FAST_CHILD_STATUS MERIDIAN_TEST_FAST_CHILD_OUTPUT MERIDIAN_TEST_FAST_CHILD_READY MERIDIAN_TEST_FAST_CHILD_RELEASE MERIDIAN_TEST_FAST_CHILD_PANE MERIDIAN_TEST_FAST_CHILD_STARTED MERIDIAN_TEST_FAST_CHILD_EXIT MERIDIAN_TEST_SESSION_START
 }
 
 @test "orchestration commands reject a child without the main capability" {
@@ -473,9 +473,9 @@ CASES
   expect_jq generated-route-has-no-socket "$(routing_file)" '.routes["worker-a"] | has("messaging_socket") | not'
 
   prepare_world worker-a '{"tmux":{"layout":"even-vertical"}}'
-  export LBWC_TEST_CONFIG_PATH="$CONTROL_ROOT/config.json" LBWC_TEST_LAYOUT_AFTER_SPLIT=bogus-layout LBWC_TEST_SELECT_LAYOUT_LOG="$TEST_ROOT/select-layout.log"
+  export MERIDIAN_TEST_CONFIG_PATH="$CONTROL_ROOT/config.json" MERIDIAN_TEST_LAYOUT_AFTER_SPLIT=bogus-layout MERIDIAN_TEST_SELECT_LAYOUT_LOG="$TEST_ROOT/select-layout.log"
   split_group "$SESSION" "$DEFINITIONS"
-  unset LBWC_TEST_CONFIG_PATH LBWC_TEST_LAYOUT_AFTER_SPLIT LBWC_TEST_SELECT_LAYOUT_LOG
+  unset MERIDIAN_TEST_CONFIG_PATH MERIDIAN_TEST_LAYOUT_AFTER_SPLIT MERIDIAN_TEST_SELECT_LAYOUT_LOG
   expect_status layout-read-once 0
   [ "$(cat "$TEST_ROOT/select-layout.log")" = "select-layout -t $SESSION even-vertical" ] \
     || record_case_failure layout-read-once-uses-initial-layout "log=$(cat "$TEST_ROOT/select-layout.log" 2>&1)"
@@ -500,7 +500,7 @@ CASES
   [ "$status" -eq 0 ]
 }
 
-@test "attached external session teardown removes only the LBWC pane and runtime state" {
+@test "attached external session teardown removes only the MERIDIAN pane and runtime state" {
   external_session="external-$RANDOM-$$"
   provision_result="$TEST_ROOT/provision.json"
   split_result="$TEST_ROOT/split.json"
@@ -511,7 +511,7 @@ CASES
   cat > "$TEST_ROOT/external-shell.sh" <<SCRIPT
 #!/usr/bin/env bash
 export PROMPT_COMMAND=': > "$shell_ready"'
-exec "$LBWC_TEST_CHILD_SHELL" --noprofile --norc -i
+exec "$MERIDIAN_TEST_CHILD_SHELL" --noprofile --norc -i
 SCRIPT
 
   cat > "$TEST_ROOT/provision.sh" <<SCRIPT
@@ -536,7 +536,7 @@ SCRIPT
   chmod +x "$TEST_ROOT/provision.sh" "$TEST_ROOT/split.sh" "$TEST_ROOT/kill.sh"
 
   run tmux_on_test_server new-session -d -s "$external_session" -n external -c "$PROJECT_ROOT" \
-    /usr/bin/env "PATH=$LBWC_TEST_CHILD_PATH" "$LBWC_TEST_CHILD_SHELL" --noprofile --norc "$TEST_ROOT/external-shell.sh" 3>&-
+    /usr/bin/env "PATH=$MERIDIAN_TEST_CHILD_PATH" "$MERIDIAN_TEST_CHILD_SHELL" --noprofile --norc "$TEST_ROOT/external-shell.sh" 3>&-
   [ "$status" -eq 0 ]
   wait_for_result "$shell_ready"
   external_pane_id="$(TMUX_TMPDIR="$TMUX_TMPDIR" tmux -L "$TMUX_SERVER" list-panes -t "$external_session" -F '#{pane_id}')"
@@ -634,9 +634,9 @@ prepare_teardown_agent() {
   run_config_rows name <<'ROWS'
 custom-prefix|custom;project;custom-project;none
 full-prefix|abcdefghijklmnopqrstuvwxyz123456;project;abcdefghijklmnopqrstuvwxyz123456-project;abcdefghijklmnopqrstuvwxyz123456
-dotted-project|missing;my.app;lbwc-my-app;none
-colon-project|missing;my:app;lbwc-my-app;none
-default-prefix|missing;project;lbwc-project;none
+dotted-project|missing;my.app;meridian-my-app;none
+colon-project|missing;my:app;meridian-my-app;none
+default-prefix|missing;project;meridian-project;none
 explicit-prefix|custom;project;custom-project;override
 ROWS
 }
@@ -667,12 +667,13 @@ idle-heartbeat|live;1;none;idle
 resets-failure-count|process;1;none;recovery
 third-failure-stops|process;1;none;exhausted
 registry-and-bus-failures-accumulate|process;1;none;mixed
-term-reaps-sleep|process;3;none;TERM
-int-reaps-sleep|process;3;none;INT
-teardown-stops-recorded-sender|process;3;none;matching
-kept-pane-stops-recorded-sender|process;3;keep;matching
-teardown-rejects-stale-start|process;3;none;stale-start
-teardown-rejects-unrelated-command|process;3;none;stale-command
+term-reaps-sleep|process;30;none;TERM
+int-reaps-sleep|process;30;none;INT
+hup-reaps-sleep|process;30;none;HUP
+teardown-stops-recorded-sender|process;30;none;matching
+kept-pane-stops-recorded-sender|process;30;keep;matching
+teardown-rejects-stale-start|process;30;none;stale-start
+teardown-rejects-unrelated-command|process;30;none;stale-command
 derived-stale-limit|stale;1;none;running
 capped-cli-limit|stale;1;90000;running
 stricter-config-limit|stale;30;configured;running

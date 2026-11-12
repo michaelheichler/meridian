@@ -66,7 +66,7 @@ class UnparseableCommandTest(unittest.TestCase):
         space = build_workspace(self)
         rows = (
             f"cat {UNPARSEABLE_QUOTE} rt/decisions/secret.txt",
-            f"echo {UNPARSEABLE_QUOTE} .lbwc-planning/.runtime/x",
+            f"echo {UNPARSEABLE_QUOTE} .meridian/.runtime/x",
             f"echo {UNPARSEABLE_QUOTE} > {SOURCE}",
         )
         for command in rows:
@@ -90,7 +90,7 @@ class SearchToolScopeTest(unittest.TestCase):
             ("Grep", {"pattern": "S", "path": runtime}),
             ("Glob", {"pattern": "**/secret.txt", "path": "rt"}),
             ("Glob", {"pattern": "rt/**"}),
-            ("Glob", {"pattern": ".lbwc-planning/.runtime/**"}),
+            ("Glob", {"pattern": ".meridian/.runtime/**"}),
             ("Glob", {"pattern": "*.txt"}),
         )
         for tool, tool_input in attempts:

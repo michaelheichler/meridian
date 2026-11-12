@@ -1,10 +1,21 @@
 #!/usr/bin/env bash
+
+printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${BASH_SOURCE[0]}"
+case "$MERIDIAN_MIGRATION_SOURCE" in
+  *"/"*) printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${MERIDIAN_MIGRATION_SOURCE%"/"*}" ;;
+  *) printf -v MERIDIAN_MIGRATION_SOURCE '%s' . ;;
+esac
+if [ -f "$MERIDIAN_MIGRATION_SOURCE/lib/rename-migration.sh" ]; then
+  . "$MERIDIAN_MIGRATION_SOURCE/lib/rename-migration.sh"
+  meridian_migrate_environment
+fi
+unset MERIDIAN_MIGRATION_SOURCE
 set -u
 set -Eeo pipefail
 umask 077
 
 SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname "$0")" && pwd -P)
-. "$SCRIPT_DIR/lib/lbwc-control-root.sh"
+. "$SCRIPT_DIR/lib/meridian-control-root.sh"
 
 usage() {
   printf '%s\n' 'Usage: tmux-preflight.sh --project-root PATH --control-root PATH --main-id ID' >&2
@@ -73,9 +84,9 @@ tmux_version=$(tmux -V 2>/dev/null || true)
 tmux_version_is_supported "$tmux_version" || fail "tmux 3.0 or later is required; found: ${tmux_version:-unreadable}"
 
 project_root=$(CDPATH='' cd -- "$project_root" && pwd -P)
-control_root=$(lbwc_resolve_control_root "$requested_control_root" "$project_root" "$project_root" 2>/dev/null || true)
+control_root=$(meridian_resolve_control_root "$requested_control_root" "$project_root" "$project_root" 2>/dev/null || true)
 [ -n "$control_root" ] || fail "control root is invalid: $requested_control_root"
-resolved_project_root=$(lbwc_control_root_project_root "$control_root" 2>/dev/null || true)
+resolved_project_root=$(meridian_control_root_project_root "$control_root" 2>/dev/null || true)
 [ "$resolved_project_root" = "$project_root" ] || fail 'control root does not belong to --project-root'
 
 runtime_dir="$control_root/.runtime"
@@ -108,7 +119,7 @@ fi
 
 session=$(bash "$SCRIPT_DIR/tmux-session-name.sh" --project-root "$project_root" --control-root "$control_root" --main-id "$main_id") || fail 'cannot derive a safe tmux session name'
 while tmux has-session -t "$session" 2>/dev/null; do
-  kept=$(tmux show-options -v -t "$session" @lbwc_kept_panes 2>/dev/null || true)
+  kept=$(tmux show-options -v -t "$session" @meridian_kept_panes 2>/dev/null || true)
   [ "$kept" = true ] || fail "tmux session already exists for this main ID: $session; inspect or clean up the orphan before retrying"
   if [ -f "$bus_dir/registry.json" ]; then
     jq -e --arg session "$session" '.tmux.session != $session or all(.agents[]; .state == "shutdown")' "$bus_dir/registry.json" >/dev/null \

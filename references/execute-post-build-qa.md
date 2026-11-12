@@ -1,8 +1,8 @@
-# LBWC execution adaptation
+# MERIDIAN execution adaptation
 
 This port preserves behavior. The main session owns task contracts and generated-agent admission. It controls mutable planning state with verification persistence, and it owns telemetry as well as Git and user-facing output. A worker can change only the exact paths in its dispatched contract. `scripts/phase-detect.sh`, `scripts/qa-result-gate.sh`, `scripts/write-verification.sh`, `scripts/remediation-round.sh`, and `references/agent-spawn-protocol.md` replace source-specific routing, persistence, and lifecycle authority. This fragment runs after `references/execute-protocol.md` resolves `PLUGIN_ROOT`.
 
-**QA ownership routing:** Before any QA contract or spawn, the main session sends a JSON array of `{task_id, owners}` rows for every selected task on stdin to `bash "${PLUGIN_ROOT}/scripts/qa-routing.sh" "$PROJECT_ROOT/.lbwc-planning"`. Use role names from accepted task contracts, never generated agent names or guesses from file extensions. Missing ownership uses an empty owners array and requires QA. Stop on helper failure. Each `skip_qa=true` task skips the QA agent, but still requires its PLAN verification and main-session review. Mixed owners always require QA.
+**QA ownership routing:** Before any QA contract or spawn, the main session sends a JSON array of `{task_id, owners}` rows for every selected task on stdin to `bash "${PLUGIN_ROOT}/scripts/qa-routing.sh" "$PROJECT_ROOT/.meridian"`. Use role names from accepted task contracts, never generated agent names or guesses from file extensions. Missing ownership uses an empty owners array and requires QA. Stop on helper failure. Each `skip_qa=true` task skips the QA agent, but still requires its PLAN verification and main-session review. Mixed owners always require QA.
 
 Preserve every returned `skip_entries` row in the main-session verification payload, with the matching canonical `plan_ref`. Keep those WARN rows and their reasons when QA checks other tasks. If `qa_required=false`, do not create a QA contract or spawn an agent. The main session runs the PLAN verification and records that observed evidence together with the skip rows through `scripts/write-verification.sh`. Use correct counters and complete plan references. Derive the result from the observed checks, not from the skip itself, and state that main-session verification ran without a QA agent. Failed checks still prevent PASS. Otherwise dispatch QA only for non-skipped tasks and combine its evidence with the skip rows before calling the writer. Existing deviations and known issues still need checks and cannot disappear through a skip. Continue through the same QA-result gate, which may block progress.
 
@@ -107,7 +107,7 @@ The human-readable Discovered Issues block is supplemental. The JSON registry re
 
 **Tier resolution:** `config_verification_tier` from `scripts/phase-detect.sh` or an explicit QA command tier selects one of the Quick and Standard tiers or the Deep tier. An explicit tier wins. More than fifteen requirements or the final shipping phase requires Deep unless a higher-priority explicit policy says otherwise. An explicit QA skip does not make a verification artifact or clear known issues. It also does not bypass the QA result gate.
 
-**QA context:** `compile-context.sh` is the direct LBWC context boundary. The retired control plane is not part of this flow.
+**QA context:** `compile-context.sh` is the direct MERIDIAN context boundary. The retired control plane is not part of this flow.
 
 **Context compilation**
 
@@ -121,7 +121,7 @@ This produces `{phase-dir}/.context-qa.md` with the phase goal, success criteria
 
 Display `◆ Spawning QA agent ({generator model})...` only after contract dispatch. Select remediation scope from detector state before resolving the output path. `next_phase_state=needs_qa_remediation` selects `scripts/remediation-round.sh current "$PHASE_DIR" qa` and its exact `verif_path`. `next_phase_state=needs_uat_remediation` or `needs_reverification` selects `scripts/remediation-round.sh current "$PHASE_DIR" uat` and its exact `verif_path`. A root phase uses `resolve-artifact-path.sh verification`.
 
-The UAT-round path is evidence for future UAT-round validation work only, which LBWC does not implement yet. The current `qa-result-gate.sh` cannot gate it. Do not substitute the QA round path, call the QA gate, or report a UAT-round PASS as routable.
+The UAT-round path is evidence for future UAT-round validation work only, which MERIDIAN does not implement yet. The current `qa-result-gate.sh` cannot gate it. Do not substitute the QA round path, call the QA gate, or report a UAT-round PASS as routable.
 
 After a QA remediation round is complete, resolve the authoritative verification artifact only with:
 
@@ -129,11 +129,11 @@ After a QA remediation round is complete, resolve the authoritative verification
 AUTHORITATIVE_VERIFICATION_PATH=$(bash "${PLUGIN_ROOT}/scripts/resolve-verification-path.sh" authoritative "$PHASE_DIR")
 ```
 
-To claim that a post-remediation verification artifact is authoritative, do not use the `phase` mode. `resolve-verification-path.sh` does not support UAT remediation scope. LBWC does not implement a UAT-round verification path or deterministic gate until a tested UAT-aware resolver and gate exist.
+To claim that a post-remediation verification artifact is authoritative, do not use the `phase` mode. `resolve-verification-path.sh` does not support UAT remediation scope. MERIDIAN does not implement a UAT-round verification path or deterministic gate until a tested UAT-aware resolver and gate exist.
 
-**Per-wave QA:** LBWC does not implement the source's concurrent per-wave QA schedule yet. LBWC exclusive admission does not permit overlapping a QA grouping with the next build grouping. If LBWC later adds the per-wave schedule, preserve the source evidence scope. A wave QA sees only completed-wave PLAN and SUMMARY artifacts, then final integration QA sees all plans and cross-plan behavior. Each artifact needs its own exact output path.
+**Per-wave QA:** MERIDIAN does not implement the source's concurrent per-wave QA schedule yet. MERIDIAN exclusive admission does not permit overlapping a QA grouping with the next build grouping. If MERIDIAN later adds the per-wave schedule, preserve the source evidence scope. A wave QA sees only completed-wave PLAN and SUMMARY artifacts, then final integration QA sees all plans and cross-plan behavior. Each artifact needs its own exact output path.
 
-**Post-build QA:** Current LBWC QA runs after all selected plans are terminal. If context compilation produced phase context, the brief includes it. The brief includes every selected PLAN and SUMMARY, Dev-surfaced deviations, pre-existing issues, and known-issue context. It also includes the model parameters emitted by the generator and the resolved verification output path. If codebase testing, concerns, and architecture map artifacts exist, QA must bootstrap from them. It runs the configured tier count and returns evidence only.
+**Post-build QA:** Current MERIDIAN QA runs after all selected plans are terminal. If context compilation produced phase context, the brief includes it. The brief includes every selected PLAN and SUMMARY, Dev-surfaced deviations, pre-existing issues, and known-issue context. It also includes the model parameters emitted by the generator and the resolved verification output path. If codebase testing, concerns, and architecture map artifacts exist, QA must bootstrap from them. It runs the configured tier count and returns evidence only.
 
 **QA contract and generator:** The main session creates a read-only command contract before the generator. Use the same exact brief in both calls. The contract has no write allowance.
 
@@ -147,7 +147,7 @@ bash "${PLUGIN_ROOT}/scripts/task-contract.sh" state "$PROJECT_ROOT" "$TASK_ID" 
 
 Read the complete generator output. A missing `SPAWN_READY` name, generator error, stale contract, or dispatch failure stops QA. Use the emitted name as both `subagent_type` and `name`, with the exact model and other supported parameters emitted by the generator. Do not derive model, turns, or reasoning from a static profile.
 
-**Spawn shape:** QA is a read-only solo. It receives no `team_name`, background option, isolation option, worktree cwd, or write allowance. The source runs QA as a true team. LBWC does not implement that lifecycle. It uses a solo dispatched contract and manifest closure instead.
+**Spawn shape:** QA is a read-only solo. It receives no `team_name`, background option, isolation option, worktree cwd, or write allowance. The source runs QA as a true team. MERIDIAN does not implement that lifecycle. It uses a solo dispatched contract and manifest closure instead.
 
 **Contract lifecycle, return, and persistence:** After the spawn guard admits QA, the main session advances the contract from `dispatched` to `running`. At QA return, apply the shared no-tool circuit breaker, then advance `running` to `awaiting_review` before payload validation. Check result, tier, counters, check rows, plan references, complete `plans_verified`, and pre-existing issue shape. QA does not call the writer. The main session writes the checked payload to the selected root, QA-round, or UAT-round path.
 

@@ -1,4 +1,4 @@
-# LBWC Typed Communication Protocol
+# MERIDIAN Typed Communication Protocol
 
 V2 inter-agent messages use strict JSON schemas. Every message includes a mandatory envelope.
 
@@ -351,7 +351,7 @@ Graceful termination signal sent by the orchestrator after phase/plan work is co
   "confidence": "high",
   "payload": {
     "reason": "phase_complete|plan_complete|user_abort",
-    "team_name": "lbwc-phase-01"
+    "team_name": "meridian-phase-01"
   }
 }
 ```

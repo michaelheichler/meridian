@@ -1,4 +1,15 @@
 #!/usr/bin/env bash
+
+printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${BASH_SOURCE[0]}"
+case "$MERIDIAN_MIGRATION_SOURCE" in
+  *"/"*) printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${MERIDIAN_MIGRATION_SOURCE%"/"*}" ;;
+  *) printf -v MERIDIAN_MIGRATION_SOURCE '%s' . ;;
+esac
+if [ -f "$MERIDIAN_MIGRATION_SOURCE/lib/rename-migration.sh" ]; then
+  . "$MERIDIAN_MIGRATION_SOURCE/lib/rename-migration.sh"
+  meridian_migrate_environment
+fi
+unset MERIDIAN_MIGRATION_SOURCE
 set -euo pipefail
 MD_HASH="#"
 
@@ -26,7 +37,7 @@ read_config() {
 write_transient_ignore_runtime() {
   local ignore_file="$1"
   cat > "$ignore_file" <<EOF
-${MD_HASH} LBWC transient runtime artifacts
+${MD_HASH} MERIDIAN transient runtime artifacts
 .execution-state.json
 .execution-state.json.tmp
 .context-*.md
@@ -45,8 +56,8 @@ write_transient_ignore_tracking() {
   cat >> "$ignore_file" <<EOF
 
 ${MD_HASH} Session & agent tracking
-.lbwc-context
-.lbwc-session
+.meridian-context
+.meridian-session
 .active-agent
 .active-agents/
 .active-agent-count
@@ -101,7 +112,7 @@ EOF
 }
 
 ensure_transient_ignore() {
-  local planning_dir=".lbwc-planning"
+  local planning_dir=".meridian"
   local ignore_file="$planning_dir/.gitignore"
   [ -d "$planning_dir" ] || return 0
   write_transient_ignore_runtime "$ignore_file"
@@ -114,7 +125,7 @@ ensure_generated_agent_ignore() {
   local repo_root root_ignore pattern
   repo_root=$(git rev-parse --show-toplevel 2>/dev/null) || return 1
   root_ignore="$repo_root/.gitignore"
-  pattern=".claude/agents/lbwc-*-*-*-*.md"
+  pattern=".claude/agents/meridian-*-*-*-*.md"
 
   if [ ! -f "$root_ignore" ]; then
     printf '%s\n' "$pattern" > "$root_ignore"
@@ -132,12 +143,12 @@ sync_root_ignore() {
 
   if [ "$mode" = "ignore" ]; then
     if [ ! -f "$root_ignore" ]; then
-      printf '.lbwc-planning/\n' > "$root_ignore"
+      printf '.meridian/\n' > "$root_ignore"
       return 0
     fi
 
-    if ! grep -qx '\.lbwc-planning/' "$root_ignore"; then
-      printf '\n.lbwc-planning/\n' >> "$root_ignore"
+    if ! grep -qx '\.meridian/' "$root_ignore"; then
+      printf '\n.meridian/\n' >> "$root_ignore"
     fi
     return 0
   fi
@@ -145,7 +156,7 @@ sync_root_ignore() {
   if [ "$mode" = "commit" ] && [ -f "$root_ignore" ]; then
     local tmp
     tmp=$(mktemp)
-    awk '$0 != ".lbwc-planning/"' "$root_ignore" > "$tmp"
+    awk '$0 != ".meridian/"' "$root_ignore" > "$tmp"
     mv "$tmp" "$root_ignore"
   fi
 }
@@ -176,7 +187,7 @@ case "$COMMAND" in
     ;;
 
   sync-ignore)
-    CONFIG_FILE="${ARG2:-.lbwc-planning/config.json}"
+    CONFIG_FILE="${ARG2:-.meridian/config.json}"
 
     if ! is_git_repo; then
       exit 0
@@ -190,7 +201,7 @@ case "$COMMAND" in
 
   commit-boundary)
     ACTION="${ARG2:-}"
-    CONFIG_FILE="${ARG3:-.lbwc-planning/config.json}"
+    CONFIG_FILE="${ARG3:-.meridian/config.json}"
 
     if [ -z "$ACTION" ]; then
       echo "Usage: planning-git.sh commit-boundary <action> [CONFIG_FILE]" >&2
@@ -209,8 +220,8 @@ case "$COMMAND" in
 
     ensure_transient_ignore
 
-    if [ -d ".lbwc-planning" ]; then
-      git add .lbwc-planning
+    if [ -d ".meridian" ]; then
+      git add .meridian
     fi
 
     if [ -f "CLAUDE.md" ]; then
@@ -221,12 +232,12 @@ case "$COMMAND" in
       exit 0
     fi
 
-    git commit -m "chore(lbwc): $ACTION"
+    git commit -m "chore(meridian): $ACTION"
     push_if_configured "$CFG_AUTO_PUSH"
     ;;
 
   push-after-phase)
-    CONFIG_FILE="${ARG2:-.lbwc-planning/config.json}"
+    CONFIG_FILE="${ARG2:-.meridian/config.json}"
 
     if ! is_git_repo; then
       exit 0

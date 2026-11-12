@@ -166,7 +166,7 @@ sc_qa_git() {
       pd_commit_file app.py 'print("before")' "before remediated qa"
       pd_original_fail
       pd_round_plan 01 process-exception "Fixture documents a structurally valid remediated round"
-      pd_round_summary 01 ".lbwc-planning/phases/01-test/remediation/qa/round-01/R01-SUMMARY.md"
+      pd_round_summary 01 ".meridian/phases/01-test/remediation/qa/round-01/R01-SUMMARY.md"
       pd_md "$PD_QA_DIR/round-01/R01-VERIFICATION.md" '---' 'result: PASS' 'writer: write-verification.sh' 'plans_verified:' '  - R01' \
         '---' '# Verification' 'Passed.'
       pd_md "$PD_QA_DIR/.qa-remediation-stage" 'stage=done' 'round=01'
@@ -183,7 +183,7 @@ sc_qa_round() {
   case "$1" in
     remediated)
       pd_round_plan 01 process-exception "Fixture documents a structurally valid remediated round"
-      pd_round_summary 01 README.md ".lbwc-planning/phases/01-test/remediation/qa/round-01/R01-SUMMARY.md"
+      pd_round_summary 01 README.md ".meridian/phases/01-test/remediation/qa/round-01/R01-SUMMARY.md"
       anchor="$(git rev-parse HEAD)"
       pd_md "$PD_PHASES/01-test/01-SUMMARY.md" '---' 'status: complete' '---' '# Summary' 'Documented historical process exception.'
       echo "remediation notes" > README.md
@@ -196,7 +196,7 @@ sc_qa_round() {
       pd_md "$PD_QA_DIR/round-01/R01-VERIFICATION.md" '---' 'result: PASS' 'writer: write-verification.sh' 'plans_verified:' '  - R01' '---' \
         '## Checks'
       pd_round_plan 02 process-exception "Fixture documents a structurally valid remediated round"
-      pd_round_summary 02 README.md ".lbwc-planning/phases/01-test/remediation/qa/round-02/R02-SUMMARY.md"
+      pd_round_summary 02 README.md ".meridian/phases/01-test/remediation/qa/round-02/R02-SUMMARY.md"
       anchor="$(git rev-parse HEAD)"
       pd_md "$PD_PHASES/01-test/01-SUMMARY.md" '---' 'status: complete' '---' '# Summary' 'Round 02 documented the historical process exception.'
       echo "round two docs" > README.md
@@ -219,7 +219,7 @@ sc_qa_round() {
         "verified_at_commit: ${anchor}" '---' '' '## Pre-existing Issues' '' '| Test | File | Error |' '|------|------|-------|' \
         '| FIGIRegistryServiceTests | Tests/FIGIRegistryServiceTests.swift | stale phase-level issue |'
       pd_round_plan 01 code-fix "Need a real fix"
-      pd_round_summary 01 src/Fix.swift README.md ".lbwc-planning/phases/01-test/01-SUMMARY.md"
+      pd_round_summary 01 src/Fix.swift README.md ".meridian/phases/01-test/01-SUMMARY.md"
       mkdir -p src
       echo "real code fix" > src/Fix.swift
       echo "round pass docs" > README.md
@@ -311,7 +311,7 @@ result-field-overrides-legacy-status#sc_qa result_overrides_legacy#qa_status=fai
 blank-result-does-not-fall-back#sc_qa blank_result#qa_status=pending~qa_reason=verification_result_missing
 unrecognized-result-explained#sc_qa unrecognized_result#qa_status=pending~qa_reason=verification_result_unrecognized
 pass-with-unresolved-known-issues#sc_qa pass_with_known_issues#qa_status=failed
-fail-does-not-restore-missing-registry#sc_qa fail_with_preexisting_table#qa_status=failed~-.lbwc-planning/phases/01-test/known-issues.json
+fail-does-not-restore-missing-registry#sc_qa fail_with_preexisting_table#qa_status=failed~-.meridian/phases/01-test/known-issues.json
 brownfield-plain-verification#sc_qa brownfield_plain#qa_status=passed
 latest-wave-verification-wins#sc_qa latest_wave#qa_status=passed
 fail-result#sc_qa fail#qa_status=failed
@@ -335,7 +335,7 @@ brownfield-remediated-after-later-commit#sc_qa_git remediated_after_commit#qa_st
 first-round-pass-is-remediated#sc_qa_round remediated#qa_status=remediated
 second-round-pass-is-remediated#sc_qa_round second_round#qa_status=remediated
 unresolved-known-issues-keep-failed#sc_qa_round known_issues_keep_failed#qa_status=failed
-cleared-round-ignores-stale-phase-issues#sc_qa_round resume_with_stale_phase_issues#-.lbwc-planning/phases/01-test/known-issues.json~!next_phase_state=needs_qa_remediation
+cleared-round-ignores-stale-phase-issues#sc_qa_round resume_with_stale_phase_issues#-.meridian/phases/01-test/known-issues.json~!next_phase_state=needs_qa_remediation
 CASES
 }
 
@@ -348,8 +348,8 @@ known-issues-qa-beats-unplanned#sc_qa_priority known_issues_beat_unplanned#next_
 later-qa-beats-mid-execution#sc_qa_priority qa_beats_mid_execution#next_phase_state=needs_qa_remediation~next_phase=02
 verify-stage-beats-unfinished#sc_qa_priority verify_stage_beats_unfinished#next_phase=02~next_phase_state=needs_qa_remediation~first_qa_attention_phase=02~first_qa_attention_slug=02-remediating~qa_attention_status=verify
 backlog-attention-while-unfinished#sc_qa_priority backlog#next_phase=01~next_phase_state=needs_plan_and_execute~first_qa_attention_phase=02~first_qa_attention_slug=02-known-issues~qa_attention_status=failed
-backlog-attention-when-status-probe-fails#sc_qa_priority backlog_probe_fails#next_phase=01~next_phase_state=needs_plan_and_execute~first_qa_attention_phase=02~first_qa_attention_slug=02-known-issues~qa_attention_status=failed~+.lbwc-planning/phases/02-known-issues/known-issues.json
-backlog-attention-with-partial-status-payload#sc_qa_priority backlog_partial_payload#next_phase=01~next_phase_state=needs_plan_and_execute~first_qa_attention_phase=02~first_qa_attention_slug=02-known-issues~qa_attention_status=failed~+.lbwc-planning/phases/02-known-issues/known-issues.json
+backlog-attention-when-status-probe-fails#sc_qa_priority backlog_probe_fails#next_phase=01~next_phase_state=needs_plan_and_execute~first_qa_attention_phase=02~first_qa_attention_slug=02-known-issues~qa_attention_status=failed~+.meridian/phases/02-known-issues/known-issues.json
+backlog-attention-with-partial-status-payload#sc_qa_priority backlog_partial_payload#next_phase=01~next_phase_state=needs_plan_and_execute~first_qa_attention_phase=02~first_qa_attention_slug=02-known-issues~qa_attention_status=failed~+.meridian/phases/02-known-issues/known-issues.json
 all-done-routes-to-qa-when-known-issues-failed#sc_qa_priority all_done_known_issues_failed#next_phase=01~next_phase_slug=01-test~next_phase_state=needs_qa_remediation~first_qa_attention_phase=01~qa_attention_status=failed~qa_status=failed
 terminal-partial-summary-satisfied-by-current-round-pass#sc_golden phase-05-remediated#^next_phase_state=all_done~^next_phase_summaries=0
 terminal-failed-summary-not-masked-by-pass#sc_golden failed-summary-passing-remediation#^next_phase_state=needs_execute~!next_phase_state=all_done

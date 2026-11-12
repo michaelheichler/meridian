@@ -3,7 +3,7 @@ If `SELECTED_TODO_MODE=true`, the selected-todo helper has already created or id
 For manual/freeform starts only, create a fresh session from $ARGUMENTS. Strip known flags (`--competing`, `--parallel`, `--serial`) and any `(ref:HASH)` suffix from $ARGUMENTS before computing the slug, these are routing/ref metadata, not part of the bug description.
 
 ```bash
-eval "$(printf '%s' "$ARGUMENTS" | REF_HASH="${REF_HASH:-none}" DETAIL_STATUS="${DETAIL_STATUS:-none}" DETAIL_RESULT_JSON="${DETAIL_RESULT_JSON:-}" bash "{plugin-root}/scripts/debug-start-manual.sh" .lbwc-planning)"
+eval "$(printf '%s' "$ARGUMENTS" | REF_HASH="${REF_HASH:-none}" DETAIL_STATUS="${DETAIL_STATUS:-none}" DETAIL_RESULT_JSON="${DETAIL_RESULT_JSON:-}" bash "{plugin-root}/scripts/debug-start-manual.sh" .meridian)"
 ```
 
 Keep manual/freeform debug starts on the existing `start-with-source-todo` path. The selected helper owns deterministic selected-todo state mutation and returns pickup presentation fields under `.pickup`.

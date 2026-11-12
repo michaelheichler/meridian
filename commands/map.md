@@ -7,7 +7,7 @@ argument-hint: "[--incremental] [--package=name] [--tier=solo|duo|quad]"
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep, WebFetch, Agent, Skill, LSP, AskUserQuestion, Workflow
 ---
 
-# LBWC Map: $ARGUMENTS
+# MERIDIAN Map: $ARGUMENTS
 
 ## Context
 
@@ -20,7 +20,7 @@ Working directory:
 Plugin root:
 
 ```text
-!`L="/tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID:-default}"; R="$L/scripts/resolve-plugin-root.sh"; [ -f "$R" ] || R="${CLAUDE_PLUGIN_ROOT:-}/scripts/resolve-plugin-root.sh"; [ -f "$R" ] || { echo "LBWC: plugin root unavailable. Restart this session to recreate $L." >&2; exit 1; }; bash "$R" >/dev/null || exit 1; echo "$L"`
+!`L="/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}"; R="$L/scripts/resolve-plugin-root.sh"; [ -f "$R" ] || R="${CLAUDE_PLUGIN_ROOT:-}/scripts/resolve-plugin-root.sh"; [ -f "$R" ] || { echo "MERIDIAN: plugin root unavailable. Restart this session to recreate $L." >&2; exit 1; }; bash "$R" >/dev/null || exit 1; echo "$L"`
 ```
 
 Store that value as `{plugin-root}`. Read `{plugin-root}/references/agent-spawn-protocol.md` before any Scout spawn.
@@ -28,13 +28,13 @@ Store that value as `{plugin-root}`. Read `{plugin-root}/references/agent-spawn-
 Existing mapping:
 
 ```text
-!`ls .lbwc-planning/codebase/ 2>/dev/null || echo "No codebase mapping found"`
+!`ls .meridian/codebase/ 2>/dev/null || echo "No codebase mapping found"`
 ```
 
 META.md:
 
 ```text
-!`cat .lbwc-planning/codebase/META.md 2>/dev/null || echo "No META.md found"`
+!`cat .meridian/codebase/META.md 2>/dev/null || echo "No META.md found"`
 ```
 
 Project files:
@@ -54,14 +54,14 @@ Git HEAD:
 Refresh the saved Claude capability catalog before any Scout contract or spawn:
 
 ```bash
-bash "{plugin-root}/scripts/lbwc-model" refresh .lbwc-planning
+bash "{plugin-root}/scripts/meridian-model" refresh .meridian
 ```
 
-The refresh stores workflow-backend availability as `.workflow` in `.lbwc-planning/claude-capabilities.json`. Step 3 reads that value before it offers or resolves `workflow`. A non-zero exit does not stop mapping, because Step 3 then keeps `RESOLVED_BACKEND` at `in_process` and maps on the existing catalog. Only a run that requests or chooses `workflow` can still stop. Step 0 of `workflow-spawn-protocol.md` and the live check in `workflow-generator.sh` stop that run. If `.lbwc-planning/` is missing, skip this gate and do not create a planning directory here.
+The refresh stores workflow-backend availability as `.workflow` in `.meridian/claude-capabilities.json`. Step 3 reads that value before it offers or resolves `workflow`. A non-zero exit does not stop mapping, because Step 3 then keeps `RESOLVED_BACKEND` at `in_process` and maps on the existing catalog. Only a run that requests or chooses `workflow` can still stop. Step 0 of `workflow-spawn-protocol.md` and the live check in `workflow-generator.sh` stop that run. If `.meridian/` is missing, skip this gate and do not create a planning directory here.
 
 ## Guard
 
-1. If `.lbwc-planning/` is absent, STOP: `Run /lbwc:init first.`
+1. If `.meridian/` is absent, STOP: `Run /meridian:init first.`
 2. If the project has no source files, STOP: `No source code found to map.`
 3. If Git is unavailable, warn that incremental mapping needs Git and continue in full mode.
 4. Parse only `--incremental`, `--package=name`, and `--tier=solo|duo|quad`. STOP on another flag or an invalid tier.
@@ -74,18 +74,18 @@ If the user supplied `--incremental`, set `FORCED_MODE` to `incremental`. Otherw
 
 ```bash
 . "{plugin-root}/scripts/lib/map-tiers.sh"
-resolve_map_mode .lbwc-planning "$FORCED_MODE"
+resolve_map_mode .meridian "$FORCED_MODE"
 ```
 
 The helper compares the `META.md` `git_hash` with HEAD. If fewer than 20 percent of the mapped files changed, it prints `mode=incremental`. In all other cases it prints `mode=full`. Store the printed `mode` as `MAPPING_MODE` and the printed `changed_files` as `CHANGED_FILES`.
 
 ### Step 1.5. Size codebase and select tier
 
-Count source files. Leave out `.lbwc-planning/`, `node_modules/`, `.git/`, `vendor/`, `dist/`, `build/`, `target/`, `.next/`, `__pycache__/`, `.venv/`, and `coverage/`. If the user supplied `--package`, count only that package. Store the count as `SOURCE_FILE_COUNT`. If the user supplied `--tier`, set `FORCED_TIER` to its value. Otherwise leave it empty. Run the shared tier helper.
+Count source files. Leave out `.meridian/`, `node_modules/`, `.git/`, `vendor/`, `dist/`, `build/`, `target/`, `.next/`, `__pycache__/`, `.venv/`, and `coverage/`. If the user supplied `--package`, count only that package. Store the count as `SOURCE_FILE_COUNT`. If the user supplied `--tier`, set `FORCED_TIER` to its value. Otherwise leave it empty. Run the shared tier helper.
 
 ```bash
 . "{plugin-root}/scripts/lib/map-tiers.sh"
-PREFER_TEAMS=$(bash "{plugin-root}/scripts/lbwc-config.sh" get .lbwc-planning prefer_teams 2>/dev/null | jq -r . 2>/dev/null)
+PREFER_TEAMS=$(bash "{plugin-root}/scripts/meridian-config.sh" get .meridian prefer_teams 2>/dev/null | jq -r . 2>/dev/null)
 [ -n "$PREFER_TEAMS" ] || PREFER_TEAMS=auto
 resolve_map_tier "$SOURCE_FILE_COUNT" "$PREFER_TEAMS" "$FORCED_TIER"
 ```
@@ -209,11 +209,11 @@ commit, or stage map artifacts.
 
 #### Step 3-solo
 
-Analyze stack, dependencies, architecture, structure, conventions, testing, and concerns inline. The main session writes all seven domain documents under `.lbwc-planning/codebase/`.
+Analyze stack, dependencies, architecture, structure, conventions, testing, and concerns inline. The main session writes all seven domain documents under `.meridian/codebase/`.
 
 #### Execution backend for duo and quad
 
-Follow step 0 of `{plugin-root}/references/workflow-spawn-protocol.md`, with `<control-root>` bound to `.lbwc-planning`. If that step takes its `ask` branch, use these literal `AskUserQuestion` fields.
+Follow step 0 of `{plugin-root}/references/workflow-spawn-protocol.md`, with `<control-root>` bound to `.meridian`. If that step takes its `ask` branch, use these literal `AskUserQuestion` fields.
 
 - header: `Map execution`
 - question: `Where should Scout evidence gathering run? Workflow run orchestrates each Scout through a committed background script. Native spawn keeps the current multi-agent Scout spawn.`
@@ -230,7 +230,7 @@ If `RESOLVED_BACKEND` is `workflow`, follow `{plugin-root}/references/workflow-s
 
 ```bash
 PROJECT_ROOT=$(pwd)
-CONTROL_ROOT="$PROJECT_ROOT/.lbwc-planning"
+CONTROL_ROOT="$PROJECT_ROOT/.meridian"
 DOMAINS=("tech-and-architecture" "quality-and-concerns")
 CONTRACT_PATHS=(); TASK_IDS=(); SCRIPT_PATHS=()
 for DOMAIN in "${DOMAINS[@]}"; do
@@ -286,13 +286,13 @@ A Scout's workflow path can fail in two ways, because the generator can fail or 
 
 ## Output Format
 
-Follow @${CLAUDE_PLUGIN_ROOT}/references/lbwc-brand-essentials.md. Use a Phase Banner, a file checklist, `◆` findings, `⚠` warnings, and no ANSI color codes.
+Follow @${CLAUDE_PLUGIN_ROOT}/references/meridian-brand-essentials.md. Use a Phase Banner, a file checklist, `◆` findings, `⚠` warnings, and no ANSI color codes.
 
 ## Next Up
 
 ```text
 ➜ Next Up
-  /lbwc:plan {NN} - plan the next phase with this map
-  /lbwc:research "topic" - investigate an identified uncertainty
-  /lbwc:status - review project state
+  /meridian:plan {NN} - plan the next phase with this map
+  /meridian:research "topic" - investigate an identified uncertainty
+  /meridian:status - review project state
 ```

@@ -21,7 +21,7 @@ write_route_capabilities() {
         model_associations: {"nova-route": ["deliberate"]}
       }
     }
-  ' > "$root/.lbwc-planning/claude-capabilities.json"
+  ' > "$root/.meridian/claude-capabilities.json"
 }
 
 write_balanced_routing_config() {
@@ -40,7 +40,7 @@ write_balanced_routing_config() {
         }
       }
     }
-  ' "$CONFIG_DIR/settings.json" > "$root/.lbwc-planning/config.json"
+  ' "$CONFIG_DIR/settings.json" > "$root/.meridian/config.json"
 }
 
 write_generator_fixture() {

@@ -31,10 +31,10 @@ expect_exact_output() {
 
 make_repo() {
   local repo="$TEST_TEMP_DIR/$1" step
-  mkdir -p "$repo/.lbwc-planning/codebase"
+  mkdir -p "$repo/.meridian/codebase"
   git -C "$repo" init -q
-  git -C "$repo" config user.name "LBWC Test"
-  git -C "$repo" config user.email "lbwc-tests@example.com"
+  git -C "$repo" config user.name "MERIDIAN Test"
+  git -C "$repo" config user.email "meridian-tests@example.com"
   for step in 1 2 3; do
     printf 'v%s\n' "$step" > "$repo/file-$step.txt"
     git -C "$repo" add -A
@@ -45,7 +45,7 @@ make_repo() {
 }
 
 write_meta() {
-  printf '%s\n' 'mapped_at: 2026-08-01T00:00:00Z' "git_hash: $2" "file_count: $3" > "$1/.lbwc-planning/codebase/META.md"
+  printf '%s\n' 'mapped_at: 2026-08-01T00:00:00Z' "git_hash: $2" "file_count: $3" > "$1/.meridian/codebase/META.md"
 }
 
 @test "resolve_map_tier picks a tier from file count, preference and forced tier" {
@@ -95,21 +95,21 @@ CASES
   local label repo
 
   make_repo forced
-  run_mode "$TEST_TEMP_DIR/forced" "$TEST_TEMP_DIR/forced/.lbwc-planning" incremental
+  run_mode "$TEST_TEMP_DIR/forced" "$TEST_TEMP_DIR/forced/.meridian" incremental
   expect_case "forced-incremental-without-meta" 0 ""
   expect_exact_output "forced-incremental-without-meta" $'mode=incremental\nchanged_files=0'
 
-  run_mode "$TEST_TEMP_DIR/forced" "$TEST_TEMP_DIR/forced/.lbwc-planning" full
+  run_mode "$TEST_TEMP_DIR/forced" "$TEST_TEMP_DIR/forced/.meridian" full
   expect_exact_output "forced-full" $'mode=full\nchanged_files=0'
 
   make_repo no-meta
-  run_mode "$TEST_TEMP_DIR/no-meta" "$TEST_TEMP_DIR/no-meta/.lbwc-planning"
+  run_mode "$TEST_TEMP_DIR/no-meta" "$TEST_TEMP_DIR/no-meta/.meridian"
   expect_exact_output "missing-meta-is-full" $'mode=full\nchanged_files=0'
 
   repo="$TEST_TEMP_DIR/no-git"
-  mkdir -p "$repo/.lbwc-planning/codebase"
+  mkdir -p "$repo/.meridian/codebase"
   write_meta "$repo" "0123456789abcdef0123456789abcdef01234567" 10
-  run_mode "$repo" "$repo/.lbwc-planning"
+  run_mode "$repo" "$repo/.meridian"
   expect_exact_output "outside-git-is-full" $'mode=full\nchanged_files=0'
 
   while IFS='|' read -r label hash_kind count want_mode want_changed; do
@@ -122,7 +122,7 @@ CASES
       unknown) write_meta "$repo" "0000000000000000000000000000000000000000" "$count" ;;
       no-git) write_meta "$repo" "no-git" "$count" ;;
     esac
-    run_mode "$repo" "$repo/.lbwc-planning"
+    run_mode "$repo" "$repo/.meridian"
     expect_case "$label" 0 ""
     expect_exact_output "$label" "mode=$want_mode"$'\n'"changed_files=$want_changed"
   done <<'CASES'

@@ -9,11 +9,11 @@ setup() {
   REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/.." && pwd)"
   SCRIPT="$REPO_ROOT/scripts/session-start.sh"
   TEST_ROOT="$(mktemp -d)"
-  PLANNING_DIR="$TEST_ROOT/.lbwc-planning"
+  PLANNING_DIR="$TEST_ROOT/.meridian"
   export CLAUDE_SESSION_ID="session-start-${BATS_TEST_NUMBER}-$$"
-  ROOT_LINK="/tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID}"
+  ROOT_LINK="/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID}"
   rm -rf "$ROOT_LINK"
-  CONCURRENT_LINK="/tmp/.lbwc-plugin-root-link-concurrent-child-session"
+  CONCURRENT_LINK="/tmp/.meridian-plugin-root-link-concurrent-child-session"
   WORKDIR="$TEST_ROOT/project"
   mkdir -p "$WORKDIR"
   git -C "$WORKDIR" init -q
@@ -24,13 +24,13 @@ teardown() {
   cd "$BATS_TEST_DIRNAME"
   rm -rf "$TEST_ROOT" "$ROOT_LINK" "$CONCURRENT_LINK"
   unset CLAUDE_SESSION_ID
-  [ ! -L "$REPO_ROOT/lbwc" ] || { rm -f "$REPO_ROOT/lbwc"; return 1; }
+  [ ! -L "$REPO_ROOT/meridian" ] || { rm -f "$REPO_ROOT/meridian"; return 1; }
 }
 
 run_session_start() {
   (
     cd "$WORKDIR"
-    LBWC_PLANNING_DIR="$PLANNING_DIR" bash "$SCRIPT" </dev/null
+    MERIDIAN_PLANNING_DIR="$PLANNING_DIR" bash "$SCRIPT" </dev/null
   )
 }
 
@@ -38,7 +38,7 @@ run_session_start_from() {
   local script_dir="$1"
   (
     cd "$WORKDIR"
-    LBWC_PLANNING_DIR="$PLANNING_DIR" bash "$script_dir/session-start.sh" </dev/null
+    MERIDIAN_PLANNING_DIR="$PLANNING_DIR" bash "$script_dir/session-start.sh" </dev/null
   )
 }
 
@@ -46,7 +46,7 @@ run_session_start_with_input() {
   local input="$1"
   (
     cd "$WORKDIR"
-    printf '%s' "$input" | LBWC_PLANNING_DIR="$PLANNING_DIR" bash "$SCRIPT"
+    printf '%s' "$input" | MERIDIAN_PLANNING_DIR="$PLANNING_DIR" bash "$SCRIPT"
   )
 }
 
@@ -146,7 +146,7 @@ link_session_plugin_root_and_persist_environment() {
   copy_scripts_to "$plugin_root/scripts"
   replace_script_in_copy "$plugin_root/scripts" ensure-plugin-root-link.sh 'exit 1'
   run run_session_start_from "$plugin_root/scripts"
-  expect_case link-bootstrap-fails 1 "LBWC: SessionStart plugin root link bootstrap failed"
+  expect_case link-bootstrap-fails 1 "MERIDIAN: SessionStart plugin root link bootstrap failed"
 
   run run_session_start
   expect_case exact-root-link 0
@@ -179,7 +179,7 @@ report_planning_and_subsystem_context() {
   context_row cold-start-reports-init-needed prepare_cold_start
   expect_fragment cold-start-reports-init-needed "no ${PLANNING_DIR}/ directory found"
   context_row warm-start-reports-phase-brief prepare_warm_start
-  expect_fragment warm-start-reports-phase-brief "lbwc phase"
+  expect_fragment warm-start-reports-phase-brief "meridian phase"
   context_row phase-needing-plan-routes-to-plan prepare_phase_needing_plan
   expect_fragment phase-needing-plan-routes-to-plan "missing PLAN.md"
   expect_fragment phase-needing-plan-routes-to-plan "/plan 01"
@@ -188,12 +188,12 @@ report_planning_and_subsystem_context() {
   expect_fragment phase-needing-discussion-routes-to-discuss "/discuss 01"
   expect_lacks phase-needing-discussion-routes-to-discuss "/plan 01"
   context_row phase-setup-failure-is-unavailable-not-missing prepare_phase_detect_setup_failure
-  expect_fragment phase-setup-failure-is-unavailable-not-missing "lbwc: phase status unavailable (setup_failed)."
+  expect_fragment phase-setup-failure-is-unavailable-not-missing "meridian: phase status unavailable (setup_failed)."
   expect_lacks phase-setup-failure-is-unavailable-not-missing "no ${PLANNING_DIR}/ directory found"
   context_row malformed-agent-manifest-surfaces prepare_malformed_manifest
-  expect_fragment malformed-agent-manifest-surfaces "lbwc: agent manifest status malformed."
+  expect_fragment malformed-agent-manifest-surfaces "meridian: agent manifest status malformed."
   context_row unavailable-agent-manifest-surfaces prepare_unavailable_manifest
-  expect_fragment unavailable-agent-manifest-surfaces "lbwc: agent manifest status unavailable."
+  expect_fragment unavailable-agent-manifest-surfaces "meridian: agent manifest status unavailable."
 
   assert_no_case_failures
 }
@@ -215,7 +215,7 @@ apply_source_specific_compaction_policy() {
   seed_compaction_count 9
   run run_session_start_with_input '{"source":"startup"}'
   expect_case near-limit-startup 0
-  run env LBWC_PLANNING_DIR="$PLANNING_DIR" bash -c 'printf "%s" "{\"matcher\":\"auto\"}" | bash "$1"' _ "$REPO_ROOT/scripts/compaction-instructions.sh"
+  run env MERIDIAN_PLANNING_DIR="$PLANNING_DIR" bash -c 'printf "%s" "{\"matcher\":\"auto\"}" | bash "$1"' _ "$REPO_ROOT/scripts/compaction-instructions.sh"
   expect_case near-limit-compaction 0
   expect_lacks near-limit-compaction "COMPACTION LOOP DETECTED"
   [ "$(read_compaction_count)" = "1" ] || record_case_failure near-limit-compaction "count=$(read_compaction_count) want 1"
@@ -225,7 +225,7 @@ apply_source_specific_compaction_policy() {
 
 fixture_session_bus() {
   local control_root="$1" hash registry
-  source "$REPO_ROOT/scripts/lib/lbwc-control-root.sh"
+  source "$REPO_ROOT/scripts/lib/meridian-control-root.sh"
   source "$REPO_ROOT/scripts/lib/tmux-runtime.sh"
   tmux_runtime_configure "$control_root"
   tmux_runtime_ensure
@@ -257,10 +257,10 @@ plant_unbound_agent() {
   updated=$(jq --arg id "$agent_id" --arg hash "$hash" '
     .agents += [{
       agent_id: $id, parent_id: .main.agent_id, contract_id: "contract-a", generated_name: $id,
-      tmux_target: "lbwc-test-main:0.1", tmux_pane_id: null, claude_session_id: null,
+      tmux_target: "meridian-test-main:0.1", tmux_pane_id: null, claude_session_id: null,
       capability_hash: $hash, state: "registered", heartbeat_at_ms: null
     }]
-    | .routes[$id] = {inbox: $id, tmux_target: "lbwc-test-main:0.1"}
+    | .routes[$id] = {inbox: $id, tmux_target: "meridian-test-main:0.1"}
   ' <<<"$registry")
   tmux_runtime_write_registry_route_bundle "$updated"
   tmux_runtime_initialize_inbox "$agent_id"
@@ -273,7 +273,7 @@ write_credential() {
 }
 
 prepare_bound_agent() {
-  BOUND_CONTROL_ROOT="$TEST_ROOT/tmux-project/.lbwc-planning"
+  BOUND_CONTROL_ROOT="$TEST_ROOT/tmux-project/.meridian"
   BOUND_CAPABILITY='0123456789abcdef0123456789abcdef'
   rm -rf "$TEST_ROOT/tmux-project"
   mkdir -p "$BOUND_CONTROL_ROOT"
@@ -284,7 +284,7 @@ prepare_bound_agent() {
 
 run_bound_session_start() {
   local child_session="$1"
-  run env LBWC_TMUX_AGENT=1 LBWC_TMUX_AGENT_ID=agent-a LBWC_TMUX_CONTRACT_ID=contract-a LBWC_TMUX_CONTROL_ROOT="$BOUND_CONTROL_ROOT" LBWC_PLANNING_DIR="$PLANNING_DIR" CLAUDE_SESSION_ID="$child_session" bash "$SCRIPT" </dev/null
+  run env MERIDIAN_TMUX_AGENT=1 MERIDIAN_TMUX_AGENT_ID=agent-a MERIDIAN_TMUX_CONTRACT_ID=contract-a MERIDIAN_TMUX_CONTROL_ROOT="$BOUND_CONTROL_ROOT" MERIDIAN_PLANNING_DIR="$PLANNING_DIR" CLAUDE_SESSION_ID="$child_session" bash "$SCRIPT" </dev/null
 }
 
 expect_bound_registry() {
@@ -302,9 +302,9 @@ bind_rejected_row() {
 
 run_concurrent_session_starts() {
   run env SESSION_START="$SCRIPT" CONTROL_ROOT="$BOUND_CONTROL_ROOT" PLANNING_DIR="$PLANNING_DIR" bash -c '
-    LBWC_TMUX_AGENT=1 LBWC_TMUX_AGENT_ID=agent-a LBWC_TMUX_CONTRACT_ID=contract-a LBWC_TMUX_CONTROL_ROOT="$CONTROL_ROOT" LBWC_PLANNING_DIR="$PLANNING_DIR" CLAUDE_SESSION_ID=concurrent-child-session bash "$SESSION_START" > "$CONTROL_ROOT/first-session-start.log" 2>&1 &
+    MERIDIAN_TMUX_AGENT=1 MERIDIAN_TMUX_AGENT_ID=agent-a MERIDIAN_TMUX_CONTRACT_ID=contract-a MERIDIAN_TMUX_CONTROL_ROOT="$CONTROL_ROOT" MERIDIAN_PLANNING_DIR="$PLANNING_DIR" CLAUDE_SESSION_ID=concurrent-child-session bash "$SESSION_START" > "$CONTROL_ROOT/first-session-start.log" 2>&1 &
     first=$!
-    LBWC_TMUX_AGENT=1 LBWC_TMUX_AGENT_ID=agent-a LBWC_TMUX_CONTRACT_ID=contract-a LBWC_TMUX_CONTROL_ROOT="$CONTROL_ROOT" LBWC_PLANNING_DIR="$PLANNING_DIR" CLAUDE_SESSION_ID=concurrent-child-session bash "$SESSION_START" > "$CONTROL_ROOT/second-session-start.log" 2>&1 &
+    MERIDIAN_TMUX_AGENT=1 MERIDIAN_TMUX_AGENT_ID=agent-a MERIDIAN_TMUX_CONTRACT_ID=contract-a MERIDIAN_TMUX_CONTROL_ROOT="$CONTROL_ROOT" MERIDIAN_PLANNING_DIR="$PLANNING_DIR" CLAUDE_SESSION_ID=concurrent-child-session bash "$SESSION_START" > "$CONTROL_ROOT/second-session-start.log" 2>&1 &
     second=$!
     wait "$first"; first_status=$?
     wait "$second"; second_status=$?
@@ -325,7 +325,7 @@ bind_tmux_session_with_one_shot_credentials() {
   prepare_bound_agent
   write_credential agent-a "$BOUND_CAPABILITY"
   run_bound_session_start actual-child-session
-  expect_case one-shot-credential 0 "lbwc tmux bind:"
+  expect_case one-shot-credential 0 "meridian tmux bind:"
   expect_fragment one-shot-credential "$BOUND_CAPABILITY"
   [ ! -e "$BOUND_CONTROL_ROOT/.runtime/tmux-bus/credentials/agent-a.json" ] \
     || record_case_failure one-shot-credential "credential was not consumed"
@@ -364,7 +364,7 @@ build_cleanup_fixture() {
 }
 
 run_cleanup_fixture_session_start() {
-  run bash -c 'cd "$1" && LBWC_PLANNING_DIR="$2" bash "$3/session-start.sh" </dev/null' _ "$CLEANUP_WORKDIR" "$PLANNING_DIR" "$CLEANUP_PLUGIN_SCRIPTS"
+  run bash -c 'cd "$1" && MERIDIAN_PLANNING_DIR="$2" bash "$3/session-start.sh" </dev/null' _ "$CLEANUP_WORKDIR" "$PLANNING_DIR" "$CLEANUP_PLUGIN_SCRIPTS"
 }
 
 cleanup_row() {

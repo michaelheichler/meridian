@@ -4,7 +4,7 @@ isolation_external_prepare() {
   jq -cn --arg policy "$policy" '{} | if $policy == "missing" then . else .tmux_execution.cleanup_policy=$policy end' > "$CONTROL_ROOT/config.json"
   SESSION="external-$RANDOM"
   tmux_on_test_server new-session -d -s "$SESSION" -c "$PROJECT_ROOT" \
-    /usr/bin/env "PATH=$LBWC_TEST_CHILD_PATH" "$LBWC_TEST_CHILD_SHELL" --noprofile --norc -c 'exec sleep 600'
+    /usr/bin/env "PATH=$MERIDIAN_TEST_CHILD_PATH" "$MERIDIAN_TEST_CHILD_SHELL" --noprofile --norc -c 'exec sleep 600'
   pane=$(tmux_on_test_server display-message -p -t "$SESSION" '#{pane_id}')
   run env TMUX=private-test-server TMUX_PANE="$pane" PATH="$BIN_DIR:$PATH" TMUX_TMPDIR="$TMUX_TMPDIR" \
     bash "$ORCHESTRATOR" provision --project-root "$PROJECT_ROOT" --control-root "$CONTROL_ROOT" --main-id main-session
@@ -53,9 +53,9 @@ config_rollback_poll_row() {
   SESSION=$(provisioned_session)
   DEFINITIONS=$(prepare_tmux_agents worker-a worker-b)
   before=$(bus_state_digest)
-  export LBWC_TEST_PANE_DELAY="$TEST_ROOT/rollback-pane"
-  export LBWC_TEST_PANE_DELAY_PROBES=3
-  [ "$mode" != timeout ] || export LBWC_TEST_PANE_DELAY_PROBES=1000
+  export MERIDIAN_TEST_PANE_DELAY="$TEST_ROOT/rollback-pane"
+  export MERIDIAN_TEST_PANE_DELAY_PROBES=3
+  [ "$mode" != timeout ] || export MERIDIAN_TEST_PANE_DELAY_PROBES=1000
   inject_failure send-keys
   started=$(date +%s)
   split_group "$SESSION" "$DEFINITIONS"
@@ -70,5 +70,5 @@ config_rollback_poll_row() {
   fi
   [ "$(bus_state_digest)" = "$before" ]
   clear_failures
-  unset LBWC_TEST_PANE_DELAY LBWC_TEST_PANE_DELAY_PROBES
+  unset MERIDIAN_TEST_PANE_DELAY MERIDIAN_TEST_PANE_DELAY_PROBES
 }

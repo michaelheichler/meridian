@@ -18,7 +18,7 @@ teardown() {
 }
 
 fresh_phase() {
-  PLANNING_DIR="$TEST_ROOT/$1/.lbwc-planning"
+  PLANNING_DIR="$TEST_ROOT/$1/.meridian"
   PHASE_DIR="$PLANNING_DIR/phases/01-checkout"
   UAT_STATE="$PHASE_DIR/remediation/uat/.uat-remediation-stage"
   mkdir -p "$PHASE_DIR"

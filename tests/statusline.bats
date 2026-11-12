@@ -6,12 +6,12 @@ load gate_case_files
 
 setup() {
   REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/.." && pwd)"
-  STATUSLINE="$REPO_ROOT/scripts/lbwc-statusline.sh"
+  STATUSLINE="$REPO_ROOT/scripts/meridian-statusline.sh"
   INSTALLER="$REPO_ROOT/scripts/statusline-install.sh"
   TEST_ROOT="$(mktemp -d)"
   PROJECT="$TEST_ROOT/project"
   BIN="$TEST_ROOT/bin"
-  mkdir -p "$PROJECT/.lbwc-planning/.contracts/tasks" "$BIN"
+  mkdir -p "$PROJECT/.meridian/.contracts/tasks" "$BIN"
   cat > "$BIN/git" <<'EOF'
 #!/usr/bin/env bash
 case "$*" in
@@ -19,7 +19,7 @@ case "$*" in
   *'status --porcelain'*) printf ' M scripts/example.sh\n' ;;
   *'rev-parse --is-inside-work-tree'*) printf 'true\n' ;;
   *'rev-parse --path-format=absolute --git-dir'*)
-    if [ "${LBWC_TEST_GIT_WORKTREE:-false}" = true ]; then
+    if [ "${MERIDIAN_TEST_GIT_WORKTREE:-false}" = true ]; then
       printf '%s\n' "$PWD/.git/worktrees/agent"
     else
       printf '%s\n' "$PWD/.git"
@@ -67,12 +67,12 @@ write_tmux_config() {
     --argjson hide "$hide" \
     --argjson collapse "$collapse" \
     '{agent_execution_mode:"tmux",tmux_execution:{enabled:true,heartbeat_stale_seconds:120},statusline_hide_agent_in_tmux:$hide,statusline_collapse_agent_in_tmux:$collapse}' \
-    > "$PROJECT/.lbwc-planning/config.json"
+    > "$PROJECT/.meridian/config.json"
 }
 
 write_tmux_registry() {
   local state="$1" heartbeat="$2"
-  local runtime="$PROJECT/.lbwc-planning/.runtime/tmux-bus"
+  local runtime="$PROJECT/.meridian/.runtime/tmux-bus"
   mkdir -p "$runtime"
   jq -n \
     --arg state "$state" \
@@ -82,13 +82,13 @@ write_tmux_registry() {
 }
 
 clear_tmux_runtime() {
-  rm -rf "$PROJECT/.lbwc-planning/.runtime"
+  rm -rf "$PROJECT/.meridian/.runtime"
 }
 
 reset_project() {
   cd "$TEST_ROOT"
   rm -rf "$PROJECT" "$BIN/tmux"
-  mkdir -p "$PROJECT/.lbwc-planning/.contracts/tasks"
+  mkdir -p "$PROJECT/.meridian/.contracts/tasks"
   cd "$PROJECT"
 }
 
@@ -99,18 +99,18 @@ native_usage_input() {
 
 statusline_usage_row() {
   local label=$1 input=$2 expected=$3 record
-  printf '%s\n' 'previous|33|200000|statusline' > "$PROJECT/.lbwc-planning/.context-usage"
+  printf '%s\n' 'previous|33|200000|statusline' > "$PROJECT/.meridian/.context-usage"
   run_statusline "$input"
   expect_case "$label" 0
-  record=$(cat "$PROJECT/.lbwc-planning/.context-usage")
+  record=$(cat "$PROJECT/.meridian/.context-usage")
   [ "$record" = "$expected" ] || record_case_failure "$label" "record=$record expected=$expected"
-  [ -z "$(find "$PROJECT/.lbwc-planning" -name '.context-usage.statusline.*' -print)" ] \
+  [ -z "$(find "$PROJECT/.meridian" -name '.context-usage.statusline.*' -print)" ] \
     || record_case_failure "$label" 'unfinished usage record remains'
 }
 
 statusline_write_row() {
   local label=$1 input=$2 seed=$3 expected=$4 before after record
-  local planning="$PROJECT/.lbwc-planning" log="$TEST_ROOT/mv.log"
+  local planning="$PROJECT/.meridian" log="$TEST_ROOT/mv.log"
   cp "$BATS_TEST_DIRNAME/statusline_mv_proxy.bash" "$BIN/mv"
   chmod +x "$BIN/mv"
   export STATUSLINE_REAL_MV="$(command -v mv)" STATUSLINE_MV_LOG="$log"
@@ -158,17 +158,17 @@ statusline_invalid_row() {
 }
 
 @test "statusline: renders every line without writes and hides the Quota line only for true hide-limits switches" {
-  local config="$PROJECT/.lbwc-planning/config.json"
-  mkdir -p "$PROJECT/.lbwc-planning/phases/10-status"
-  cat > "$PROJECT/.lbwc-planning/.contracts/tasks/task.json" <<EOF
+  local config="$PROJECT/.meridian/config.json"
+  mkdir -p "$PROJECT/.meridian/phases/10-status"
+  cat > "$PROJECT/.meridian/.contracts/tasks/task.json" <<EOF
 {"phase":"10"}
 EOF
-  cat > "$PROJECT/.lbwc-planning/.agent-manifest.json" <<EOF
-{"agents":{"lbwc-python-engineer-a":{"state":"running","role":"python-engineer","pair_id":"pair-1","task_identity":"task-10","contract_path":"$PROJECT/.lbwc-planning/.contracts/tasks/task.json"},"lbwc-python-critic-b":{"state":"running","role":"python-critic","pair_id":"pair-1","task_identity":"task-10","contract_path":"$PROJECT/.lbwc-planning/.contracts/tasks/task.json"}}}
+  cat > "$PROJECT/.meridian/.agent-manifest.json" <<EOF
+{"agents":{"meridian-python-engineer-a":{"state":"running","role":"python-engineer","pair_id":"pair-1","task_identity":"task-10","contract_path":"$PROJECT/.meridian/.contracts/tasks/task.json"},"meridian-python-critic-b":{"state":"running","role":"python-critic","pair_id":"pair-1","task_identity":"task-10","contract_path":"$PROJECT/.meridian/.contracts/tasks/task.json"}}}
 EOF
-  printf '%s\n' '---' 'result: PASS' '---' > "$PROJECT/.lbwc-planning/phases/10-status/10-VERIFICATION.md"
-  printf '%s\n' '---' 'status: complete' '---' > "$PROJECT/.lbwc-planning/phases/10-status/10-UAT.md"
-  python3 "$REPO_ROOT/scripts/lib/session-telemetry.py" record --root "$PROJECT/.lbwc-planning" --event session_start --outcome success >/dev/null
+  printf '%s\n' '---' 'result: PASS' '---' > "$PROJECT/.meridian/phases/10-status/10-VERIFICATION.md"
+  printf '%s\n' '---' 'status: complete' '---' > "$PROJECT/.meridian/phases/10-status/10-UAT.md"
+  python3 "$REPO_ROOT/scripts/lib/session-telemetry.py" record --root "$PROJECT/.meridian" --event session_start --outcome success >/dev/null
   local before
   before=$(find "$PROJECT" -type f -exec cksum {} \; | sort)
 
@@ -181,7 +181,7 @@ EOF
   [ "$before" = "$(find "$PROJECT" -type f -exec cksum {} \; | sort)" ] \
     || record_case_failure full-native-input "statusline wrote files into the project"
 
-  mkdir -p "$TEST_ROOT/bare/.lbwc-planning"
+  mkdir -p "$TEST_ROOT/bare/.meridian"
   run_statusline "$(jq -cn --arg project "$TEST_ROOT/bare" '{model:{display_name:"Claude"},workspace:{project_dir:$project}}')"
   expect_case no-rate-limits 0 "Telemetry"
   expect_output_lacks no-rate-limits "Quota"
@@ -218,31 +218,31 @@ EOF
 }
 
 @test "statusline: summarizes agent runtime with diagnostics and applies the hide, collapse, malformed and workflow switches" {
-  local runtime="$PROJECT/.lbwc-planning/.runtime/tmux-bus"
+  local runtime="$PROJECT/.meridian/.runtime/tmux-bus"
   mkdir -p "$runtime" "$runtime/locks" "$runtime/claims" "$runtime/transactions"
-  printf '%s\n' '{"agent_execution_mode":"tmux","tmux_execution":{"enabled":true,"heartbeat_stale_seconds":120}}' > "$PROJECT/.lbwc-planning/config.json"
+  printf '%s\n' '{"agent_execution_mode":"tmux","tmux_execution":{"enabled":true,"heartbeat_stale_seconds":120}}' > "$PROJECT/.meridian/config.json"
   jq -n '{
     schema_version: 2,
     main: {agent_id:"main-session",session_id:"main-session",role:"orchestrator",capability_hash:("0" * 64)},
-    tmux: {session:"lbwc-main",orchestrator_target:"lbwc-main:0.0",orchestrator_pane:"0",topology:"detached-new-session",managed_session:true,ownership_token:"owned"},
+    tmux: {session:"meridian-main",orchestrator_target:"meridian-main:0.0",orchestrator_pane:"0",topology:"detached-new-session",managed_session:true,ownership_token:"owned"},
     agents: [
-      {agent_id:"agent-running",parent_id:"main-session",contract_id:"contract-running",generated_name:"running",tmux_target:"lbwc-main:0.1",claude_session_id:"session-running",capability_hash:("1" * 64),state:"running",heartbeat_at_ms:2000000000000},
-      {agent_id:"agent-idle",parent_id:"main-session",contract_id:"contract-idle",generated_name:"idle",tmux_target:"lbwc-main:0.2",claude_session_id:"session-idle",capability_hash:("2" * 64),state:"idle",heartbeat_at_ms:2000000000000},
-      {agent_id:"agent-failed",parent_id:"main-session",contract_id:"contract-failed",generated_name:"failed",tmux_target:"lbwc-main:0.3",claude_session_id:"session-failed",capability_hash:("3" * 64),state:"failed",heartbeat_at_ms:1}
+      {agent_id:"agent-running",parent_id:"main-session",contract_id:"contract-running",generated_name:"running",tmux_target:"meridian-main:0.1",claude_session_id:"session-running",capability_hash:("1" * 64),state:"running",heartbeat_at_ms:2000000000000},
+      {agent_id:"agent-idle",parent_id:"main-session",contract_id:"contract-idle",generated_name:"idle",tmux_target:"meridian-main:0.2",claude_session_id:"session-idle",capability_hash:("2" * 64),state:"idle",heartbeat_at_ms:2000000000000},
+      {agent_id:"agent-failed",parent_id:"main-session",contract_id:"contract-failed",generated_name:"failed",tmux_target:"meridian-main:0.3",claude_session_id:"session-failed",capability_hash:("3" * 64),state:"failed",heartbeat_at_ms:1}
     ],
     routes: {
-      "main-session": {inbox:"main-session",tmux_target:"lbwc-main:0.0"},
-      "agent-running": {inbox:"agent-running",tmux_target:"lbwc-main:0.1"},
-      "agent-idle": {inbox:"agent-idle",tmux_target:"lbwc-main:0.2"},
-      "agent-failed": {inbox:"agent-failed",tmux_target:"lbwc-main:0.3"}
+      "main-session": {inbox:"main-session",tmux_target:"meridian-main:0.0"},
+      "agent-running": {inbox:"agent-running",tmux_target:"meridian-main:0.1"},
+      "agent-idle": {inbox:"agent-idle",tmux_target:"meridian-main:0.2"},
+      "agent-failed": {inbox:"agent-failed",tmux_target:"meridian-main:0.3"}
     }
   }' > "$runtime/registry.json"
   chmod 600 "$runtime/registry.json"
   jq -n '{schema_version:1,routes:{
-    "main-session":{agent_id:"main-session",session_id:"main-session",contract_id:null,inbox:"main-session",tmux_target:"lbwc-main:0.0"},
-    "agent-running":{agent_id:"agent-running",session_id:"session-running",contract_id:"contract-running",inbox:"agent-running",tmux_target:"lbwc-main:0.1"},
-    "agent-idle":{agent_id:"agent-idle",session_id:"session-idle",contract_id:"contract-idle",inbox:"agent-idle",tmux_target:"lbwc-main:0.2"},
-    "agent-failed":{agent_id:"agent-failed",session_id:"session-failed",contract_id:"contract-failed",inbox:"agent-failed",tmux_target:"lbwc-main:0.3"}
+    "main-session":{agent_id:"main-session",session_id:"main-session",contract_id:null,inbox:"main-session",tmux_target:"meridian-main:0.0"},
+    "agent-running":{agent_id:"agent-running",session_id:"session-running",contract_id:"contract-running",inbox:"agent-running",tmux_target:"meridian-main:0.1"},
+    "agent-idle":{agent_id:"agent-idle",session_id:"session-idle",contract_id:"contract-idle",inbox:"agent-idle",tmux_target:"meridian-main:0.2"},
+    "agent-failed":{agent_id:"agent-failed",session_id:"session-failed",contract_id:"contract-failed",inbox:"agent-failed",tmux_target:"meridian-main:0.3"}
   }}' > "$runtime/routing-table.json"
   chmod 600 "$runtime/routing-table.json"
   jq -n '{pid:999999,acquired_at_ms:1,lease_ms:1}' > "$runtime/locks/stale.lock.owner.json"
@@ -261,7 +261,7 @@ EOF
 
   run timeout 10 env PATH="$BIN:$PATH" TMUX=1 bash "$STATUSLINE" <<< "$(minimal_input)"
   expect_case runtime-summary 0 "Backend tmux"
-  expect_output_has runtime-summary "session lbwc-main up"
+  expect_output_has runtime-summary "session meridian-main up"
   expect_output_has runtime-summary "panes 4/4"
   [[ "$output" == *"agents 3"*"running:1"*"idle:1"*"failed:1"* ]] || record_case_failure runtime-summary "agent counts missing output=$output"
   [[ "$output" == *"stale 1"*"failed 1"* ]] || record_case_failure runtime-summary "stale and failed totals missing output=$output"
@@ -278,9 +278,9 @@ EOF
 
   write_tmux_config false true
   write_tmux_registry failed 1
-  run_statusline "$(minimal_input)" LBWC_TEST_GIT_WORKTREE=true TMUX=1
+  run_statusline "$(minimal_input)" MERIDIAN_TEST_GIT_WORKTREE=true TMUX=1
   expect_case collapse-agent-in-worktree 0 "Diagnostics failed agent"
-  [[ "$output" == *"LBWC"*"TMUX agents 1 running:0 idle:0 failed:1"* ]] || record_case_failure collapse-agent-in-worktree "collapsed line missing output=$output"
+  [[ "$output" == *"MERIDIAN"*"TMUX agents 1 running:0 idle:0 failed:1"* ]] || record_case_failure collapse-agent-in-worktree "collapsed line missing output=$output"
   expect_output_lacks collapse-agent-in-worktree "Context"
   expect_output_lacks collapse-agent-in-worktree "Flow"
   expect_output_lacks collapse-agent-in-worktree "Quality"
@@ -288,7 +288,7 @@ EOF
 
   write_tmux_config true true
   write_tmux_registry running 2000000000000
-  run_statusline "$(minimal_input)" LBWC_TEST_GIT_WORKTREE=true TMUX=1
+  run_statusline "$(minimal_input)" MERIDIAN_TEST_GIT_WORKTREE=true TMUX=1
   expect_case collapse-beats-hide 0 "TMUX agents 1 running:1 idle:0 failed:0"
   expect_output_lacks collapse-beats-hide "Context"
   expect_output_lacks collapse-beats-hide "Flow"
@@ -296,21 +296,21 @@ EOF
 
   write_tmux_config true true
   write_tmux_registry failed 1
-  run_statusline "$(minimal_input)" LBWC_TEST_GIT_WORKTREE=true
+  run_statusline "$(minimal_input)" MERIDIAN_TEST_GIT_WORKTREE=true
   [[ "$output" == *"Context"*"Flow"*"Quality"* ]] || record_case_failure outside-tmux "standard lines missing output=$output"
   expect_case outside-tmux 0 ""
   expect_output_lacks outside-tmux "Backend"
   expect_output_lacks outside-tmux "TMUX"
   expect_output_lacks outside-tmux "Diagnostics"
 
-  printf '%s\n' '{"agent_execution_mode":"tmux","statusline_hide_agent_in_tmux":"true","statusline_collapse_agent_in_tmux":false}' > "$PROJECT/.lbwc-planning/config.json"
+  printf '%s\n' '{"agent_execution_mode":"tmux","statusline_hide_agent_in_tmux":"true","statusline_collapse_agent_in_tmux":false}' > "$PROJECT/.meridian/config.json"
   write_tmux_registry failed 1
   run_statusline "$(minimal_input)" TMUX=1
   expect_case malformed-settings-fail-closed 0 "Flow"
   expect_output_has malformed-settings-fail-closed "Backend invalid"
   expect_output_has malformed-settings-fail-closed "Diagnostics configuration drift"
 
-  printf '%s\n' '{"agent_execution_mode":"workflow","workflow_execution":{"enabled":true}}' > "$PROJECT/.lbwc-planning/config.json"
+  printf '%s\n' '{"agent_execution_mode":"workflow","workflow_execution":{"enabled":true}}' > "$PROJECT/.meridian/config.json"
   clear_tmux_runtime
   run_statusline "$(minimal_input)" TMUX=1
   expect_case workflow-backend 0 "Backend workflow"
@@ -331,7 +331,7 @@ EOF
   expect_case no-replace-approval 2 "statusline_install=replacement_confirmation_required"
   [ "$(jq -r '.statusLine.command' "$settings")" = "other-status" ] \
     || record_case_failure no-replace-approval "foreign statusline was overwritten"
-  [ ! -e "${settings}.lbwc-statusline.bak" ] \
+  [ ! -e "${settings}.meridian-statusline.bak" ] \
     || record_case_failure no-replace-approval "backup written for a refused install"
 
   run bash "$INSTALLER" --settings "$settings" --bogus
@@ -344,29 +344,29 @@ EOF
   run bash "$INSTALLER" --settings "$settings" --yes
   expect_case settings-not-an-object 2 "statusline_install=settings_malformed"
 
-  rm -f "${settings}.lbwc-statusline.bak"
+  rm -f "${settings}.meridian-statusline.bak"
   printf '{}\n' > "$settings"
   run bash "$INSTALLER" --settings "$settings" --yes
   expect_case empty-settings 0 "statusline_install=installed refresh_interval=15"
   expect_jq empty-settings "$settings" '.statusLine.type == "command" and .statusLine.refreshInterval == 15'
-  expect_jq empty-settings "$settings" '.statusLine.command | contains("lbwc-statusline.sh")'
-  expect_path empty-settings "${settings}.lbwc-statusline.bak"
+  expect_jq empty-settings "$settings" '.statusLine.command | contains("meridian-statusline.sh")'
+  expect_path empty-settings "${settings}.meridian-statusline.bak"
 
   printf '%s\n' '{"statusLine":{"type":"command","command":"other-status"}}' > "$settings"
   run bash "$INSTALLER" --settings "$settings" --yes --replace
   expect_case replace-foreign 0 "statusline_install=installed"
-  expect_jq replace-foreign "$settings" '.statusLine.command | contains("lbwc-statusline.sh")'
+  expect_jq replace-foreign "$settings" '.statusLine.command | contains("meridian-statusline.sh")'
   expect_jq replace-foreign "$settings" '.statusLine.refreshInterval == 15'
-  expect_jq replace-foreign "${settings}.lbwc-statusline.bak" '.statusLine.command == "other-status"'
+  expect_jq replace-foreign "${settings}.meridian-statusline.bak" '.statusLine.command == "other-status"'
 
   run bash "$INSTALLER" --settings "$fresh" --yes
   expect_case missing-settings-file 0 "statusline_install=installed"
   expect_jq missing-settings-file "$fresh" '.statusLine.refreshInterval == 15'
 
-  printf '%s\n' '{"statusLine":{"type":"command","command":"bash /old/lbwc-statusline.sh"}}' > "$own"
+  printf '%s\n' '{"statusLine":{"type":"command","command":"bash /old/meridian-statusline.sh"}}' > "$own"
   run bash "$INSTALLER" --settings "$own" --yes
   expect_case reinstall-own-statusline 0 "statusline_install=installed"
-  expect_jq reinstall-own-statusline "$own" '.statusLine.command | contains("lbwc-statusline.sh") and (contains("/old/") | not)'
+  expect_jq reinstall-own-statusline "$own" '.statusLine.command | contains("meridian-statusline.sh") and (contains("/old/") | not)'
 
   assert_no_case_failures
 }

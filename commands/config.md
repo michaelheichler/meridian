@@ -2,19 +2,19 @@
 category: supporting
 model: sonnet
 disable-model-invocation: true
-description: View and modify LBWC configuration including execution mode, effort profile, verification tier, and skill-hook wiring.
+description: View and modify MERIDIAN configuration including execution mode, effort profile, verification tier, and skill-hook wiring.
 argument-hint: "[setting value]"
 allowed-tools: Read, Write, Edit, Bash, Glob, AskUserQuestion
 ---
 
-# LBWC Config $ARGUMENTS
+# MERIDIAN Config $ARGUMENTS
 
 ## Context
 
 Plugin root:
 
 ```bash
-!`L="/tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID:-default}"; R="$L/scripts/resolve-plugin-root.sh"; [ -f "$R" ] || R="${CLAUDE_PLUGIN_ROOT:-}/scripts/resolve-plugin-root.sh"; [ -f "$R" ] || { echo "LBWC: plugin root unavailable. Restart this session to recreate $L." >&2; exit 1; }; bash "$R" >/dev/null || exit 1; echo "$L"`
+!`L="/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}"; R="$L/scripts/resolve-plugin-root.sh"; [ -f "$R" ] || R="${CLAUDE_PLUGIN_ROOT:-}/scripts/resolve-plugin-root.sh"; [ -f "$R" ] || { echo "MERIDIAN: plugin root unavailable. Restart this session to recreate $L." >&2; exit 1; }; bash "$R" >/dev/null || exit 1; echo "$L"`
 ```
 
 Store the plugin root path output above as `{plugin-root}` for use in script and config lookups below. Replace `{plugin-root}` with the literal `Plugin root` value from Context whenever a step below references a script or file in the installed plugin.
@@ -24,30 +24,30 @@ Store the plugin root path output above as `{plugin-root}` for use in script and
 Config:
 
 ```bash
-!`cat .lbwc-planning/config.json 2>/dev/null || echo "No config found -- run /lbwc:init first"`
+!`cat .meridian/config.json 2>/dev/null || echo "No config found -- run /meridian:init first"`
 ```
 
 ## Guard
 
-If no .lbwc-planning/ dir exists, STOP with "Run /lbwc:init first." (check `.lbwc-planning/config.json`)
+If no .meridian/ dir exists, STOP with "Run /meridian:init first." (check `.meridian/config.json`)
 
 ## Behavior
 
-Agent Teams is process-level Claude Code configuration. `/lbwc:team` checks it through `lbwc-config.sh agent-teams-check`, which reads Claude Code `settings.json`. Enabling requires a main-session confirmation, then `lbwc-config.sh agent-teams-enable --approved`. The command must stop with restart guidance because changing settings cannot enable the current process.
+Agent Teams is process-level Claude Code configuration. `/meridian:team` checks it through `meridian-config.sh agent-teams-check`, which reads Claude Code `settings.json`. Enabling requires a main-session confirmation, then `meridian-config.sh agent-teams-enable --approved`. The command must stop with restart guidance because changing settings cannot enable the current process.
 
-Every ordinary setting mutation runs `bash "{plugin-root}/scripts/lbwc-config.sh" set .lbwc-planning <setting> <value-json>`, followed by `lbwc-config.sh validate`. The only routing setting exposed here is `routing.active_profile`, which mutates through `lbwc-model activate`, not through direct JSON writes.
+Every ordinary setting mutation runs `bash "{plugin-root}/scripts/meridian-config.sh" set .meridian <setting> <value-json>`, followed by `meridian-config.sh validate`. The only routing setting exposed here is `routing.active_profile`, which mutates through `meridian-model activate`, not through direct JSON writes.
 
 ### Step 0 (always): validate and migrate configuration
 
-Run `bash "{plugin-root}/scripts/lbwc-config.sh" migrate .lbwc-planning`, then `bash "{plugin-root}/scripts/lbwc-config.sh" validate .lbwc-planning`. A nonzero result stops the command and leaves the invalid file for explicit repair. Do not silently replace it with defaults. Validate routing profiles separately with `bash "{plugin-root}/scripts/lbwc-model" validate .lbwc-planning`.
+Run `bash "{plugin-root}/scripts/meridian-config.sh" migrate .meridian`, then `bash "{plugin-root}/scripts/meridian-config.sh" validate .meridian`. A nonzero result stops the command and leaves the invalid file for explicit repair. Do not silently replace it with defaults. Validate routing profiles separately with `bash "{plugin-root}/scripts/meridian-model" validate .meridian`.
 
 ### No arguments (interactive configuration)
 
 **Step 1:** Display current settings in single-line box table (setting, value, description) + skill-hook mappings.
 
-Before any presentation, run `bash "{plugin-root}/scripts/lbwc-model" --json refresh .lbwc-planning`.
+Before any presentation, run `bash "{plugin-root}/scripts/meridian-model" --json refresh .meridian`.
 
-Present the detected routing state by running `bash "{plugin-root}/scripts/lbwc-model" --json show .lbwc-planning`. Render its active profile and each supported role's selector and reasoning value, plus its turn limit. Mark custom profiles as custom. Do not resolve roles through static profile files or assign cost weights.
+Present the detected routing state by running `bash "{plugin-root}/scripts/meridian-model" --json show .meridian`. Render its active profile and each supported role's selector and reasoning value, plus its turn limit. Mark custom profiles as custom. Do not resolve roles through static profile files or assign cost weights.
 
 **Step 2:** AskUserQuestion with 1 question:
 
@@ -116,13 +116,13 @@ If `SETTING=planning_tracking`, AskUserQuestion with 1 question:
 - question: `How should the plugin track planning artifacts?`
 - options:
   - `manual`: Leave planning files for manual git handling
-  - `ignore`: Keep `.lbwc-planning/` out of git
+  - `ignore`: Keep `.meridian/` out of git
   - `commit`: Auto-commit planning artifacts
 
 If `SETTING=auto_push`, AskUserQuestion with 1 question:
 
 - header: `Auto push`
-- question: `When should LBWC push automatically?`
+- question: `When should MERIDIAN push automatically?`
 - options:
   - `never`: Never push automatically
   - `after_phase`: Push once after each phase
@@ -130,7 +130,7 @@ If `SETTING=auto_push`, AskUserQuestion with 1 question:
 
 Store the selected value in variable `VALUE`.
 
-After the user chooses a core setting value, continue to Step 3 and apply it there with the same validation, write behavior, and side effects as the `/lbwc:config <setting> <value>` path below. Step 4 remains the no-args tail behavior after that shared apply step.
+After the user chooses a core setting value, continue to Step 3 and apply it there with the same validation, write behavior, and side effects as the `/meridian:config <setting> <value>` path below. Step 4 remains the no-args tail behavior after that shared apply step.
 
 **Step 2.7:** If `CONFIG_SECTION = "Model profile"`, AskUserQuestion with 1 question:
 
@@ -152,7 +152,7 @@ Store selection in variable `PROFILE_METHOD`.
 **Step 2.8:** If `CONFIG_SECTION = "Execution mode"`, AskUserQuestion with 1 question:
 
 - header: `Agent execution`
-- question: `Where should LBWC run spawned agents?`
+- question: `Where should MERIDIAN run spawned agents?`
 - options:
   - `In-process agents`: Preserve the current native Agent execution path
   - `TMUX split panes`: Persist the TMUX execution backend and its restrictions
@@ -161,27 +161,27 @@ Store selection in variable `PROFILE_METHOD`.
 Store the selection in variable `EXECUTION_MODE`.
 
 - If `EXECUTION_MODE = "Cancel spawn"`, display `✓ No changes made.` and STOP. Cancel is terminal for the requested spawn. Do not write `in_process` and do not silently fall back to another backend.
-- If `EXECUTION_MODE = "In-process agents"`, run `bash "{plugin-root}/scripts/lbwc-config.sh" set .lbwc-planning agent_execution_mode '"in_process"'`, then validate.
-- If `EXECUTION_MODE = "TMUX split panes"`, run `bash "{plugin-root}/scripts/lbwc-config.sh" set .lbwc-planning tmux_execution.enabled true`, then run `bash "{plugin-root}/scripts/lbwc-config.sh" set .lbwc-planning agent_execution_mode '"tmux"'`, then validate.
+- If `EXECUTION_MODE = "In-process agents"`, run `bash "{plugin-root}/scripts/meridian-config.sh" set .meridian agent_execution_mode '"in_process"'`, then validate.
+- If `EXECUTION_MODE = "TMUX split panes"`, run `bash "{plugin-root}/scripts/meridian-config.sh" set .meridian tmux_execution.enabled true`, then run `bash "{plugin-root}/scripts/meridian-config.sh" set .meridian agent_execution_mode '"tmux"'`, then validate.
 
 The default `agent_execution_mode=ask` and `tmux_execution.enabled=false` preserve the current in-process behavior until a caller presents its execution gate. A caller that presents the gate must treat `Cancel spawn` as cancellation, not as an automatic Option 1 fallback.
 
 **Detected model configuration:**
 
-Run `bash "{plugin-root}/scripts/lbwc-model" --json refresh .lbwc-planning`, then `bash "{plugin-root}/scripts/lbwc-model" --json show .lbwc-planning`. The detected Claude catalog, accepted reasoning values, built-in profiles, active profile, and custom profiles in that output are authoritative. Do not read or write a static model-price, alias, matrix, or reasoning file.
+Run `bash "{plugin-root}/scripts/meridian-model" --json refresh .meridian`, then `bash "{plugin-root}/scripts/meridian-model" --json show .meridian`. The detected Claude catalog, accepted reasoning values, built-in profiles, active profile, and custom profiles in that output are authoritative. Do not read or write a static model-price, alias, matrix, or reasoning file.
 
-- **Use preset profile:** Show only built-in profile names from the `show` result. Confirm one bounded choice, then run `lbwc-model activate .lbwc-planning <profile>`.
-- **Configure each agent individually:** Read the active profile and catalog from `show` and `catalog`. Ask one bounded question at a time for each supported role. Every selector and reasoning value must appear in the detected catalog. Apply each accepted cell through `lbwc-model set .lbwc-planning <profile> <role> <selector> <reasoning-json>`.
-- **Model matrix:** Copy the active profile to a user-named custom profile with `lbwc-model copy`, edit its role cells through `lbwc-model set`, validate it, then activate it. Do not create a parallel matrix schema.
+- **Use preset profile:** Show only built-in profile names from the `show` result. Confirm one bounded choice, then run `meridian-model activate .meridian <profile>`.
+- **Configure each agent individually:** Read the active profile and catalog from `show` and `catalog`. Ask one bounded question at a time for each supported role. Every selector and reasoning value must appear in the detected catalog. Apply each accepted cell through `meridian-model set .meridian <profile> <role> <selector> <reasoning-json>`.
+- **Model matrix:** Copy the active profile to a user-named custom profile with `meridian-model copy`, edit its role cells through `meridian-model set`, validate it, then activate it. Do not create a parallel matrix schema.
 
-Native Other text may name a detected selector or profile. Reject an unknown value with the exact validation error and keep the current profile unchanged. Every mutation must end with `lbwc-model validate .lbwc-planning` and a fresh `lbwc-model show .lbwc-planning`. On Cancel, make no model mutation and return to Step 2.7.
+Native Other text may name a detected selector or profile. Reject an unknown value with the exact validation error and keep the current profile unchanged. Every mutation must end with `meridian-model validate .meridian` and a fresh `meridian-model show .meridian`. On Cancel, make no model mutation and return to Step 2.7.
 
 **Step 3:** Apply changes to config.json. This is the shared apply step for no-args core-setting changes and preset-model-profile changes. Display ✓ per changed setting with ➜. No changes: "✓ No changes made."
 
 **Step 4 (profile drift detection).** If effort/autonomy/verification_tier changed:
 
 - Compare against active profile's expected values
-- If they mismatch, call AskUserQuestion "Settings no longer match '{profile}'. Save as new profile?" → "Save" (route to /lbwc:profile save) or "No" (set active_profile to "custom")
+- If they mismatch, call AskUserQuestion "Settings no longer match '{profile}'. Save as new profile?" → "Save" (route to /meridian:profile save) or "No" (set active_profile to "custom")
 - Skip if no profile-tracked settings changed or already "custom"
 
 Run `bash "{plugin-root}/scripts/suggest-next.sh" config` and display.
@@ -206,7 +206,7 @@ if [ $? -ne 0 ] || [ -z "${CANONICAL_VALUE:-}" ]; then
   exit 0
 fi
 
-jq ".max_uat_remediation_rounds = ${CANONICAL_VALUE}" .lbwc-planning/config.json > .lbwc-planning/config.json.tmp && mv .lbwc-planning/config.json.tmp .lbwc-planning/config.json
+jq ".max_uat_remediation_rounds = ${CANONICAL_VALUE}" .meridian/config.json > .meridian/config.json.tmp && mv .meridian/config.json.tmp .meridian/config.json
 echo "✓ max_uat_remediation_rounds ➜ ${CANONICAL_VALUE}"
 exit 0
 ```
@@ -214,15 +214,15 @@ exit 0
 If `setting=planning_tracking`, after writing config run:
 
 ```bash
-  PG_SCRIPT="/tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/planning-git.sh"
+  PG_SCRIPT="/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/planning-git.sh"
   if [ -f "$PG_SCRIPT" ]; then
-    bash "$PG_SCRIPT" sync-ignore .lbwc-planning/config.json
+    bash "$PG_SCRIPT" sync-ignore .meridian/config.json
   else
-    echo "⚠ LBWC: planning-git.sh unavailable. Skipping .gitignore sync." >&2
+    echo "⚠ MERIDIAN: planning-git.sh unavailable. Skipping .gitignore sync." >&2
   fi
 ```
 
-This applies any mode-specific root `.gitignore` behavior and keeps `.lbwc-planning/.gitignore` current for transient runtime files in every tracking mode.
+This applies any mode-specific root `.gitignore` behavior and keeps `.meridian/.gitignore` current for transient runtime files in every tracking mode.
 
 ### Skill-hook wiring: `skill_hook <skill> <event> <tools>`
 
@@ -238,11 +238,11 @@ Stored in config.json `skill_hooks`:
 
 ### Model profile switching: `model_profile <profile>`
 
-Run `bash "{plugin-root}/scripts/lbwc-model" activate .lbwc-planning "$PROFILE"`, then validate and show the result. The helper accepts built-in and valid custom profiles from the detected catalog. An unknown profile exits nonzero and leaves the active profile unchanged.
+Run `bash "{plugin-root}/scripts/meridian-model" activate .meridian "$PROFILE"`, then validate and show the result. The helper accepts built-in and valid custom profiles from the detected catalog. An unknown profile exits nonzero and leaves the active profile unchanged.
 
 ### Per-agent route: `model_override <role> <selector> [reasoning-json]`
 
-Read the active profile with `lbwc-model --json show`. Validate the role, selector, and optional reasoning value against `lbwc-model --json catalog`. Apply the cell through `lbwc-model set .lbwc-planning <active-profile> <role> <selector> <reasoning-json>`, then run `lbwc-model validate`. Never write model routing fields directly with jq.
+Read the active profile with `meridian-model --json show`. Validate the role, selector, and optional reasoning value against `meridian-model --json catalog`. Apply the cell through `meridian-model set .meridian <active-profile> <role> <selector> <reasoning-json>`, then run `meridian-model validate`. Never write model routing fields directly with jq.
 
 ## Settings Reference
 
@@ -266,7 +266,7 @@ Note that `auto_commit` controls source-task commits during Execute mode, while 
 | agent_execution_mode | string | in_process/tmux/workflow/ask | ask |
 | tmux_execution | object | strict TMUX backend and restriction object | enabled=false |
 | tmux_execution.enabled | boolean | true/false | false |
-| tmux_execution.session_name_prefix | string | ASCII name prefix, 1-32 characters | lbwc |
+| tmux_execution.session_name_prefix | string | ASCII name prefix, 1-32 characters | meridian |
 | tmux_execution.max_agents | integer | 1-4 | 3 |
 | tmux_execution.attach_policy | string | orchestrator_only/visible_grid | orchestrator_only |
 | tmux_execution.heartbeat_interval_seconds | integer | positive seconds | 30 |
@@ -319,7 +319,7 @@ These rows describe existing readers, not new writable settings. `/config` canno
 
 | Setting | Type | Reader and behavior | Default |
 | ------- | ---- | ------------------- | ------- |
-| schema_version | integer | [persistence-only], the validator checks the configuration version in `scripts/lib/lbwc-config-defaults.sh:24` and `scripts/lib/lbwc-config-validate.jq:74` | 1 |
+| schema_version | integer | [persistence-only], the validator checks the configuration version in `scripts/lib/meridian-config-defaults.sh:24` and `scripts/lib/meridian-config-validate.jq:74` | 1 |
 | compaction_threshold | integer | `scripts/lib/phase-detect-environment-output.sh:40` reads a token threshold and `scripts/suggest-compact.sh:244` reads the projected-token threshold | 130000 in phase detection, unset disables the projected-token check |
 | qa_commit_window_seconds | integer | `scripts/qa-gate.sh:84` accepts positive seconds for recent QA commit evidence | 7200 |
 | hooks.post_archive | string | `scripts/post-archive-hook.sh:64` reads an optional script path after archive | empty string |
@@ -327,8 +327,8 @@ These rows describe existing readers, not new writable settings. `/config` canno
 | routing.active_profile | string | `scripts/runtime-snapshot.sh:74` freezes the active model routing profile | balanced |
 | routing.profiles | object | `scripts/runtime-snapshot.sh:68` reads the selected profile and its role cells | generated quality, balanced and turbo profiles |
 | routing.profiles.balanced.roles | object | `scripts/resolve-agent-settings.sh:83` reads balanced role cells for the workflow backend | generated role cells |
-| roles | object | `scripts/lib/turn-value.sh:67` reads legacy per-role turn limits and `scripts/lib/lbwc-routing-migrate.sh:6` migrates legacy roles | empty object |
-| model_profile | string | `scripts/lib/lbwc-routing-migrate.sh:11` reads the legacy profile and `scripts/lib/suggest-next-state.sh:138` checks its presence | balanced during routing migration, quality during suggest-next initialization |
+| roles | object | `scripts/lib/turn-value.sh:67` reads legacy per-role turn limits and `scripts/lib/meridian-routing-migrate.sh:6` migrates legacy roles | empty object |
+| model_profile | string | `scripts/lib/meridian-routing-migrate.sh:11` reads the legacy profile and `scripts/lib/suggest-next-state.sh:138` checks its presence | balanced during routing migration, quality during suggest-next initialization |
 | max_remediation_rounds | boolean/number | `scripts/resolve-uat-remediation-round-limit.sh:123` reads the legacy alias after the canonical key | false |
 | v3_rolling_summary | boolean | `scripts/cache-context.sh:200` and `scripts/compile-context.sh:174` read the legacy alias after rolling_summary | false |
 | tmux.layout | string | `scripts/tmux-agent-orchestrator.sh:70` reads the legacy layout after tmux_execution.layout | tiled |
@@ -380,7 +380,7 @@ The log never holds payloads, tool input, file contents, command text, prompts, 
 
 ### Statusline switches
 
-Four flags control what the LBWC statusline shows:
+Four flags control what the MERIDIAN statusline shows:
 
 - **`statusline_hide_limits`**: Suppress the Quota line (L3, the 5-hour and 7-day rate limits) unconditionally. Use this if you never want to see rate limit information in the statusline.
 
@@ -436,7 +436,7 @@ Accepted values:
 - `0`: unlimited UAT remediation rounds
 - positive integer, the finite UAT remediation round cap
 
-Injected default is `false`, and runtime fallback is also unlimited when the persisted value is absent or malformed. `/lbwc:config` rejects malformed interactive input instead of writing it.
+Injected default is `false`, and runtime fallback is also unlimited when the persisted value is absent or malformed. `/meridian:config` rejects malformed interactive input instead of writing it.
 
 Finite cap example:
 
@@ -456,8 +456,8 @@ Unlimited example:
 
 ## Output Format
 
-Follow @${CLAUDE_PLUGIN_ROOT}/references/lbwc-brand-essentials.md (single-line box, ✓ success, ⚠ invalid, ➜ transitions, no ANSI).
+Follow @${CLAUDE_PLUGIN_ROOT}/references/meridian-brand-essentials.md (single-line box, ✓ success, ⚠ invalid, ➜ transitions, no ANSI).
 
 ## Next Up
 
-After a successful mutation, show the validated current value and suggest `/lbwc:config` to review all settings. Stop after one suggestion.
+After a successful mutation, show the validated current value and suggest `/meridian:config` to review all settings. Stop after one suggestion.

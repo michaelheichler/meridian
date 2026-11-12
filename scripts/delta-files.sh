@@ -1,9 +1,20 @@
 #!/usr/bin/env bash
+
+printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${BASH_SOURCE[0]}"
+case "$MERIDIAN_MIGRATION_SOURCE" in
+  *"/"*) printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${MERIDIAN_MIGRATION_SOURCE%"/"*}" ;;
+  *) printf -v MERIDIAN_MIGRATION_SOURCE '%s' . ;;
+esac
+if [ -f "$MERIDIAN_MIGRATION_SOURCE/lib/rename-migration.sh" ]; then
+  . "$MERIDIAN_MIGRATION_SOURCE/lib/rename-migration.sh"
+  meridian_migrate_environment
+fi
+unset MERIDIAN_MIGRATION_SOURCE
 set -u
 
 SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-. "${SCRIPT_DIR}/lib/lbwc-target-root.sh"
+. "${SCRIPT_DIR}/lib/meridian-target-root.sh"
 
 PHASE_DIR="${1:-.}"
 PLAN_PATH="${2:-}"
@@ -23,16 +34,16 @@ if [ "$PHASE_DIR_EXPLICIT" -eq 1 ] || [ "$PLAN_PATH_EXPLICIT" -eq 1 ]; then
   TARGET_SCOPE_EXPLICIT=1
 fi
 
-TARGET_ROOT=$(lbwc_resolve_target_root "$TARGET_SCOPE_EXPLICIT" "$PLAN_PATH" "$PHASE_DIR" || true)
-TARGET_GIT_ROOT=$(lbwc_resolve_target_git_root "$TARGET_SCOPE_EXPLICIT" "$PLAN_PATH" "$PHASE_DIR" || true)
-WORKSPACE_SUBPATH=$(lbwc_workspace_subpath_from_git_root "$TARGET_ROOT" "$TARGET_GIT_ROOT" 2>/dev/null || true)
+TARGET_ROOT=$(meridian_resolve_target_root "$TARGET_SCOPE_EXPLICIT" "$PLAN_PATH" "$PHASE_DIR" || true)
+TARGET_GIT_ROOT=$(meridian_resolve_target_git_root "$TARGET_SCOPE_EXPLICIT" "$PLAN_PATH" "$PHASE_DIR" || true)
+WORKSPACE_SUBPATH=$(meridian_workspace_subpath_from_git_root "$TARGET_ROOT" "$TARGET_GIT_ROOT" 2>/dev/null || true)
 
 emit_workspace_relative_delta_paths() {
   local path normalized
 
   while IFS= read -r path; do
     [ -n "$path" ] || continue
-    normalized=$(lbwc_git_path_to_workspace_path "$path" "$TARGET_ROOT" "$TARGET_GIT_ROOT" 2>/dev/null || true)
+    normalized=$(meridian_git_path_to_workspace_path "$path" "$TARGET_ROOT" "$TARGET_GIT_ROOT" 2>/dev/null || true)
     [ -n "$normalized" ] || continue
     [ "$normalized" = "." ] && continue
     printf '%s\n' "$normalized"

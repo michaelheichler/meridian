@@ -1,45 +1,51 @@
-# LBWC execution adaptation
+# MERIDIAN execution adaptation
 
 This is a behavior-preserving port. The main session owns task contracts, generated-agent admission, mutable planning state, verification persistence, telemetry, git, and user-facing output. A worker can change only the exact paths in its dispatched contract. `scripts/phase-detect.sh`, `scripts/qa-result-gate.sh`, `scripts/write-verification.sh`, `scripts/remediation-round.sh`, and `references/agent-spawn-protocol.md` replace source-specific routing, persistence, and lifecycle authority.
 
 Commands resolve `PLUGIN_ROOT` through the session-link contract before applying this protocol.
 
-# LBWC Phase Auto-Detection Protocol
+# MERIDIAN Phase Auto-Detection Protocol
 
-If the user omits the phase number from a command, this protocol is the single source of truth for detecting the target phase. `$PLUGIN_ROOT/commands/vibe.md` and the QA protocol (`qa.md`, hidden from `/help`) reference it.
+If the user omits the phase number from a command, this protocol is the single source of truth for detecting the target phase. `$PLUGIN_ROOT/commands/transit.md` and the QA protocol (`qa.md`, hidden from `/help`) reference it.
 
 ## Overview
 
 When `$ARGUMENTS` contains no explicit phase number, commands use this protocol to infer the correct phase from the current planning state. Detection logic varies by command type because each command targets a different stage of the phase lifecycle.
 
-Note that `/lbwc:vibe` has additional state detection that precedes phase scanning (see its State Detection section). Commands use the algorithms below once they determine that they need phase-level detection.
+Note that `/meridian:transit` has additional state detection that precedes phase scanning (see its State Detection section). Commands use the algorithms below once they determine that they need phase-level detection.
 
 ## Resolve Phases Directory
 
-Phases always live at `.lbwc-planning/phases/` (root-canonical).
+Phases always live at `.meridian/phases/` (root-canonical).
 
 All directory scanning below uses this path.
 
 ## Detection by Command Type
 
-**LBWC superseder:** every command invokes `scripts/phase-detect.sh` and consumes its complete result. The command-specific rules below constrain which emitted state is actionable. They never rescan directories, recalculate a state, or replace an active remediation route.
+**MERIDIAN superseder:** every command invokes `scripts/phase-detect.sh` and consumes its complete result. The command-specific rules below constrain which emitted state is actionable. They never rescan directories, recalculate a state, or replace an active remediation route.
 
-### Planning Commands (`/lbwc:vibe --plan`, `/lbwc:vibe --discuss`, `/lbwc:vibe --assumptions`)
+### Planning Commands (`/meridian:transit --plan`, `/meridian:transit --discuss`, `/meridian:transit --assumptions`)
 
 **Goal:** Act on the detector result that requires planning or discussion.
 
 **Algorithm:**
 1. Run the detector and require `phase_detect_complete=true`.
-2. If the configured discussion gate is active, route `needs_discussion` to `/lbwc:discuss {NN}`. If the gate is inactive, do not route it there.
-3. For `needs_plan_and_execute`, route to `/lbwc:plan {NN}`.
+2. If the configured discussion gate is active, route `needs_discussion` to `/meridian:discuss {NN}`. If the gate is inactive, do not route it there.
+3. For `needs_plan_and_execute`, route to `/meridian:plan {NN}`.
 4. For any state with an existing plan, require an explicit replan request. Do not choose a phase by scanning plan filenames.
-5. If every phase is planned, report `All phases are planned. Specify a phase to re-plan: /lbwc:plan N` and stop.
+5. If every phase has a plan, report 
+
+```text
+All phases are planned. Specify a phase to re-plan: /meridian:plan N
+```
+
+ and stop.
 
 ### Discussion Gate (`require_phase_discussion` config)
 
 When `require_phase_discussion=true`, `phase-detect.sh` emits `needs_discussion` before `needs_plan_and_execute` when a phase lacks both plan and context evidence. When discussion context exists, the detector advances to the ordinary planning state. When the config is false, commands accept the ordinary detector result without adding a local gate.
 
-### Build Command (`/lbwc:vibe --execute`)
+### Build Command (`/meridian:transit --execute`)
 
 **Goal:** Act on the earliest detector-selected phase whose execution evidence is incomplete.
 
@@ -47,7 +53,13 @@ When `require_phase_discussion=true`, `phase-detect.sh` emits `needs_discussion`
 1. Accept `needs_execute` for a root PLAN, or an active remediation execution state for its exact round PLAN.
 2. Read the root or round path emitted by `scripts/remediation-round.sh current <phase-dir> <qa|uat>`.
 3. Require all predecessor contract and summary evidence before a dependent task starts.
-4. If all planned phases are terminally built, report `All planned phases are built. Specify a phase to rebuild: /lbwc:build N` and stop.
+4. If all planned phases have terminal build evidence, report 
+
+```text
+All planned phases are built. Specify a phase to rebuild: /meridian:build N
+```
+
+ and stop.
 
 **Matching logic:** `phase-detect.sh` and task-contract state supersede filename-prefix matching. A terminal SUMMARY requires contract, verdict, verification, and commit evidence.
 
@@ -65,9 +77,9 @@ When `require_phase_discussion=true`, `phase-detect.sh` emits `needs_discussion`
 
 **Verification result parsing:** `result:` is authoritative. Accept a legacy `status:` of PASS/FAIL/PARTIAL only in the absence of `result:`. A blank or unrecognized result never falls back to status.
 
-### Lifecycle Command (`/lbwc:vibe`)
+### Lifecycle Command (`/meridian:transit`)
 
-`/lbwc:vibe` calls the detector before selecting a stage. It does not implement a second state machine. `planning_dir_exists`, `project_exists`, `phase_count`, `next_phase_state`, QA attention, UAT blockers, and milestone fields are the route authority.
+`/meridian:transit` calls the detector before selecting a stage. It does not implement a second state machine. `planning_dir_exists`, `project_exists`, `phase_count`, `next_phase_state`, QA attention, UAT blockers, and milestone fields are the route authority.
 
 **Goal:** Continue the earliest lifecycle obligation without skipping a prior remediation, verification, discussion, planning, or build state.
 

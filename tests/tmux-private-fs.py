@@ -54,7 +54,7 @@ class TmuxPrivateFilesystemTests(unittest.TestCase):
 
     def test_complete_ack_resumes_after_both_names_interruption(self) -> None:
         self.create_fixture()
-        with mock.patch.dict(os.environ, {"LBWC_TMUX_FS_FAIL_AFTER_ACK_LINK": "1"}):
+        with mock.patch.dict(os.environ, {"MERIDIAN_TMUX_FS_FAIL_AFTER_ACK_LINK": "1"}):
             with self.assertRaises(RuntimeError):
                 self.helper.complete_ack(self.root, "inbox/job.json", "acked/job.json")
         self.assertTrue(os.path.exists(os.path.join(self.root, "inbox", "job.json")))

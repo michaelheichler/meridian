@@ -1,87 +1,87 @@
-vibe_finish() {
+transit_finish() {
   if [ "$next_phase_state" = "needs_reverification" ]; then
     suggest_reverification
   elif [ "$next_phase_state" = "needs_verification" ] && [ -n "$current_uat_blocking_phase" ]; then
     suggest_resume_verify
   elif ! suggest_milestone_recovery; then
     if [ "$deviation_count" -eq 0 ]; then
-      suggest "/lbwc:vibe --archive -- All phases complete, zero deviations"
+      suggest "/meridian:transit --archive -- All phases complete, zero deviations"
     else
-      suggest "/lbwc:vibe --archive -- Archive completed work ($deviation_count deviation(s) logged)"
-      suggest "/lbwc:vibe -- Review before archiving"
+      suggest "/meridian:transit --archive -- Archive completed work ($deviation_count deviation(s) logged)"
+      suggest "/meridian:transit -- Review before archiving"
     fi
   elif [ "$deviation_count" -gt 0 ]; then
-    suggest "/lbwc:vibe -- Review remediation scope before resuming new work"
+    suggest "/meridian:transit -- Review remediation scope before resuming new work"
   fi
   return 0
 }
 
-vibe_continue_target() {
+transit_continue_target() {
   local target="${next_unbuilt:-$next_unplanned}"
   if [ -n "$next_undiscussed" ] && [ "$next_undiscussed" = "$target" ]; then
-    suggest "/lbwc:discuss $target -- Discuss phase before planning"
+    suggest "/meridian:discuss $target -- Discuss phase before planning"
   elif [ -n "$next_preseeded" ] && [ "$next_preseeded" = "$target" ]; then
     suggest_phase_line "$target" "Plan Phase" " (discussion pre-seeded from UAT)"
   elif [ -n "$active_phase_name" ] && [ "$target" != "$active_phase_num" ]; then
     suggest_phase_line "$target" "Continue to Phase" ""
   else
-    suggest "/lbwc:vibe -- Continue to next phase"
+    suggest "/meridian:transit -- Continue to next phase"
   fi
 }
 
-vibe_default() {
+transit_default() {
   if needs_verify_prompt; then
-    suggest_verify_unverified "/lbwc:vibe -- Verify completed work before continuing"
+    suggest_verify_unverified "/meridian:transit -- Verify completed work before continuing"
   fi
   if [ "$all_done" = true ] || [ "$next_phase_state" = "needs_reverification" ] || { [ "$next_phase_state" = "needs_verification" ] && [ -n "$current_uat_blocking_phase" ]; }; then
-    vibe_finish
+    transit_finish
   elif [ -n "$current_uat_issues_phase" ]; then
     suggest_uat_remediation
   elif continue_target_available; then
-    vibe_continue_target
+    transit_continue_target
   fi
   if [ "$RESULT" = "skipped" ]; then
-    suggest "/lbwc:vibe -- Verify completed work"
+    suggest "/meridian:transit -- Verify completed work"
   fi
   return 0
 }
 
-suggest_vibe() {
+suggest_transit() {
   case "$effective_result" in
     fail)
       suggest_fix_plan "failed verification" "Fix the failing checks"
-      suggest "/lbwc:vibe -- Re-run verification after fixing"
+      suggest "/meridian:transit -- Re-run verification after fixing"
       ;;
     partial)
       suggest_fix_plan "partial failure" "Address partial failures"
       if [ "$all_done" != true ]; then
-        suggest "/lbwc:vibe -- Continue to next phase"
+        suggest "/meridian:transit -- Continue to next phase"
       fi
       ;;
     *)
-      vibe_default
+      transit_default
       ;;
   esac
 }
 
 suggest_plan() {
   if [ "$active_phase_plans" -gt 0 ]; then
-    suggest "/lbwc:vibe -- Execute $active_phase_plans plans ($effort effort)"
+    suggest "/meridian:transit -- Execute $active_phase_plans plans ($effort effort)"
   else
-    suggest "/lbwc:vibe -- Execute the planned phase"
+    suggest "/meridian:transit -- Execute the planned phase"
   fi
 }
 
 qa_debug_pending() {
   case "$effective_result" in
     fail|partial)
-      suggest "/lbwc:debug --resume -- Address QA failures"
+      suggest "/meridian:debug --resume -- Address QA failures"
       ;;
     *)
       if [ "$DEBUG_SESSION_STATUS" = "uat_pending" ]; then
-        suggest "/lbwc:debug --resume -- Continue to UAT verification"
+        suggest "/meridian:debug --resume -- Continue to UAT verification"
       else
-        suggest "/lbwc:debug --resume -- Continue to QA verification"
+        suggest "/meridian:debug --resume -- Continue to QA verification"
       fi
       ;;
   esac
@@ -91,7 +91,7 @@ qa_debug_suggestion() {
   load_debug_session || return 1
   case "$DEBUG_SESSION_STATUS" in
     qa_pending|uat_pending|fix_applied) qa_debug_pending ;;
-    qa_failed) suggest "/lbwc:debug --resume -- Address QA failures" ;;
+    qa_failed) suggest "/meridian:debug --resume -- Address QA failures" ;;
     *) return 1 ;;
   esac
 }
@@ -103,9 +103,9 @@ qa_finish() {
     suggest_resume_verify
   elif ! suggest_milestone_recovery; then
     if [ "$deviation_count" -eq 0 ]; then
-      suggest "/lbwc:vibe --archive -- All phases complete, zero deviations"
+      suggest "/meridian:transit --archive -- All phases complete, zero deviations"
     else
-      suggest "/lbwc:vibe --archive -- Archive completed work ($deviation_count deviation(s) logged)"
+      suggest "/meridian:transit --archive -- Archive completed work ($deviation_count deviation(s) logged)"
     fi
   fi
   return 0
@@ -114,19 +114,19 @@ qa_finish() {
 qa_continue_target() {
   local target="${next_unbuilt:-$next_unplanned}"
   if [ -n "$next_undiscussed" ] && [ -n "$target" ] && [ "$next_undiscussed" = "$target" ]; then
-    suggest "/lbwc:discuss $target -- Discuss phase before planning"
+    suggest "/meridian:discuss $target -- Discuss phase before planning"
   elif [ -n "$next_preseeded" ] && [ -n "$target" ] && [ "$next_preseeded" = "$target" ]; then
     suggest_phase_line "$target" "Plan Phase" " (discussion pre-seeded from UAT)"
   elif [ -n "$target" ]; then
     suggest_phase_line "$target" "Continue to Phase" ""
   else
-    suggest "/lbwc:vibe -- Continue to next phase"
+    suggest "/meridian:transit -- Continue to next phase"
   fi
 }
 
 qa_pass() {
   if needs_verify_prompt; then
-    suggest_verify_unverified "/lbwc:vibe -- Verify completed work"
+    suggest_verify_unverified "/meridian:transit -- Verify completed work"
   fi
   if [ "$all_done" = true ] || [ "$next_phase_state" = "needs_reverification" ] || { [ "$next_phase_state" = "needs_verification" ] && [ -n "$current_uat_blocking_phase" ]; }; then
     qa_finish
@@ -151,10 +151,10 @@ suggest_qa() {
       ;;
     partial)
       suggest_fix_plan "partial failure" "Address partial failures"
-      suggest "/lbwc:vibe -- Continue despite warnings"
+      suggest "/meridian:transit -- Continue despite warnings"
       ;;
     *)
-      suggest "/lbwc:vibe -- Continue building"
+      suggest "/meridian:transit -- Continue building"
       ;;
   esac
 }
@@ -162,11 +162,11 @@ suggest_qa() {
 fix_debug_suggestion() {
   load_debug_session || return 1
   case "$DEBUG_SESSION_STATUS" in
-    qa_pending|fix_applied) suggest "/lbwc:debug --resume -- Address remaining issues" ;;
-    qa_failed) suggest "/lbwc:debug --resume -- Address QA failures" ;;
-    uat_pending) suggest "/lbwc:debug --resume -- Run UAT on the debug fix" ;;
-    uat_failed) suggest "/lbwc:debug --resume -- Address UAT issues" ;;
-    investigating) suggest "/lbwc:debug --resume -- Continue investigation" ;;
+    qa_pending|fix_applied) suggest "/meridian:debug --resume -- Address remaining issues" ;;
+    qa_failed) suggest "/meridian:debug --resume -- Address QA failures" ;;
+    uat_pending) suggest "/meridian:debug --resume -- Run UAT on the debug fix" ;;
+    uat_failed) suggest "/meridian:debug --resume -- Address UAT issues" ;;
+    investigating) suggest "/meridian:debug --resume -- Continue investigation" ;;
     *) return 1 ;;
   esac
 }
@@ -186,9 +186,9 @@ suggest_fix() {
   if debug_fallback_available && fix_debug_suggestion; then
     return 0
   fi
-  suggest "/lbwc:vibe -- Verify the fix"
+  suggest "/meridian:transit -- Verify the fix"
   if [ "$cfg_auto_uat" = true ] && [ -f "$PLANNING_DIR/.last-fix-commit" ] && fix_marker_is_fresh; then
-    suggest "/lbwc:verify -- Run UAT on the fix"
+    suggest "/meridian:verify -- Run UAT on the fix"
   fi
-  suggest "/lbwc:vibe -- Continue building"
+  suggest "/meridian:transit -- Continue building"
 }

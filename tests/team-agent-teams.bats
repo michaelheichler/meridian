@@ -9,13 +9,13 @@ DISABLED_MESSAGE='TEAM CHECK IS NOT ENABLED.'
 
 setup() {
   REPO_ROOT="$BATS_TEST_DIRNAME/.."
-  SCRIPT="$REPO_ROOT/scripts/lbwc-config.sh"
+  SCRIPT="$REPO_ROOT/scripts/meridian-config.sh"
   TEST_ROOT="$(mktemp -d)"
   SETTINGS="$TEST_ROOT/settings.json"
   PROJECT="$TEST_ROOT/project"
   mkdir -p "$PROJECT/src" "$TEST_ROOT/claude"
   (cd "$PROJECT" && git init -q)
-  export LBWC_SETTINGS_PATH="$SETTINGS"
+  export MERIDIAN_SETTINGS_PATH="$SETTINGS"
   export CLAUDE_CONFIG_DIR="$TEST_ROOT/claude"
   unset CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS || true
   use_claude_fixture "$TEST_ROOT/host-claude"
@@ -145,7 +145,7 @@ pinned_corrupt_check_row() {
     run env -u LINK -u PROJECT_ROOT -u AGENT_TEAMS_CHECK -u CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS \
       CLAUDE_PLUGIN_ROOT="$REPO_ROOT" \
       CLAUDE_CONFIG_DIR="$TEST_ROOT/claude" \
-      LBWC_SETTINGS_PATH="$SETTINGS" \
+      MERIDIAN_SETTINGS_PATH="$SETTINGS" \
       bash -c "cd \"$PROJECT\" && $directive"
     [ "$status" -eq 0 ] || { echo "case=$label status=$status output=$output" >&2; return 1; }
     [[ "$output" == *"Plugin root: "* ]] || { echo "case=$label output=$output" >&2; return 1; }
@@ -153,7 +153,7 @@ pinned_corrupt_check_row() {
     [[ "$output" == *"$expected_marker"* ]] || { echo "case=$label output=$output" >&2; return 1; }
     [[ "$output" != *"$absent_marker"* ]] || { echo "case=$label output=$output" >&2; return 1; }
     [ ! -e "$PROJECT/.temporary-agent-runfiles" ] || { echo "case=$label created runfiles" >&2; return 1; }
-    [ ! -e "$PROJECT/.lbwc-planning" ] || { echo "case=$label created planning" >&2; return 1; }
+    [ ! -e "$PROJECT/.meridian" ] || { echo "case=$label created planning" >&2; return 1; }
     [ "$(jq -c . "$SETTINGS")" = "{}" ] || { echo "case=$label changed settings" >&2; return 1; }
   done <<CASES
 disabled|$DISABLED_MESSAGE|$ENABLED_MESSAGE

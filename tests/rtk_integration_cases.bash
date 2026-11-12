@@ -45,8 +45,8 @@ integration_doctor_malformed() {
 }
 
 integration_doctor_project_binary() {
-  mkdir -p "$LBWC_RTK_DIR"
-  cp "$TEST_TEMP_DIR/release/payload/rtk" "$LBWC_RTK_BINARY"
+  mkdir -p "$MERIDIAN_RTK_DIR"
+  cp "$TEST_TEMP_DIR/release/payload/rtk" "$MERIDIAN_RTK_BINARY"
   run manager doctor-json
   [ "$status" -eq 0 ]
   printf '%s' "$output" | jq -e '.rtk_present == true and .artifacts_present == true and .compatibility == "unverified"'
@@ -56,7 +56,7 @@ integration_init_dry_run() {
   run manager init --dry-run
   [ "$status" -eq 0 ]
   [ ! -e "$CLAUDE_CONFIG_DIR" ]
-  [ ! -e "$LBWC_RTK_DIR" ]
+  [ ! -e "$MERIDIAN_RTK_DIR" ]
 }
 
 integration_init_publish() {
@@ -136,7 +136,7 @@ integration_finish_without_transcript() {
   run manager smoke-finish
   [ "$status" -eq 0 ]
   printf '%s' "$output" | jq -e '.observed_commands == [] and .compatibility == "unverified" and .proof_source == null'
-  jq -e '.transcript == "" and .start_line == 0 and (.nonce | length > 0)' "$LBWC_RTK_DIR/rtk-smoke.json"
+  jq -e '.transcript == "" and .start_line == 0 and (.nonce | length > 0)' "$MERIDIAN_RTK_DIR/rtk-smoke.json"
 }
 
 integration_finish_tracks_new_requests() {
@@ -154,16 +154,16 @@ integration_finish_tracks_new_requests() {
 }
 
 integration_finish_invalid_marker() {
-  mkdir -p "$LBWC_RTK_DIR"
-  printf '{"nonce":3}\n' > "$LBWC_RTK_DIR/rtk-smoke.json"
+  mkdir -p "$MERIDIAN_RTK_DIR"
+  printf '{"nonce":3}\n' > "$MERIDIAN_RTK_DIR/rtk-smoke.json"
   run manager smoke-finish
   [ "$status" -eq 2 ]
 }
 
 integration_finish_outside_projects() {
-  mkdir -p "$LBWC_RTK_DIR"
+  mkdir -p "$MERIDIAN_RTK_DIR"
   printf '{}\n' > "$TEST_TEMP_DIR/outside.jsonl"
-  jq -n --arg transcript "$TEST_TEMP_DIR/outside.jsonl" '{nonce:"fixture",transcript:$transcript,start_line:0}' > "$LBWC_RTK_DIR/rtk-smoke.json"
+  jq -n --arg transcript "$TEST_TEMP_DIR/outside.jsonl" '{nonce:"fixture",transcript:$transcript,start_line:0}' > "$MERIDIAN_RTK_DIR/rtk-smoke.json"
   run manager smoke-finish
   [ "$status" -eq 2 ]
 }

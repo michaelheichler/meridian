@@ -77,7 +77,7 @@ main() {
   local section_index=0
   local all_items_ndjson
   all_items_ndjson=$(mktemp 2>/dev/null) || {
-    emit_error_json "$state_path" "$section_name" "$filter_lower" "Could not prepare todo listing output. Rerun /lbwc:list-todos."
+    emit_error_json "$state_path" "$section_name" "$filter_lower" "Could not prepare todo listing output. Rerun /meridian:list-todos."
     exit 0
   }
   while IFS= read -r line; do
@@ -90,12 +90,12 @@ main() {
     local parsed
     if ! parsed=$(todo_item_parse_line_json "$line" "$section_index" "$state_path" "$section_name"); then
       rm -f "$all_items_ndjson"
-      emit_error_json "$state_path" "$section_name" "$filter_lower" "Could not parse one of the current todos. Rerun /lbwc:list-todos."
+      emit_error_json "$state_path" "$section_name" "$filter_lower" "Could not parse one of the current todos. Rerun /meridian:list-todos."
       exit 0
     fi
     if ! printf '%s\n' "$parsed" >> "$all_items_ndjson"; then
       rm -f "$all_items_ndjson"
-      emit_error_json "$state_path" "$section_name" "$filter_lower" "Could not stage todo listing output. Rerun /lbwc:list-todos."
+      emit_error_json "$state_path" "$section_name" "$filter_lower" "Could not stage todo listing output. Rerun /meridian:list-todos."
       exit 0
     fi
   done <<< "$todo_lines"
@@ -111,12 +111,12 @@ main() {
 
   all_items_json=$(jq -sc '.' "$all_items_ndjson" 2>/dev/null) || {
     rm -f "$all_items_ndjson"
-    emit_error_json "$state_path" "$section_name" "$filter_lower" "Could not build the todo listing. Rerun /lbwc:list-todos."
+    emit_error_json "$state_path" "$section_name" "$filter_lower" "Could not build the todo listing. Rerun /meridian:list-todos."
     exit 0
   }
   rm -f "$all_items_ndjson"
   all_items_json=$(todo_item_annotate_identity_occurrence "$all_items_json") || {
-    emit_error_json "$state_path" "$section_name" "$filter_lower" "Could not annotate todo identity metadata. Rerun /lbwc:list-todos."
+    emit_error_json "$state_path" "$section_name" "$filter_lower" "Could not annotate todo identity metadata. Rerun /meridian:list-todos."
     exit 0
   }
   items_json=$(printf '%s' "$all_items_json" | jq -c --arg filter "$filter_lower" '
@@ -126,13 +126,13 @@ main() {
     | to_entries
     | map(.value + {num:(.key + 1)})
   ' 2>/dev/null) || {
-    emit_error_json "$state_path" "$section_name" "$filter_lower" "Could not filter todo items. Rerun /lbwc:list-todos."
+    emit_error_json "$state_path" "$section_name" "$filter_lower" "Could not filter todo items. Rerun /meridian:list-todos."
     exit 0
   }
 
   local filtered_count
   filtered_count=$(echo "$items_json" | jq 'length' 2>/dev/null) || {
-    emit_error_json "$state_path" "$section_name" "$filter_lower" "Could not count todo items. Rerun /lbwc:list-todos."
+    emit_error_json "$state_path" "$section_name" "$filter_lower" "Could not count todo items. Rerun /meridian:list-todos."
     exit 0
   }
 
@@ -163,7 +163,7 @@ main() {
       ) as $body
       | "\(.num). \($body)"
   ' 2>/dev/null) || {
-    emit_error_json "$state_path" "$section_name" "$filter_lower" "Could not render the todo listing. Rerun /lbwc:list-todos."
+    emit_error_json "$state_path" "$section_name" "$filter_lower" "Could not render the todo listing. Rerun /meridian:list-todos."
     exit 0
   }
   [ -n "$display" ] && display="${display}"$'\n'
@@ -174,7 +174,7 @@ main() {
     '{status:$st, state_path:$sp, section:$sec, count:$c,
       filter:(if $f == "" then null else $f end),
       display:$d, items:.}' 2>/dev/null || {
-    emit_error_json "$state_path" "$section_name" "$filter_lower" "Could not finalize the todo listing. Rerun /lbwc:list-todos."
+    emit_error_json "$state_path" "$section_name" "$filter_lower" "Could not finalize the todo listing. Rerun /meridian:list-todos."
     exit 0
   }
 }

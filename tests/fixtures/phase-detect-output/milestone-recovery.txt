@@ -1,7 +1,7 @@
 jq_available=true
 planning_dir_exists=true
 project_exists=true
-phases_dir=.lbwc-planning/phases
+phases_dir=.meridian/phases
 has_shipped_milestones=true
 needs_milestone_rename=false
 phase_count=0
@@ -37,9 +37,9 @@ milestone_uat_issues=true
 milestone_uat_phase=01
 milestone_uat_slug=m01-shipped
 milestone_uat_major_or_higher=true
-milestone_uat_phase_dir=.lbwc-planning/milestones/m01-shipped/phases/01-archived
+milestone_uat_phase_dir=.meridian/milestones/m01-shipped/phases/01-archived
 milestone_uat_count=1
-milestone_uat_phase_dirs=.lbwc-planning/milestones/m01-shipped/phases/01-archived
+milestone_uat_phase_dirs=.meridian/milestones/m01-shipped/phases/01-archived
 config_effort=balanced
 config_autonomy=standard
 config_auto_commit=true
@@ -56,7 +56,7 @@ has_codebase_map=false
 brownfield=true
 execution_state=none
 ---MILESTONE_UAT_EXTRACT_START---
-milestone_phase_dir=.lbwc-planning/milestones/m01-shipped/phases/01-archived
+milestone_phase_dir=.meridian/milestones/m01-shipped/phases/01-archived
 uat_phase=01 uat_issues_total=1 uat_round=1 uat_file=01-UAT.md
 P01-T1|major|fixture behavior failed|1
 ---

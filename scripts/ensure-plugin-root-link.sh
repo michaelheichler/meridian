@@ -1,4 +1,15 @@
 #!/usr/bin/env bash
+
+printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${BASH_SOURCE[0]}"
+case "$MERIDIAN_MIGRATION_SOURCE" in
+  *"/"*) printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${MERIDIAN_MIGRATION_SOURCE%"/"*}" ;;
+  *) printf -v MERIDIAN_MIGRATION_SOURCE '%s' . ;;
+esac
+if [ -f "$MERIDIAN_MIGRATION_SOURCE/lib/rename-migration.sh" ]; then
+  . "$MERIDIAN_MIGRATION_SOURCE/lib/rename-migration.sh"
+  meridian_migrate_environment
+fi
+unset MERIDIAN_MIGRATION_SOURCE
 set -euo pipefail
 
 
@@ -11,7 +22,7 @@ if [ -z "$link_path" ] || [ -z "$target_dir" ]; then
 fi
 
 case "$(basename "$link_path")" in
-  .lbwc-plugin-root-link-*) ;;
+  .meridian-plugin-root-link-*) ;;
   *)
     echo "Error: unexpected link path basename: $link_path" >&2
     exit 1

@@ -1,6 +1,6 @@
 isolation_spawn_config() {
-  jq --argjson value "$1" 'if $value == "missing" then del(.worktree_isolation) else .worktree_isolation=$value end' "$TEST_TEMP_DIR/.lbwc-planning/config.json" > "$TEST_TEMP_DIR/config.tmp"
-  mv "$TEST_TEMP_DIR/config.tmp" "$TEST_TEMP_DIR/.lbwc-planning/config.json"
+  jq --argjson value "$1" 'if $value == "missing" then del(.worktree_isolation) else .worktree_isolation=$value end' "$TEST_TEMP_DIR/.meridian/config.json" > "$TEST_TEMP_DIR/config.tmp"
+  mv "$TEST_TEMP_DIR/config.tmp" "$TEST_TEMP_DIR/.meridian/config.json"
 }
 
 isolation_raw_case() {
@@ -63,11 +63,11 @@ isolation_registered_allowed() {
 }
 
 isolation_frozen() {
-  rm "$TEST_TEMP_DIR/.lbwc-planning/config.json"
-  bash "$SCRIPTS_DIR/lbwc-config.sh" init "$TEST_TEMP_DIR/.lbwc-planning" >/dev/null
-  printf '%s\n' '{"status":"running"}' > "$TEST_TEMP_DIR/.lbwc-planning/.execution-state.json"
-  run bash "$SCRIPTS_DIR/lbwc-config.sh" set "$TEST_TEMP_DIR/.lbwc-planning" worktree_isolation '"on"'
+  rm "$TEST_TEMP_DIR/.meridian/config.json"
+  bash "$SCRIPTS_DIR/meridian-config.sh" init "$TEST_TEMP_DIR/.meridian" >/dev/null
+  printf '%s\n' '{"status":"running"}' > "$TEST_TEMP_DIR/.meridian/.execution-state.json"
+  run bash "$SCRIPTS_DIR/meridian-config.sh" set "$TEST_TEMP_DIR/.meridian" worktree_isolation '"on"'
   expect_status frozen 1
   expect_output_has frozen 'frozen'
-  jq -e '.worktree_isolation != "on"' "$TEST_TEMP_DIR/.lbwc-planning/config.json"
+  jq -e '.worktree_isolation != "on"' "$TEST_TEMP_DIR/.meridian/config.json"
 }

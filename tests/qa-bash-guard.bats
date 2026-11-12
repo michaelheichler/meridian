@@ -16,20 +16,20 @@ teardown() {
 run_guard() {
   local command="$1" agent_id="${2:-}" override="${3:-}"
   payload "tool_input.command=$command" "agent_id=$agent_id" \
-    | LBWC_ALLOW_DESTRUCTIVE="$override" bash "$SCRIPTS_DIR/bash-guard.sh"
+    | MERIDIAN_ALLOW_DESTRUCTIVE="$override" bash "$SCRIPTS_DIR/bash-guard.sh"
 }
 
 register_agent() {
   local id="$1" role="$2" state="$3"
-  rm -f "$TEST_TEMP_DIR/.lbwc-planning/.agent-manifest.json"
+  rm -f "$TEST_TEMP_DIR/.meridian/.agent-manifest.json"
   [ "$role" != "-" ] || return 0
-  write_manifest "$TEST_TEMP_DIR/.lbwc-planning" "$(jq -cn --arg id "$id" --arg role "$role" --arg state "$state" --arg root "$TEST_TEMP_DIR" \
+  write_manifest "$TEST_TEMP_DIR/.meridian" "$(jq -cn --arg id "$id" --arg role "$role" --arg state "$state" --arg root "$TEST_TEMP_DIR" \
     '{agents:{($id):({role:$role,project_root:$root,write_allowances:[]} + (if $state == "-" then {} else {state:$state} end))}}')"
 }
 
 apply_setup() {
   case "$1" in
-    local-list) printf '%s\n' 'frobnicate[[:space:]]+--all' > "$TEST_TEMP_DIR/.lbwc-planning/destructive-commands.local.txt" ;;
+    local-list) printf '%s\n' 'frobnicate[[:space:]]+--all' > "$TEST_TEMP_DIR/.meridian/destructive-commands.local.txt" ;;
   esac
 }
 
@@ -60,9 +60,9 @@ scout-read-only-git|scout-1|scout|-|-|git status
 scout-quoted-redirect-character|scout-1|scout|-|-|grep ">" file.txt
 qa-read-only-listing|qa-1|qa|-|-|ls -la
 python-engineer-redirect|dev-1|python-engineer|-|-|echo hi > out.txt
-registered-worker-template-bash|lbwc-python-engineer-a|python-engineer|registered|-|printf x
-running-worker-ordinary-bash|lbwc-docs-a|docs|running|-|printf '%s\n' ready
-forged-identity-ordinary-command|lbwc-forged-agent|-|-|-|printf x
+registered-worker-template-bash|meridian-python-engineer-a|python-engineer|registered|-|printf x
+running-worker-ordinary-bash|meridian-docs-a|docs|running|-|printf '%s\n' ready
+forged-identity-ordinary-command|meridian-forged-agent|-|-|-|printf x
 CASES
 
   run bash -c "printf '' | bash '$SCRIPTS_DIR/bash-guard.sh'"
@@ -88,50 +88,50 @@ scout-nested-shell|scout-1|scout|-|-|nested shell execution|bash -c ls
 scout-filesystem-mutation-in-pipe|scout-1|scout|-|-|filesystem mutation command|echo hi | tee out.txt
 qa-filesystem-mutation|qa-1|qa|-|-|filesystem mutation command|mkdir newdir
 scout-redirect-with-destructive-override|scout-1|scout|-|override|write redirection, substitution, or eval|echo hi > out.txt
-protected-policy-read|lbwc-docs-a|docs|running|-|protected control path|cat config/subagent-critical-execution.txt
-protected-policy-redirect|lbwc-docs-a|docs|running|-|protected control path|printf x > config/subagent-critical-execution.txt
-protected-python-policy|lbwc-docs-a|docs|running|-|protected control path|python3 -c "open('config/subagent-critical-execution.txt', 'w')"
-protected-python-planning-config|lbwc-docs-a|docs|running|-|protected control path|python3 -c "open('.lbwc-planning/config.json', 'w')"
-protected-python-guard-script|lbwc-docs-a|docs|running|-|protected control path|python3 -c "open('scripts/bash-guard.sh', 'w')"
-protected-python-contract-script|lbwc-docs-a|docs|running|-|protected control path|python3 -c "open('scripts/task-contract.sh', 'w')"
-protected-python-lifecycle-script|lbwc-docs-a|docs|running|-|protected control path|python3 -c "open('scripts/agent-lifecycle.sh', 'w')"
-protected-python-manifest|lbwc-docs-a|docs|running|-|protected control path|python3 -c "open('.lbwc-planning/.agent-manifest.json', 'w')"
-protected-python-contract-store|lbwc-docs-a|docs|running|-|protected control path|python3 -c "open('.lbwc-planning/.contracts/tasks/forged.json', 'w')"
-protected-python-agent-definition|lbwc-docs-a|docs|running|-|protected control path|python3 -c "open('.claude/agents/forged.md', 'w')"
-protected-python-split-path|lbwc-docs-a|docs|running|-|protected control path|python3 -c "from pathlib import Path; Path('config') / 'subagent-critical-execution.txt'"
-shell-source-keyword|lbwc-docs-a|docs|running|-|shell execution route|source payload.sh
-shell-source-dot|lbwc-docs-a|docs|running|-|shell execution route|. payload.sh
-shell-stdin-redirect|lbwc-docs-a|docs|running|-|shell execution route|echo sh < payload.sh
-shell-code-flag-after-word|lbwc-docs-a|docs|running|-|shell execution route|echo bash -c payload
-shell-interpreter-script|lbwc-docs-a|docs|running|-|shell execution route|bash scripts/wrapper-that-runs-git.sh
-shell-interpreter-sh-script|lbwc-docs-a|docs|running|-|shell execution route|sh scripts/wrapper-that-runs-git.sh
-shell-interpreter-via-rtk-proxy|lbwc-docs-a|docs|running|-|shell execution route|rtk proxy bash scripts/wrapper-that-runs-git.sh
-shell-interpreter-via-env|lbwc-docs-a|docs|running|-|shell execution route|env CI=1 zsh -c 'git status'
-shell-interpreter-via-command|lbwc-docs-a|docs|running|-|shell execution route|command bash payload.sh
-shell-interpreter-via-exec|lbwc-docs-a|docs|running|-|shell execution route|exec sh payload.sh
-shell-ifs-expansion-braced|lbwc-docs-a|docs|running|-|shell execution route|bash${IFS}-c${IFS}'printf ready'
-shell-ifs-expansion-bare|lbwc-docs-a|docs|running|-|shell execution route|bash $IFS-c 'printf ready'
-shell-heredoc-string|lbwc-docs-a|docs|running|-|shell execution route|bash <<< 'git status'
-shell-pipe-into-interpreter|lbwc-docs-a|docs|running|-|shell execution route|printf x | sh
-git-plain|lbwc-docs-a|docs|running|-|Git is reserved for the main session|git status
-git-backslash-escaped|lbwc-docs-a|docs|running|-|Git is reserved for the main session|\git status
-git-quoted|lbwc-docs-a|docs|running|-|Git is reserved for the main session|"git" status
-git-split-by-backslash|lbwc-docs-a|docs|running|-|Git is reserved for the main session|g\it status
-git-via-rtk|lbwc-docs-a|docs|running|-|Git is reserved for the main session|rtk git status
-git-via-rtk-proxy|lbwc-docs-a|docs|running|-|Git is reserved for the main session|rtk proxy git status
-git-via-rtk-proxy-quoted|lbwc-docs-a|docs|running|-|Git is reserved for the main session|rtk proxy "git" status
-git-via-command|lbwc-docs-a|docs|running|-|Git is reserved for the main session|command git status
-git-via-env|lbwc-docs-a|docs|running|-|Git is reserved for the main session|env GIT_DIR=. git status
-git-by-absolute-path|lbwc-docs-a|docs|running|-|Git is reserved for the main session|/usr/bin/git status
-git-with-destructive-override|lbwc-docs-a|docs|running|override|Git is reserved for the main session|git status
-git-from-forged-identity|lbwc-forged-agent|-|-|-|Git is reserved for the main session|git status
-git-from-spent-worker|lbwc-docs-a|docs|used|-|Git is reserved for the main session|git status
-critical-nested-runtime|lbwc-docs-a|docs|running|-|critical execution command|claude --version
-critical-package-mutation|lbwc-docs-a|docs|running|-|critical execution command|npm install example
-critical-remote-transfer|lbwc-docs-a|docs|running|-|critical execution command|curl https://example.com
-critical-remote-transfer-escaped|lbwc-docs-a|docs|running|-|critical execution command|c\url https://example.com
-critical-privilege|lbwc-docs-a|docs|running|-|critical execution command|sudo true
-critical-termination|lbwc-docs-a|docs|running|-|critical execution command|kill 123
+protected-policy-read|meridian-docs-a|docs|running|-|protected control path|cat config/subagent-critical-execution.txt
+protected-policy-redirect|meridian-docs-a|docs|running|-|protected control path|printf x > config/subagent-critical-execution.txt
+protected-python-policy|meridian-docs-a|docs|running|-|protected control path|python3 -c "open('config/subagent-critical-execution.txt', 'w')"
+protected-python-planning-config|meridian-docs-a|docs|running|-|protected control path|python3 -c "open('.meridian/config.json', 'w')"
+protected-python-guard-script|meridian-docs-a|docs|running|-|protected control path|python3 -c "open('scripts/bash-guard.sh', 'w')"
+protected-python-contract-script|meridian-docs-a|docs|running|-|protected control path|python3 -c "open('scripts/task-contract.sh', 'w')"
+protected-python-lifecycle-script|meridian-docs-a|docs|running|-|protected control path|python3 -c "open('scripts/agent-lifecycle.sh', 'w')"
+protected-python-manifest|meridian-docs-a|docs|running|-|protected control path|python3 -c "open('.meridian/.agent-manifest.json', 'w')"
+protected-python-contract-store|meridian-docs-a|docs|running|-|protected control path|python3 -c "open('.meridian/.contracts/tasks/forged.json', 'w')"
+protected-python-agent-definition|meridian-docs-a|docs|running|-|protected control path|python3 -c "open('.claude/agents/forged.md', 'w')"
+protected-python-split-path|meridian-docs-a|docs|running|-|protected control path|python3 -c "from pathlib import Path; Path('config') / 'subagent-critical-execution.txt'"
+shell-source-keyword|meridian-docs-a|docs|running|-|shell execution route|source payload.sh
+shell-source-dot|meridian-docs-a|docs|running|-|shell execution route|. payload.sh
+shell-stdin-redirect|meridian-docs-a|docs|running|-|shell execution route|echo sh < payload.sh
+shell-code-flag-after-word|meridian-docs-a|docs|running|-|shell execution route|echo bash -c payload
+shell-interpreter-script|meridian-docs-a|docs|running|-|shell execution route|bash scripts/wrapper-that-runs-git.sh
+shell-interpreter-sh-script|meridian-docs-a|docs|running|-|shell execution route|sh scripts/wrapper-that-runs-git.sh
+shell-interpreter-via-rtk-proxy|meridian-docs-a|docs|running|-|shell execution route|rtk proxy bash scripts/wrapper-that-runs-git.sh
+shell-interpreter-via-env|meridian-docs-a|docs|running|-|shell execution route|env CI=1 zsh -c 'git status'
+shell-interpreter-via-command|meridian-docs-a|docs|running|-|shell execution route|command bash payload.sh
+shell-interpreter-via-exec|meridian-docs-a|docs|running|-|shell execution route|exec sh payload.sh
+shell-ifs-expansion-braced|meridian-docs-a|docs|running|-|shell execution route|bash${IFS}-c${IFS}'printf ready'
+shell-ifs-expansion-bare|meridian-docs-a|docs|running|-|shell execution route|bash $IFS-c 'printf ready'
+shell-heredoc-string|meridian-docs-a|docs|running|-|shell execution route|bash <<< 'git status'
+shell-pipe-into-interpreter|meridian-docs-a|docs|running|-|shell execution route|printf x | sh
+git-plain|meridian-docs-a|docs|running|-|Git is reserved for the main session|git status
+git-backslash-escaped|meridian-docs-a|docs|running|-|Git is reserved for the main session|\git status
+git-quoted|meridian-docs-a|docs|running|-|Git is reserved for the main session|"git" status
+git-split-by-backslash|meridian-docs-a|docs|running|-|Git is reserved for the main session|g\it status
+git-via-rtk|meridian-docs-a|docs|running|-|Git is reserved for the main session|rtk git status
+git-via-rtk-proxy|meridian-docs-a|docs|running|-|Git is reserved for the main session|rtk proxy git status
+git-via-rtk-proxy-quoted|meridian-docs-a|docs|running|-|Git is reserved for the main session|rtk proxy "git" status
+git-via-command|meridian-docs-a|docs|running|-|Git is reserved for the main session|command git status
+git-via-env|meridian-docs-a|docs|running|-|Git is reserved for the main session|env GIT_DIR=. git status
+git-by-absolute-path|meridian-docs-a|docs|running|-|Git is reserved for the main session|/usr/bin/git status
+git-with-destructive-override|meridian-docs-a|docs|running|override|Git is reserved for the main session|git status
+git-from-forged-identity|meridian-forged-agent|-|-|-|Git is reserved for the main session|git status
+git-from-spent-worker|meridian-docs-a|docs|used|-|Git is reserved for the main session|git status
+critical-nested-runtime|meridian-docs-a|docs|running|-|critical execution command|claude --version
+critical-package-mutation|meridian-docs-a|docs|running|-|critical execution command|npm install example
+critical-remote-transfer|meridian-docs-a|docs|running|-|critical execution command|curl https://example.com
+critical-remote-transfer-escaped|meridian-docs-a|docs|running|-|critical execution command|c\url https://example.com
+critical-privilege|meridian-docs-a|docs|running|-|critical execution command|sudo true
+critical-termination|meridian-docs-a|docs|running|-|critical execution command|kill 123
 CASES
 
   register_agent "" "-" "-"
@@ -141,7 +141,7 @@ CASES
     run run_guard "$command" "" "$(override_for "$setup")"
     expect_status "$label" 2
     expect_output_has "$label" "$reason"
-    expect_output_has "$label" "Hint: Use LBWC_ALLOW_DESTRUCTIVE=1 to override."
+    expect_output_has "$label" "Hint: Use MERIDIAN_ALLOW_DESTRUCTIVE=1 to override."
   done <<'CASES'
 recursive-delete|-|destructive command detected|rm -rf /var/lib/mysql
 force-push|-|destructive command detected|git push --force origin main
@@ -154,8 +154,8 @@ CASES
   mkdir -p "$isolated_plugin/scripts/lib"
   cp "$SCRIPTS_DIR/lib/tmux-agent-context.sh" "$isolated_plugin/scripts/lib/"
   cp "$SCRIPTS_DIR/bash-guard.sh" "$isolated_plugin/scripts/bash-guard.sh"
-  register_agent lbwc-docs-a docs running
-  run bash -c 'jq -cn "{tool_input:{command:\"printf x\"},agent_id:\"lbwc-docs-a\"}" | bash "$1"' _ "$isolated_plugin/scripts/bash-guard.sh"
+  register_agent meridian-docs-a docs running
+  run bash -c 'jq -cn "{tool_input:{command:\"printf x\"},agent_id:\"meridian-docs-a\"}" | bash "$1"' _ "$isolated_plugin/scripts/bash-guard.sh"
   expect_status policy-file-missing 2
   expect_output_has policy-file-missing "critical execution policy is unavailable"
 

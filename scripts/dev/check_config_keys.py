@@ -66,7 +66,7 @@ def shell_reads(path: Path, text: str, reads: dict) -> None:
         add_reads(reads, {match[1]}, str(path))
     for match in re.finditer(r'lookup_round_cap_key\s+"\$config_path"\s+"(' + KEY + ')"', text):
         add_reads(reads, {match[1]}, str(path))
-    for match in re.finditer(r'lbwc-config\.sh["\s]+get\s+\S+\s+(' + KEY + ')', text):
+    for match in re.finditer(r'meridian-config\.sh["\s]+get\s+\S+\s+(' + KEY + ')', text):
         add_reads(reads, {match[1]}, str(path))
 
 
@@ -99,7 +99,7 @@ def source_files(root: Path) -> Iterator[Path]:
             continue
         if path.name.startswith(('test_', 'check_config_keys', 'check-config-keys')):
             continue
-        if path.name in {'lbwc-config-validate.jq', 'lbwc-config-migrate.jq'}:
+        if path.name in {'meridian-config-validate.jq', 'meridian-config-migrate.jq'}:
             continue
         yield path
 
@@ -134,10 +134,10 @@ def code_reads(root: Path, documented: dict) -> dict[str, set[str]]:
         text = path.read_text()
         shell_reads(path, text, reads)
         python_reads(path, text, reads)
-    validator = (root / 'scripts/lib/lbwc-config-validate.jq').read_text()
+    validator = (root / 'scripts/lib/meridian-config-validate.jq').read_text()
     for key, row in documented.items():
         if '[persistence-only]' in row and key in PATH_READ.findall(validator):
-            reads[key].add('scripts/lib/lbwc-config-validate.jq')
+            reads[key].add('scripts/lib/meridian-config-validate.jq')
     return reads
 
 

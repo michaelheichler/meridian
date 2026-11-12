@@ -14,19 +14,19 @@ setup() {
   PROJECT_ROOT="$TEST_ROOT/project"
   FAKE_BIN="$TEST_ROOT/bin"
   COMMAND_SESSION_ID="doctor-${BATS_TEST_NUMBER}-$$"
-  ROOT_LINK="/tmp/.lbwc-plugin-root-link-${COMMAND_SESSION_ID}"
-  CONTROL_ROOT="$PROJECT_ROOT/.lbwc-planning"
+  ROOT_LINK="/tmp/.meridian-plugin-root-link-${COMMAND_SESSION_ID}"
+  CONTROL_ROOT="$PROJECT_ROOT/.meridian"
   DOCTOR_HELPER="$REPO_ROOT/scripts/tmux-doctor.sh"
   reset_case_failures
-  mkdir -p "$PLUGIN_SCRIPTS/lib" "$PROJECT_ROOT/.lbwc-planning" "$FAKE_BIN"
-  printf '%s\n' '{}' > "$PROJECT_ROOT/.lbwc-planning/config.json"
+  mkdir -p "$PLUGIN_SCRIPTS/lib" "$PROJECT_ROOT/.meridian" "$FAKE_BIN"
+  printf '%s\n' '{}' > "$PROJECT_ROOT/.meridian/config.json"
   cp "$REPO_ROOT/scripts/ensure-plugin-root-link.sh" "$PLUGIN_SCRIPTS/ensure-plugin-root-link.sh"
   cp "$REPO_ROOT/scripts/resolve-plugin-root.sh" "$PLUGIN_SCRIPTS/resolve-plugin-root.sh"
   cp "$REPO_ROOT/scripts/tmux-preflight.sh" "$PLUGIN_SCRIPTS/tmux-preflight.sh"
   cp "$REPO_ROOT/scripts/tmux-session-name.sh" "$PLUGIN_SCRIPTS/tmux-session-name.sh"
-  cp "$REPO_ROOT/scripts/lib/lbwc-config-files.sh" "$PLUGIN_SCRIPTS/lib/lbwc-config-files.sh"
-  copy_script_with_libs "$REPO_ROOT/scripts/lib/lbwc-control-root.sh" "$PLUGIN_SCRIPTS/lib/lbwc-control-root.sh"
-  cp "$REPO_ROOT/scripts/lib/lbwc-target-root.sh" "$PLUGIN_SCRIPTS/lib/lbwc-target-root.sh"
+  cp "$REPO_ROOT/scripts/lib/meridian-config-files.sh" "$PLUGIN_SCRIPTS/lib/meridian-config-files.sh"
+  copy_script_with_libs "$REPO_ROOT/scripts/lib/meridian-control-root.sh" "$PLUGIN_SCRIPTS/lib/meridian-control-root.sh"
+  cp "$REPO_ROOT/scripts/lib/meridian-target-root.sh" "$PLUGIN_SCRIPTS/lib/meridian-target-root.sh"
   cp "$REPO_ROOT/scripts/lib/tmux-private-fs.py" "$PLUGIN_SCRIPTS/lib/tmux-private-fs.py"
   write_default_fakes "$FAKE_BIN"
   rm -rf "$ROOT_LINK"
@@ -48,7 +48,7 @@ write_default_fakes() {
 
 new_tmux_row() {
   PROJECT_ROOT="$TEST_ROOT/rows/$1/project"
-  CONTROL_ROOT="$PROJECT_ROOT/.lbwc-planning"
+  CONTROL_ROOT="$PROJECT_ROOT/.meridian"
   FAKE_BIN="$TEST_ROOT/rows/$1/bin"
   mkdir -p "$CONTROL_ROOT" "$FAKE_BIN"
   printf '%s\n' '{}' > "$CONTROL_ROOT/config.json"
@@ -96,7 +96,7 @@ run_tmux_doctor() {
 }
 
 source_runtime() {
-  source "$REPO_ROOT/scripts/lib/lbwc-control-root.sh"
+  source "$REPO_ROOT/scripts/lib/meridian-control-root.sh"
   source "$REPO_ROOT/scripts/lib/tmux-runtime.sh"
   tmux_runtime_configure "$CONTROL_ROOT"
 }
@@ -122,13 +122,13 @@ plant_healthy_runtime() {
   registry=$(jq -n --arg hash "$hash" '{
     schema_version: 2,
     main: {agent_id:"main-session",session_id:"main-session",role:"orchestrator",capability_hash:$hash},
-    tmux: {session:"lbwc-main",orchestrator_target:"lbwc-main:0.0",orchestrator_pane:"0",topology:"detached-new-session",managed_session:true,ownership_token:"owned"},
+    tmux: {session:"meridian-main",orchestrator_target:"meridian-main:0.0",orchestrator_pane:"0",topology:"detached-new-session",managed_session:true,ownership_token:"owned"},
     agents: [{
       agent_id:"agent-a",
       parent_id:"main-session",
       contract_id:"contract-a",
       generated_name:"agent-a",
-      tmux_target:"lbwc-main:0.1",
+      tmux_target:"meridian-main:0.1",
       tmux_pane_id:"%1",
       claude_session_id:"session-a",
       capability_hash:("1" * 64),
@@ -136,15 +136,15 @@ plant_healthy_runtime() {
       heartbeat_at_ms:2000000000000
     }],
     routes: {
-      "main-session": {inbox:"main-session",tmux_target:"lbwc-main:0.0"},
-      "agent-a": {inbox:"agent-a",tmux_target:"lbwc-main:0.1"}
+      "main-session": {inbox:"main-session",tmux_target:"meridian-main:0.0"},
+      "agent-a": {inbox:"agent-a",tmux_target:"meridian-main:0.1"}
     }
   }')
   tmux_runtime_write_registry_route_bundle "$registry"
   cat > "$FAKE_BIN/tmux" <<'EOF'
 #!/usr/bin/env bash
 case "$1" in
-  has-session) [ "$3" = lbwc-main ] && exit 0; exit 1 ;;
+  has-session) [ "$3" = meridian-main ] && exit 0; exit 1 ;;
   display-message)
     grep -qxF -- "$4" "$(dirname "$0")/gone-panes" 2>/dev/null && exit 0
     printf '%%1\n'
@@ -177,7 +177,7 @@ malformed route
 missing tmux
 stale heartbeat
 read-only
-Run `/lbwc:doctor --cleanup`
+Run `/meridian:doctor --cleanup`
 tmux-preflight.sh
 tmux-bus.sh
 does not authorize cleanup
@@ -213,7 +213,7 @@ FRAGMENTS
   before=$(runtime_checksums)
   run_tmux_doctor
   expect_case "healthy" 0 ""
-  expect_jq_output "healthy-detail" '.status == "PASS" and .detail == "backend=tmux session=lbwc-main panes=2/2 agents=1 running:1 idle:0 failed:0 heartbeats=fresh"'
+  expect_jq_output "healthy-detail" '.status == "PASS" and .detail == "backend=tmux session=meridian-main panes=2/2 agents=1 running:1 idle:0 failed:0 heartbeats=fresh"'
   after=$(runtime_checksums)
   [ "$after" = "$before" ] || record_case_failure "healthy-untouched" "runtime files changed"
 
@@ -246,7 +246,7 @@ FRAGMENTS
   ' "$CONTROL_ROOT/.runtime/tmux-bus/registry.json")"
   run_tmux_doctor
   expect_case "shutdown-agent" 0 ""
-  expect_jq_output "shutdown-agent-detail" '.status == "PASS" and .detail == "backend=tmux session=lbwc-main panes=1/1 agents=1 running:0 idle:0 failed:0 heartbeats=fresh"'
+  expect_jq_output "shutdown-agent-detail" '.status == "PASS" and .detail == "backend=tmux session=meridian-main panes=1/1 agents=1 running:0 idle:0 failed:0 heartbeats=fresh"'
 
   new_tmux_row workflow-backend
   plant_healthy_runtime
@@ -275,7 +275,7 @@ FRAGMENTS
 cleanup_world() {
   WORLD="$TEST_ROOT/worlds/$1"
   W_PROJECT="$WORLD/project"
-  W_PLANNING="$W_PROJECT/.lbwc-planning"
+  W_PLANNING="$W_PROJECT/.meridian"
   W_CLAUDE="$WORLD/claude"
   mkdir -p "$W_PLANNING" "$W_CLAUDE/teams" "$W_CLAUDE/tasks" "$WORLD/home"
   git init -q "$W_PROJECT"
@@ -284,7 +284,7 @@ cleanup_world() {
 
 run_cleanup() {
   local action=$1
-  run env HOME="$WORLD/home" CLAUDE_CONFIG_DIR="$W_CLAUDE" LBWC_PLANNING_DIR="$W_PLANNING" \
+  run env HOME="$WORLD/home" CLAUDE_CONFIG_DIR="$W_CLAUDE" MERIDIAN_PLANNING_DIR="$W_PLANNING" \
     bash -c 'cd "$1" && bash "$2" "$3"' _ "$W_PROJECT" "${CLEANUP_SCRIPT:-$CLEANUP}" "$action"
 }
 
@@ -324,31 +324,31 @@ make_team() {
   expect_case_silent "nothing-to-report" 0
 
   cleanup_world ghost-team
-  make_team lbwc-ghost ghost
-  mkdir -p "$W_CLAUDE/tasks/lbwc-ghost" "$W_CLAUDE/teams/other-ghost"
+  make_team meridian-ghost ghost
+  mkdir -p "$W_CLAUDE/tasks/meridian-ghost" "$W_CLAUDE/teams/other-ghost"
   run_cleanup scan
-  expect_case "ghost-team" 0 "orphaned_team|lbwc-ghost|no config.json (ghost team residual)"
-  expect_output_has "ghost-team-tasks" "orphaned_tasks|lbwc-ghost|paired tasks dir"
+  expect_case "ghost-team" 0 "orphaned_team|meridian-ghost|no config.json (ghost team residual)"
+  expect_output_has "ghost-team-tasks" "orphaned_tasks|meridian-ghost|paired tasks dir"
   expect_output_lacks "ghost-team-ignores-foreign" "other-ghost"
 
   cleanup_world stale-team
-  make_team lbwc-old stale
-  make_team lbwc-new fresh
-  make_team lbwc-bare noinbox
+  make_team meridian-old stale
+  make_team meridian-new fresh
+  make_team meridian-bare noinbox
   make_team other-old stale
-  mkdir -p "$W_CLAUDE/tasks/lbwc-old"
+  mkdir -p "$W_CLAUDE/tasks/meridian-old"
   run_cleanup scan
-  expect_case "stale-team" 0 "stale_team|lbwc-old|age: "
-  expect_output_has "stale-team-tasks" "stale_tasks|lbwc-old|paired tasks dir"
-  expect_output_lacks "stale-team-fresh-skipped" "lbwc-new"
-  expect_output_lacks "stale-team-no-inbox-skipped" "lbwc-bare"
+  expect_case "stale-team" 0 "stale_team|meridian-old|age: "
+  expect_output_has "stale-team-tasks" "stale_tasks|meridian-old|paired tasks dir"
+  expect_output_lacks "stale-team-fresh-skipped" "meridian-new"
+  expect_output_lacks "stale-team-no-inbox-skipped" "meridian-bare"
   expect_output_lacks "stale-team-foreign-skipped" "other-old"
 
   cleanup_world process-records
-  printf '%s\n%s\n' 'lbwc:4242' 'lbwc:4343' > "$W_PLANNING/.agent-pids"
+  printf '%s\n%s\n' 'meridian:4242' 'meridian:4343' > "$W_PLANNING/.agent-pids"
   run_cleanup scan
-  expect_case "process-records" 0 "process_record|lbwc:4242|scan-only"
-  expect_output_has "process-records-second" "process_record|lbwc:4343|scan-only"
+  expect_case "process-records" 0 "process_record|meridian:4242|scan-only"
+  expect_output_has "process-records-second" "process_record|meridian:4343|scan-only"
 
   cleanup_world dead-watchdog
   printf '%s\n' 999999 > "$W_PLANNING/.watchdog-pid"
@@ -436,32 +436,32 @@ make_team() {
 
   cleanup_world teams
   log="$W_PLANNING/.hook-errors.log"
-  make_team lbwc-ghost ghost
-  make_team lbwc-old stale
-  make_team lbwc-new fresh
+  make_team meridian-ghost ghost
+  make_team meridian-old stale
+  make_team meridian-new fresh
   make_team other-old stale
-  mkdir -p "$W_CLAUDE/tasks/lbwc-ghost" "$W_CLAUDE/tasks/lbwc-old"
+  mkdir -p "$W_CLAUDE/tasks/meridian-ghost" "$W_CLAUDE/tasks/meridian-old"
   run_cleanup cleanup
   expect_status "stale-teams" 0
-  expect_no_path "ghost-team-removed" "$W_CLAUDE/teams/lbwc-ghost"
-  expect_no_path "stale-team-removed" "$W_CLAUDE/teams/lbwc-old"
-  expect_no_path "paired-tasks-removed" "$W_CLAUDE/tasks/lbwc-old"
-  expect_path "fresh-team-kept" "$W_CLAUDE/teams/lbwc-new"
+  expect_no_path "ghost-team-removed" "$W_CLAUDE/teams/meridian-ghost"
+  expect_no_path "stale-team-removed" "$W_CLAUDE/teams/meridian-old"
+  expect_no_path "paired-tasks-removed" "$W_CLAUDE/tasks/meridian-old"
+  expect_path "fresh-team-kept" "$W_CLAUDE/teams/meridian-new"
   expect_path "foreign-team-kept" "$W_CLAUDE/teams/other-old"
-  expect_file_line "log-team-removed" "$log" 'Removed stale team: lbwc-old'
+  expect_file_line "log-team-removed" "$log" 'Removed stale team: meridian-old'
   expect_file_line "log-teams-done" "$log" 'stale teams cleanup completed'
   expect_file_line "log-team-count" "$log" 'cleanup complete: teams=4,'
 
   cleanup_world process-and-runs
   log="$W_PLANNING/.hook-errors.log"
-  printf '%s\n' 'lbwc:4242' > "$W_PLANNING/.agent-pids"
+  printf '%s\n' 'meridian:4242' > "$W_PLANNING/.agent-pids"
   runs="$W_PROJECT/.temporary-agent-runfiles/runs"
   mkdir -p "$runs/done-old" "$runs/busy"
   printf '%s\n' '{"status":"completed","updated_at":"2020-01-01T00:00:00Z"}' > "$runs/done-old/run.json"
   printf '%s\n' '{"status":"running"}' > "$runs/busy/run.json"
   run_cleanup cleanup
   expect_status "process-and-runs" 0
-  expect_file_line "log-process-record" "$log" 'scan-only process record: lbwc:4242'
+  expect_file_line "log-process-record" "$log" 'scan-only process record: meridian:4242'
   expect_no_path "terminal-run-removed" "$runs/done-old"
   expect_path "active-run-kept" "$runs/busy"
   expect_file_line "log-run-removed" "$log" 'temporary_run_removed|done-old'
@@ -479,11 +479,11 @@ make_team() {
   done < <(find "$REPO_ROOT/scripts" -maxdepth 1 -type f -name '*.sh')
   ln -sfn "$REPO_ROOT/scripts/lib" "$isolated/lib"
   rm -f "$isolated/clean-stale-teams.sh"
-  make_team lbwc-ghost ghost
+  make_team meridian-ghost ghost
   CLEANUP_SCRIPT="$isolated/doctor-cleanup.sh" run_cleanup cleanup
   expect_status "team-helper-missing" 0
   expect_file_line "team-helper-skip-logged" "$W_PLANNING/.hook-errors.log" 'skipped stale teams cleanup: helper unavailable'
-  expect_path "team-kept-without-helper" "$W_CLAUDE/teams/lbwc-ghost"
+  expect_path "team-kept-without-helper" "$W_CLAUDE/teams/meridian-ghost"
 
   cleanup_world no-run-helper
   mkdir -p "$W_PROJECT/.temporary-agent-runfiles/runs/busy"

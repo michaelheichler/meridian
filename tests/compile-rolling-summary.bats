@@ -16,20 +16,20 @@ teardown() {
 
 fresh_phases() {
   local dir="$TEST_TEMP_DIR/$1"
-  mkdir -p "$dir/.lbwc-planning/phases"
+  mkdir -p "$dir/.meridian/phases"
   cd "$dir" || return 1
 }
 
 rich_summary() {
-  mkdir -p ".lbwc-planning/phases/$1"
+  mkdir -p ".meridian/phases/$1"
   printf '%s\n' '---' "phase: \"$2\"" 'plan: 01' 'title: Parser setup' "status: $3" 'deviations: 1' 'commit_hashes: [abc123, def456]' '---' \
     '## What Was Built' '- Added the parser' '- Wired the CLI' '## Files Modified' '- a.sh' '- b.sh' '## Notes' '- ignored' \
-    > ".lbwc-planning/phases/$1/$2-01-SUMMARY.md"
+    > ".meridian/phases/$1/$2-01-SUMMARY.md"
 }
 
 bare_summary() {
-  mkdir -p ".lbwc-planning/phases/$1"
-  printf '%s\n' '---' 'status: complete' '---' 'Body without sections' > ".lbwc-planning/phases/$1/$2-01-SUMMARY.md"
+  mkdir -p ".meridian/phases/$1"
+  printf '%s\n' '---' 'status: complete' '---' 'Body without sections' > ".meridian/phases/$1/$2-01-SUMMARY.md"
 }
 
 rolling_context() {
@@ -39,25 +39,25 @@ rolling_context() {
 
 @test "rolling summary compiles completed phase plans into the context file" {
   fresh_phases no-phases-dir
-  run rolling_context .lbwc-planning/absent .lbwc-planning/ROLLING-CONTEXT.md
+  run rolling_context .meridian/absent .meridian/ROLLING-CONTEXT.md
   expect_case no-phases-dir 0 "No prior completed phases."
 
   fresh_phases single-summary
   rich_summary 01-setup 01 complete
-  run rolling_context .lbwc-planning/phases .lbwc-planning/ROLLING-CONTEXT.md
+  run rolling_context .meridian/phases .meridian/ROLLING-CONTEXT.md
   expect_case single-summary 0 "No prior completed phases."
 
   fresh_phases none-complete
   rich_summary 01-setup 01 in-progress
   rich_summary 02-api 02 partial
-  run rolling_context .lbwc-planning/phases .lbwc-planning/ROLLING-CONTEXT.md
+  run rolling_context .meridian/phases .meridian/ROLLING-CONTEXT.md
   expect_case none-complete 0 "No prior completed phases."
 
   fresh_phases completed-plans
   rich_summary 01-setup 01 complete
   rich_summary 02-api 02 '"completed"'
   rich_summary 03-ui 03 in-progress
-  run rolling_context .lbwc-planning/phases .lbwc-planning/ROLLING-CONTEXT.md
+  run rolling_context .meridian/phases .meridian/ROLLING-CONTEXT.md
   expect_case completed-plans 0 "Compiled from 2 completed phase plan(s)"
   expect_case completed-plans 0 "## Phase 02 Plan 01: Parser setup"
   expect_case completed-plans 0 "Built: Added the parser"
@@ -69,7 +69,7 @@ rolling_context() {
   fresh_phases missing-fields
   bare_summary 01-setup 01
   bare_summary 02-api 02
-  run rolling_context .lbwc-planning/phases .lbwc-planning/ROLLING-CONTEXT.md
+  run rolling_context .meridian/phases .meridian/ROLLING-CONTEXT.md
   expect_case missing-fields 0 "## Phase ? Plan ?: Untitled"
   expect_case missing-fields 0 "Built: (no details)"
   expect_case missing-fields 0 "Files: (none listed)"
@@ -79,11 +79,11 @@ rolling_context() {
   fresh_phases unwritable-output
   rich_summary 01-setup 01 complete
   rich_summary 02-api 02 complete
-  run bash "$SCRIPTS_DIR/compile-rolling-summary.sh" .lbwc-planning/phases absent-dir/ROLLING-CONTEXT.md
+  run bash "$SCRIPTS_DIR/compile-rolling-summary.sh" .meridian/phases absent-dir/ROLLING-CONTEXT.md
   expect_case unwritable-output 0 "WARNING"
 
   fresh_phases unwritable-empty-output
-  run bash "$SCRIPTS_DIR/compile-rolling-summary.sh" .lbwc-planning/phases absent-dir/ROLLING-CONTEXT.md
+  run bash "$SCRIPTS_DIR/compile-rolling-summary.sh" .meridian/phases absent-dir/ROLLING-CONTEXT.md
   expect_case unwritable-empty-output 0 "WARNING"
 
   assert_no_case_failures

@@ -16,9 +16,9 @@ setup() {
   CUSTOM_HOST_ID="leverframe:openai-oauth:codex-auto-review"
   CONTROL_ROOT=""
   AGENT_NAME=""
-  jq -n --arg binary "$ROUTE_BINARY" --arg sha "$ROUTE_SHA" '{schema_version:1,source:{binary_path:$binary,version:"fixture",sha256:$sha,detected_at:"2035-01-02T03:04:05Z"},models:[{selector:"nova-route",label:"Nova Route",description:"Fixture"}],reasoning:{scope:"global",accepted_values:["deliberate"],model_associations:{"nova-route":["deliberate"]}}}' > "$TEST_TEMP_DIR/.lbwc-planning/claude-capabilities.json"
-  jq --slurpfile defaults "$PROJECT_ROOT/templates/agent-roles/defaults.json" '. + {schema_version:1,routing:{active_profile:"balanced",profiles:{quality:{roles:{}},balanced:{roles:($defaults[0]|keys|map({key:.,value:{model:"nova-route",reasoning:"deliberate",status:"resolved"}})|from_entries)},turbo:{roles:{}}}}}' "$TEST_TEMP_DIR/.lbwc-planning/config.json" > "$TEST_TEMP_DIR/.lbwc-planning/config.tmp"
-  mv "$TEST_TEMP_DIR/.lbwc-planning/config.tmp" "$TEST_TEMP_DIR/.lbwc-planning/config.json"
+  jq -n --arg binary "$ROUTE_BINARY" --arg sha "$ROUTE_SHA" '{schema_version:1,source:{binary_path:$binary,version:"fixture",sha256:$sha,detected_at:"2035-01-02T03:04:05Z"},models:[{selector:"nova-route",label:"Nova Route",description:"Fixture"}],reasoning:{scope:"global",accepted_values:["deliberate"],model_associations:{"nova-route":["deliberate"]}}}' > "$TEST_TEMP_DIR/.meridian/claude-capabilities.json"
+  jq --slurpfile defaults "$PROJECT_ROOT/templates/agent-roles/defaults.json" '. + {schema_version:1,routing:{active_profile:"balanced",profiles:{quality:{roles:{}},balanced:{roles:($defaults[0]|keys|map({key:.,value:{model:"nova-route",reasoning:"deliberate",status:"resolved"}})|from_entries)},turbo:{roles:{}}}}}' "$TEST_TEMP_DIR/.meridian/config.json" > "$TEST_TEMP_DIR/.meridian/config.tmp"
+  mv "$TEST_TEMP_DIR/.meridian/config.tmp" "$TEST_TEMP_DIR/.meridian/config.json"
   cd "$TEST_TEMP_DIR"
 }
 
@@ -31,7 +31,7 @@ run_spawn() {
   local name="$1" extra="${2:-}"
   [ -n "$extra" ] || extra='{}'
   jq -cn --arg name "$name" --argjson extra "$extra" '{tool_name:"Agent",tool_input:({subagent_type:$name} + $extra)}' \
-    | LBWC_CONTROL_ROOT="$CONTROL_ROOT" CLAUDE_CODE_EXECPATH="$ROUTE_BINARY" bash "$SCRIPTS_DIR/agent-spawn-guard.sh"
+    | MERIDIAN_CONTROL_ROOT="$CONTROL_ROOT" CLAUDE_CODE_EXECPATH="$ROUTE_BINARY" bash "$SCRIPTS_DIR/agent-spawn-guard.sh"
 }
 
 run_raw_spawn() {
@@ -57,7 +57,7 @@ install_catalog() {
   esac
   jq --arg custom "$CUSTOM_HOST_ID" --arg binary "$ROUTE_BINARY" --arg sha "$ROUTE_SHA" \
     "$filter | .source.binary_path = \$binary | .source.sha256 = \$sha" \
-    "$TEST_TEMP_DIR/.lbwc-planning/claude-capabilities.json" > "$CONTROL_ROOT/claude-capabilities.json"
+    "$TEST_TEMP_DIR/.meridian/claude-capabilities.json" > "$CONTROL_ROOT/claude-capabilities.json"
 }
 
 mutate_manifest() {
@@ -101,22 +101,22 @@ agent_state() {
 
 prepare_raw_setup() {
   case "$1" in
-    no-planning) rm -rf "$TEST_TEMP_DIR/.lbwc-planning" ;;
-    empty-manifest) write_manifest "$TEST_TEMP_DIR/.lbwc-planning" '{"agents":{}}' ;;
+    no-planning) rm -rf "$TEST_TEMP_DIR/.meridian" ;;
+    empty-manifest) write_manifest "$TEST_TEMP_DIR/.meridian" '{"agents":{}}' ;;
   esac
 }
 
 snapshot_planning() {
   rm -rf "$BATS_TEST_TMPDIR/planning-snapshot"
-  cp -R "$TEST_TEMP_DIR/.lbwc-planning" "$BATS_TEST_TMPDIR/planning-snapshot"
+  cp -R "$TEST_TEMP_DIR/.meridian" "$BATS_TEST_TMPDIR/planning-snapshot"
 }
 
 restore_planning() {
-  rm -rf "$TEST_TEMP_DIR/.lbwc-planning"
-  cp -R "$BATS_TEST_TMPDIR/planning-snapshot" "$TEST_TEMP_DIR/.lbwc-planning"
+  rm -rf "$TEST_TEMP_DIR/.meridian"
+  cp -R "$BATS_TEST_TMPDIR/planning-snapshot" "$TEST_TEMP_DIR/.meridian"
 }
 
-@test "spawn guard blocks malformed input, passes non-LBWC calls untouched, and strips sidechain fields" {
+@test "spawn guard blocks malformed input, passes non-MERIDIAN calls untouched, and strips sidechain fields" {
   local before after json no_jq_path="$TEST_TEMP_DIR/no-jq-bin"
   snapshot_planning
   load guard_library_fixture
@@ -130,8 +130,8 @@ restore_planning() {
     expect_output_has "$label" "$reason"
   done <<'CASES'
 malformed-json|-|could not parse tool call input|not json at all
-generated-identity-without-control-root|no-planning|no resolvable control root or manifest|{"tool_name":"Agent","tool_input":{"subagent_type":"lbwc-docs-missing"}}
-generated-identity-without-manifest|-|no resolvable control root or manifest|{"tool_name":"Agent","tool_input":{"subagent_type":"lbwc-docs-missing"}}
+generated-identity-without-control-root|no-planning|no resolvable control root or manifest|{"tool_name":"Agent","tool_input":{"subagent_type":"meridian-docs-missing"}}
+generated-identity-without-manifest|-|no resolvable control root or manifest|{"tool_name":"Agent","tool_input":{"subagent_type":"meridian-docs-missing"}}
 CASES
 
   restore_planning
@@ -156,7 +156,7 @@ ordinary-agent-without-control-root|no-planning|{"tool_name":"Agent","tool_input
 ordinary-agent-without-manifest|-|{"tool_name":"Agent","tool_input":{"subagent_type":"general-purpose"}}
 ordinary-agent-unknown-to-manifest|empty-manifest|{"tool_name":"Agent","tool_input":{"subagent_type":"general-purpose"}}
 task-create-ordinary-agent|empty-manifest|{"tool_name":"TaskCreate","tool_input":{"subagent_type":"general-purpose"}}
-unrelated-tool-with-generated-name|empty-manifest|{"tool_name":"Bash","tool_input":{"subagent_type":"lbwc-docs-x"}}
+unrelated-tool-with-generated-name|empty-manifest|{"tool_name":"Bash","tool_input":{"subagent_type":"meridian-docs-x"}}
 call-without-subagent-type|empty-manifest|{"tool_name":"Agent","tool_input":{}}
 ordinary-cwd-and-isolation-kept|empty-manifest|{"tool_name":"Agent","tool_input":{"subagent_type":"general-purpose","cwd":"/work/project","isolation":"none"}}
 empty-stdin|-|
@@ -170,7 +170,7 @@ CASES
     run run_raw_spawn "$(jq -cn --argjson extra "$extra" '{tool_name:"Agent",tool_input:({subagent_type:"general-purpose"} + $extra)}')"
     after=$(tree_digest "$TEST_TEMP_DIR")
     expect_status "$label" 0
-    expect_output_has "$label" "lbwc guard: stripped"
+    expect_output_has "$label" "meridian guard: stripped"
     json=$(printf '%s\n' "$output" | grep '^{')
     printf '%s' "$json" | jq -e --arg field "$stripped_field" '
       .hookSpecificOutput.permissionDecision == "allow"
@@ -179,8 +179,8 @@ CASES
     ' >/dev/null || fail_case "$label" "updatedInput kept $stripped_field or dropped subagent_type"
     expect_same_digest "$label" "$before" "$after"
   done <<'CASES'
-sidechain-cwd|cwd|{"cwd":".lbwc-worktrees/agent-a1"}
-sidechain-working-dir|working_dir|{"working_dir":"/project/.lbwc-worktrees/agent-a1/sub"}
+sidechain-cwd|cwd|{"cwd":".meridian-worktrees/agent-a1"}
+sidechain-working-dir|working_dir|{"working_dir":"/project/.meridian-worktrees/agent-a1/sub"}
 worktree-isolation|isolation|{"isolation":"worktree"}
 CASES
 }
@@ -221,7 +221,7 @@ manifest-model-missing-from-live-enum|unknown|unknown-model|@agent||registered|n
 agent-already-running|default|running|@agent||running|is already running and cannot be spawned again
 agent-already-used|default|used|@agent||used|is already used and cannot be spawned again
 agent-already-expired|default|expired|@agent||expired|is already expired and cannot be spawned again
-generated-name-absent-from-manifest|default|none|lbwc-ghost||registered|has no manifest entry
+generated-name-absent-from-manifest|default|none|meridian-ghost||registered|has no manifest entry
 CASES
 
   while IFS='|' read -r label preset mutation expected_model; do
@@ -265,6 +265,6 @@ CASES
   expect_status second-group-member 2
   expect_output_has second-group-member "is open, spawn every member before starting other work."
   expect_output_has second-group-member "$first_engineer"
-  [ "$(jq -r --arg name "$second_engineer" '.agents[$name].state' "$TEST_TEMP_DIR/.lbwc-planning/.agent-manifest.json")" = "registered" ] \
+  [ "$(jq -r --arg name "$second_engineer" '.agents[$name].state' "$TEST_TEMP_DIR/.meridian/.agent-manifest.json")" = "registered" ] \
     || fail_case second-group-member "second group member left the registered state"
 }

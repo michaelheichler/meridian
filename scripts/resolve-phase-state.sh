@@ -1,12 +1,23 @@
 #!/usr/bin/env bash
+
+printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${BASH_SOURCE[0]}"
+case "$MERIDIAN_MIGRATION_SOURCE" in
+  *"/"*) printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${MERIDIAN_MIGRATION_SOURCE%"/"*}" ;;
+  *) printf -v MERIDIAN_MIGRATION_SOURCE '%s' . ;;
+esac
+if [ -f "$MERIDIAN_MIGRATION_SOURCE/lib/rename-migration.sh" ]; then
+  . "$MERIDIAN_MIGRATION_SOURCE/lib/rename-migration.sh"
+  meridian_migrate_environment
+fi
+unset MERIDIAN_MIGRATION_SOURCE
 set -euo pipefail
 
 SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd)"
 SESSION_KEY="${CLAUDE_SESSION_ID:-default}"
-L="/tmp/.lbwc-plugin-root-link-${SESSION_KEY}"
-P="/tmp/.lbwc-phase-detect-${SESSION_KEY}.txt"
+L="/tmp/.meridian-plugin-root-link-${SESSION_KEY}"
+P="/tmp/.meridian-phase-detect-${SESSION_KEY}.txt"
 PTMP="${P}.tmp.$$"
-LOCK="/tmp/.lbwc-phase-detect-live-${SESSION_KEY}.lock"
+LOCK="/tmp/.meridian-phase-detect-live-${SESSION_KEY}.lock"
 LOCK_STALE_SECONDS=5
 LOCKED=false
 phase_detect_start_ts=$(date +%s 2>/dev/null || echo 0)

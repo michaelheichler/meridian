@@ -1,11 +1,22 @@
 #!/bin/bash
+
+printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${BASH_SOURCE[0]}"
+case "$MERIDIAN_MIGRATION_SOURCE" in
+  *"/"*) printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${MERIDIAN_MIGRATION_SOURCE%"/"*}" ;;
+  *) printf -v MERIDIAN_MIGRATION_SOURCE '%s' . ;;
+esac
+if [ -f "$MERIDIAN_MIGRATION_SOURCE/lib/rename-migration.sh" ]; then
+  . "$MERIDIAN_MIGRATION_SOURCE/lib/rename-migration.sh"
+  meridian_migrate_environment
+fi
+unset MERIDIAN_MIGRATION_SOURCE
 set -u
 
 SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname "$0")" && pwd)
-. "$SCRIPT_DIR/lib/lbwc-control-root.sh"
-PLANNING_DIR=$(lbwc_resolve_control_root "${LBWC_CONTROL_ROOT:-}" "" "$PWD" 2>/dev/null) || PLANNING_DIR=""
-[ -n "$PLANNING_DIR" ] || PLANNING_DIR="${LBWC_PLANNING_DIR:-.lbwc-planning}"
-export LBWC_PLANNING_DIR="$PLANNING_DIR"
+. "$SCRIPT_DIR/lib/meridian-control-root.sh"
+PLANNING_DIR=$(meridian_resolve_control_root "${MERIDIAN_CONTROL_ROOT:-}" "" "$PWD" 2>/dev/null) || PLANNING_DIR=""
+[ -n "$PLANNING_DIR" ] || PLANNING_DIR="${MERIDIAN_PLANNING_DIR:-.meridian}"
+export MERIDIAN_PLANNING_DIR="$PLANNING_DIR"
 
 commit_delta() {
   local journal_head="$1" resolved_head current_head count

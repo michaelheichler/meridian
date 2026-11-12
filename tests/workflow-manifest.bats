@@ -5,10 +5,10 @@ load gate_case_files
 
 setup() {
   ROOT=$(mktemp -d)
-  mkdir -p "$ROOT/.lbwc-planning"
-  printf '%s\n' '{}' > "$ROOT/.lbwc-planning/config.json"
+  mkdir -p "$ROOT/.meridian"
+  printf '%s\n' '{}' > "$ROOT/.meridian/config.json"
   SCRIPT="$BATS_TEST_DIRNAME/../scripts/lib/workflow-manifest.sh"
-  PLANNING_DIR="$ROOT/.lbwc-planning"
+  PLANNING_DIR="$ROOT/.meridian"
   MANIFEST="$PLANNING_DIR/.workflow-manifest.json"
   SCRIPT_DIGEST=$(printf 'a%.0s' $(seq 1 64))
   ARGS_DIGEST=$(printf 'b%.0s' $(seq 1 64))
@@ -55,12 +55,12 @@ expect_entry_set() {
 }
 
 @test "workflow_manifest_register writes a registered entry and rejects a duplicate id or a non-array roster" {
-  register_wf1 first-register wf-1 '["lbwc-engineer-a","lbwc-critic-b"]'
+  register_wf1 first-register wf-1 '["meridian-engineer-a","meridian-critic-b"]'
   expect_entry registered-state state registered
   expect_entry registered-script-path script_path "$ROOT/workflows/wf-1.js"
   expect_entry registered-script-digest script_digest "$SCRIPT_DIGEST"
   expect_entry registered-args-digest args_digest "$ARGS_DIGEST"
-  [ "$(jq -c '.workflows["wf-1"].roster' "$MANIFEST")" = '["lbwc-engineer-a","lbwc-critic-b"]' ] \
+  [ "$(jq -c '.workflows["wf-1"].roster' "$MANIFEST")" = '["meridian-engineer-a","meridian-critic-b"]' ] \
     || record_case_failure registered-roster "roster=$(jq -c '.workflows["wf-1"].roster' "$MANIFEST")"
   expect_entry_set registered-created-at created_at
 
@@ -125,7 +125,7 @@ expect_entry_set() {
   mkdir -p "$lock_dir"
   printf '%s\n' "$writer_pid" > "$lock_dir/pid"
   touch -t 200001010000 "$lock_dir"
-  run env LBWC_WORKFLOW_MANIFEST_LOCK_TIMEOUT=1 LBWC_WORKFLOW_MANIFEST_LOCK_STALE_SECONDS=0 \
+  run env MERIDIAN_WORKFLOW_MANIFEST_LOCK_TIMEOUT=1 MERIDIAN_WORKFLOW_MANIFEST_LOCK_STALE_SECONDS=0 \
     bash -c '. "$1"; workflow_manifest_register "$2" wf-1 "$3" "$4" "$5" "[]"' \
     _ "$SCRIPT" "$PLANNING_DIR" "$ROOT/workflows/wf-1.js" "$SCRIPT_DIGEST" "$ARGS_DIGEST"
   kill "$writer_pid" 2>/dev/null || true
@@ -138,7 +138,7 @@ expect_entry_set() {
   mkdir -p "$lock_dir"
   printf '%s\n' '999999' > "$lock_dir/pid"
   touch -t 200001010000 "$lock_dir"
-  run env LBWC_WORKFLOW_MANIFEST_LOCK_STALE_SECONDS=0 \
+  run env MERIDIAN_WORKFLOW_MANIFEST_LOCK_STALE_SECONDS=0 \
     bash -c '. "$1"; workflow_manifest_register "$2" wf-1 "$3" "$4" "$5" "[]"' \
     _ "$SCRIPT" "$PLANNING_DIR" "$ROOT/workflows/wf-1.js" "$SCRIPT_DIGEST" "$ARGS_DIGEST"
   expect_status dead-writer-reclaimed 0

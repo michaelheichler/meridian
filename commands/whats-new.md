@@ -7,13 +7,13 @@ argument-hint: "[version]"
 allowed-tools: Read, Glob
 ---
 
-# LBWC What's New $ARGUMENTS
+# MERIDIAN What's New $ARGUMENTS
 
 ## Context
 
 Plugin root:
 ```
-!`L="/tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID:-default}"; R="$L/scripts/resolve-plugin-root.sh"; [ -f "$R" ] || R="${CLAUDE_PLUGIN_ROOT:-}/scripts/resolve-plugin-root.sh"; [ -f "$R" ] || { echo "LBWC: plugin root unavailable. Restart this session to recreate $L." >&2; exit 1; }; bash "$R" >/dev/null || exit 1; echo "$L"`
+!`L="/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}"; R="$L/scripts/resolve-plugin-root.sh"; [ -f "$R" ] || R="${CLAUDE_PLUGIN_ROOT:-}/scripts/resolve-plugin-root.sh"; [ -f "$R" ] || { echo "MERIDIAN: plugin root unavailable. Restart this session to recreate $L." >&2; exit 1; }; bash "$R" >/dev/null || exit 1; echo "$L"`
 ```
 
 Store the plugin root path output above as `{plugin-root}` for use in file lookups below. Replace `{plugin-root}` with the literal `Plugin root` value from Context whenever a step below references VERSION or CHANGELOG.md.
@@ -28,12 +28,12 @@ Store the plugin root path output above as `{plugin-root}` for use in file looku
 2. Read `{plugin-root}/CHANGELOG.md`, split by `## [` headings.
    - With a version arg, show entries newer than that version.
    - With no args, show the current version entry.
-3. Display Phase Banner "LBWC Changelog" with version context, entries, Next Up (/lbwc:help). No entries: "✓ No changelog entry found for v{version}."
+3. Display Phase Banner "MERIDIAN Changelog" with version context, entries, Next Up (/meridian:help). No entries: "✓ No changelog entry found for v{version}."
 
 ## Output Format
 
-Follow @${CLAUDE_PLUGIN_ROOT}/references/lbwc-brand-essentials.md , double-line box, ✓ up-to-date, Next Up, no ANSI.
+Follow @${CLAUDE_PLUGIN_ROOT}/references/meridian-brand-essentials.md , double-line box, ✓ up-to-date, Next Up, no ANSI.
 
 ## Next Up
 
-Show `/lbwc:help` only when the user needs command details. Otherwise stop after the changelog.
+Show `/meridian:help` only when the user needs command details. Otherwise stop after the changelog.

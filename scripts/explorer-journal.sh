@@ -1,9 +1,20 @@
 #!/bin/bash
+
+printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${BASH_SOURCE[0]}"
+case "$MERIDIAN_MIGRATION_SOURCE" in
+  *"/"*) printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${MERIDIAN_MIGRATION_SOURCE%"/"*}" ;;
+  *) printf -v MERIDIAN_MIGRATION_SOURCE '%s' . ;;
+esac
+if [ -f "$MERIDIAN_MIGRATION_SOURCE/lib/rename-migration.sh" ]; then
+  . "$MERIDIAN_MIGRATION_SOURCE/lib/rename-migration.sh"
+  meridian_migrate_environment
+fi
+unset MERIDIAN_MIGRATION_SOURCE
 set -eu
 
 SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname "$0")" && pwd)
 . "$SCRIPT_DIR/lib/manifest-lock.sh"
-. "$SCRIPT_DIR/lib/lbwc-control-root.sh"
+. "$SCRIPT_DIR/lib/meridian-control-root.sh"
 
 usage() {
   printf '%s\n' 'Usage: explorer-journal.sh append --trigger precompact|pause|phase-end [--command TEXT] [--request TEXT] [--questions TEXT] [--next TEXT]' '       explorer-journal.sh current' >&2
@@ -126,8 +137,8 @@ main() {
     *) usage ;;
   esac
   local resolved
-  resolved=$(lbwc_resolve_control_root "${LBWC_CONTROL_ROOT:-}" "" "$PWD" 2>/dev/null || true)
-  [ -n "$resolved" ] || resolved="${LBWC_PLANNING_DIR:-.lbwc-planning}"
+  resolved=$(meridian_resolve_control_root "${MERIDIAN_CONTROL_ROOT:-}" "" "$PWD" 2>/dev/null || true)
+  [ -n "$resolved" ] || resolved="${MERIDIAN_PLANNING_DIR:-.meridian}"
   printf -v PLANNING_DIR '%s' "$resolved"
   case "$action" in
     append)

@@ -8,7 +8,7 @@ setup() {
   setup_temp_dir
   reset_case_failures
   FINALIZE="$SCRIPTS_DIR/finalize-uat-status.sh"
-  PHASE_DIR="$TEST_TEMP_DIR/repo/.lbwc-planning/phases/01-checkout"
+  PHASE_DIR="$TEST_TEMP_DIR/repo/.meridian/phases/01-checkout"
   UAT_FILE="$PHASE_DIR/01-UAT.md"
   mkdir -p "$PHASE_DIR"
   cd "$TEST_TEMP_DIR/repo" || return 1

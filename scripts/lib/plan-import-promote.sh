@@ -7,13 +7,13 @@ safe_artifact() {
   local artifact="$1"
   [[ "$artifact" != /* && "$artifact" != ../* && "$artifact" != */../* && "$artifact" != */.. && "$artifact" != *"//"* ]] || return 1
   case "$artifact" in
-    .lbwc-planning/config.json)
+    .meridian/config.json)
       return 0
       ;;
   esac
   [[ "$artifact" == *.md ]] || return 1
   case "$artifact" in
-    .lbwc-planning/PROJECT.md|.lbwc-planning/REQUIREMENTS.md|.lbwc-planning/ROADMAP.md|.lbwc-planning/STATE.md|.lbwc-planning/phases/*.md|.lbwc-planning/imported-markdown/*.md)
+    .meridian/PROJECT.md|.meridian/REQUIREMENTS.md|.meridian/ROADMAP.md|.meridian/STATE.md|.meridian/phases/*.md|.meridian/imported-markdown/*.md)
       return 0
       ;;
     *)
@@ -131,11 +131,11 @@ promote_validation_failure() {
   local validation_output
   if [ "$FAIL_VALIDATION" = 1 ]; then
     printf '%s' "post-promotion validation failed: forced validation failure"
-  elif ! printf '%s\n' "${ARTIFACTS[@]}" | grep -qx '.lbwc-planning/config.json'; then
-    printf '%s' "post-promotion validation failed: canonical artifact .lbwc-planning/config.json was not selected for promotion"
-  elif ! validation_output=$(LBWC_PLANNING_DIR="$PROMOTE_PLANNING_DIR" "$SCRIPT_DIR/lbwc-config.sh" validate-config-json < "$PROMOTE_PLANNING_DIR/config.json" 2>&1); then
-    printf '%s' "post-promotion validation failed: lbwc-config.sh validate-config-json: $validation_output"
-  elif ! validation_output=$(CDPATH='' cd -- "$PROMOTE_ROOT" && LBWC_PLANNING_DIR="$PROMOTE_PLANNING_DIR" bash "$SCRIPT_DIR/verify-state-consistency.sh" 2>&1); then
+  elif ! printf '%s\n' "${ARTIFACTS[@]}" | grep -qx '.meridian/config.json'; then
+    printf '%s' "post-promotion validation failed: canonical artifact .meridian/config.json was not selected for promotion"
+  elif ! validation_output=$(MERIDIAN_PLANNING_DIR="$PROMOTE_PLANNING_DIR" "$SCRIPT_DIR/meridian-config.sh" validate-config-json < "$PROMOTE_PLANNING_DIR/config.json" 2>&1); then
+    printf '%s' "post-promotion validation failed: meridian-config.sh validate-config-json: $validation_output"
+  elif ! validation_output=$(CDPATH='' cd -- "$PROMOTE_ROOT" && MERIDIAN_PLANNING_DIR="$PROMOTE_PLANNING_DIR" bash "$SCRIPT_DIR/verify-state-consistency.sh" 2>&1); then
     printf '%s' "post-promotion validation failed: verify-state-consistency.sh: $validation_output"
   fi
 }
@@ -160,7 +160,7 @@ promote_import() {
   ir_file="$stage/ir.json"
   [ "${#ARTIFACTS[@]}" -gt 0 ] || import_fail 'promotion requires explicit --artifact input'
   promote_check_source "$stage" "$ir_file"
-  PROMOTE_PLANNING_DIR="$PROMOTE_ROOT/.lbwc-planning"
+  PROMOTE_PLANNING_DIR="$PROMOTE_ROOT/.meridian"
   PROMOTE_IMPORTS_PARENT="$PROMOTE_PLANNING_DIR/imports"
   PROMOTE_IMPORTS_EXISTED=false
   PROMOTE_PLANNING_EXISTED=false

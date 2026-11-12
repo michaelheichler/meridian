@@ -1,11 +1,22 @@
 #!/usr/bin/env bash
+
+printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${BASH_SOURCE[0]}"
+case "$MERIDIAN_MIGRATION_SOURCE" in
+  *"/"*) printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${MERIDIAN_MIGRATION_SOURCE%"/"*}" ;;
+  *) printf -v MERIDIAN_MIGRATION_SOURCE '%s' . ;;
+esac
+if [ -f "$MERIDIAN_MIGRATION_SOURCE/lib/rename-migration.sh" ]; then
+  . "$MERIDIAN_MIGRATION_SOURCE/lib/rename-migration.sh"
+  meridian_migrate_environment
+fi
+unset MERIDIAN_MIGRATION_SOURCE
 set -euo pipefail
 
 SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd)"
-. "$SCRIPT_DIR/lib/lbwc-settings.sh"
+. "$SCRIPT_DIR/lib/meridian-settings.sh"
 
-planning_dir="${1:-.lbwc-planning}"
-config=$(lbwc_merged_config "$planning_dir/config.json")
+planning_dir="${1:-.meridian}"
+config=$(meridian_merged_config "$planning_dir/config.json")
 skip_roles=$(jq -ce 'if .qa_skip_agents == null then ["docs"] else .qa_skip_agents end | select(type == "array" and all(.[]; type == "string"))' <<< "$config")
 jq -e --argjson skip_roles "$skip_roles" '
   if type != "array" or length == 0 then error("task ownership list must not be empty") else . end

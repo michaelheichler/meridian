@@ -66,12 +66,12 @@ PROTECTED_EXACT = {
     "config/destructive-commands.txt",
     "scripts/task-contract.sh",
     "scripts/agent-lifecycle.sh",
-    ".lbwc-planning/.agent-manifest.json",
-    ".lbwc-planning/.contracts",
+    ".meridian/.agent-manifest.json",
+    ".meridian/.contracts",
     ".claude/agents",
 }
 PROTECTED_DIRS = (".git", ".temporary-agent-runfiles")
-PROTECTED_PREFIXES = (".lbwc-planning/.contracts/", ".claude/agents/")
+PROTECTED_PREFIXES = (".meridian/.contracts/", ".claude/agents/")
 PROTECTED_SUFFIXES = ("credentials.json", "secrets.json", "service-account.json")
 
 
@@ -120,13 +120,13 @@ def safe_capability_path(value: Any, kind: Any) -> str:
 
 
 def resolve_control_root(value: str, root: Path) -> Path:
-    script = Path(os.environ["TASK_CONTRACT_SCRIPT_DIR"]) / "lib" / "lbwc-control-root.sh"
+    script = Path(os.environ["TASK_CONTRACT_SCRIPT_DIR"]) / "lib" / "meridian-control-root.sh"
     if not script.is_file():
         fail("control root resolver is unavailable")
     try:
         result = subprocess.run(
-            ["bash", "-c", '. "$1"; lbwc_resolve_control_root "$2" "$3" "$4"',
-             "lbwc-control-root", str(script), value, str(root), str(root)],
+            ["bash", "-c", '. "$1"; meridian_resolve_control_root "$2" "$3" "$4"',
+             "meridian-control-root", str(script), value, str(root), str(root)],
             check=True, capture_output=True, text=True,
         )
     except (OSError, subprocess.CalledProcessError):

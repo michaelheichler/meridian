@@ -1,4 +1,15 @@
 #!/usr/bin/env bash
+
+printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${BASH_SOURCE[0]}"
+case "$MERIDIAN_MIGRATION_SOURCE" in
+  *"/"*) printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${MERIDIAN_MIGRATION_SOURCE%"/"*}" ;;
+  *) printf -v MERIDIAN_MIGRATION_SOURCE '%s' . ;;
+esac
+if [ -f "$MERIDIAN_MIGRATION_SOURCE/lib/rename-migration.sh" ]; then
+  . "$MERIDIAN_MIGRATION_SOURCE/lib/rename-migration.sh"
+  meridian_migrate_environment
+fi
+unset MERIDIAN_MIGRATION_SOURCE
 set -euo pipefail
 
 SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname "$0")" && pwd)
@@ -6,7 +17,7 @@ PLUGIN_ROOT=$(CDPATH='' cd -- "$SCRIPT_DIR/.." && pwd)
 . "$SCRIPT_DIR/lib/agent-keyed-vars.sh"
 . "$SCRIPT_DIR/lib/agent-manifest.sh"
 . "$SCRIPT_DIR/lib/agent-fields.sh"
-. "$SCRIPT_DIR/lib/lbwc-control-root.sh"
+. "$SCRIPT_DIR/lib/meridian-control-root.sh"
 . "$SCRIPT_DIR/lib/agent-generator-options.sh"
 . "$SCRIPT_DIR/lib/agent-generator-contract.sh"
 . "$SCRIPT_DIR/lib/agent-generator-roles.sh"
@@ -46,7 +57,7 @@ elif [ "${1:-}" = "--trio" ]; then
 fi
 ROLE="${1:-}"
 [ -n "$ROLE" ] || usage
-ROLE="${ROLE#lbwc-}"
+ROLE="${ROLE#meridian-}"
 shift
 is_valid_role "$ROLE" || fail "invalid role '$ROLE'"
 

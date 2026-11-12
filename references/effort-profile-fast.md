@@ -11,6 +11,6 @@ Use `fast` only for a well-understood task with a bounded change and a clear che
 | Review and QA | Verify the changed contract and its nearest regression boundary. |
 | Research and debugging | Start with the most likely source or hypothesis, then stop when confirmed. |
 
-The active routing profile still supplies every role's stored selector and reasoning value. Use `scripts/lbwc-model show .lbwc-planning` to inspect it and `scripts/resolve-agent-settings.sh` to resolve it for a spawn. Do not create a `fast` route or infer a selector from this guide.
+The active routing profile still supplies every role's stored selector and reasoning value. Use `scripts/meridian-model show .meridian` to inspect it and `scripts/resolve-agent-settings.sh` to resolve it for a spawn. Do not create a `fast` route or infer a selector from this guide.
 
 If the command contract no longer accepts `fast`, use one of the canonical routing profiles and the command's current workflow setting instead.

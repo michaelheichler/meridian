@@ -1,7 +1,18 @@
 #!/bin/bash
+
+printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${BASH_SOURCE[0]}"
+case "$MERIDIAN_MIGRATION_SOURCE" in
+  *"/"*) printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${MERIDIAN_MIGRATION_SOURCE%"/"*}" ;;
+  *) printf -v MERIDIAN_MIGRATION_SOURCE '%s' . ;;
+esac
+if [ -f "$MERIDIAN_MIGRATION_SOURCE/lib/rename-migration.sh" ]; then
+  . "$MERIDIAN_MIGRATION_SOURCE/lib/rename-migration.sh"
+  meridian_migrate_environment
+fi
+unset MERIDIAN_MIGRATION_SOURCE
 set -u
 
-PLANNING_DIR="${LBWC_PLANNING_DIR:-.lbwc-planning}"
+PLANNING_DIR="${MERIDIAN_PLANNING_DIR:-.meridian}"
 SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd)"
 
 INPUT=$(cat)
@@ -85,7 +96,7 @@ if [ -d "$PLANNING_DIR" ]; then
   JOURNAL_COMMAND=$(echo "$INPUT" | jq -r '.command // ""' 2>/dev/null) || JOURNAL_COMMAND=""
   JOURNAL_REQUEST=$(echo "$INPUT" | jq -r '.request // .prompt // ""' 2>/dev/null) || JOURNAL_REQUEST=""
   JOURNAL_NEXT=$(echo "$INPUT" | jq -r '.next_step // "Re-read assigned files from disk after compaction."' 2>/dev/null) || JOURNAL_NEXT=""
-  if ! LBWC_EXPLORER_JOURNAL_LOCK_TIMEOUT=2 bash "$SCRIPT_DIR/explorer-journal.sh" append \
+  if ! MERIDIAN_EXPLORER_JOURNAL_LOCK_TIMEOUT=2 bash "$SCRIPT_DIR/explorer-journal.sh" append \
     --trigger precompact --command "$JOURNAL_COMMAND" --request "$JOURNAL_REQUEST" \
     --next "$JOURNAL_NEXT" >/dev/null 2>&1; then
     printf '%s\n' 'compaction-instructions.sh could not append journal entry' >&2

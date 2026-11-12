@@ -1,7 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
-  "name": "lbwc-marketplace",
-  "description": "LBWC zero-trust orchestration for Claude Code.",
+  "name": "meridian-marketplace",
+  "description": "Meridian zero-trust orchestration for Claude Code.",
   "version": "1.0.5",
   "owner": {
     "name": "Michael Heichler",
@@ -9,15 +9,15 @@
   },
   "plugins": [
     {
-      "name": "lbwc",
+      "name": "meridian",
       "source": ".",
       "description": "Plan, build, QA, and UAT orchestration with shell-enforced generated-agent boundaries.",
       "version": "1.0.5",
       "author": {
         "name": "Michael Heichler"
       },
-      "homepage": "https://github.com/michaelheichler/lbwc",
-      "repository": "https://github.com/michaelheichler/lbwc",
+      "homepage": "https://github.com/michaelheichler/meridian",
+      "repository": "https://github.com/michaelheichler/meridian",
       "license": "GPL-3.0-only",
       "keywords": [
         "claude-code",

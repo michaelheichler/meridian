@@ -41,7 +41,7 @@ Meridian runs on local files and small scripts written for the bash that ships w
 After you add the marketplace and install the plugin, restart Claude Code.
 
 ```bash
-claude plugin marketplace add michaelheichler/lbwc
+claude plugin marketplace add michaelheichler/meridian
 claude plugin install meridian@meridian-marketplace
 ```
 

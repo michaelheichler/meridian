@@ -28,11 +28,11 @@ run_guard() {
   [ "$tool" != "NotebookEdit" ] || key=notebook_path
   case "$cwd_mode" in
     root) json_cwd="$TEST_TEMP_DIR" ;;
-    secondary) json_cwd="$TEST_TEMP_DIR/secondary"; planning="$TEST_TEMP_DIR/.lbwc-planning" ;;
+    secondary) json_cwd="$TEST_TEMP_DIR/secondary"; planning="$TEST_TEMP_DIR/.meridian" ;;
     secondary-noenv) json_cwd="$TEST_TEMP_DIR/secondary" ;;
   esac
   payload "tool_name=$tool" "tool_input.$key=$path" "agent_id=$agent_id" ${json_cwd:+"cwd=$json_cwd"} \
-    | LBWC_PLANNING_DIR="$planning" LBWC_CONTROL_ROOT="$GUARD_CONTROL_ROOT" bash "$SCRIPTS_DIR/file-guard.sh"
+    | MERIDIAN_PLANNING_DIR="$planning" MERIDIAN_CONTROL_ROOT="$GUARD_CONTROL_ROOT" bash "$SCRIPTS_DIR/file-guard.sh"
 }
 
 run_raw_guard() {
@@ -40,7 +40,7 @@ run_raw_guard() {
 }
 
 write_worker_manifest() {
-  write_manifest "$TEST_TEMP_DIR/.lbwc-planning" "$(jq -cn --arg id "$1" --argjson entry "$2" '{agents:{($id):$entry}}')"
+  write_manifest "$TEST_TEMP_DIR/.meridian" "$(jq -cn --arg id "$1" --argjson entry "$2" '{agents:{($id):$entry}}')"
 }
 
 capability_entry() {
@@ -73,7 +73,7 @@ build_contract_worker() {
     allowance-drift) allowance=src/other.py ;;
   esac
   if [ "$mutation" = "no-contract-path" ]; then
-    GUARD_ID=lbwc-dev-a
+    GUARD_ID=meridian-dev-a
     write_worker_manifest "$GUARD_ID" "$(jq -cn --arg root "$TEST_TEMP_DIR" --arg allowance "$allowance" '{role:"python-engineer",project_root:$root,write_allowances:[$allowance]}')"
     return 0
   fi
@@ -120,17 +120,17 @@ build_scenario() {
   local role="$1" grant="$2"
   GUARD_ID=dev-1
   GUARD_CONTROL_ROOT=""
-  rm -f "$TEST_TEMP_DIR/.lbwc-planning/.agent-manifest.json"
+  rm -f "$TEST_TEMP_DIR/.meridian/.agent-manifest.json"
   case "$grant" in
     unscoped) GUARD_ID="" ;;
-    unregistered-lbwc) GUARD_ID=lbwc-ghost ;;
-    lbwc-allow:*)
-      GUARD_ID=lbwc-dev-a
-      write_worker_manifest lbwc-dev-a "$(jq -cn --arg root "$TEST_TEMP_DIR" --arg role "$role" --arg path "${grant#lbwc-allow:}" '{role:$role,project_root:$root,write_allowances:[$path]}')"
+    unregistered-meridian) GUARD_ID=meridian-ghost ;;
+    meridian-allow:*)
+      GUARD_ID=meridian-dev-a
+      write_worker_manifest meridian-dev-a "$(jq -cn --arg root "$TEST_TEMP_DIR" --arg role "$role" --arg path "${grant#meridian-allow:}" '{role:$role,project_root:$root,write_allowances:[$path]}')"
       ;;
     main-pair-*)
       GUARD_ID=""
-      write_worker_manifest lbwc-dev-a "$(jq -cn --arg state "${grant#main-pair-}" '{role:"python-engineer",state:$state}')"
+      write_worker_manifest meridian-dev-a "$(jq -cn --arg state "${grant#main-pair-}" '{role:"python-engineer",state:$state}')"
       ;;
     allow:*)
       write_worker_manifest dev-1 "$(jq -cn --arg root "$TEST_TEMP_DIR" --arg role "$role" --arg path "${grant#allow:}" '{role:$role,project_root:$root,write_allowances:[$path]}')"
@@ -165,11 +165,11 @@ guard_case() {
 no-agent-identity|-|unscoped|src/main.py|-|-
 exact-hook-allowance|python-engineer|allow:hooks/skill_gate.py|hooks/skill_gate.py|-|-
 notebook-exact-allowance|python-engineer|allow:notebooks/a.ipynb|notebooks/a.ipynb|NotebookEdit|-
-scout-planning-file|scout|allow:.lbwc-planning/phases/01-x/RESEARCH.md|.lbwc-planning/phases/01-x/RESEARCH.md|-|-
-architect-planning-file|architect|allow:.lbwc-planning/ROADMAP.md|.lbwc-planning/ROADMAP.md|-|-
-lead-planning-file|lead|allow:.lbwc-planning/STATE.md|.lbwc-planning/STATE.md|-|-
+scout-planning-file|scout|allow:.meridian/phases/01-x/RESEARCH.md|.meridian/phases/01-x/RESEARCH.md|-|-
+architect-planning-file|architect|allow:.meridian/ROADMAP.md|.meridian/ROADMAP.md|-|-
+lead-planning-file|lead|allow:.meridian/STATE.md|.meridian/STATE.md|-|-
 docs-markdown-file|docs|allow:README.md|README.md|-|-
-docs-planning-file|docs|allow:.lbwc-planning/notes.json|.lbwc-planning/notes.json|-|-
+docs-planning-file|docs|allow:.meridian/notes.json|.meridian/notes.json|-|-
 qa-author-tests-dir|qa-author|allow:tests/test_thing.py|tests/test_thing.py|-|-
 qa-author-explicit-hook-cwd|qa-author|allow:tests/helpers.py|tests/helpers.py|-|root
 test-dev-dot-test-name|test-dev|allow:src/thing.test.ts|src/thing.test.ts|-|-
@@ -208,21 +208,21 @@ schema3-prefix-lookalike-directory|web-engineer|dir:src/web|src/webapp/page.ts|-
 schema3-exact-file-other-path|web-engineer|file:src/one.py|src/two.py|-|-|outside worker 'dev-1' assigned write allowance
 worker-without-allowance|python-engineer|none|src/main.py|-|-|has no assigned write allowance
 cwd-outside-primary-workspace|python-engineer|allow:hooks/skill_gate.py|hooks/skill_gate.py|-|secondary|primary workspace
-generated-worker-outside-primary-without-override|python-engineer|lbwc-allow:hooks/skill_gate.py|hooks/skill_gate.py|-|secondary-noenv|primary workspace
-generated-identity-without-manifest-entry|python-engineer|unregistered-lbwc|src/main.py|-|-|manifest capability could not be resolved
-protected-critical-policy|python-engineer|allow:config/subagent-critical-execution.txt|config/subagent-critical-execution.txt|-|-|cannot write LBWC policy
-protected-destructive-list|python-engineer|allow:config/destructive-commands.txt|config/destructive-commands.txt|-|-|cannot write LBWC policy
-protected-guard-script|python-engineer|allow:scripts/file-guard.sh|scripts/file-guard.sh|-|-|cannot write LBWC policy
-protected-task-contract-script|python-engineer|allow:scripts/task-contract.sh|scripts/task-contract.sh|-|-|cannot write LBWC policy
-protected-lifecycle-script|python-engineer|allow:scripts/agent-lifecycle.sh|scripts/agent-lifecycle.sh|-|-|cannot write LBWC policy
-protected-manifest|python-engineer|allow:.lbwc-planning/.agent-manifest.json|.lbwc-planning/.agent-manifest.json|-|-|cannot write LBWC policy
-protected-contract-store|python-engineer|allow:.lbwc-planning/.contracts/tasks/forged.json|.lbwc-planning/.contracts/tasks/forged.json|-|-|cannot write LBWC policy
-protected-agent-definition|python-engineer|allow:.claude/agents/forged.md|.claude/agents/forged.md|-|-|cannot write LBWC policy
-root-capability-planning-config|python-engineer|root-capability|.lbwc-planning/config.json|-|-|cannot write LBWC policy
-root-capability-runfiles|python-engineer|root-capability|.temporary-agent-runfiles/runs/one/run.json|-|-|cannot write LBWC policy
-root-capability-dotenv|python-engineer|root-capability|.env|-|-|cannot write LBWC policy
-root-capability-private-key|python-engineer|root-capability|config/private.key|-|-|cannot write LBWC policy
-root-capability-credentials|python-engineer|root-capability|credentials.json|-|-|cannot write LBWC policy
+generated-worker-outside-primary-without-override|python-engineer|meridian-allow:hooks/skill_gate.py|hooks/skill_gate.py|-|secondary-noenv|primary workspace
+generated-identity-without-manifest-entry|python-engineer|unregistered-meridian|src/main.py|-|-|manifest capability could not be resolved
+protected-critical-policy|python-engineer|allow:config/subagent-critical-execution.txt|config/subagent-critical-execution.txt|-|-|cannot write MERIDIAN policy
+protected-destructive-list|python-engineer|allow:config/destructive-commands.txt|config/destructive-commands.txt|-|-|cannot write MERIDIAN policy
+protected-guard-script|python-engineer|allow:scripts/file-guard.sh|scripts/file-guard.sh|-|-|cannot write MERIDIAN policy
+protected-task-contract-script|python-engineer|allow:scripts/task-contract.sh|scripts/task-contract.sh|-|-|cannot write MERIDIAN policy
+protected-lifecycle-script|python-engineer|allow:scripts/agent-lifecycle.sh|scripts/agent-lifecycle.sh|-|-|cannot write MERIDIAN policy
+protected-manifest|python-engineer|allow:.meridian/.agent-manifest.json|.meridian/.agent-manifest.json|-|-|cannot write MERIDIAN policy
+protected-contract-store|python-engineer|allow:.meridian/.contracts/tasks/forged.json|.meridian/.contracts/tasks/forged.json|-|-|cannot write MERIDIAN policy
+protected-agent-definition|python-engineer|allow:.claude/agents/forged.md|.claude/agents/forged.md|-|-|cannot write MERIDIAN policy
+root-capability-planning-config|python-engineer|root-capability|.meridian/config.json|-|-|cannot write MERIDIAN policy
+root-capability-runfiles|python-engineer|root-capability|.temporary-agent-runfiles/runs/one/run.json|-|-|cannot write MERIDIAN policy
+root-capability-dotenv|python-engineer|root-capability|.env|-|-|cannot write MERIDIAN policy
+root-capability-private-key|python-engineer|root-capability|config/private.key|-|-|cannot write MERIDIAN policy
+root-capability-credentials|python-engineer|root-capability|credentials.json|-|-|cannot write MERIDIAN policy
 contract-file-missing|python-engineer|contract:missing|src/allowed.py|-|-|contract is missing, mismatched, stale, or outside allowance
 contract-tampered|python-engineer|contract:tampered|src/allowed.py|-|-|contract is missing, mismatched, stale, or outside allowance
 manifest-contract-id-mismatch|python-engineer|contract:wrong-id|src/allowed.py|-|-|contract is missing, mismatched, stale, or outside allowance

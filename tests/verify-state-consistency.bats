@@ -20,7 +20,7 @@ teardown() {
 
 fresh_planning() {
   PROJECT="$TEST_ROOT/$1"
-  PLANNING_DIR="$PROJECT/.lbwc-planning"
+  PLANNING_DIR="$PROJECT/.meridian"
   STATE_FILE="$PLANNING_DIR/STATE.md"
   mkdir -p "$PLANNING_DIR/phases"
   cd "$PROJECT"
@@ -61,7 +61,7 @@ skip_qa() {
 }
 
 run_verify() {
-  LBWC_PLANNING_DIR="$PLANNING_DIR" bash "$SCRIPT"
+  MERIDIAN_PLANNING_DIR="$PLANNING_DIR" bash "$SCRIPT"
 }
 
 @test "verify-state-consistency reports ok when disk and state agree and exits 1 naming each kind of drift" {

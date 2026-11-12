@@ -2,15 +2,15 @@
 set -u
 
 agent_manifest_path() {
-  printf '%s/.agent-manifest.json\n' "${1:-.lbwc-planning}"
+  printf '%s/.agent-manifest.json\n' "${1:-.meridian}"
 }
 
 agent_manifest_lock_path() {
-  printf '%s/.agent-manifest.lock\n' "${1:-.lbwc-planning}"
+  printf '%s/.agent-manifest.lock\n' "${1:-.meridian}"
 }
 
 agent_manifest_acquire_lock() {
-  local planning_dir="${1:-.lbwc-planning}" lock_dir
+  local planning_dir="${1:-.meridian}" lock_dir
   lock_dir=$(agent_manifest_lock_path "$planning_dir")
   mkdir -p "$planning_dir" 2>/dev/null || return 1
   local tries=0
@@ -22,11 +22,11 @@ agent_manifest_acquire_lock() {
 }
 
 agent_manifest_release_lock() {
-  rmdir "$(agent_manifest_lock_path "${1:-.lbwc-planning}")" 2>/dev/null || true
+  rmdir "$(agent_manifest_lock_path "${1:-.meridian}")" 2>/dev/null || true
 }
 
 agent_manifest_with_lock() {
-  local planning_dir="${1:-.lbwc-planning}" callback="${2:-}" status
+  local planning_dir="${1:-.meridian}" callback="${2:-}" status
   shift 2 || return 1
   [ -n "$callback" ] || return 1
   agent_manifest_acquire_lock "$planning_dir" || return 1
@@ -40,7 +40,7 @@ agent_manifest_with_lock() {
 }
 
 agent_manifest_read() {
-  local planning_dir="${1:-.lbwc-planning}" path
+  local planning_dir="${1:-.meridian}" path
   path=$(agent_manifest_path "$planning_dir")
   if [ ! -f "$path" ]; then
     printf '%s\n' '{"agents":{}}'

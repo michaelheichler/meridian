@@ -72,7 +72,7 @@ import_source_metadata() {
   SOURCE="$source"
   SOURCE_FILE_COUNT=0
   SOURCE_TOTAL_BYTES=0
-  digest_input=$(mktemp "${TMPDIR:-/tmp}/lbwc-import-digest.XXXXXX") || import_fail 'could not create source digest workspace'
+  digest_input=$(mktemp "${TMPDIR:-/tmp}/meridian-import-digest.XXXXXX") || import_fail 'could not create source digest workspace'
   if find "$source" -type l -print -quit 2>/dev/null | grep -q .; then
     rm -f "$digest_input"
     import_fail "source contains a symbolic link"

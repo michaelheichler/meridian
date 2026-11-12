@@ -1,5 +1,5 @@
 {
-  "description": "lbwc agent generation and lifecycle enforcement",
+  "description": "meridian agent generation and lifecycle enforcement",
   "hooks": {
     "PreToolUse": [
       {
@@ -27,7 +27,7 @@
     ],
     "SubagentStart": [
       {
-        "matcher": "lbwc-.*",
+        "matcher": "meridian-.*",
         "hooks": [
           {
             "type": "command",
@@ -39,7 +39,7 @@
     ],
     "SubagentStop": [
       {
-        "matcher": "lbwc-.*",
+        "matcher": "meridian-.*",
         "hooks": [
           {
             "type": "command",

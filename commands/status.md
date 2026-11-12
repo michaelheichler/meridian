@@ -7,7 +7,7 @@ argument-hint: "[--verbose] [--metrics]"
 allowed-tools: Read, Glob, Grep, Bash, LSP
 ---
 
-# LBWC Status $ARGUMENTS
+# MERIDIAN Status $ARGUMENTS
 
 ## Context
 
@@ -17,31 +17,31 @@ Working directory:
 ```
 Plugin root:
 ```
-!`SESSION_KEY="${CLAUDE_SESSION_ID:-default}"; L="/tmp/.lbwc-plugin-root-link-${SESSION_KEY}"; R="$L/scripts/resolve-plugin-root.sh"; [ -f "$R" ] || R="${CLAUDE_PLUGIN_ROOT:-}/scripts/resolve-plugin-root.sh"; [ -f "$R" ] || { echo "LBWC: plugin root unavailable. Restart this session to recreate $L." >&2; exit 1; }; bash "$R" >/dev/null || exit 1; bash "$L/scripts/phase-detect.sh" > "/tmp/.lbwc-phase-detect-${SESSION_KEY}.txt" 2>/dev/null || echo "phase_detect_error=true" > "/tmp/.lbwc-phase-detect-${SESSION_KEY}.txt"; echo "$L"`
+!`SESSION_KEY="${CLAUDE_SESSION_ID:-default}"; L="/tmp/.meridian-plugin-root-link-${SESSION_KEY}"; R="$L/scripts/resolve-plugin-root.sh"; [ -f "$R" ] || R="${CLAUDE_PLUGIN_ROOT:-}/scripts/resolve-plugin-root.sh"; [ -f "$R" ] || { echo "MERIDIAN: plugin root unavailable. Restart this session to recreate $L." >&2; exit 1; }; bash "$R" >/dev/null || exit 1; bash "$L/scripts/phase-detect.sh" > "/tmp/.meridian-phase-detect-${SESSION_KEY}.txt" 2>/dev/null || echo "phase_detect_error=true" > "/tmp/.meridian-phase-detect-${SESSION_KEY}.txt"; echo "$L"`
 ```
 
 Current state:
 ```
-!`head -40 .lbwc-planning/STATE.md 2>/dev/null || echo "No state found"`
+!`head -40 .meridian/STATE.md 2>/dev/null || echo "No state found"`
 ```
 
 Roadmap:
 ```
-!`head -50 .lbwc-planning/ROADMAP.md 2>/dev/null || echo "No roadmap found"`
+!`head -50 .meridian/ROADMAP.md 2>/dev/null || echo "No roadmap found"`
 ```
 
-The SessionStart hook pre-injects config. Read .lbwc-planning/config.json only if --verbose.
+The SessionStart hook pre-injects config. Read .meridian/config.json only if --verbose.
 
 Phase directories:
 ```
-!`ls .lbwc-planning/phases/ 2>/dev/null || echo "No phases directory"`
+!`ls .meridian/phases/ 2>/dev/null || echo "No phases directory"`
 ```
 
 Phase state:
 ```
 !`SESSION_KEY="${CLAUDE_SESSION_ID:-default}"
-L="/tmp/.lbwc-plugin-root-link-${SESSION_KEY}"
-P="/tmp/.lbwc-phase-detect-${SESSION_KEY}.txt"
+L="/tmp/.meridian-plugin-root-link-${SESSION_KEY}"
+P="/tmp/.meridian-phase-detect-${SESSION_KEY}.txt"
 PD=""
 _refresh_phase_detect() {
   local resolver root
@@ -76,17 +76,17 @@ fi`
 
 Shipped milestones:
 ```
-!`ls -d .lbwc-planning/milestones/*/SHIPPED.md 2>/dev/null || echo "No shipped milestones"`
+!`ls -d .meridian/milestones/*/SHIPPED.md 2>/dev/null || echo "No shipped milestones"`
 ```
 
 ## Guard
 
-- Not initialized (no .lbwc-planning/ dir): STOP "Run /lbwc:init first."
+- Not initialized (no .meridian/ dir): STOP "Run /meridian:init first."
 - **Brownfield normalization:** If Phase state (from Context above) contains `misnamed_plans=true`, normalize all phase directories before proceeding:
   ```bash
-  NORM_SCRIPT="/tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/normalize-plan-filenames.sh"
+  NORM_SCRIPT="/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/normalize-plan-filenames.sh"
   if [ -f "$NORM_SCRIPT" ]; then
-    for pdir in .lbwc-planning/phases/*/; do
+    for pdir in .meridian/phases/*/; do
       [ -d "$pdir" ] && bash "$NORM_SCRIPT" "$pdir"
     done
   fi
@@ -94,15 +94,15 @@ Shipped milestones:
   Display: "⚠ Renamed misnamed plan files to `{NN}-PLAN.md` convention."
   Then re-run phase-detect.sh to refresh state (filenames changed):
   ```bash
-  bash "/tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/phase-detect.sh" > "/tmp/.lbwc-phase-detect-${CLAUDE_SESSION_ID:-default}.txt"
+  bash "/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/phase-detect.sh" > "/tmp/.meridian-phase-detect-${CLAUDE_SESSION_ID:-default}.txt"
   ```
   Use the refreshed phase-detect output for all subsequent steps.
-- If ROADMAP.md is missing or has template placeholders, STOP "No roadmap found. Run /lbwc:vibe to set up your project."
+- If ROADMAP.md is missing or has template placeholders, STOP "No roadmap found. Run /meridian:transit to set up your project."
 
 ## Steps
 
 1. **Parse args:** --verbose shows per-plan detail within each phase
-2. **Resolve paths:** Use `.lbwc-planning/phases/` for phase directories. Gather milestone list from `.lbwc-planning/milestones/` (dirs with SHIPPED.md).
+2. **Resolve paths:** Use `.meridian/phases/` for phase directories. Gather milestone list from `.meridian/milestones/` (dirs with SHIPPED.md).
 3. **Read data:** STATE.md and ROADMAP.md use compact format with flat fields and no verbose prose.
 
    **Planning data**
@@ -115,15 +115,15 @@ Shipped milestones:
 
    - Glob `*-PLAN.md` and `*-SUMMARY.md` per phase directory for completion data.
    - If an Agent Teams build is active, read the shared task list for teammate status.
-   - If `.lbwc-planning/.cost-ledger.json` exists, read it with jq. Extract per-agent costs and compute the total. Only display economy if total > 0.
+   - If `.meridian/.cost-ledger.json` exists, read it with jq. Extract per-agent costs and compute the total. Only display economy if total > 0.
 
 4. **Compute progress:** Per phase, count PLANs (total) vs SUMMARYs (done). Pct = done/total * 100. Use status ✓ (100%), ◆ (1-99%), ○ (0%).
 5. **Compute velocity:** Total plans done, avg duration, total time. If --verbose, show the per-phase breakdown.
-6. **Next action:** Find first incomplete phase. Has plans but not all summaries: `/lbwc:vibe` (auto-executes). Complete + next unplanned: `/lbwc:vibe` (auto-plans). All complete: `/lbwc:vibe --archive`. No plans anywhere: `/lbwc:vibe`.
+6. **Next action:** Find first incomplete phase. Has plans but not all summaries: `/meridian:transit` (auto-executes). Complete + next unplanned: `/meridian:transit` (auto-plans). All complete: `/meridian:transit --archive`. No plans anywhere: `/meridian:transit`.
 
 ## Display
 
-Per @${CLAUDE_PLUGIN_ROOT}/references/lbwc-brand-essentials.md:
+Per @${CLAUDE_PLUGIN_ROOT}/references/meridian-brand-essentials.md:
 
 **Header:**
 ```
@@ -162,9 +162,9 @@ Per @${CLAUDE_PLUGIN_ROOT}/references/lbwc-brand-essentials.md:
     Cache hit rate: {percent}%
 ```
 
-  **RTK external metrics** (only when `--metrics` is explicit): run `bash /tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/rtk-manager.sh status --json --stats`. If RTK is absent, show nothing. If RTK is present, show one compact line labeled external, for example `RTK external: verified by runtime smoke proof, 47% avg savings`, `RTK external: active, 47% avg savings`, or `RTK external: hook active, compatibility unverified`. Use compatibility-unverified wording only for `risk` or `hook_active_unverified` states without proof. RTK savings are external RTK savings, not LBWC savings. Default `/lbwc:status` avoids RTK history, stats, network, and smoke work to prevent recurring overhead, it must not advertise RTK when absent.
+  **RTK external metrics** (only when `--metrics` is explicit): run `bash /tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/rtk-manager.sh status --json --stats`. If RTK is absent, show nothing. If RTK is present, show one compact line labeled external, for example `RTK external: verified by runtime smoke proof, 47% avg savings`, `RTK external: active, 47% avg savings`, or `RTK external: hook active, compatibility unverified`. Use compatibility-unverified wording only for `risk` or `hook_active_unverified` states without proof. RTK savings are external RTK savings, not MERIDIAN savings. Default `/meridian:status` avoids RTK history, stats, network, and smoke work to prevent recurring overhead, it must not advertise RTK when absent.
 
-**Next Up:** Run `bash /tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/suggest-next.sh status` and display.
+**Next Up:** Run `bash /tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/suggest-next.sh status` and display.
 
 ## Failure and recovery
 

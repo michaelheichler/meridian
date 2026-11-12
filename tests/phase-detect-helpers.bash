@@ -3,9 +3,9 @@ set -u
 
 load test_helper
 
-PD_PLAN_DIR=".lbwc-planning"
-PD_PHASES=".lbwc-planning/phases"
-PD_MILESTONES=".lbwc-planning/milestones"
+PD_PLAN_DIR=".meridian"
+PD_PHASES=".meridian/phases"
+PD_MILESTONES=".meridian/milestones"
 PD_FIXTURE_BUILDER="$BATS_TEST_DIRNAME/fixtures/phase-detect-output/setup-case.bash"
 
 pd_setup() {
@@ -26,9 +26,9 @@ pd_new_session() {
 }
 
 pd_teardown() {
-  rm -f "/tmp/.lbwc-phase-detect-${CLAUDE_SESSION_ID:-default}.txt" 2>/dev/null || true
-  rm -rf "/tmp/.lbwc-phase-detect-live-${CLAUDE_SESSION_ID:-default}.lock" 2>/dev/null || true
-  rm -rf "/tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID:-default}" 2>/dev/null || true
+  rm -f "/tmp/.meridian-phase-detect-${CLAUDE_SESSION_ID:-default}.txt" 2>/dev/null || true
+  rm -rf "/tmp/.meridian-phase-detect-live-${CLAUDE_SESSION_ID:-default}.lock" 2>/dev/null || true
+  rm -rf "/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}" 2>/dev/null || true
   unset CLAUDE_SESSION_ID
   cd "$PROJECT_ROOT" || true
   teardown_temp_dir

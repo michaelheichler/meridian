@@ -15,8 +15,8 @@ setup() {
 
 teardown() {
   cd "$PROJECT_ROOT" || true
-  rm -rf "/tmp/.lbwc-phase-detect-live-${CLAUDE_SESSION_ID}.lock" "/tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID}"
-  rm -f "/tmp/.lbwc-phase-detect-${CLAUDE_SESSION_ID}.txt" "/tmp/.lbwc-last-list-view-${CLAUDE_SESSION_ID}.json"
+  rm -rf "/tmp/.meridian-phase-detect-live-${CLAUDE_SESSION_ID}.lock" "/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID}"
+  rm -f "/tmp/.meridian-phase-detect-${CLAUDE_SESSION_ID}.txt" "/tmp/.meridian-last-list-view-${CLAUDE_SESSION_ID}.json"
   unset CLAUDE_SESSION_ID
   teardown_temp_dir
 }
@@ -64,7 +64,7 @@ run_old_bash() {
 }
 
 case_dir() {
-  mkdir -p "$TEST_TEMP_DIR/$1/.lbwc-planning"
+  mkdir -p "$TEST_TEMP_DIR/$1/.meridian"
   printf '%s\n' "$TEST_TEMP_DIR/$1"
 }
 
@@ -81,7 +81,7 @@ init_git_repo() {
 case_phase_detect() {
   local dir
   dir=$(case_dir phase-detect)
-  printf '{}\n' > "$dir/.lbwc-planning/config.json"
+  printf '{}\n' > "$dir/.meridian/config.json"
   cd "$dir" || return 1
   run_old_bash "$SCRIPTS_DIR/phase-detect.sh"
   [[ "$OLD_STDOUT" == *"phase_detect_complete=true"* ]] \
@@ -101,7 +101,7 @@ case_qa_gate() {
 case_verification_freshness() {
   local dir phase_dir
   dir=$(case_dir verification-freshness)
-  phase_dir="$dir/.lbwc-planning/phases/01-test"
+  phase_dir="$dir/.meridian/phases/01-test"
   mkdir -p "$phase_dir" "$dir/src"
   printf '%s\n' '---' 'files_modified:' '  - src/listed.txt' '---' > "$phase_dir/01-01-SUMMARY.md"
   printf 'one\n' > "$dir/src/listed.txt"
@@ -171,8 +171,8 @@ case_tmux_spawn_group() {
 
 case_plan_import() {
   local dir="$TEST_TEMP_DIR/plan-import-project"
-  mkdir -p "$dir/.lbwc-planning"
-  printf '%s\n' '# Existing canonical project' > "$dir/.lbwc-planning/PROJECT.md"
+  mkdir -p "$dir/.meridian"
+  printf '%s\n' '# Existing canonical project' > "$dir/.meridian/PROJECT.md"
   cd "$dir" || return 1
   run_old_bash "$SCRIPTS_DIR/plan-import.sh" stage --adapter gsd --source "$PROJECT_ROOT/tests/fixtures/import/gsd/.planning" \
     --project-root "$dir" --import-id import-one
@@ -182,7 +182,7 @@ case_plan_import() {
 case_write_verification() {
   local dir phase_dir
   dir=$(case_dir write-verification)
-  phase_dir="$dir/.lbwc-planning/phases/01-verification"
+  phase_dir="$dir/.meridian/phases/01-verification"
   mkdir -p "$phase_dir"
   cat > "$dir/payload.json" <<'JSON'
 {"phase": "01", "tier": "standard", "result": "PASS",
@@ -197,12 +197,12 @@ JSON
 case_debug_start_selected_todo() {
   local dir
   dir=$(case_dir debug-start)
-  printf '{}\n' > "$dir/.lbwc-planning/config.json"
+  printf '{}\n' > "$dir/.meridian/config.json"
   printf '%s\n' '# Project State' '' '## Todos' '- Fix parser bug (added 2026-04-01)' '' '## Recent Activity' '- 2026-04-01: Existing note' \
-    > "$dir/.lbwc-planning/STATE.md"
-  (cd "$dir" && LBWC_PLANNING_DIR="$dir/.lbwc-planning" bash "$SCRIPTS_DIR/todo-lifecycle.sh" list-with-snapshot) >/dev/null || return 1
+    > "$dir/.meridian/STATE.md"
+  (cd "$dir" && MERIDIAN_PLANNING_DIR="$dir/.meridian" bash "$SCRIPTS_DIR/todo-lifecycle.sh" list-with-snapshot) >/dev/null || return 1
   cd "$dir" || return 1
-  LBWC_PLANNING_DIR="$dir/.lbwc-planning" run_old_bash "$SCRIPTS_DIR/debug-start-selected-todo.sh" "$dir/.lbwc-planning" 1
+  MERIDIAN_PLANNING_DIR="$dir/.meridian" run_old_bash "$SCRIPTS_DIR/debug-start-selected-todo.sh" "$dir/.meridian" 1
   [ "$OLD_STATUS" -eq 0 ] || { report_case_failure debug-start-selected-todo "start without routing flags failed"; return 1; }
 }
 
@@ -213,10 +213,10 @@ case_tmux_bus_watchdog() {
   mkdir -p "$bin"
   printf '%s\n' '#!/usr/bin/env bash' 'case "$1" in display-message) exit 0 ;; *) exit 1 ;; esac' > "$bin/tmux"
   chmod +x "$bin/tmux"
-  printf '{}\n' > "$dir/.lbwc-planning/config.json"
-  REPO_ROOT="$PROJECT_ROOT" CONTROL_ROOT="$dir/.lbwc-planning" fixture_watchdog_bus || return 1
-  REPO_ROOT="$PROJECT_ROOT" CONTROL_ROOT="$dir/.lbwc-planning" plant_bound_agent test:0.1 '%1' || return 1
-  PATH="$bin:$PATH" run_old_bash "$SCRIPTS_DIR/tmux-bus-watchdog.sh" --control-root "$dir/.lbwc-planning" check \
+  printf '{}\n' > "$dir/.meridian/config.json"
+  REPO_ROOT="$PROJECT_ROOT" CONTROL_ROOT="$dir/.meridian" fixture_watchdog_bus || return 1
+  REPO_ROOT="$PROJECT_ROOT" CONTROL_ROOT="$dir/.meridian" plant_bound_agent test:0.1 '%1' || return 1
+  PATH="$bin:$PATH" run_old_bash "$SCRIPTS_DIR/tmux-bus-watchdog.sh" --control-root "$dir/.meridian" check \
     --orchestrator-id main-session --orchestrator-session-id main-session --orchestrator-capability "$MAIN_CAPABILITY" \
     --stale-after-ms 1 --shutdown-timeout-ms 30
   [ "$OLD_STATUS" -eq 1 ] || { report_case_failure tmux-bus-watchdog "stale pass did not exit 1"; return 1; }

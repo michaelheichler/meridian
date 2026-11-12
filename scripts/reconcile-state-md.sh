@@ -1,5 +1,16 @@
 #!/usr/bin/env bash
 
+printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${BASH_SOURCE[0]}"
+case "$MERIDIAN_MIGRATION_SOURCE" in
+  *"/"*) printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${MERIDIAN_MIGRATION_SOURCE%"/"*}" ;;
+  *) printf -v MERIDIAN_MIGRATION_SOURCE '%s' . ;;
+esac
+if [ -f "$MERIDIAN_MIGRATION_SOURCE/lib/rename-migration.sh" ]; then
+  . "$MERIDIAN_MIGRATION_SOURCE/lib/rename-migration.sh"
+  meridian_migrate_environment
+fi
+unset MERIDIAN_MIGRATION_SOURCE
+
 set -u
 
 SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd -P 2>/dev/null || pwd)"
@@ -116,7 +127,7 @@ resolve_planning_root() {
     return 0
   fi
 
-  [ -n "$target" ] || target="${LBWC_PLANNING_DIR:-.lbwc-planning}"
+  [ -n "$target" ] || target="${MERIDIAN_PLANNING_DIR:-.meridian}"
   if [ -d "$target" ]; then
     physical_dir "$target"
   else

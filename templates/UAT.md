@@ -21,7 +21,7 @@ Supported checkpoint IDs:
 
 Prefilled summary-deviation reviews are not blocking issues until the human rejects them. They start with an empty `Result`, include deterministic identity metadata, and are written before generated plan checkpoints.
 Only entries whose final `Result` is `issue` are blocking UAT issues, empty, `pass`, and `skip` `DNN` review entries are non-blocking.
-Accepted summary deviations may include an optional `Tracking:` line when the human accepts the deviation as non-blocking and asks LBWC to add a follow-up todo. `Result: pass` plus `Disposition: accepted-process-exception` plus `Tracking: accepted deviation added to todos (ref:{8hex})` is non-blocking, only final `Result: issue` entries block UAT.
+Accepted summary deviations may include an optional `Tracking:` line when the human accepts the deviation as non-blocking and asks MERIDIAN to add a follow-up todo. `Result: pass` plus `Disposition: accepted-process-exception` plus `Tracking: accepted deviation added to todos (ref:{8hex})` is non-blocking, only final `Result: issue` entries block UAT.
 
 Issue `Description` values are synthesized, remediation-ready text, not raw user responses. Fold any visible attachment/image evidence into the description while it is available. Do not persist `image attached`, `(Image attached)`, `screenshot attached`, raw screenshots, raw attachment blobs, or base64 data in this artifact.
 

@@ -8,14 +8,14 @@ allowed-tools: Read, Write, Edit, Bash, Glob, Grep, Agent, SendMessage, LSP, Ask
 
 After resolving Context, first read `{LINK}/skills-bundle/ponytail/SKILL.md` and apply the ponytail discipline at level full for the whole task.
 
-# LBWC Build: $ARGUMENTS
+# MERIDIAN Build: $ARGUMENTS
 
 ## Context
 
 Plugin root and project root (self-contained, shell variables do not survive across directives):
 
 ```bash
-!`SESSION_KEY="${CLAUDE_SESSION_ID:-default}"; L="/tmp/.lbwc-plugin-root-link-${SESSION_KEY}"; R="$L/scripts/resolve-plugin-root.sh"; [ -f "$R" ] || R="${CLAUDE_PLUGIN_ROOT:-}/scripts/resolve-plugin-root.sh"; [ -f "$R" ] || { echo "LBWC: plugin root unavailable. Restart this session to recreate $L." >&2; exit 1; }; LINK=$(bash "$R" --require-script indexer-sync.sh) || exit 1; PROJECT_ROOT=$(source "$LINK/scripts/lib/lbwc-target-root.sh" && lbwc_resolve_target_root 0 2>/dev/null || git rev-parse --show-toplevel 2>/dev/null) || { echo "LBWC: no Git repository root found. /lbwc:build requires a Git repository." >&2; exit 1; }; printf 'Plugin root: %s\nProject root: %s\n' "$LINK" "$PROJECT_ROOT"`
+!`SESSION_KEY="${CLAUDE_SESSION_ID:-default}"; L="/tmp/.meridian-plugin-root-link-${SESSION_KEY}"; R="$L/scripts/resolve-plugin-root.sh"; [ -f "$R" ] || R="${CLAUDE_PLUGIN_ROOT:-}/scripts/resolve-plugin-root.sh"; [ -f "$R" ] || { echo "MERIDIAN: plugin root unavailable. Restart this session to recreate $L." >&2; exit 1; }; LINK=$(bash "$R" --require-script indexer-sync.sh) || exit 1; PROJECT_ROOT=$(source "$LINK/scripts/lib/meridian-target-root.sh" && meridian_resolve_target_root 0 2>/dev/null || git rev-parse --show-toplevel 2>/dev/null) || { echo "MERIDIAN: no Git repository root found. /meridian:build requires a Git repository." >&2; exit 1; }; printf 'Plugin root: %s\nProject root: %s\n' "$LINK" "$PROJECT_ROOT"`
 ```
 
 Store the returned `Plugin root` value as `{LINK}` and the returned `Project root` value as `{PROJECT_ROOT}` for every later literal helper invocation. Never guess a plugin path or substitute a missing helper with an inline approximation.
@@ -37,10 +37,10 @@ After the gate succeeds, run `bash "{LINK}/scripts/phase-detect.sh"`. Read the s
 Refresh the saved Claude capability catalog before any grouping contract or spawn:
 
 ```bash
-bash "{LINK}/scripts/lbwc-model" refresh "{PROJECT_ROOT}/.lbwc-planning"
+bash "{LINK}/scripts/meridian-model" refresh "{PROJECT_ROOT}/.meridian"
 ```
 
-This persists workflow-backend availability as `.workflow` on `.lbwc-planning/claude-capabilities.json`, the authority the execution-mode choice in Spawn and verify reads before offering or resolving `workflow`. Stop before plan execution when the helper exits non-zero. Skip this gate when `.lbwc-planning/` is missing. Do not create a planning directory here.
+This persists workflow-backend availability as `.workflow` on `.meridian/claude-capabilities.json`, the authority the execution-mode choice in Spawn and verify reads before offering or resolving `workflow`. Stop before plan execution when the helper exits non-zero. Skip this gate when `.meridian/` is missing. Do not create a planning directory here.
 
 ## Guard
 
@@ -50,7 +50,7 @@ Require initialized active planning state, `phase_detect_complete=true`, a canon
 
 - Use $ARGUMENTS when supplied.
 - Otherwise use the first non-`complete` phase in ROADMAP.md's Progress table.
-- Read `.lbwc-planning/phases/{NN}-{slug}/PLAN.md`.
+- Read `.meridian/phases/{NN}-{slug}/PLAN.md`.
 - If it does not exist, stop and tell the user to run `/plan <phase>` first.
 - **Remediation round execution:** if the phase has an active remediation round (`remediation/qa/.qa-remediation-stage` or `remediation/uat/.uat-remediation-stage` with `stage=plan`, checkable via `bash "{LINK}/scripts/remediation-round.sh" current <phase-dir> <qa|uat>`), the work list is that round's `R{NN}-PLAN.md` instead of the phase PLAN.md. Run `bash "{LINK}/scripts/remediation-round.sh" stage <phase-dir> <kind> execute` before spawning, work the round plan's tasks exactly like a normal plan (steps 2-7 below), write `R{NN}-SUMMARY.md` from `{LINK}/templates/REMEDIATION-SUMMARY.md` instead of SUMMARY.md, then tell the user to run `/qa <phase>` to re-verify the round. The deviq build gate still runs first.
 - Before spawning any dev/engineer pair or trio for this phase, run `bash "{LINK}/scripts/deviq-build-gate.sh" <phase>`. This is the one blocking rule and this is its only call site.
@@ -62,7 +62,7 @@ Group the plan's `<task>` entries into waves by `depends_on`, preserving PLAN or
 
 Within a dependency wave, process tasks in PLAN order and admit exactly one task team at a time. Each task team contains one or more sequential groupings. A grouping can be a solo red stage. Its other kinds are a pair or a trio. Independence within a wave means the tasks have no dependency edge between them. It does not permit parallel admission. Generate every build grouping with `--exclusive`, then wait until every member is `used` or `expired` before generating the next grouping. Do not pre-generate a later grouping.
 
-This admission rule is identical under every resolved backend, including `workflow`, but a workflow grouping's closure signal is not. `--exclusive` reads the one shared agent manifest, not a backend-specific one. A workflow-spawned member's `agent()` step fires the same `SubagentStart`/`SubagentStop` hooks a native member's `Agent` call fires, carrying the registered `lbwc-` name in `agent_type`, and `agent-lifecycle.sh` advances that name to `running` then `used` from those hooks exactly as it does for a native or TMUX member. The host confirms this behavior, see `references/workflow-probe-findings.md`, Unknown D. Do not treat it as an assumption. For a solo grouping that is the whole picture, one `agent()` call and one `used` transition, and the manifest closure check is sufficient on its own exactly as it is for native and TMUX.
+This admission rule is identical under every resolved backend, including `workflow`, but a workflow grouping's closure signal is not. `--exclusive` reads the one shared agent manifest, not a backend-specific one. A workflow-spawned member's `agent()` step fires the same `SubagentStart`/`SubagentStop` hooks a native member's `Agent` call fires, carrying the registered `meridian-` name in `agent_type`, and `agent-lifecycle.sh` advances that name to `running` then `used` from those hooks exactly as it does for a native or TMUX member. The host confirms this behavior, see `references/workflow-probe-findings.md`, Unknown D. Do not treat it as an assumption. For a solo grouping that is the whole picture, one `agent()` call and one `used` transition, and the manifest closure check is sufficient on its own exactly as it is for native and TMUX.
 
 A pair or trio grouping is not that simple. `templates/workflows/pair.js.tpl` and `templates/workflows/trio.js.tpl` retry the same registered names for up to three remediation rounds, unbounded under `pure-vibe`, and every round ends with its own `SubagentStop` followed by the next round's `SubagentStart`. Between rounds, a still-running grouping's members read `used` in the manifest exactly like a closed one does, so `used` is necessary but not sufficient for workflow closure. It can also mean the grouping is between rounds. The run's own terminal `result`, read once the `Workflow` call completes, signals that the grouping is done, including every internal round. The main session observes that terminal result before it reads the manifest's `used`-or-`expired` state as confirmation, and only then generates the next grouping, exactly as detailed in the workflow branch of Spawn and verify below. The manifest is not the sole admission authority for `workflow` the way it is for `in_process` and `tmux`. For `workflow` it is corroborating state read after the terminal result, never a substitute for it. No wave or cross-grouping ordering is ever delegated into a workflow script itself.
 
@@ -90,11 +90,11 @@ Apply the ponytail discipline read in the required first step to every implement
 
 After selecting the role and grouping, the main session opens one PLAN contract for that grouping. A TDD task has two contracts, `red` and `implementation`. Every other task has one `implementation` contract. Pass the exact generator brief as `--job` to `open` and to the generator. Do not run `open` until Spawn and verify has a validated or frozen snapshot.
 
-Copy snapshot backends into CLI flags only when `{PHASE_DIR}/.runtime-snapshot.json` exists. Control root is `{PROJECT_ROOT}/.lbwc-planning`, the freeze `--planning-dir`. Native `in_process` with no freeze must not `jq` a missing snapshot. Leave `OPEN_BACKEND_ARGS` empty and keep the selected `in_process` backends in that case. When the snapshot exists and `snapshot.requested_backend` equals `snapshot.resolved_backend`, pass those values plus `--control-root` and `--assert-snapshot` so `open` cannot disagree with the snapshot. When they differ, that is the already-frozen `comms_fallback` case. Omit the schema 3 backend flags (`open` requires matching backends), then follow the native Agent path.
+Copy snapshot backends into CLI flags only when `{PHASE_DIR}/.runtime-snapshot.json` exists. Control root is `{PROJECT_ROOT}/.meridian`, the freeze `--planning-dir`. Native `in_process` with no freeze must not `jq` a missing snapshot. Leave `OPEN_BACKEND_ARGS` empty and keep the selected `in_process` backends in that case. When the snapshot exists and `snapshot.requested_backend` equals `snapshot.resolved_backend`, pass those values plus `--control-root` and `--assert-snapshot` so `open` cannot disagree with the snapshot. When they differ, that is the already-frozen `comms_fallback` case. Omit the schema 3 backend flags (`open` requires matching backends), then follow the native Agent path.
 
 ```bash
 SNAPSHOT_PATH="{PHASE_DIR}/.runtime-snapshot.json"
-CONTROL_ROOT="{PROJECT_ROOT}/.lbwc-planning"
+CONTROL_ROOT="{PROJECT_ROOT}/.meridian"
 OPEN_BACKEND_ARGS=()
 if [ -f "$SNAPSHOT_PATH" ]; then
   REQUESTED_BACKEND=$(jq -r '.requested_backend' "$SNAPSHOT_PATH")
@@ -123,18 +123,18 @@ Use the matching `failure`, `partial`, or `blocked` outcome when applicable, and
 
 ## Spawn and verify
 
-Before opening a grouping contract, resolve `{PHASE_DIR}` as the selected canonical directory below `{PROJECT_ROOT}/.lbwc-planning/phases/`. Its frozen runtime snapshot path is `{PHASE_DIR}/.runtime-snapshot.json`.
+Before opening a grouping contract, resolve `{PHASE_DIR}` as the selected canonical directory below `{PROJECT_ROOT}/.meridian/phases/`. Its frozen runtime snapshot path is `{PHASE_DIR}/.runtime-snapshot.json`.
 
 1. When that path exists, run exactly:
 
    ```bash
-   bash "{LINK}/scripts/runtime-snapshot.sh" validate --planning-dir "{PROJECT_ROOT}/.lbwc-planning" --phase-dir "{PHASE_DIR}"
+   bash "{LINK}/scripts/runtime-snapshot.sh" validate --planning-dir "{PROJECT_ROOT}/.meridian" --phase-dir "{PHASE_DIR}"
    ```
 
    On success, use the returned `snapshot` as the only authority for requested backend, resolved backend, effort, routing profile, routed models, TMUX settings, and restrictions. Do not re-read live configuration for execution selection. A non-zero result is `backend drift` or malformed runtime state. Stop before contract opening, generation, spawning, or telemetry and preserve every contract state.
 2. When no snapshot exists, read validated execution configuration once. An explicit `agent_execution_mode` wins outright, including an explicit `in_process` or `tmux`. `agent_execution_mode=in_process` selects requested and resolved `in_process`, while `agent_execution_mode=tmux` selects requested `tmux`.
 
-   `agent_execution_mode=workflow` selects requested `workflow`. Read `.workflow.available` from `{PROJECT_ROOT}/.lbwc-planning/claude-capabilities.json` and `.workflow_execution.enabled` from `{PROJECT_ROOT}/.lbwc-planning/config.json`. When `.workflow.available` is `false`, stop before any contract or agent exists and report `.workflow.unavailable_reasons` verbatim. Otherwise, when `.workflow_execution.enabled` is not `true`, stop before any contract or agent exists with this exact error.
+   `agent_execution_mode=workflow` selects requested `workflow`. Read `.workflow.available` from `{PROJECT_ROOT}/.meridian/claude-capabilities.json` and `.workflow_execution.enabled` from `{PROJECT_ROOT}/.meridian/config.json`. When `.workflow.available` is `false`, stop before any contract or agent exists and report `.workflow.unavailable_reasons` verbatim. Otherwise, when `.workflow_execution.enabled` is not `true`, stop before any contract or agent exists with this exact error.
 
    ```text
    workflow backend is disabled in configuration
@@ -158,21 +158,21 @@ Before opening a grouping contract, resolve `{PHASE_DIR}` as the selected canoni
    Select requested and resolved `workflow` when the user chooses `Workflow run`, or requested and resolved `in_process` when they choose `Native spawn`. For `TMUX panes`, select requested `tmux`. If the user chooses `Cancel spawn`, run exactly:
 
    ```bash
-   bash "{LINK}/scripts/runtime-snapshot.sh" cancel --planning-dir "{PROJECT_ROOT}/.lbwc-planning" --phase-dir "{PHASE_DIR}"
+   bash "{LINK}/scripts/runtime-snapshot.sh" cancel --planning-dir "{PROJECT_ROOT}/.meridian" --phase-dir "{PHASE_DIR}"
    ```
 
    Report cancellation and stop after the command writes `{PHASE_DIR}/.runtime-cancelled.json` without creating a snapshot. Keep any planned grouping contract unchanged, cancel the build and never fall back.
 3. For requested `tmux`, complete preflight before freezing. On success resolve `tmux`. On failure, resolve `in_process` only if `tmux_execution.comms_fallback=fall_back_to_in_process`. Otherwise stop without a snapshot. Then run exactly:
 
    ```bash
-   bash "{LINK}/scripts/runtime-snapshot.sh" freeze --planning-dir "{PROJECT_ROOT}/.lbwc-planning" --phase-dir "{PHASE_DIR}" --requested-backend "{REQUESTED_BACKEND}" --resolved-backend "{RESOLVED_BACKEND}"
+   bash "{LINK}/scripts/runtime-snapshot.sh" freeze --planning-dir "{PROJECT_ROOT}/.meridian" --phase-dir "{PHASE_DIR}" --requested-backend "{REQUESTED_BACKEND}" --resolved-backend "{RESOLVED_BACKEND}"
    ```
 
    A `created` or `matched` result moves runtime state to `ready` and does not alter a task contract. Pass `snapshot.resolved_backend` to every `agent-generator.sh --execution-backend` invocation that follows a schema 3 open. Schema 2 generation omits `--execution-backend`. The helper atomically records schema version, canonical phase, requested and resolved backend, effort, active routing profile and models, complete TMUX settings and restrictions, and the canonical source-config digest.
 4. After every task reaches its terminal state and you write and validate the summary, run exactly:
 
    ```bash
-   bash "{LINK}/scripts/runtime-snapshot.sh" cleanup --planning-dir "{PROJECT_ROOT}/.lbwc-planning" --phase-dir "{PHASE_DIR}"
+   bash "{LINK}/scripts/runtime-snapshot.sh" cleanup --planning-dir "{PROJECT_ROOT}/.meridian" --phase-dir "{PHASE_DIR}"
    ```
 
    This moves runtime state from `ready` to `cleaned`. A failed or blocked build preserves the snapshot for resume. Report a cleanup failure, which blocks the terminal transition.
@@ -187,7 +187,7 @@ If `snapshot.resolved_backend` is `tmux`, follow `{LINK}/references/tmux-spawn-p
 
    ```bash
    MAIN_ID="${CLAUDE_SESSION_ID:-}"
-   [ -n "$MAIN_ID" ] || { echo "LBWC: CLAUDE_SESSION_ID is required for tmux spawn" >&2; exit 1; }
+   [ -n "$MAIN_ID" ] || { echo "MERIDIAN: CLAUDE_SESSION_ID is required for tmux spawn" >&2; exit 1; }
    TIMEOUT_MS=$(jq -r '.tmux_execution.comms_latency_tolerance_ms' "$SNAPSHOT_PATH")
    CONTRACT_DIGEST=$(jq -r '.contract_digest' "$CONTRACT_PATH")
    bash "{LINK}/scripts/tmux-spawn-group.sh" dispatch --project-root "{PROJECT_ROOT}" --control-root "$CONTROL_ROOT" --main-id "$MAIN_ID" --contract-id "$TASK_ID" --contract-digest "$CONTRACT_DIGEST" --spawn-ready-text "$GENERATOR_OUTPUT" --job "$BRIEF" --timeout-ms "$TIMEOUT_MS"
@@ -195,7 +195,7 @@ If `snapshot.resolved_backend` is `tmux`, follow `{LINK}/references/tmux-spawn-p
 
    Observe the helper JSON summary as the grouping reports. Then continue the contract state transitions below, followed by verification and commits. After the grouping is terminal, apply protocol cleanup (`kill-agent` or `kill-session`) from the frozen cleanup policy.
 
-If `snapshot.resolved_backend` is `workflow`, follow `{LINK}/references/workflow-spawn-protocol.md` on this branch only. Do not call native Agent and do not run the tmux spawn driver. `workflow-generator.sh` requires the same grouping contract while it is still `planned`, so run it before the state transition below. Its call is `workflow-generator.sh <solo|pair|trio> "$ROLE" --job "$BRIEF" --contract "$CONTRACT_PATH" --task-id "$TASK_ID" --control-root "$CONTROL_ROOT"`, with the shape matching `$TEAM_MODE` for this grouping. Pass every name the prior generator invocation produced as `--name` (solo) or `--engineer-name`/`--critic-name`/`--testdev-name` (pair or trio), plus `--autonomy` read from `{PROJECT_ROOT}/.lbwc-planning/config.json` for a pair or trio. Read the `Workflow-call parameters:` block and the `WORKFLOW_READY <task-id>` line that follows it. On any `workflow-generator:` stderr failure, stop and report the error verbatim, and leave the contract `planned`. After successful registration, run `state ... dispatched`.
+If `snapshot.resolved_backend` is `workflow`, follow `{LINK}/references/workflow-spawn-protocol.md` on this branch only. Do not call native Agent and do not run the tmux spawn driver. `workflow-generator.sh` requires the same grouping contract while it is still `planned`, so run it before the state transition below. Its call is `workflow-generator.sh <solo|pair|trio> "$ROLE" --job "$BRIEF" --contract "$CONTRACT_PATH" --task-id "$TASK_ID" --control-root "$CONTROL_ROOT"`, with the shape matching `$TEAM_MODE` for this grouping. Pass every name the prior generator invocation produced as `--name` (solo) or `--engineer-name`/`--critic-name`/`--testdev-name` (pair or trio), plus `--autonomy` read from `{PROJECT_ROOT}/.meridian/config.json` for a pair or trio. Read the `Workflow-call parameters:` block and the `WORKFLOW_READY <task-id>` line that follows it. On any `workflow-generator:` stderr failure, stop and report the error verbatim, and leave the contract `planned`. After successful registration, run `state ... dispatched`.
 
    Call `Workflow` exactly once with `scriptPath` set to the path value from the `Workflow-call parameters:` block, confirmed by the `WORKFLOW_READY <task-id>` line that follows it. Never pass `script`, and never inline or paraphrase the rendered file into the call. The `PreToolUse` guard on `Workflow` independently revalidates the path against the registered digest. A denial is a stop, not a fallback trigger.
 
@@ -210,11 +210,11 @@ When a task's pair or trio returns its verdict, observe and record the reports. 
 
 If an engineer deviates from the plan's stated `action`, record that deviation exactly as reported. Do not silently accept it or smooth it over, an unrecorded deviation becomes an unchecked claim `/qa` cannot gate on.
 
-Once every wave is done, write `.lbwc-planning/phases/{NN}-{slug}/SUMMARY.md` from `templates/SUMMARY.md`. Include commit hashes, deviations, and an honest verdict for every `must_haves` truth, artifact, or key link from PLAN.md.
+Once every wave is done, write `.meridian/phases/{NN}-{slug}/SUMMARY.md` from `templates/SUMMARY.md`. Include commit hashes, deviations, and an honest verdict for every `must_haves` truth, artifact, or key link from PLAN.md.
 
-Report the commits made and the SUMMARY.md path. Tell the user to run `/lbwc:qa <phase>` next.
+Report the commits made and the SUMMARY.md path. Tell the user to run `/meridian:qa <phase>` next.
 
-`deviq-record.py` prints a stable id for every block or evidence record it writes. Keep that id. Later resolution references `--field id=<id>`. Do not generate a solo `deviq` advisor while a build grouping is `registered` or `running`. If a group is in the blocked state, close it first. Issue a new read-only `/lbwc:build` command contract for the advisor, then generate it with `--exclusive`. Apply its recommendation only through a newly contracted retry grouping.
+`deviq-record.py` prints a stable id for every block or evidence record it writes. Keep that id. Later resolution references `--field id=<id>`. Do not generate a solo `deviq` advisor while a build grouping is `registered` or `running`. If a group is in the blocked state, close it first. Issue a new read-only `/meridian:build` command contract for the advisor, then generate it with `--exclusive`. Apply its recommendation only through a newly contracted retry grouping.
 
 ## Failure and recovery
 
@@ -224,11 +224,11 @@ If the workflow generator fails or a guard or the user denies the `Workflow` cal
 
 ## Output Format
 
-Show the phase, each task and grouping verdict, main-session commit hashes, deviations, summary path, telemetry status, and any blocker. Use the LBWC phase banner and no ANSI codes.
+Show the phase, each task and grouping verdict, main-session commit hashes, deviations, summary path, telemetry status, and any blocker. Use the MERIDIAN phase banner and no ANSI codes.
 
 ## Next Up
 
-For a completed build, show `/lbwc:qa <phase>`. For a remediation build, show the same QA command for the active round. For a blocker, show only its exact recovery command, then stop.
+For a completed build, show `/meridian:qa <phase>`. For a remediation build, show the same QA command for the active round. For a blocker, show only its exact recovery command, then stop.
 
 ## Feedback card
 

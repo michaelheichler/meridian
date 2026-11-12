@@ -13,7 +13,7 @@ CONTRACT_E=$(bash "$PLUGIN_FIXTURE_PHASE_BROKEN/scripts/task-contract.sh" issue 
   --control-root "$CONTROL_ROOT_E" --requested-backend workflow --resolved-backend workflow \
   --write-capability directory:notes)
 TASK_ID_E=$(basename "$CONTRACT_E" .json)
-AGEN_OUT_E=$(LBWC_AGENT_RANDOM_SEED=404 run_with_modern_bash "$PLUGIN_FIXTURE_PHASE_BROKEN/scripts/agent-generator.sh" scout \
+AGEN_OUT_E=$(MERIDIAN_AGENT_RANDOM_SEED=404 run_with_modern_bash "$PLUGIN_FIXTURE_PHASE_BROKEN/scripts/agent-generator.sh" scout \
   --job "phase mismatch job" --contract "$CONTRACT_E" --task-id "$TASK_ID_E" \
   --control-root "$CONTROL_ROOT_E" --write-capability directory:notes \
   --execution-backend workflow 2>&1)
@@ -40,7 +40,7 @@ CONTRACT_F=$(bash "$PLUGIN_FIXTURE_SYNTAX_BROKEN/scripts/task-contract.sh" issue
   --control-root "$CONTROL_ROOT_F" --requested-backend workflow --resolved-backend workflow \
   --write-capability directory:notes)
 TASK_ID_F=$(basename "$CONTRACT_F" .json)
-AGEN_OUT_F=$(LBWC_AGENT_RANDOM_SEED=505 run_with_modern_bash "$PLUGIN_FIXTURE_SYNTAX_BROKEN/scripts/agent-generator.sh" scout \
+AGEN_OUT_F=$(MERIDIAN_AGENT_RANDOM_SEED=505 run_with_modern_bash "$PLUGIN_FIXTURE_SYNTAX_BROKEN/scripts/agent-generator.sh" scout \
   --job "syntax failure job" --contract "$CONTRACT_F" --task-id "$TASK_ID_F" \
   --control-root "$CONTROL_ROOT_F" --write-capability directory:notes \
   --execution-backend workflow 2>&1)
@@ -75,7 +75,7 @@ CONTRACT_H=$(bash "$TASK_CONTRACT" issue "$PROJECT_H" no-node-1 \
   --control-root "$CONTROL_ROOT_H" --requested-backend workflow --resolved-backend workflow \
   --write-capability directory:notes)
 TASK_ID_H=$(basename "$CONTRACT_H" .json)
-AGEN_OUT_H=$(LBWC_AGENT_RANDOM_SEED=909 run_with_modern_bash "$AGENT_GENERATOR" scout \
+AGEN_OUT_H=$(MERIDIAN_AGENT_RANDOM_SEED=909 run_with_modern_bash "$AGENT_GENERATOR" scout \
   --job "node absent fallback job" --contract "$CONTRACT_H" --task-id "$TASK_ID_H" \
   --control-root "$CONTROL_ROOT_H" --write-capability directory:notes \
   --execution-backend workflow 2>&1)
@@ -114,7 +114,7 @@ CONTRACT_QB=$(bash "$PLUGIN_FIXTURE_QUOTE_BLIND/scripts/task-contract.sh" issue 
   --control-root "$CONTROL_ROOT_QB" --requested-backend workflow --resolved-backend workflow \
   --write-capability directory:notes)
 TASK_ID_QB=$(basename "$CONTRACT_QB" .json)
-AGEN_OUT_QB=$(LBWC_AGENT_RANDOM_SEED=111 run_with_modern_bash "$PLUGIN_FIXTURE_QUOTE_BLIND/scripts/agent-generator.sh" scout \
+AGEN_OUT_QB=$(MERIDIAN_AGENT_RANDOM_SEED=111 run_with_modern_bash "$PLUGIN_FIXTURE_QUOTE_BLIND/scripts/agent-generator.sh" scout \
   --job "single quote blinding job" --contract "$CONTRACT_QB" --task-id "$TASK_ID_QB" \
   --control-root "$CONTROL_ROOT_QB" --write-capability directory:notes \
   --execution-backend workflow 2>&1)

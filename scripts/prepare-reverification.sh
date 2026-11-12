@@ -1,5 +1,16 @@
 #!/usr/bin/env bash
 
+printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${BASH_SOURCE[0]}"
+case "$MERIDIAN_MIGRATION_SOURCE" in
+  *"/"*) printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${MERIDIAN_MIGRATION_SOURCE%"/"*}" ;;
+  *) printf -v MERIDIAN_MIGRATION_SOURCE '%s' . ;;
+esac
+if [ -f "$MERIDIAN_MIGRATION_SOURCE/lib/rename-migration.sh" ]; then
+  . "$MERIDIAN_MIGRATION_SOURCE/lib/rename-migration.sh"
+  meridian_migrate_environment
+fi
+unset MERIDIAN_MIGRATION_SOURCE
+
 set -euo pipefail
 
 PHASE_DIR="${1:-}"
@@ -29,15 +40,15 @@ resolve_config_path() {
   local planning_dir
 
   case "$phase_dir" in
-    */.lbwc-planning/phases/*)
+    */.meridian/phases/*)
       planning_dir=$(dirname "$(dirname "$phase_dir")")
       printf '%s/config.json\n' "$planning_dir"
       ;;
-    .lbwc-planning/phases/*)
-      printf '.lbwc-planning/config.json\n'
+    .meridian/phases/*)
+      printf '.meridian/config.json\n'
       ;;
     *)
-      printf '.lbwc-planning/config.json\n'
+      printf '.meridian/config.json\n'
       ;;
   esac
 }

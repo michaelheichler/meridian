@@ -6,7 +6,7 @@ The generic artifact expectation alone is not enough. It must not be the only vi
 
 Use three labels for this checkpoint type only:
 - `Pass` → `Accept this deviation as non-blocking for this phase`
-- `Track Todo` → `Accept this deviation and add a LBWC todo`
+- `Track Todo` → `Accept this deviation and add a MERIDIAN todo`
 - `Skip` → `Leave this deviation unaccepted for now`
 Normal product checkpoints keep `Pass` and `Skip`. Record freeform text as an issue when it rejects the deviation or exposes a defect, except for the todo-intent path in Step 6.
 

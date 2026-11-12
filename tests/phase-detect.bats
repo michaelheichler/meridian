@@ -372,16 +372,16 @@ sc_milestone_extract() {
   pd_table <<'CASES'
 no-planning-directory#sc_no_planning#planning_dir_exists=false~uat_round_count=0~qa_attention_reason=none~qa_reason=none
 planning-without-phases-dir#:#planning_dir_exists=true~project_exists=false
-bare-planning-defaults#mkdir -p .lbwc-planning/phases#planning_dir_exists=true~project_exists=false~phase_count=0~phases_dir=.lbwc-planning/phases~has_shipped_milestones=false~needs_milestone_rename=false~config_effort=balanced~config_autonomy=standard~config_require_phase_discussion=false~phase_detect_complete=true~!active_milestone=
+bare-planning-defaults#mkdir -p .meridian/phases#planning_dir_exists=true~project_exists=false~phase_count=0~phases_dir=.meridian/phases~has_shipped_milestones=false~needs_milestone_rename=false~config_effort=balanced~config_autonomy=standard~config_require_phase_discussion=false~phase_detect_complete=true~!active_milestone=
 project-without-phases#sc_project_no_phases#project_exists=true~qa_status=none~qa_reason=none~qa_attention_reason=none~qa_round=00
-unplanned-phase#mkdir -p .lbwc-planning/phases/01-test#next_phase_state=needs_plan_and_execute
+unplanned-phase#mkdir -p .meridian/phases/01-test#next_phase_state=needs_plan_and_execute
 planned-phase#pd_plan 01-test 1#next_phase_state=needs_execute
 finished-phase#pd_done 01-test#next_phase_state=all_done
 noncanonical-plan-file-ignored#sc_noncanonical_plan#next_phase_state=needs_execute~next_phase_plans=1
 dotfile-plan-ignored#sc_dotfile_plan#next_phase_state=all_done
 noncanonical-phase-dir-skipped#sc_noncanonical_dir#phase_count=1~next_phase=01~next_phase_slug=01-real~next_phase_state=needs_plan_and_execute
 numeric-sort-not-lexicographic#sc_numeric_sort#uat_issues_phase=11~next_phase=11
-active-file-ignored#sc_active_file_ignored#phase_count=1~phases_dir=.lbwc-planning/phases
+active-file-ignored#sc_active_file_ignored#phase_count=1~phases_dir=.meridian/phases
 mid-remediation-beats-later-uat#sc_priority mid_remediation#next_phase=02~next_phase_state=needs_execute~next_phase_plans=2~next_phase_summaries=1
 mid-execution-beats-later-uat#sc_priority mid_execution#next_phase=02~next_phase_state=needs_execute~next_phase_plans=2~next_phase_summaries=1
 unplanned-beats-later-uat#sc_priority unplanned#next_phase=01~next_phase_state=needs_plan_and_execute
@@ -458,16 +458,16 @@ CASES
 @test "shipped milestones report rename and UAT recovery state and emit the extractor block for the shipped phase" {
   pd_table <<'CASES'
 shipped-milestone-detected#sc_milestone shipped_only#has_shipped_milestones=true
-legacy-default-reported-not-renamed#sc_milestone legacy_default#phase_detect_complete=true~needs_milestone_rename=true~+.lbwc-planning/milestones/default~+.lbwc-planning/milestones/default/phases/01-legacy-phase
+legacy-default-reported-not-renamed#sc_milestone legacy_default#phase_detect_complete=true~needs_milestone_rename=true~+.meridian/milestones/default~+.meridian/milestones/default/phases/01-legacy-phase
 source-uat-excluded-from-milestone-scan#sc_milestone source_uat_only#milestone_uat_issues=false
 remediation-reference-suppresses-recovery#sc_milestone referenced_by_remediation#next_phase_state=all_done~milestone_uat_issues=false
 unreferenced-issues-trigger-recovery#sc_milestone unreferenced#milestone_uat_issues=true~milestone_uat_slug=v1
 recovery-outranks-discussion#sc_milestone over_discussion#next_phase_state=all_done~milestone_uat_issues=true~milestone_uat_slug=v1
 issue-block-emitted#sc_milestone_extract major_issue#---MILESTONE_UAT_EXTRACT_START---~---MILESTONE_UAT_EXTRACT_END---~P01-T1|major|milestone broken
-zero-issue-matches-standalone-extractor#sc_milestone_extract zero_issue#%.lbwc-planning/milestones/m01-test/phases/01-alpha~uat_phase=01 uat_issues_total=0~!uat_extract_error=true
-recurrence-matches-standalone-extractor#sc_milestone_extract recurrence#%.lbwc-planning/milestones/m01-test/phases/03-feature
-noncanonical-dir-uses-resolved-number#sc_milestone_extract noncanonical_dir#milestone_uat_issues=true~milestone_phase_dir=.lbwc-planning/milestones/m01-test/phases/setup-api~uat_phase=03 uat_issues_total=1 uat_round=1 uat_file=03-UAT.md
-noncanonical-round-dir-resolves-latest-round#sc_milestone_extract noncanonical_rounds#milestone_uat_issues=true~milestone_phase_dir=.lbwc-planning/milestones/m01-test/phases/setup-api~uat_phase=03 uat_issues_total=1 uat_round=2 uat_file=R02-UAT.md~P03-T2|major|broke again|1,2
+zero-issue-matches-standalone-extractor#sc_milestone_extract zero_issue#%.meridian/milestones/m01-test/phases/01-alpha~uat_phase=01 uat_issues_total=0~!uat_extract_error=true
+recurrence-matches-standalone-extractor#sc_milestone_extract recurrence#%.meridian/milestones/m01-test/phases/03-feature
+noncanonical-dir-uses-resolved-number#sc_milestone_extract noncanonical_dir#milestone_uat_issues=true~milestone_phase_dir=.meridian/milestones/m01-test/phases/setup-api~uat_phase=03 uat_issues_total=1 uat_round=1 uat_file=03-UAT.md
+noncanonical-round-dir-resolves-latest-round#sc_milestone_extract noncanonical_rounds#milestone_uat_issues=true~milestone_phase_dir=.meridian/milestones/m01-test/phases/setup-api~uat_phase=03 uat_issues_total=1 uat_round=2 uat_file=R02-UAT.md~P03-T2|major|broke again|1,2
 source-uat-name-cannot-supply-phase-number#sc_milestone_extract source_uat_only_name#milestone_uat_issues=false
 noncanonical-round-one-parity#sc_milestone_extract noncanonical_round_one#milestone_uat_issues=true~uat_phase=03 uat_issues_total=1 uat_round=1 uat_file=R01-UAT.md~P03-T2|major|broke first time|1
 CASES

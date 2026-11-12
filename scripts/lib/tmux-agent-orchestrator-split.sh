@@ -22,7 +22,7 @@ refresh_agent_targets() {
 prepare_agent_pane() {
   local orchestrator_target="$1" agent_id="$2" contract_id="$3" pane_id target worker_directory
   worker_directory=$(tmux_worker_directory "$agent_id") || return 1
-  pane_id=$(tmux split-window -e LBWC_TMUX_AGENT=1 -e "LBWC_TMUX_CONTROL_ROOT=$TMUX_RUNTIME_CONTROL_ROOT" -e "LBWC_TMUX_AGENT_ID=$agent_id" -e "LBWC_TMUX_CONTRACT_ID=$contract_id" -t "$orchestrator_target" -c "$worker_directory" -P -F '#{pane_id}') || return 1
+  pane_id=$(tmux split-window -e MERIDIAN_TMUX_AGENT=1 -e "MERIDIAN_TMUX_CONTROL_ROOT=$TMUX_RUNTIME_CONTROL_ROOT" -e "MERIDIAN_TMUX_AGENT_ID=$agent_id" -e "MERIDIAN_TMUX_CONTRACT_ID=$contract_id" -t "$orchestrator_target" -c "$worker_directory" -P -F '#{pane_id}') || return 1
   [[ "$pane_id" =~ ^%[0-9]+$ ]] || return 1
   if ! record_worker_pane "$agent_id" "$pane_id"; then
     tmux kill-pane -t "$pane_id" >/dev/null 2>&1 || true

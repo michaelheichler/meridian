@@ -1,9 +1,20 @@
 #!/usr/bin/env bash
+
+printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${BASH_SOURCE[0]}"
+case "$MERIDIAN_MIGRATION_SOURCE" in
+  *"/"*) printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${MERIDIAN_MIGRATION_SOURCE%"/"*}" ;;
+  *) printf -v MERIDIAN_MIGRATION_SOURCE '%s' . ;;
+esac
+if [ -f "$MERIDIAN_MIGRATION_SOURCE/lib/rename-migration.sh" ]; then
+  . "$MERIDIAN_MIGRATION_SOURCE/lib/rename-migration.sh"
+  meridian_migrate_environment
+fi
+unset MERIDIAN_MIGRATION_SOURCE
 set -euo pipefail
 
 
 SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ARCHIVED_STATE_MESSAGE="This todo came from archived milestone state. Restore the writable root STATE.md first by restarting so session-start.sh can run migration, or run 'bash scripts/migrate-orphaned-state.sh .lbwc-planning'."
+ARCHIVED_STATE_MESSAGE="This todo came from archived milestone state. Restore the writable root STATE.md first by restarting so session-start.sh can run migration, or run 'bash scripts/migrate-orphaned-state.sh .meridian'."
 AUTO_PICKUP_NOTE="Selected todo was already picked up automatically."
 . "$SCRIPT_DIR/lib/debug-start-todo-match.sh"
 
@@ -21,7 +32,7 @@ usage_json() {
 state_path_is_archived() {
   local state_path="$1"
   case "$state_path" in
-    */.lbwc-planning/milestones/*|.lbwc-planning/milestones/*) return 0 ;;
+    */.meridian/milestones/*|.meridian/milestones/*) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -110,8 +121,8 @@ pickup_selected_todo() {
   local selected_json="$1"
   local detail_status="$2"
   local cleanup_policy="$3"
-  LBWC_PLANNING_DIR="$PLANNING_DIR" printf '%s' "$selected_json" | \
-    LBWC_PLANNING_DIR="$PLANNING_DIR" bash "$SCRIPT_DIR/todo-lifecycle.sh" pickup /lbwc:debug "$detail_status" "$cleanup_policy" 2>/dev/null || true
+  MERIDIAN_PLANNING_DIR="$PLANNING_DIR" printf '%s' "$selected_json" | \
+    MERIDIAN_PLANNING_DIR="$PLANNING_DIR" bash "$SCRIPT_DIR/todo-lifecycle.sh" pickup /meridian:debug "$detail_status" "$cleanup_policy" 2>/dev/null || true
 }
 
 emit_error_with_session() {
@@ -197,7 +208,7 @@ while [ $# -gt 0 ]; do
       ROUTING_FLAGS+=("$1")
       ;;
     *)
-      json_error "usage" "Unknown routing flag for /lbwc:debug selected todo: $1"
+      json_error "usage" "Unknown routing flag for /meridian:debug selected todo: $1"
       exit 0
       ;;
   esac
@@ -205,7 +216,7 @@ while [ $# -gt 0 ]; do
 done
 
 if ! [[ "$SELECTION" =~ ^[0-9]+$ ]]; then
-  json_error "usage" "Invalid todo selection, choose a numbered todo from /lbwc:list-todos."
+  json_error "usage" "Invalid todo selection, choose a numbered todo from /meridian:list-todos."
   exit 0
 fi
 
@@ -215,13 +226,13 @@ if ! PLANNING_DIR=$(normalize_planning_dir "$PLANNING_ARG"); then
 fi
 PROJECT_ROOT=$(CDPATH='' cd -- "${PLANNING_DIR%/}/.." && pwd -P)
 CDPATH='' cd -- "$PROJECT_ROOT"
-export LBWC_PLANNING_DIR="$PLANNING_DIR"
+export MERIDIAN_PLANNING_DIR="$PLANNING_DIR"
 
 ROUTING_FLAGS_JSON=$(routing_flags_json_from_args ${ROUTING_FLAGS[@]+"${ROUTING_FLAGS[@]}"})
 
-SELECTED_JSON=$(LBWC_PLANNING_DIR="$PLANNING_DIR" bash "$SCRIPT_DIR/resolve-todo-item.sh" "$SELECTION" --session-snapshot --require-unfiltered --validate-live 2>/dev/null || true)
+SELECTED_JSON=$(MERIDIAN_PLANNING_DIR="$PLANNING_DIR" bash "$SCRIPT_DIR/resolve-todo-item.sh" "$SELECTION" --session-snapshot --require-unfiltered --validate-live 2>/dev/null || true)
 if ! json_is_valid "$SELECTED_JSON"; then
-  json_error "resolver_invalid_json" "Todo selection resolver returned invalid JSON. Rerun /lbwc:list-todos."
+  json_error "resolver_invalid_json" "Todo selection resolver returned invalid JSON. Rerun /meridian:list-todos."
   exit 0
 fi
 SELECTED_STATUS=$(printf '%s' "$SELECTED_JSON" | jq -r '.status // "error"' 2>/dev/null || echo "error")
@@ -249,7 +260,7 @@ DETAIL_HAS_SIGNAL=false
 DETAIL_WARNING_JSON="null"
 
 if [ -n "$REF_VALUE" ] && [ "$REF_VALUE" != "null" ]; then
-  DETAIL_RESULT_JSON=$(LBWC_PLANNING_DIR="$PLANNING_DIR" bash "$SCRIPT_DIR/todo-details.sh" get "$REF_VALUE" 2>/dev/null || true)
+  DETAIL_RESULT_JSON=$(MERIDIAN_PLANNING_DIR="$PLANNING_DIR" bash "$SCRIPT_DIR/todo-details.sh" get "$REF_VALUE" 2>/dev/null || true)
   if ! json_is_valid "$DETAIL_RESULT_JSON"; then
     DETAIL_STATUS="error"
     DETAIL_RESULT_JSON="null"
@@ -264,7 +275,7 @@ if [ -n "$REF_VALUE" ] && [ "$REF_VALUE" != "null" ]; then
         not_found|error) ;;
         *) DETAIL_STATUS="error" ;;
       esac
-      DETAIL_WARNING_JSON=$(LBWC_PLANNING_DIR="$PLANNING_DIR" bash "$SCRIPT_DIR/todo-lifecycle.sh" detail-warning "$REF_VALUE" 2>/dev/null || true)
+      DETAIL_WARNING_JSON=$(MERIDIAN_PLANNING_DIR="$PLANNING_DIR" bash "$SCRIPT_DIR/todo-lifecycle.sh" detail-warning "$REF_VALUE" 2>/dev/null || true)
       if ! json_is_valid "$DETAIL_WARNING_JSON"; then
         DETAIL_WARNING_JSON=$(jq -cn --arg status "error" --arg message "Could not record detail warning for ref ${REF_VALUE}." '{status:$status, message:$message}')
       fi
@@ -298,12 +309,12 @@ fi
 
 SESSION_OUTPUT=""
 if [ "$DETAIL_STATUS" = "ok" ]; then
-  SESSION_OUTPUT=$(printf '%s' "$SELECTED_JSON" | TODO_DETAIL_RESULT_JSON="$DETAIL_RESULT_JSON" LBWC_PLANNING_DIR="$PLANNING_DIR" bash "$SCRIPT_DIR/debug-session-state.sh" start-with-selected-todo "$PLANNING_DIR" "$SLUG" "$DETAIL_STATUS" 2>&1) || {
+  SESSION_OUTPUT=$(printf '%s' "$SELECTED_JSON" | TODO_DETAIL_RESULT_JSON="$DETAIL_RESULT_JSON" MERIDIAN_PLANNING_DIR="$PLANNING_DIR" bash "$SCRIPT_DIR/debug-session-state.sh" start-with-selected-todo "$PLANNING_DIR" "$SLUG" "$DETAIL_STATUS" 2>&1) || {
     json_error "session_start_failed" "$SESSION_OUTPUT"
     exit 0
   }
 else
-  SESSION_OUTPUT=$(printf '%s' "$SELECTED_JSON" | LBWC_PLANNING_DIR="$PLANNING_DIR" bash "$SCRIPT_DIR/debug-session-state.sh" start-with-selected-todo "$PLANNING_DIR" "$SLUG" "$DETAIL_STATUS" 2>&1) || {
+  SESSION_OUTPUT=$(printf '%s' "$SELECTED_JSON" | MERIDIAN_PLANNING_DIR="$PLANNING_DIR" bash "$SCRIPT_DIR/debug-session-state.sh" start-with-selected-todo "$PLANNING_DIR" "$SLUG" "$DETAIL_STATUS" 2>&1) || {
     json_error "session_start_failed" "$SESSION_OUTPUT"
     exit 0
   }

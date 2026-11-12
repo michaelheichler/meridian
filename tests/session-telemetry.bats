@@ -3,23 +3,23 @@
 load test_helper
 load gate_case_helper
 
-setup() { setup_temp_dir; cd "$TEST_TEMP_DIR"; LOG=".lbwc-planning/telemetry/session.jsonl"; }
+setup() { setup_temp_dir; cd "$TEST_TEMP_DIR"; LOG=".meridian/telemetry/session.jsonl"; }
 teardown() { cd "$PROJECT_ROOT"; teardown_temp_dir; }
 
 writer() { python3 "$PROJECT_ROOT/scripts/lib/session-telemetry.py" "$@"; }
 
 forged_genesis_log() {
-  mkdir -p .lbwc-planning/telemetry
+  mkdir -p .meridian/telemetry
   python3 - <<'PY'
 import hashlib, json
 r = {"ts":"2026-01-01T00:00:00+00:00","session_id":None,"actor":"main","event":"session_start","outcome":"success","duration_ms":None,"tokens_in":None,"tokens_out":None,"model":None,"phase":None,"prev_sha256":"forged"}
 r["sha256"] = hashlib.sha256(json.dumps(r, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
-open('.lbwc-planning/telemetry/session.jsonl','w').write(json.dumps(r, sort_keys=True, separators=(",", ":"))+'\n')
+open('.meridian/telemetry/session.jsonl','w').write(json.dumps(r, sort_keys=True, separators=(",", ":"))+'\n')
 PY
 }
 
 prior_log() {
-  mkdir -p .lbwc-planning/telemetry
+  mkdir -p .meridian/telemetry
   case "$1" in
     none) ;;
     schema-garbage) echo '{"not":"a record"}' > "$LOG" ;;
@@ -37,7 +37,7 @@ log_size() {
 }
 
 hold_lock() {
-  mkdir -p .lbwc-planning/telemetry
+  mkdir -p .meridian/telemetry
   python3 -c 'import fcntl,sys,time; f=open(sys.argv[1],"a"); fcntl.flock(f,fcntl.LOCK_EX); open(sys.argv[2],"w").close(); time.sleep(5)' "$LOG" "$TEST_TEMP_DIR/locked" &
   LOCKER=$!
   local waited=0
@@ -77,14 +77,14 @@ assert third["prev_sha256"] == second["sha256"], third
 
   mkdir -p canonical
   ln -s canonical alias
-  run env LBWC_PLANNING_DIR="$TEST_TEMP_DIR/alias" python3 "$PROJECT_ROOT/scripts/lib/session-telemetry.py" record --event session_start --outcome success
+  run env MERIDIAN_PLANNING_DIR="$TEST_TEMP_DIR/alias" python3 "$PROJECT_ROOT/scripts/lib/session-telemetry.py" record --event session_start --outcome success
   expect_case planning-alias 0
   [ -f canonical/telemetry/session.jsonl ] || record_case_failure planning-alias "canonical log missing"
 
   long_value=$(printf 'x%.0s' {1..257})
   while IFS='~' read -r label prior args; do
     [ -n "$label" ] || continue
-    rm -rf .lbwc-planning
+    rm -rf .meridian
     prior_log "$prior"
     size_before=$(log_size)
     args="${args//@LONG@/$long_value}"
@@ -112,10 +112,10 @@ CASES
   reset_case_failures
   while IFS='~' read -r label timeout; do
     [ -n "$label" ] || continue
-    rm -rf .lbwc-planning "$TEST_TEMP_DIR/locked"
+    rm -rf .meridian "$TEST_TEMP_DIR/locked"
     hold_lock || record_case_failure "$label" "lock holder did not start"
 
-    run env LBWC_TELEMETRY_LOCK_TIMEOUT="$timeout" python3 "$PROJECT_ROOT/scripts/lib/session-telemetry.py" record --event command --outcome success
+    run env MERIDIAN_TELEMETRY_LOCK_TIMEOUT="$timeout" python3 "$PROJECT_ROOT/scripts/lib/session-telemetry.py" record --event command --outcome success
 
     release_lock
     expect_case "$label" 2 "timed out waiting for telemetry lock"

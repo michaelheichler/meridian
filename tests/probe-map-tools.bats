@@ -25,7 +25,7 @@ teardown() {
 }
 
 reset_row() {
-  rm -rf "$HOME/.claude" "$HOME/.claude.json" "$PROJECT_DIR/.mcp.json" "$PROJECT_DIR/.lbwc-planning" "$PROJECT_DIR/.gitnexus" "$PROJECT_DIR/probe.sh"
+  rm -rf "$HOME/.claude" "$HOME/.claude.json" "$PROJECT_DIR/.mcp.json" "$PROJECT_DIR/.meridian" "$PROJECT_DIR/.gitnexus" "$PROJECT_DIR/probe.sh"
 }
 
 serena_enabled() {
@@ -144,21 +144,21 @@ expect_map() {
   gitnexus_absent
   run_probe
   expect_status no-planning 0
-  expect_no_path no-planning "$PROJECT_DIR/.lbwc-planning"
+  expect_no_path no-planning "$PROJECT_DIR/.meridian"
   expect_map no-planning '.codebase_map.available == false and .codebase_map.canonical_path == null'
 
   reset_row
   serena_absent
   gitnexus_absent
-  mkdir -p "$PROJECT_DIR/.lbwc-planning"
+  mkdir -p "$PROJECT_DIR/.meridian"
   run_probe
   expect_status persisted 0
-  expect_jq persisted "$PROJECT_DIR/.lbwc-planning/MAP-TOOLS.json" '.recommended_route == "grep-only"'
+  expect_jq persisted "$PROJECT_DIR/.meridian/MAP-TOOLS.json" '.recommended_route == "grep-only"'
 
   reset_row
   serena_absent
   gitnexus_absent
-  map_dir="$PROJECT_DIR/.lbwc-planning/codebase"
+  map_dir="$PROJECT_DIR/.meridian/codebase"
   mkdir -p "$map_dir"
   current_hash=$(git -C "$PROJECT_DIR" rev-parse HEAD)
   printf 'mapped_at: 2026-08-01T00:00:00Z\ngit_hash: %s\nfile_count: 1\n' "$current_hash" > "$map_dir/META.md"

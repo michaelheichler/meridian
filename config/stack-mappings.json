@@ -1,6 +1,6 @@
 {
   "_description": "Maps detected project stack to recommended Claude Code skills",
-  "_usage": "Used by /lbwc:init and /lbwc:vibe to suggest relevant skills",
+  "_usage": "Used by /meridian:init and /meridian:transit to suggest relevant skills",
   "languages": {
     "python": {
       "detect": ["pyproject.toml", "requirements.txt", "setup.py"],

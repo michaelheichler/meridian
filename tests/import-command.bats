@@ -10,7 +10,7 @@ setup() {
   [ "$status" -eq 0 ]
   [ "$output" -eq 1 ]
   grep -F 'scripts/resolve-plugin-root.sh' "$COMMAND" >/dev/null
-  grep -F 'lbwc-target-root.sh' "$COMMAND" >/dev/null
+  grep -F 'meridian-target-root.sh' "$COMMAND" >/dev/null
   grep -F '{LINK}/scripts/plan-import.sh' "$COMMAND" >/dev/null
   grep -F '{PROJECT_ROOT}' "$COMMAND" >/dev/null
 }

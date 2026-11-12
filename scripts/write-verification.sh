@@ -1,4 +1,15 @@
 #!/usr/bin/env bash
+
+printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${BASH_SOURCE[0]}"
+case "$MERIDIAN_MIGRATION_SOURCE" in
+  *"/"*) printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${MERIDIAN_MIGRATION_SOURCE%"/"*}" ;;
+  *) printf -v MERIDIAN_MIGRATION_SOURCE '%s' . ;;
+esac
+if [ -f "$MERIDIAN_MIGRATION_SOURCE/lib/rename-migration.sh" ]; then
+  . "$MERIDIAN_MIGRATION_SOURCE/lib/rename-migration.sh"
+  meridian_migrate_environment
+fi
+unset MERIDIAN_MIGRATION_SOURCE
 set -euo pipefail
 
 output_path="${1:-}"
@@ -97,7 +108,7 @@ fi
 
 date_val=$(date -u +%Y-%m-%d)
 
-verified_at_commit=$(git log -1 --format='%H' -- . ':!.lbwc-planning' ':!CLAUDE.md' 2>/dev/null || echo "")
+verified_at_commit=$(git log -1 --format='%H' -- . ':!.meridian' ':!CLAUDE.md' 2>/dev/null || echo "")
 
 detail_type=$(echo "$payload" | jq -r '.checks_detail | type')
 if [[ "$detail_type" != "array" && "$detail_type" != "null" ]]; then

@@ -1,4 +1,15 @@
 #!/bin/bash
+
+printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${BASH_SOURCE[0]}"
+case "$MERIDIAN_MIGRATION_SOURCE" in
+  *"/"*) printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${MERIDIAN_MIGRATION_SOURCE%"/"*}" ;;
+  *) printf -v MERIDIAN_MIGRATION_SOURCE '%s' . ;;
+esac
+if [ -f "$MERIDIAN_MIGRATION_SOURCE/lib/rename-migration.sh" ]; then
+  . "$MERIDIAN_MIGRATION_SOURCE/lib/rename-migration.sh"
+  meridian_migrate_environment
+fi
+unset MERIDIAN_MIGRATION_SOURCE
 set -u
 
 PHASE="${1:-}"
@@ -13,12 +24,12 @@ if ! [[ "$PHASE" =~ ^[0-9]{2}$ && "$PLAN" =~ ^[0-9]{2}$ ]]; then
   exit 1
 fi
 
-PLANNING_DIR="${LBWC_PLANNING_DIR:-.lbwc-planning}"
-WORKTREES_PARENT=".lbwc-worktrees"
+PLANNING_DIR="${MERIDIAN_PLANNING_DIR:-.meridian}"
+WORKTREES_PARENT=".meridian-worktrees"
 WORKTREE_DIR="${WORKTREES_PARENT}/${PHASE}-${PLAN}"
-BRANCH="lbwc/${PHASE}-${PLAN}"
+BRANCH="meridian/${PHASE}-${PLAN}"
 AGENT_WORKTREES_DIR="$PLANNING_DIR/.agent-worktrees"
-AUTOMATIC_CLEANUP="${LBWC_AUTOMATIC_CLEANUP:-0}"
+AUTOMATIC_CLEANUP="${MERIDIAN_AUTOMATIC_CLEANUP:-0}"
 
 scan_only() {
   printf 'scan_only|%s|%s\n' "$WORKTREE_DIR" "$1"
@@ -42,7 +53,7 @@ worktree_mapping_state() {
   return 1
 }
 
-is_owned_lbwc_worktree() {
+is_owned_meridian_worktree() {
   local worktree_abs
 
   worktree_abs="$(CDPATH='' cd -- "$WORKTREE_DIR" 2>/dev/null && pwd -P)" || return 1
@@ -67,7 +78,7 @@ worktree_is_dirty() {
 
 if [ "$AUTOMATIC_CLEANUP" = "1" ]; then
   [ -d "$WORKTREE_DIR" ] || scan_only "cleanup target absent"
-  is_owned_lbwc_worktree || scan_only "unproven ownership"
+  is_owned_meridian_worktree || scan_only "unproven ownership"
   worktree_mapping_state
   case "$?" in
     0) scan_only "active mapping" ;;

@@ -1,7 +1,18 @@
 #!/usr/bin/env bash
+
+printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${BASH_SOURCE[0]}"
+case "$MERIDIAN_MIGRATION_SOURCE" in
+  *"/"*) printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${MERIDIAN_MIGRATION_SOURCE%"/"*}" ;;
+  *) printf -v MERIDIAN_MIGRATION_SOURCE '%s' . ;;
+esac
+if [ -f "$MERIDIAN_MIGRATION_SOURCE/lib/rename-migration.sh" ]; then
+  . "$MERIDIAN_MIGRATION_SOURCE/lib/rename-migration.sh"
+  meridian_migrate_environment
+fi
+unset MERIDIAN_MIGRATION_SOURCE
 set -euo pipefail
 
-PLANNING_DIR="${LBWC_PLANNING_DIR:-.lbwc-planning}"
+PLANNING_DIR="${MERIDIAN_PLANNING_DIR:-.meridian}"
 
 if [[ -f "$PLANNING_DIR/.compaction-marker" ]]; then
   _cm_ts=$(cat "$PLANNING_DIR/.compaction-marker" 2>/dev/null || echo 0)
@@ -44,7 +55,7 @@ if ! git cat-file -e "$git_hash" 2>/dev/null; then
   _diag "total: $file_count"
   _diag "since: $mapped_at"
   if [[ "$IS_HOOK" == true ]]; then
-    echo "{\"hookSpecificOutput\":{\"hookEventName\":\"SessionStart\",\"additionalContext\":\"Codebase map is stale (100% files changed). Run /lbwc:map --incremental to refresh.\"}}"
+    echo "{\"hookSpecificOutput\":{\"hookEventName\":\"SessionStart\",\"additionalContext\":\"Codebase map is stale (100% files changed). Run /meridian:map --incremental to refresh.\"}}"
   fi
   exit 0
 fi
@@ -66,5 +77,5 @@ _diag "total: $file_count"
 _diag "since: $mapped_at"
 
 if [[ "$status" == "stale" ]] && [[ "$IS_HOOK" == true ]]; then
-  echo "{\"hookSpecificOutput\":{\"hookEventName\":\"SessionStart\",\"additionalContext\":\"Codebase map is stale (${staleness}% files changed). Run /lbwc:map --incremental to refresh.\"}}"
+  echo "{\"hookSpecificOutput\":{\"hookEventName\":\"SessionStart\",\"additionalContext\":\"Codebase map is stale (${staleness}% files changed). Run /meridian:map --incremental to refresh.\"}}"
 fi

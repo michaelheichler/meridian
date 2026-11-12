@@ -1,15 +1,26 @@
 #!/usr/bin/env bash
+
+printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${BASH_SOURCE[0]}"
+case "$MERIDIAN_MIGRATION_SOURCE" in
+  *"/"*) printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${MERIDIAN_MIGRATION_SOURCE%"/"*}" ;;
+  *) printf -v MERIDIAN_MIGRATION_SOURCE '%s' . ;;
+esac
+if [ -f "$MERIDIAN_MIGRATION_SOURCE/../lib/rename-migration.sh" ]; then
+  . "$MERIDIAN_MIGRATION_SOURCE/../lib/rename-migration.sh"
+  meridian_migrate_environment
+fi
+unset MERIDIAN_MIGRATION_SOURCE
 set -euo pipefail
 
 REPO=/w
 OUT=/out
 PYDATA=/tmp/pycov
 
-# Tests are omitted because they are not production, except test_scope_guard.py.
+# Tests are omitted because they are not production, except scope_guard.py.
 write_pycov_rcfile() {
   local omit="" file
   for file in "$REPO"/hooks/test_*.py; do
-    [ "$(basename "$file")" = test_scope_guard.py ] || omit="$omit,$file"
+    [ "$(basename "$file")" = scope_guard.py ] || omit="$omit,$file"
   done
   mkdir -p "$PYDATA"
   cat >"$PYDATA/rc" <<RC

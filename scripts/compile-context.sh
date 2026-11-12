@@ -1,4 +1,15 @@
 #!/usr/bin/env bash
+
+printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${BASH_SOURCE[0]}"
+case "$MERIDIAN_MIGRATION_SOURCE" in
+  *"/"*) printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${MERIDIAN_MIGRATION_SOURCE%"/"*}" ;;
+  *) printf -v MERIDIAN_MIGRATION_SOURCE '%s' . ;;
+esac
+if [ -f "$MERIDIAN_MIGRATION_SOURCE/lib/rename-migration.sh" ]; then
+  . "$MERIDIAN_MIGRATION_SOURCE/lib/rename-migration.sh"
+  meridian_migrate_environment
+fi
+unset MERIDIAN_MIGRATION_SOURCE
 set -euo pipefail
 
 if [ $# -lt 2 ]; then
@@ -12,47 +23,47 @@ PHASES_DIR_INPUT="${3:-}"
 PLAN_PATH="${4:-}"
 SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-. "${SCRIPT_DIR}/lib/lbwc-target-root.sh"
-. "${SCRIPT_DIR}/lib/lbwc-settings.sh"
+. "${SCRIPT_DIR}/lib/meridian-target-root.sh"
+. "${SCRIPT_DIR}/lib/meridian-settings.sh"
 . "${SCRIPT_DIR}/lib/compile-context-emit.sh"
 . "${SCRIPT_DIR}/lib/compile-context-roles.sh"
 
 TARGET_SCOPE_EXPLICIT=0
-if [ -n "${LBWC_PLANNING_DIR:-}" ] || [ $# -ge 3 ] || [ $# -ge 4 ]; then
+if [ -n "${MERIDIAN_PLANNING_DIR:-}" ] || [ $# -ge 3 ] || [ $# -ge 4 ]; then
   TARGET_SCOPE_EXPLICIT=1
 fi
 
 resolve_preferred_planning_dir() {
   local explicit_planning_dir
 
-  explicit_planning_dir=$(lbwc_resolve_target_planning_dir "1" "$PLAN_PATH" "$PHASES_DIR_INPUT" 2>/dev/null || true)
+  explicit_planning_dir=$(meridian_resolve_target_planning_dir "1" "$PLAN_PATH" "$PHASES_DIR_INPUT" 2>/dev/null || true)
   if [ -n "$explicit_planning_dir" ]; then
     printf '%s\n' "$explicit_planning_dir"
     return 0
   fi
 
-  if [ -n "${LBWC_PLANNING_DIR:-}" ]; then
-    printf '%s\n' "$LBWC_PLANNING_DIR"
+  if [ -n "${MERIDIAN_PLANNING_DIR:-}" ]; then
+    printf '%s\n' "$MERIDIAN_PLANNING_DIR"
     return 0
   fi
 
-  lbwc_resolve_target_planning_dir "$TARGET_SCOPE_EXPLICIT" "$PLAN_PATH" "$PHASES_DIR_INPUT" 2>/dev/null || printf '%s\n' '.lbwc-planning'
+  meridian_resolve_target_planning_dir "$TARGET_SCOPE_EXPLICIT" "$PLAN_PATH" "$PHASES_DIR_INPUT" 2>/dev/null || printf '%s\n' '.meridian'
 }
 
 PLANNING_DIR=$(resolve_preferred_planning_dir)
-PLANNING_DIR=$(lbwc_candidate_dir_for_path "$PLANNING_DIR" 2>/dev/null || printf '%s\n' "$PLANNING_DIR")
-TARGET_ROOT=$(lbwc_resolve_target_root "$TARGET_SCOPE_EXPLICIT" "$PLAN_PATH" "$PHASES_DIR_INPUT" "$PLANNING_DIR" || true)
+PLANNING_DIR=$(meridian_candidate_dir_for_path "$PLANNING_DIR" 2>/dev/null || printf '%s\n' "$PLANNING_DIR")
+TARGET_ROOT=$(meridian_resolve_target_root "$TARGET_SCOPE_EXPLICIT" "$PLAN_PATH" "$PHASES_DIR_INPUT" "$PLANNING_DIR" || true)
 
-if [ -n "$TARGET_ROOT" ] && [ -d "$TARGET_ROOT/.lbwc-planning" ] && [ ! -d "$PLANNING_DIR" ]; then
-  PLANNING_DIR="$TARGET_ROOT/.lbwc-planning"
+if [ -n "$TARGET_ROOT" ] && [ -d "$TARGET_ROOT/.meridian" ] && [ ! -d "$PLANNING_DIR" ]; then
+  PLANNING_DIR="$TARGET_ROOT/.meridian"
 fi
 
 PHASES_DIR="${PHASES_DIR_INPUT:-${PLANNING_DIR}/phases}"
 
 case "$PHASES_DIR" in
-  */.lbwc-planning/milestones/*|.lbwc-planning/milestones/*)
+  */.meridian/milestones/*|.meridian/milestones/*)
     echo "Error: refusing to compile context for archived milestone path: $PHASES_DIR" >&2
-    echo "Execution must target active phases in .lbwc-planning/phases/" >&2
+    echo "Execution must target active phases in .meridian/phases/" >&2
     exit 1
     ;;
 esac
@@ -159,7 +170,7 @@ fi
 V3_CACHE_ENABLED=true
 CACHE_HASH=""
 CONFIG_PATH="${PLANNING_DIR}/config.json"
-MERGED_CONFIG=$(lbwc_merged_config "$CONFIG_PATH")
+MERGED_CONFIG=$(meridian_merged_config "$CONFIG_PATH")
 
 V3_DELTA_ENABLED=true
 V3_METRICS_ENABLED=true

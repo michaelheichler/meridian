@@ -10,8 +10,8 @@ logging_decision() {
   run logging_gate "$code"
   [ "$status" -eq "$code" ]
   [ "$output" = $'visible output\nvisible error' ]
-  grep -Eq " component=gate event=PreToolUse check=fixture decision=$decision duration_ms=[0-9]+ reason=$reason$" "$LBWC_PLANNING_DIR/.debug.log"
-  [ "$(wc -l < "$LBWC_PLANNING_DIR/.debug.log" | tr -d ' ')" -eq 1 ]
+  grep -Eq " component=gate event=PreToolUse check=fixture decision=$decision duration_ms=[0-9]+ reason=$reason$" "$MERIDIAN_PLANNING_DIR/.debug.log"
+  [ "$(wc -l < "$MERIDIAN_PLANNING_DIR/.debug.log" | tr -d ' ')" -eq 1 ]
 }
 logging_allow() { logging_decision 0 allow completed; }
 logging_deny() { logging_decision 2 deny blocked; }
@@ -19,15 +19,15 @@ logging_error() { logging_decision 1 error nonzero; }
 logging_timeout() { logging_decision 124 timeout deadline; }
 logging_disabled() {
   local config=$1
-  printf '{}\n' > "$LBWC_PLANNING_DIR/config.json"
+  printf '{}\n' > "$MERIDIAN_PLANNING_DIR/config.json"
   run logging_capture 2 baseline
   local baseline_status=$status
-  printf '%s\n' "$config" > "$LBWC_PLANNING_DIR/config.json"
+  printf '%s\n' "$config" > "$MERIDIAN_PLANNING_DIR/config.json"
   run logging_capture 2 configured
   [ "$status" -eq "$baseline_status" ]
   cmp baseline-out configured-out
   cmp baseline-err configured-err
-  [ -z "$(find "$LBWC_PLANNING_DIR" -name '.debug.log*' -print)" ]
+  [ -z "$(find "$MERIDIAN_PLANNING_DIR" -name '.debug.log*' -print)" ]
 }
 logging_missing() { logging_disabled '{}'; }
 logging_off() { logging_disabled '{"debug_logging":false}'; }
@@ -40,33 +40,33 @@ text=pathlib.Path(sys.argv[1]).read_text()
 assert text
 assert "PAYLOAD_SECRET_921" not in text
 pattern=r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ component=(gate|dispatcher) event=PreToolUse check=[a-z_-]+(\.sh)? decision=(allow|deny|warn|error|timeout|retry) duration_ms=(\d+|unknown) reason=[a-z_]+"
-assert all(re.fullmatch(pattern,line) for line in text.splitlines())' "$LBWC_PLANNING_DIR/.debug.log"
+assert all(re.fullmatch(pattern,line) for line in text.splitlines())' "$MERIDIAN_PLANNING_DIR/.debug.log"
 }
 logging_readonly() {
-  chmod u-w "$LBWC_PLANNING_DIR"
+  chmod u-w "$MERIDIAN_PLANNING_DIR"
   run logging_gate 2
   [ "$status" -eq 2 ]
   [ "$output" = $'visible output\nvisible error' ]
-  [ ! -e "$LBWC_PLANNING_DIR/.debug.log" ]
+  [ ! -e "$MERIDIAN_PLANNING_DIR/.debug.log" ]
 }
 logging_missing_dir() {
   . "$SCRIPTS_DIR/lib/debug-logging.sh"
   debug_logging_init
-  rm -r "$LBWC_PLANNING_DIR"
+  rm -r "$MERIDIAN_PLANNING_DIR"
   run debug_logging_append gate PreToolUse fixture deny 0 blocked
   [ "$status" -eq 0 ]
   [ -z "$output" ]
-  [ ! -e "$LBWC_PLANNING_DIR" ]
+  [ ! -e "$MERIDIAN_PLANNING_DIR" ]
 }
 logging_slow() {
   mkdir plugin
   cp -R "$PROJECT_ROOT/hooks" "$SCRIPTS_DIR" plugin/
   jq -n --arg cwd "$PWD" '{cwd:$cwd,session_id:"logging-session",hook_event_name:"PreToolUse",tool_name:"AskUserQuestion",tool_input:{}}' > payload
-  printf '{}\n' > "$LBWC_PLANNING_DIR/config.json"
+  printf '{}\n' > "$MERIDIAN_PLANNING_DIR/config.json"
   run bash -c 'python3 plugin/hooks/dispatch.py < payload > baseline-out 2> baseline-err'
   local baseline_status=$status
   grep -q '"permissionDecision": "deny"' baseline-out
-  printf '{"debug_logging":true}\n' > "$LBWC_PLANNING_DIR/config.json"
+  printf '{"debug_logging":true}\n' > "$MERIDIAN_PLANNING_DIR/config.json"
   python3 -c 'import pathlib,sys
 path=pathlib.Path(sys.argv[1])
 text=path.read_text()
@@ -76,41 +76,41 @@ path.write_text(text)' plugin/scripts/lib/debug-logging.sh
   [ "$status" -eq "$baseline_status" ]
   cmp baseline-out slow-out
   cmp baseline-err slow-err
-  [ -e "$LBWC_PLANNING_DIR/delay-started" ]
+  [ -e "$MERIDIAN_PLANNING_DIR/delay-started" ]
 }
 logging_ignored() {
   run bash "$SCRIPTS_DIR/planning-git.sh" sync-ignore
   [ "$status" -eq 0 ]
-  printf 'current\n' > "$LBWC_PLANNING_DIR/.debug.log"
-  printf 'archive\n' > "$LBWC_PLANNING_DIR/.debug.log.1"
-  run git check-ignore .lbwc-planning/.debug.log .lbwc-planning/.debug.log.1
+  printf 'current\n' > "$MERIDIAN_PLANNING_DIR/.debug.log"
+  printf 'archive\n' > "$MERIDIAN_PLANNING_DIR/.debug.log.1"
+  run git check-ignore .meridian/.debug.log .meridian/.debug.log.1
   [ "$status" -eq 0 ]
-  [ "$output" = $'.lbwc-planning/.debug.log\n.lbwc-planning/.debug.log.1' ]
+  [ "$output" = $'.meridian/.debug.log\n.meridian/.debug.log.1' ]
 }
 logging_append() {
-  bash -c '. "$1"; DEBUG_LOGGING_ENABLED=true; DEBUG_LOGGING_DIR="$2"; debug_logging_append gate PreToolUse fixture allow 0 completed' logging "$SCRIPTS_DIR/lib/debug-logging.sh" "$LBWC_PLANNING_DIR"
+  bash -c '. "$1"; DEBUG_LOGGING_ENABLED=true; DEBUG_LOGGING_DIR="$2"; debug_logging_append gate PreToolUse fixture allow 0 completed' logging "$SCRIPTS_DIR/lib/debug-logging.sh" "$MERIDIAN_PLANNING_DIR"
 }
 logging_boundary() {
   logging_append
   local length
-  length=$(wc -c < "$LBWC_PLANNING_DIR/.debug.log")
+  length=$(wc -c < "$MERIDIAN_PLANNING_DIR/.debug.log")
   python3 -c 'import pathlib,sys
-pathlib.Path(sys.argv[1]).write_bytes(b"x" * (1048576-int(sys.argv[2])))' "$LBWC_PLANNING_DIR/.debug.log" "$length"
+pathlib.Path(sys.argv[1]).write_bytes(b"x" * (1048576-int(sys.argv[2])))' "$MERIDIAN_PLANNING_DIR/.debug.log" "$length"
   logging_append
 }
 logging_exact_limit() {
   logging_boundary
-  [ "$(wc -c < "$LBWC_PLANNING_DIR/.debug.log" | tr -d ' ')" -eq 1048576 ]
-  [ ! -e "$LBWC_PLANNING_DIR/.debug.log.1" ]
+  [ "$(wc -c < "$MERIDIAN_PLANNING_DIR/.debug.log" | tr -d ' ')" -eq 1048576 ]
+  [ ! -e "$MERIDIAN_PLANNING_DIR/.debug.log.1" ]
 }
 logging_rotate() {
   logging_boundary
-  cp "$LBWC_PLANNING_DIR/.debug.log" expected-archive
-  printf 'older archive\n' > "$LBWC_PLANNING_DIR/.debug.log.1"
+  cp "$MERIDIAN_PLANNING_DIR/.debug.log" expected-archive
+  printf 'older archive\n' > "$MERIDIAN_PLANNING_DIR/.debug.log.1"
   logging_append
-  cmp expected-archive "$LBWC_PLANNING_DIR/.debug.log.1"
-  [ "$(wc -l < "$LBWC_PLANNING_DIR/.debug.log" | tr -d ' ')" -eq 1 ]
-  grep -q 'decision=allow.*reason=completed' "$LBWC_PLANNING_DIR/.debug.log"
+  cmp expected-archive "$MERIDIAN_PLANNING_DIR/.debug.log.1"
+  [ "$(wc -l < "$MERIDIAN_PLANNING_DIR/.debug.log" | tr -d ' ')" -eq 1 ]
+  grep -q 'decision=allow.*reason=completed' "$MERIDIAN_PLANNING_DIR/.debug.log"
 }
 logging_concurrent() {
   local writer pid pids=()
@@ -122,13 +122,13 @@ logging_concurrent() {
   python3 -c 'import pathlib,re,sys
 lines=pathlib.Path(sys.argv[1]).read_text().splitlines()
 assert len(lines)==8
-assert all(re.fullmatch(r"\S+ component=gate event=PreToolUse check=fixture decision=allow duration_ms=0 reason=completed",line) for line in lines)' "$LBWC_PLANNING_DIR/.debug.log"
+assert all(re.fullmatch(r"\S+ component=gate event=PreToolUse check=fixture decision=allow duration_ms=0 reason=completed",line) for line in lines)' "$MERIDIAN_PLANNING_DIR/.debug.log"
 }
 config_fixture() {
   mkdir -p fixture/commands fixture/scripts/lib
   printf '| Key | Type | Default | Purpose |\n| sample | boolean | false | Sample setting |\n' > fixture/commands/config.md
   printf 'jq '\''.sample'\'' "$config_path"\n' > fixture/scripts/read.sh
-  printf '.sample | type == "boolean"\n' > fixture/scripts/lib/lbwc-config-validate.jq
+  printf '.sample | type == "boolean"\n' > fixture/scripts/lib/meridian-config-validate.jq
 }
 config_run() {
   run python3 "$SCRIPTS_DIR/dev/check_config_keys.py" "$PWD/fixture"

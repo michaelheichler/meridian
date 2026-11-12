@@ -32,7 +32,7 @@ Use the checkpoint and completion output defined in `@references/execute-uat.md`
 
 ## Next Up
 
-On a clean completion, end with `Next Up: /lbwc:vibe`. On issues with a validated remediation plan, end with `Next Up: /lbwc:build <phase>`. On a resumed UAT, present only the next incomplete checkpoint and wait for the human.
+On a clean completion, end with `Next Up: /meridian:transit`. On issues with a validated remediation plan, end with `Next Up: /meridian:build <phase>`. On a resumed UAT, present only the next incomplete checkpoint and wait for the human.
 
 ## Feedback card
 

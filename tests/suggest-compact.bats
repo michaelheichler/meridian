@@ -27,7 +27,7 @@ sized_file() {
 
 build_plugin() {
   local rel
-  for rel in references/execute-protocol.md references/handoff-schemas.md references/lbwc-brand-essentials.md \
+  for rel in references/execute-protocol.md references/handoff-schemas.md references/meridian-brand-essentials.md \
     references/verification-protocol.md references/discussion-engine.md references/effort-profile-balanced.md \
     templates/agent-roles/dev.md.tpl templates/agent-roles/qa.md.tpl templates/agent-roles/lead.md.tpl \
     templates/SUMMARY.md templates/PLAN.md templates/UAT.md; do
@@ -56,7 +56,7 @@ guard() {
   shift 4
   printf '%s\n' "$usage" > "$planning/.context-usage"
   printf '%s\n' "$config" > "$planning/config.json"
-  CLAUDE_SESSION_ID="$sid" LBWC_PLANNING_DIR="$planning" CLAUDE_PLUGIN_ROOT="${GUARD_PLUGIN_ROOT-$PLUGIN}" \
+  CLAUDE_SESSION_ID="$sid" MERIDIAN_PLANNING_DIR="$planning" CLAUDE_PLUGIN_ROOT="${GUARD_PLUGIN_ROOT-$PLUGIN}" \
     CLAUDE_CONFIG_DIR="$TEST_TEMP_DIR/claude-config" bash "$SCRIPTS_DIR/suggest-compact.sh" "$@"
 }
 
@@ -69,7 +69,7 @@ native_guard_row() {
 }
 
 @test "context guard stays silent unless this session's usage leaves too little headroom" {
-  run env LBWC_PLANNING_DIR="$TEST_TEMP_DIR/active" CLAUDE_PLUGIN_ROOT="$PLUGIN" bash "$SCRIPTS_DIR/suggest-compact.sh" execute
+  run env MERIDIAN_PLANNING_DIR="$TEST_TEMP_DIR/active" CLAUDE_PLUGIN_ROOT="$PLUGIN" bash "$SCRIPTS_DIR/suggest-compact.sh" execute
   expect_case_silent no-usage-file 0
 
   run guard active '80|200000' '{}' s1 execute
@@ -139,8 +139,8 @@ native_guard_row() {
   run guard active 's1|99|100000' '{}' s1 archive
   expect_case other-workflow 0 "needs ~2300 tokens"
 
-  mkdir -p "$TEST_TEMP_DIR/claude-config/plugins/cache/lbwc-marketplace/lbwc/1.0.9"
-  cp -R "$PLUGIN" "$TEST_TEMP_DIR/claude-config/plugins/cache/lbwc-marketplace/lbwc/1.0.10"
+  mkdir -p "$TEST_TEMP_DIR/claude-config/plugins/cache/meridian-marketplace/meridian/1.0.9"
+  cp -R "$PLUGIN" "$TEST_TEMP_DIR/claude-config/plugins/cache/meridian-marketplace/meridian/1.0.10"
   GUARD_PLUGIN_ROOT='' run guard active 's1|99|100000' '{}' s1 execute
   expect_case latest-cached-plugin 0 "needs ~3700 tokens"
 

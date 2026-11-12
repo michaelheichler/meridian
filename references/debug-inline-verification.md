@@ -9,9 +9,9 @@ Run QA automatically after a verified fix commit or when a resumed session has `
 1. Resolve configuration:
 
    ```bash
-   AUTO_UAT=$(jq -r '.auto_uat // "false"' .lbwc-planning/config.json 2>/dev/null || echo "false")
+   AUTO_UAT=$(jq -r '.auto_uat // "false"' .meridian/config.json 2>/dev/null || echo "false")
    if [ -z "${EFFORT_PROFILE:-}" ]; then
-     EFFORT_PROFILE=$(jq -r '.effort // "balanced"' .lbwc-planning/config.json 2>/dev/null || echo "balanced")
+     EFFORT_PROFILE=$(jq -r '.effort // "balanced"' .meridian/config.json 2>/dev/null || echo "balanced")
    fi
    QA_CONTEXT=$(bash "{plugin-root}/scripts/compile-debug-session-context.sh" "$session_file" qa)
    ```
@@ -21,7 +21,7 @@ Run QA automatically after a verified fix commit or when a resumed session has `
 3. Increment the QA round:
 
    ```bash
-   eval "$(bash "{plugin-root}/scripts/debug-session-state.sh" increment-qa .lbwc-planning)"
+   eval "$(bash "{plugin-root}/scripts/debug-session-state.sh" increment-qa .meridian)"
    ```
 
 4. Issue and dispatch a read-only QA contract:
@@ -105,7 +105,7 @@ Run UAT when QA passes, turbo skips QA, or a resumed session has `session_status
 
    ```bash
    if [ -z "${AUTO_UAT:-}" ]; then
-     AUTO_UAT=$(jq -r '.auto_uat // "false"' .lbwc-planning/config.json 2>/dev/null || echo "false")
+     AUTO_UAT=$(jq -r '.auto_uat // "false"' .meridian/config.json 2>/dev/null || echo "false")
    fi
    ```
 
@@ -115,13 +115,13 @@ Run UAT when QA passes, turbo skips QA, or a resumed session has `session_status
    - Header: `Debug Session`
    - Options: `Yes` to run inline, `No` to resume later.
 
-   Never print the question parameters as text. Treat clearly affirmative freeform input as Yes, negative or deferring input as No, and ask one short follow-up for ambiguity. For No, stop with `➜ Next: /lbwc:debug --resume -- Continue to UAT verification`.
+   Never print the question parameters as text. Treat clearly affirmative freeform input as Yes, negative or deferring input as No, and ask one short follow-up for ambiguity. For No, stop with `➜ Next: /meridian:debug --resume -- Continue to UAT verification`.
 
 3. Compile context and increment the UAT round:
 
    ```bash
    UAT_CONTEXT=$(bash "{plugin-root}/scripts/compile-debug-session-context.sh" "$session_file" uat)
-   eval "$(bash "{plugin-root}/scripts/debug-session-state.sh" increment-uat .lbwc-planning)"
+   eval "$(bash "{plugin-root}/scripts/debug-session-state.sh" increment-uat .meridian)"
    ```
 
 4. Generate one to three checkpoints that require human judgment: reproduce the original bug, inspect related workflows, and verify the user-visible result. Never ask the user to run tests, lint, builds, or other automated checks. For an internal-only fix, use one checkpoint: `Does the app still work as expected from your perspective?`

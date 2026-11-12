@@ -7,20 +7,20 @@ argument-hint: "[profile-name | save | delete <name>]"
 allowed-tools: Read, Write, Edit, AskUserQuestion
 ---
 
-# LBWC Profile $ARGUMENTS
+# MERIDIAN Profile $ARGUMENTS
 
 ## Context
 
 Config:
 ```
-!`cat .lbwc-planning/config.json 2>/dev/null || echo "No config found -- run /lbwc:init first"`
+!`cat .meridian/config.json 2>/dev/null || echo "No config found -- run /meridian:init first"`
 ```
 
 @${CLAUDE_PLUGIN_ROOT}/references/ask-user-question.md
 
 ## Guard
 
-If the .lbwc-planning/ directory does not exist, STOP "Run /lbwc:init first." (check `.lbwc-planning/config.json`)
+If the .meridian/ directory does not exist, STOP "Run /meridian:init first." (check `.meridian/config.json`)
 
 ## Built-in Profiles
 
@@ -59,8 +59,8 @@ For a built-in profile, show "⚠ Cannot delete built-in profile." If not found,
 
 ## Output Format
 
-Follow @${CLAUDE_PLUGIN_ROOT}/references/lbwc-brand-essentials.md , single-line box, ✓ success, ⚠ errors, ➜ transitions, no ANSI.
+Follow @${CLAUDE_PLUGIN_ROOT}/references/meridian-brand-essentials.md , single-line box, ✓ success, ⚠ errors, ➜ transitions, no ANSI.
 
 ## Next Up
 
-After validation, show `/lbwc:profile` to review the active profile and stop.
+After validation, show `/meridian:profile` to review the active profile and stop.

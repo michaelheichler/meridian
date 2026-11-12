@@ -40,7 +40,7 @@ run_nudge() {
   run run_nudge "yet another god object right here"
   expect_case_silent second-match-in-cooldown 0
 
-  printf '0\n' > "$TEST_TEMP_DIR/.lbwc-planning/deviq/.nudge-last"
+  printf '0\n' > "$TEST_TEMP_DIR/.meridian/deviq/.nudge-last"
   run run_nudge "a god object again after the cooldown ended"
   expect_case match-after-cooldown-expiry 0 "additionalContext"
 

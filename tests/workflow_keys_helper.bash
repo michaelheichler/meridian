@@ -16,8 +16,8 @@ workflow_row() (
   cd "$BATS_TEST_TMPDIR/$reader-$row"
   trap await_git_ai EXIT
   git init -q
-  mkdir -p .lbwc-planning/phases/07-release
-  printf '{}\n' > .lbwc-planning/config.json
+  mkdir -p .meridian/phases/07-release
+  printf '{}\n' > .meridian/config.json
   "workflow_$reader" "$row"
 )
 
@@ -25,36 +25,36 @@ workflow_research() {
   local row=$1 required=false forced=false effort=turbo artifact=07-RESEARCH.md
   case "$row" in
     missing) ;;
-    false|balanced-off|thorough-off) printf '{"pipeline_research":false}\n' > .lbwc-planning/config.json ;;
-    *) printf '{"pipeline_research":true}\n' > .lbwc-planning/config.json ;;
+    false|balanced-off|thorough-off) printf '{"pipeline_research":false}\n' > .meridian/config.json ;;
+    *) printf '{"pipeline_research":true}\n' > .meridian/config.json ;;
   esac
   case "$row" in
     balanced-off) effort=balanced; required=true ;;
     thorough-off) effort=thorough; required=true ;;
     required) effort=balanced; required=true; forced=true ;;
     turbo) required=true; forced=true ;;
-    canonical) printf 'Phase findings\n' > .lbwc-planning/phases/07-release/07-RESEARCH.md ;;
+    canonical) printf 'Phase findings\n' > .meridian/phases/07-release/07-RESEARCH.md ;;
     legacy)
       artifact=07-01-RESEARCH.md
-      printf 'Reusable findings\n' > .lbwc-planning/phases/07-release/07-01-RESEARCH.md ;;
+      printf 'Reusable findings\n' > .meridian/phases/07-release/07-01-RESEARCH.md ;;
     multiple)
-      touch .lbwc-planning/phases/07-release/07-01-RESEARCH.md .lbwc-planning/phases/07-release/07-02-RESEARCH.md
+      touch .meridian/phases/07-release/07-01-RESEARCH.md .meridian/phases/07-release/07-02-RESEARCH.md
       required=true; forced=true ;;
   esac
-  run bash "$SCRIPTS_DIR/pipeline-research.sh" .lbwc-planning .lbwc-planning/phases/07-release "$effort"
+  run bash "$SCRIPTS_DIR/pipeline-research.sh" .meridian .meridian/phases/07-release "$effort"
   [ "$status" -eq 0 ]
   [ "$output" = "research_required=$required
 research_forced=$forced
-research_path=.lbwc-planning/phases/07-release/$artifact" ]
+research_path=.meridian/phases/07-release/$artifact" ]
 }
 
 workflow_summary() {
   local row=$1 text='People can now review the release.'
   case "$row" in
-    true|false) printf '{"plain_summary":%s}\n' "$row" > .lbwc-planning/config.json ;;
+    true|false) printf '{"plain_summary":%s}\n' "$row" > .meridian/config.json ;;
     empty) text='   ' ;;
   esac
-  run bash "$SCRIPTS_DIR/plain-summary.sh" .lbwc-planning <<< "$text"
+  run bash "$SCRIPTS_DIR/plain-summary.sh" .meridian <<< "$text"
   case "$row" in
     false) [ "$status" -eq 0 ]; [ -z "$output" ] ;;
     empty) [ "$status" -eq 1 ] ;;
@@ -66,13 +66,13 @@ workflow_qa() {
   local row=$1 tasks='[{"task_id":"guide","owners":["docs"]}]' skip=true
   case "$row" in
     explicit-empty)
-      printf '{"qa_skip_agents":[]}\n' > .lbwc-planning/config.json
+      printf '{"qa_skip_agents":[]}\n' > .meridian/config.json
       skip=false ;;
     alternative)
-      printf '{"qa_skip_agents":["analyst"]}\n' > .lbwc-planning/config.json
+      printf '{"qa_skip_agents":["analyst"]}\n' > .meridian/config.json
       tasks='[{"task_id":"report","owners":["analyst"]}]' ;;
     mixed)
-      printf '{"qa_skip_agents":["docs","analyst"]}\n' > .lbwc-planning/config.json
+      printf '{"qa_skip_agents":["docs","analyst"]}\n' > .meridian/config.json
       tasks='[{"task_id":"guide","owners":["docs","analyst"]}]'
       skip=false ;;
     unknown) tasks='[{"task_id":"guide","owners":[]}]'; skip=false ;;
@@ -82,7 +82,7 @@ workflow_qa() {
     malformed) tasks='[{"task_id":"guide","owners":"docs"}]' ;;
     all-skip) tasks='[{"task_id":"guide","owners":["docs"]},{"task_id":"help","owners":["docs"]}]' ;;
   esac
-  run bash "$SCRIPTS_DIR/qa-routing.sh" .lbwc-planning <<< "$tasks"
+  run bash "$SCRIPTS_DIR/qa-routing.sh" .meridian <<< "$tasks"
   case "$row" in
     empty|empty-input|malformed|malformed-json) [ "$status" -gt 0 ]; [ "$status" -lt 126 ] ;;
     all-skip)
@@ -96,9 +96,9 @@ workflow_qa() {
 workflow_qa_persist() {
   local routing=$output payload
   payload=$(jq '{tier:"standard",result:"PASS",phase:"07",checks:{passed:0,failed:0,total:(.skip_entries|length)},checks_detail:.skip_entries}' <<< "$routing")
-  run bash "$SCRIPTS_DIR/write-verification.sh" .lbwc-planning/phases/07-release/07-VERIFICATION.md <<< "$payload"
+  run bash "$SCRIPTS_DIR/write-verification.sh" .meridian/phases/07-release/07-VERIFICATION.md <<< "$payload"
   [ "$status" -eq 0 ]
-  jq -e --rawfile persisted .lbwc-planning/phases/07-release/07-VERIFICATION.md '
+  jq -e --rawfile persisted .meridian/phases/07-release/07-VERIFICATION.md '
     all(.skip_entries[];
       . as $entry | [$entry.id,$entry.description,$entry.status,$entry.evidence]
       | all(.[]; . as $cell | $persisted | contains($cell)))

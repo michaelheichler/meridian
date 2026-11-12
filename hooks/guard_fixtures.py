@@ -48,7 +48,7 @@ def module_path(stem: str) -> str:
 def build_project(case: unittest.TestCase) -> Workspace:
     root = Path(tempfile.mkdtemp()).resolve()
     case.addCleanup(shutil.rmtree, root, True)
-    planning = root / ".lbwc-planning"
+    planning = root / ".meridian"
     planning.mkdir()
     return Workspace(root, planning, planning / ".runtime" / "decisions")
 

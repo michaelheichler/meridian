@@ -22,7 +22,7 @@ class MessageScopeGuardTest(unittest.TestCase):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
-        self.planning = self.root / ".lbwc-planning"
+        self.planning = self.root / ".meridian"
         self.planning.mkdir()
 
     def test_reporting_permission_follows_role_and_communication_policy(self) -> None:

@@ -53,9 +53,9 @@ write_model_catalog() {
 
 setup_model_sandbox() {
   REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/.." && pwd)"
-  SCRIPT="$REPO_ROOT/scripts/lbwc-model"
-  TEST_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/lbwc-model.XXXXXX")
-  PLANNING_DIR="$TEST_ROOT/.lbwc-planning"
+  SCRIPT="$REPO_ROOT/scripts/meridian-model"
+  TEST_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/meridian-model.XXXXXX")
+  PLANNING_DIR="$TEST_ROOT/.meridian"
   CATALOG="$PLANNING_DIR/claude-capabilities.json"
   CLAUDE_FIXTURE="$TEST_ROOT/claude-fixture"
   mkdir -p "$PLANNING_DIR"

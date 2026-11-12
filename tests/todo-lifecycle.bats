@@ -10,7 +10,7 @@ snapshot_path_for_session_id() {
 
   session_key=$(printf '%s' "$raw_session_id" | tr -c 'A-Za-z0-9_.-' '_')
   session_key="${session_key:-default}"
-  printf '/tmp/.lbwc-last-list-view-%s.json\n' "$session_key"
+  printf '/tmp/.meridian-last-list-view-%s.json\n' "$session_key"
 }
 
 fixed_todo_now_epoch() {
@@ -27,39 +27,39 @@ setup() {
 
   setup_temp_dir
   create_test_config
-  if [ "${LBWC_TODO_NOW_EPOCH+x}" = "x" ]; then
-    export _ORIG_LBWC_TODO_NOW_EPOCH_WAS_SET=1
-    export _ORIG_LBWC_TODO_NOW_EPOCH="$LBWC_TODO_NOW_EPOCH"
+  if [ "${MERIDIAN_TODO_NOW_EPOCH+x}" = "x" ]; then
+    export _ORIG_MERIDIAN_TODO_NOW_EPOCH_WAS_SET=1
+    export _ORIG_MERIDIAN_TODO_NOW_EPOCH="$MERIDIAN_TODO_NOW_EPOCH"
   else
-    export _ORIG_LBWC_TODO_NOW_EPOCH_WAS_SET=0
-    unset _ORIG_LBWC_TODO_NOW_EPOCH 2>/dev/null || true
+    export _ORIG_MERIDIAN_TODO_NOW_EPOCH_WAS_SET=0
+    unset _ORIG_MERIDIAN_TODO_NOW_EPOCH 2>/dev/null || true
   fi
   if ! fixed_now_epoch=$(fixed_todo_now_epoch) || [ -z "$fixed_now_epoch" ] || ! [[ "$fixed_now_epoch" =~ ^[0-9]+$ ]]; then
     echo "todo-lifecycle.bats setup: could not derive fixed epoch for deterministic age assertions" >&2
     return 1
   fi
-  export LBWC_TODO_NOW_EPOCH="$fixed_now_epoch"
+  export MERIDIAN_TODO_NOW_EPOCH="$fixed_now_epoch"
   export CLAUDE_SESSION_ID="$(unique_session_id main)"
-  export LBWC_PLANNING_DIR="$TEST_TEMP_DIR/.lbwc-planning"
+  export MERIDIAN_PLANNING_DIR="$TEST_TEMP_DIR/.meridian"
   SCRIPT="$SCRIPTS_DIR/todo-lifecycle.sh"
   LIST_SCRIPT="$SCRIPTS_DIR/list-todos.sh"
   RESOLVE_SCRIPT="$SCRIPTS_DIR/resolve-todo-item.sh"
   DETAILS_SCRIPT="$SCRIPTS_DIR/todo-details.sh"
-  STATE_FILE="$LBWC_PLANNING_DIR/STATE.md"
+  STATE_FILE="$MERIDIAN_PLANNING_DIR/STATE.md"
   export TEST_SNAPSHOT_PATH="$(snapshot_path_for_session_id "$CLAUDE_SESSION_ID")"
   export EXTRA_SNAPSHOT_PATHS=""
   rm -f "$TEST_SNAPSHOT_PATH"
-  mkdir -p "$LBWC_PLANNING_DIR/phases/03-test-phase"
+  mkdir -p "$MERIDIAN_PLANNING_DIR/phases/03-test-phase"
 }
 
 teardown() {
   rm -f "$TEST_SNAPSHOT_PATH" "$(snapshot_path_for_session_id)" ${EXTRA_SNAPSHOT_PATHS:-} 2>/dev/null || true
-  if [ "${_ORIG_LBWC_TODO_NOW_EPOCH_WAS_SET:-0}" = "1" ]; then
-    export LBWC_TODO_NOW_EPOCH="${_ORIG_LBWC_TODO_NOW_EPOCH-}"
+  if [ "${_ORIG_MERIDIAN_TODO_NOW_EPOCH_WAS_SET:-0}" = "1" ]; then
+    export MERIDIAN_TODO_NOW_EPOCH="${_ORIG_MERIDIAN_TODO_NOW_EPOCH-}"
   else
-    unset LBWC_TODO_NOW_EPOCH 2>/dev/null || true
+    unset MERIDIAN_TODO_NOW_EPOCH 2>/dev/null || true
   fi
-  unset EXTRA_SNAPSHOT_PATHS TEST_SNAPSHOT_PATH _ORIG_LBWC_TODO_NOW_EPOCH _ORIG_LBWC_TODO_NOW_EPOCH_WAS_SET
+  unset EXTRA_SNAPSHOT_PATHS TEST_SNAPSHOT_PATH _ORIG_MERIDIAN_TODO_NOW_EPOCH _ORIG_MERIDIAN_TODO_NOW_EPOCH_WAS_SET
   teardown_temp_dir
 }
 
@@ -170,7 +170,7 @@ write_raw_snapshot() {
 
 seed_sidecar() {
   case "$1" in
-    yes) bash "$DETAILS_SCRIPT" add deadbeef '{"summary":"Item with detail","context":"extra detail","files":["a.sh"],"added":"2026-04-01","source":"session"}' "$LBWC_PLANNING_DIR/todo-details.json" >/dev/null ;;
+    yes) bash "$DETAILS_SCRIPT" add deadbeef '{"summary":"Item with detail","context":"extra detail","files":["a.sh"],"added":"2026-04-01","source":"session"}' "$MERIDIAN_PLANNING_DIR/todo-details.json" >/dev/null ;;
   esac
 }
 
@@ -194,7 +194,7 @@ expect_snapshot_invalid_everywhere() {
 }
 
 @test "snapshot-save and snapshot-show keep payloads per sanitized session without masking list errors" {
-  local error_json='{"status":"error","message":"STATE.md not found at .lbwc-planning/STATE.md. Run /lbwc:init to set up your project."}'
+  local error_json='{"status":"error","message":"STATE.md not found at .meridian/STATE.md. Run /meridian:init to set up your project."}'
   local session_a session_b planning_dir_a planning_dir_b
   local snapshot_path_a snapshot_path_b output_a output_b snapshot_a snapshot_b
   while IFS='|' read -r label payload expected_status expected_code; do
@@ -210,8 +210,8 @@ expect_snapshot_invalid_everywhere() {
     expect_json_unless_dash "$label" '.code' "$expected_code"
   done <<'CASES'
 missing-snapshot|-|error|snapshot_missing
-valid-empty-payload|{"status":"empty","state_path":".lbwc-planning/STATE.md","section":null,"count":0,"filter":null,"display":"No pending todos.","items":[]}|empty|-
-valid-no-match-payload|{"status":"no-match","state_path":".lbwc-planning/STATE.md","section":"## Todos","count":0,"filter":"high","display":"No high-priority todos found.","items":[]}|no-match|-
+valid-empty-payload|{"status":"empty","state_path":".meridian/STATE.md","section":null,"count":0,"filter":null,"display":"No pending todos.","items":[]}|empty|-
+valid-no-match-payload|{"status":"no-match","state_path":".meridian/STATE.md","section":"## Todos","count":0,"filter":"high","display":"No high-priority todos found.","items":[]}|no-match|-
 CASES
 
   rm -f "$TEST_SNAPSHOT_PATH"
@@ -225,8 +225,8 @@ CASES
 
   session_a="$(unique_session_id a)"
   session_b="$(unique_session_id b)"
-  planning_dir_a="$TEST_TEMP_DIR/session-a/.lbwc-planning"
-  planning_dir_b="$TEST_TEMP_DIR/session-b/.lbwc-planning"
+  planning_dir_a="$TEST_TEMP_DIR/session-a/.meridian"
+  planning_dir_b="$TEST_TEMP_DIR/session-b/.meridian"
 
   mkdir -p "$planning_dir_a" "$planning_dir_b"
   STATE_FILE="$planning_dir_a/STATE.md" write_state_recent_activity
@@ -244,10 +244,10 @@ EOF
   EXTRA_SNAPSHOT_PATHS="$snapshot_path_a $snapshot_path_b"
   [ "$snapshot_path_a" != "$snapshot_path_b" ] || fail_case session-isolation "both sessions share $snapshot_path_a"
 
-  output_a=$(CLAUDE_SESSION_ID="$session_a" LBWC_PLANNING_DIR="$planning_dir_a" bash "$SCRIPT" list-with-snapshot high)
-  output_b=$(CLAUDE_SESSION_ID="$session_b" LBWC_PLANNING_DIR="$planning_dir_b" bash "$SCRIPT" list-with-snapshot high)
-  snapshot_a=$(CLAUDE_SESSION_ID="$session_a" LBWC_PLANNING_DIR="$planning_dir_a" bash "$SCRIPT" snapshot-show)
-  snapshot_b=$(CLAUDE_SESSION_ID="$session_b" LBWC_PLANNING_DIR="$planning_dir_b" bash "$SCRIPT" snapshot-show)
+  output_a=$(CLAUDE_SESSION_ID="$session_a" MERIDIAN_PLANNING_DIR="$planning_dir_a" bash "$SCRIPT" list-with-snapshot high)
+  output_b=$(CLAUDE_SESSION_ID="$session_b" MERIDIAN_PLANNING_DIR="$planning_dir_b" bash "$SCRIPT" list-with-snapshot high)
+  snapshot_a=$(CLAUDE_SESSION_ID="$session_a" MERIDIAN_PLANNING_DIR="$planning_dir_a" bash "$SCRIPT" snapshot-show)
+  snapshot_b=$(CLAUDE_SESSION_ID="$session_b" MERIDIAN_PLANNING_DIR="$planning_dir_b" bash "$SCRIPT" snapshot-show)
 
   expect_same_json session-a "$snapshot_a" "$output_a"
   expect_same_json session-b "$snapshot_b" "$output_b"
@@ -263,7 +263,7 @@ EOF
   run_piped "$output" "$SCRIPT" snapshot-save
   expect_status sanitize-save 0
   expect_json sanitize-save '.status' ok
-  expect_json sanitize-save '.path | startswith("/tmp/.lbwc-last-list-view-")' true
+  expect_json sanitize-save '.path | startswith("/tmp/.meridian-last-list-view-")' true
   expect_json sanitize-save '.path | contains("../")' false
   run bash "$SCRIPT" snapshot-show
   expect_status sanitize-show 0
@@ -322,10 +322,10 @@ CASES
     write_raw_snapshot "$payload"
     expect_snapshot_invalid_everywhere "$label"
   done <<'CASES'
-bogus-top-level-status|{"status":"bogus","state_path":".lbwc-planning/STATE.md","section":"## Todos","count":1,"filter":null,"items":[{"num":1,"section_index":1,"line":"- Test todo","normalized_text":"Test todo","state_path":".lbwc-planning/STATE.md","section":"## Todos","line_no":12,"identity_occurrence":1,"identity_total":1,"ref":null,"known_issue_signature":null}]}
-ok-snapshot-missing-filter|{"status":"ok","state_path":".lbwc-planning/STATE.md","section":"## Todos","count":1,"items":[{"num":1,"section_index":1,"line":"- Test todo","normalized_text":"Test todo","state_path":".lbwc-planning/STATE.md","section":"## Todos","line_no":12,"identity_occurrence":1,"identity_total":1,"ref":null,"known_issue_signature":null}]}
-no-match-snapshot-with-null-filter|{"status":"no-match","state_path":".lbwc-planning/STATE.md","section":"## Todos","count":0,"filter":null,"display":"No matching todos.","items":[]}
-invalid-item-ref-metadata|{"status":"ok","state_path":".lbwc-planning/STATE.md","section":"## Todos","count":1,"filter":null,"items":[{"num":1,"section_index":1,"line":"- Test todo","normalized_text":"Test todo","state_path":".lbwc-planning/STATE.md","section":"## Todos","line_no":12,"identity_occurrence":1,"identity_total":1,"ref":"not-a-ref","known_issue_signature":null}]}
+bogus-top-level-status|{"status":"bogus","state_path":".meridian/STATE.md","section":"## Todos","count":1,"filter":null,"items":[{"num":1,"section_index":1,"line":"- Test todo","normalized_text":"Test todo","state_path":".meridian/STATE.md","section":"## Todos","line_no":12,"identity_occurrence":1,"identity_total":1,"ref":null,"known_issue_signature":null}]}
+ok-snapshot-missing-filter|{"status":"ok","state_path":".meridian/STATE.md","section":"## Todos","count":1,"items":[{"num":1,"section_index":1,"line":"- Test todo","normalized_text":"Test todo","state_path":".meridian/STATE.md","section":"## Todos","line_no":12,"identity_occurrence":1,"identity_total":1,"ref":null,"known_issue_signature":null}]}
+no-match-snapshot-with-null-filter|{"status":"no-match","state_path":".meridian/STATE.md","section":"## Todos","count":0,"filter":null,"display":"No matching todos.","items":[]}
+invalid-item-ref-metadata|{"status":"ok","state_path":".meridian/STATE.md","section":"## Todos","count":1,"filter":null,"items":[{"num":1,"section_index":1,"line":"- Test todo","normalized_text":"Test todo","state_path":".meridian/STATE.md","section":"## Todos","line_no":12,"identity_occurrence":1,"identity_total":1,"ref":"not-a-ref","known_issue_signature":null}]}
 CASES
 }
 
@@ -368,14 +368,14 @@ CASES
     expect_file_matches "$label" "$STATE_FILE" "$present"
     expect_file_lacks_lines "$label" "$STATE_FILE" "$absent"
   done <<'CASES'
-remove-from-filtered-snapshot|recent_activity|snapshot-high|remove none safe|ok|=## Recent Activity~Fix parser bug~Removed todo via /lbwc:list-todos: [HIGH] Refactor auth module|- [HIGH] Refactor auth module (added 2026-04-02)
-pickup-restores-none-and-creates-activity-log|without_activity|list-first|pickup /lbwc:fix none keep|ok|=## Activity Log~=None.~Picked up todo via /lbwc:fix: Only todo item|- Only todo item (added 2026-04-01)
+remove-from-filtered-snapshot|recent_activity|snapshot-high|remove none safe|ok|=## Recent Activity~Fix parser bug~Removed todo via /meridian:list-todos: [HIGH] Refactor auth module|- [HIGH] Refactor auth module (added 2026-04-02)
+pickup-restores-none-and-creates-activity-log|without_activity|list-first|pickup /meridian:fix none keep|ok|=## Activity Log~=None.~Picked up todo via /meridian:fix: Only todo item|- Only todo item (added 2026-04-01)
 remove-leaves-legacy-completed-todos|legacy|list-first|remove none keep|partial|=### Completed Todos~Already completed item~Follow-up todo|- [KNOWN-ISSUE] TestCrash (CrashTests.swift): signal trap (phase 03, seen 1x) (added 2026-04-01) (ref:abc12345)
 CASES
 
   while IFS='|' read -r label invocation sidecar expected_status warned sidecar_after; do
     [ -n "$label" ] || continue
-    rm -f "$LBWC_PLANNING_DIR/todo-details.json"
+    rm -f "$MERIDIAN_PLANNING_DIR/todo-details.json"
     write_state_ref_item
     seed_sidecar "$sidecar"
     local item_json
@@ -387,7 +387,7 @@ CASES
     expect_json "$label" '(.warning // "") | contains("sidecar registry was left untouched")' "$warned"
     expect_file_has_line "$label" "$STATE_FILE" "None."
 
-    run bash "$DETAILS_SCRIPT" get deadbeef "$LBWC_PLANNING_DIR/todo-details.json"
+    run bash "$DETAILS_SCRIPT" get deadbeef "$MERIDIAN_PLANNING_DIR/todo-details.json"
     expect_status "$label" 0
     expect_json "$label" '.status' "$sidecar_after"
   done <<'CASES'
@@ -395,7 +395,7 @@ remove-detail-not-found|remove not_found safe|no|partial|true|not_found
 remove-detail-ok-safe-cleanup|remove ok safe|yes|ok|false|not_found
 remove-detail-ok-keep-cleanup|remove ok keep|yes|ok|false|ok
 remove-detail-error-safe-cleanup|remove error safe|yes|partial|true|ok
-pickup-detail-error-keep-cleanup|pickup /lbwc:fix error keep|yes|partial|true|ok
+pickup-detail-error-keep-cleanup|pickup /meridian:fix error keep|yes|partial|true|ok
 CASES
 }
 
@@ -404,7 +404,7 @@ KNOWN_ISSUE_REF_LINE='- [KNOWN-ISSUE] TransferTests (tests/transfer.sh): timeout
 KNOWN_ISSUE_LEGACY_LINE='- [KNOWN-ISSUE] TransferTests (tests/transfer.sh): timeout (phase 03, seen 1x) (added 2026-04-01)'
 
 seed_phase_registry() {
-  local phase_dir="$LBWC_PLANNING_DIR/phases/03-test-phase"
+  local phase_dir="$MERIDIAN_PLANNING_DIR/phases/03-test-phase"
   cat > "$phase_dir/03-01-SUMMARY.md" <<'SUMMARY'
 ---
 phase: 03
@@ -416,11 +416,11 @@ SUMMARY
 }
 
 seed_signature_sidecar() {
-  jq -n --arg dir "$LBWC_PLANNING_DIR/phases/03-test-phase" '{
+  jq -n --arg dir "$MERIDIAN_PLANNING_DIR/phases/03-test-phase" '{
     schema_version: 1,
     items: {deadbeef: {summary: "TransferTests", added: "2026-04-01", source: "session",
       known_issue_signature: {phase: "03", phase_dir: $dir, test: "TransferTests", file: "tests/transfer.sh", error: "timeout"}}}
-  }' > "$LBWC_PLANNING_DIR/todo-details.json"
+  }' > "$MERIDIAN_PLANNING_DIR/todo-details.json"
 }
 
 remove_known_issue_case() {
@@ -435,24 +435,24 @@ remove_known_issue_case() {
 @test "removing a known-issue todo ends ok and blocks re-promotion with a registry, and ends partial with a warning without one" {
   while IFS='|' read -r label todo_line sidecar; do
     [ -n "$label" ] || continue
-    rm -f "$LBWC_PLANNING_DIR/todo-details.json" "$LBWC_PLANNING_DIR/phases/03-test-phase/known-issues.json"
+    rm -f "$MERIDIAN_PLANNING_DIR/todo-details.json" "$MERIDIAN_PLANNING_DIR/phases/03-test-phase/known-issues.json"
 
     remove_known_issue_case "$todo_line" "$sidecar" yes
 
     expect_status "$label" 0
     expect_json "$label" '.status' ok
     expect_json "$label" '.warning' null
-    run bash "$TRACK_SCRIPT" promote-todos "$LBWC_PLANNING_DIR/phases/03-test-phase"
+    run bash "$TRACK_SCRIPT" promote-todos "$MERIDIAN_PLANNING_DIR/phases/03-test-phase"
     [[ "$output" == *"promoted_count=0"* ]] || fail_case "$label" "known issue was promoted again"
   done <<CASES
 remove-with-signature-in-sidecar|$KNOWN_ISSUE_REF_LINE|yes
 remove-legacy-line-resolved-through-registry|$KNOWN_ISSUE_LEGACY_LINE|no
 CASES
 
-  rm -f "$LBWC_PLANNING_DIR/phases/03-test-phase/03-01-SUMMARY.md"
+  rm -f "$MERIDIAN_PLANNING_DIR/phases/03-test-phase/03-01-SUMMARY.md"
   while IFS='|' read -r label todo_line sidecar; do
     [ -n "$label" ] || continue
-    rm -f "$LBWC_PLANNING_DIR/todo-details.json" "$LBWC_PLANNING_DIR/phases/03-test-phase/known-issues.json"
+    rm -f "$MERIDIAN_PLANNING_DIR/todo-details.json" "$MERIDIAN_PLANNING_DIR/phases/03-test-phase/known-issues.json"
 
     remove_known_issue_case "$todo_line" "$sidecar" no
 
@@ -514,7 +514,7 @@ CASES
 }
 
 @test "validate-item fails closed on payloads without identity metadata or outside the root backlog" {
-  local item_json other_state="$TEST_TEMP_DIR/other/.lbwc-planning/STATE.md"
+  local item_json other_state="$TEST_TEMP_DIR/other/.meridian/STATE.md"
   write_state_recent_activity
   save_snapshot
   item_json=$(select_snapshot_item 1)
@@ -529,7 +529,7 @@ CASES
   expect_status foreign-state 0
   expect_json foreign-state '.code' state_missing
 
-  run_piped "$(printf '%s' "$item_json" | jq -c --arg path "$LBWC_PLANNING_DIR/NOTES.md" '.state_path = $path')" "$SCRIPT" validate-item
+  run_piped "$(printf '%s' "$item_json" | jq -c --arg path "$MERIDIAN_PLANNING_DIR/NOTES.md" '.state_path = $path')" "$SCRIPT" validate-item
   expect_status not-state-file 0
   expect_json not-state-file '.code' state_missing
 

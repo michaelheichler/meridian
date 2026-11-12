@@ -19,7 +19,7 @@ teardown() {
 }
 
 new_row() {
-  CONTROL_ROOT="$TEST_ROOT/rows/$1/project/.lbwc-planning"
+  CONTROL_ROOT="$TEST_ROOT/rows/$1/project/.meridian"
   mkdir -p "$CONTROL_ROOT"
   printf '%s\n' '{}' > "$CONTROL_ROOT/config.json"
 }
@@ -30,7 +30,7 @@ run_watchdog() {
 
 run_watchdog_with_tmux() {
   local tmux_bin=$1 marker=$2 kill_fail=$3
-  run timeout 60 env PATH="$tmux_bin:$PATH" LBWC_TEST_TMUX_MARKER="$marker" LBWC_TEST_TMUX_KILL_FAIL="$kill_fail" bash "$SCRIPT" --control-root "$CONTROL_ROOT" check --orchestrator-id main-session --orchestrator-session-id main-session --orchestrator-capability "$MAIN_CAPABILITY" --stale-after-ms 1 --shutdown-timeout-ms 30
+  run timeout 60 env PATH="$tmux_bin:$PATH" MERIDIAN_TEST_TMUX_MARKER="$marker" MERIDIAN_TEST_TMUX_KILL_FAIL="$kill_fail" bash "$SCRIPT" --control-root "$CONTROL_ROOT" check --orchestrator-id main-session --orchestrator-session-id main-session --orchestrator-capability "$MAIN_CAPABILITY" --stale-after-ms 1 --shutdown-timeout-ms 30
 }
 
 write_tmux_shim() {
@@ -39,8 +39,8 @@ write_tmux_shim() {
   cat > "$tmux_bin/tmux" <<'EOF'
 #!/usr/bin/env bash
 case "$1" in
-  display-message) [ -e "$LBWC_TEST_TMUX_MARKER" ] && printf '%%1\n' ;;
-  kill-pane) [ "${LBWC_TEST_TMUX_KILL_FAIL:-0}" = 1 ] && exit 1; rm -f "$LBWC_TEST_TMUX_MARKER" ;;
+  display-message) [ -e "$MERIDIAN_TEST_TMUX_MARKER" ] && printf '%%1\n' ;;
+  kill-pane) [ "${MERIDIAN_TEST_TMUX_KILL_FAIL:-0}" = 1 ] && exit 1; rm -f "$MERIDIAN_TEST_TMUX_MARKER" ;;
   *) exit 1 ;;
 esac
 EOF
@@ -136,7 +136,7 @@ expect_notifications() {
   : > "$marker"
   fixture_watchdog_bus
   plant_bound_agent test:0.1 '%1'
-  run timeout 60 env PATH="$tmux_bin:$PATH" LBWC_TEST_TMUX_MARKER="$marker" SCRIPT="$SCRIPT" BUS="$REPO_ROOT/scripts/tmux-bus.sh" CONTROL_ROOT="$CONTROL_ROOT" MAIN_CAPABILITY="$MAIN_CAPABILITY" AGENT_CAPABILITY="$AGENT_CAPABILITY" OUTPUT_FILE="$output_file" bash -c '
+  run timeout 60 env PATH="$tmux_bin:$PATH" MERIDIAN_TEST_TMUX_MARKER="$marker" SCRIPT="$SCRIPT" BUS="$REPO_ROOT/scripts/tmux-bus.sh" CONTROL_ROOT="$CONTROL_ROOT" MAIN_CAPABILITY="$MAIN_CAPABILITY" AGENT_CAPABILITY="$AGENT_CAPABILITY" OUTPUT_FILE="$output_file" bash -c '
     bash "$SCRIPT" --control-root "$CONTROL_ROOT" check --orchestrator-id main-session --orchestrator-session-id main-session --orchestrator-capability "$MAIN_CAPABILITY" --stale-after-ms 1 --shutdown-timeout-ms 1000 > "$OUTPUT_FILE" 2>&1 &
     watchdog=$!
     for ((attempt = 0; attempt < 800; attempt++)); do
@@ -145,7 +145,7 @@ expect_notifications() {
     done
     [ -f "$CONTROL_ROOT/.runtime/tmux-bus/inboxes/agent-a/shutdown_request.json" ] || { cat "$OUTPUT_FILE"; exit 1; }
     bash "$BUS" --control-root "$CONTROL_ROOT" publish --to main-session --from-agent-id agent-a --from-session-id agent-session --from-role agent --capability "$AGENT_CAPABILITY" --type shutdown_response --correlation-id watchdog --payload "{\"acknowledged\":true}" >/dev/null
-    rm -f "$LBWC_TEST_TMUX_MARKER"
+    rm -f "$MERIDIAN_TEST_TMUX_MARKER"
     wait "$watchdog" || true
   '
   expect_status graceful-ack 0
@@ -173,12 +173,12 @@ expect_notifications() {
   fixture_watchdog_bus
   plant_bound_agent test:0.1 '%1'
   chmod 500 "$CONTROL_ROOT"
-  run env PATH="$tmux_bin:$PATH" LBWC_TEST_TMUX_MARKER="$marker" LBWC_TEST_TMUX_KILL_FAIL=1 bash "$SCRIPT" --control-root "$CONTROL_ROOT" check --orchestrator-id main-session --orchestrator-session-id main-session --orchestrator-capability "$MAIN_CAPABILITY" --stale-after-ms 1 --shutdown-timeout-ms 30
+  run env PATH="$tmux_bin:$PATH" MERIDIAN_TEST_TMUX_MARKER="$marker" MERIDIAN_TEST_TMUX_KILL_FAIL=1 bash "$SCRIPT" --control-root "$CONTROL_ROOT" check --orchestrator-id main-session --orchestrator-session-id main-session --orchestrator-capability "$MAIN_CAPABILITY" --stale-after-ms 1 --shutdown-timeout-ms 30
   chmod 700 "$CONTROL_ROOT"
   expect_case pending-teardown 1 "cannot append stale agent failure notification"
   expect_agent pending-teardown-failed '.state == "failed" and .watchdog_cleanup_pending == true'
   expect_no_path pending-teardown-no-notification "$CONTROL_ROOT/.notification-log.jsonl"
-  run env PATH="$tmux_bin:$PATH" LBWC_TEST_TMUX_MARKER="$marker" bash "$SCRIPT" --control-root "$CONTROL_ROOT" check --orchestrator-id main-session --orchestrator-session-id main-session --orchestrator-capability "$MAIN_CAPABILITY" --stale-after-ms 1 --shutdown-timeout-ms 30
+  run env PATH="$tmux_bin:$PATH" MERIDIAN_TEST_TMUX_MARKER="$marker" bash "$SCRIPT" --control-root "$CONTROL_ROOT" check --orchestrator-id main-session --orchestrator-session-id main-session --orchestrator-capability "$MAIN_CAPABILITY" --stale-after-ms 1 --shutdown-timeout-ms 30
   expect_status pending-teardown-retry 1
   expect_no_path pending-teardown-retry-pane-gone "$marker"
   expect_agent pending-teardown-retry-shutdown '.state == "shutdown" and .watchdog_cleanup_pending == false'

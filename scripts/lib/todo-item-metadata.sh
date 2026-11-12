@@ -1,11 +1,22 @@
 #!/usr/bin/env bash
 
+printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${BASH_SOURCE[0]}"
+case "$MERIDIAN_MIGRATION_SOURCE" in
+  *"/"*) printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${MERIDIAN_MIGRATION_SOURCE%"/"*}" ;;
+  *) printf -v MERIDIAN_MIGRATION_SOURCE '%s' . ;;
+esac
+if [ -f "$MERIDIAN_MIGRATION_SOURCE/rename-migration.sh" ]; then
+  . "$MERIDIAN_MIGRATION_SOURCE/rename-migration.sh"
+  meridian_migrate_environment
+fi
+unset MERIDIAN_MIGRATION_SOURCE
+
 
 : "${DETAILS_PATH:=}"
 : "${DETAILS_CACHE_JSON:=}"
 
 todo_item_current_epoch() {
-  local override_epoch="${LBWC_TODO_NOW_EPOCH:-}"
+  local override_epoch="${MERIDIAN_TODO_NOW_EPOCH:-}"
 
   if [ -n "$override_epoch" ] && [[ "$override_epoch" =~ ^[0-9]+$ ]]; then
     printf '%s\n' "$override_epoch"

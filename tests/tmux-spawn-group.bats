@@ -8,7 +8,7 @@ setup() {
   CHILD="$REPO_ROOT/tests/fixtures/tmux-child-job.sh"
   TEST_ROOT="$(mktemp -d)"
   PROJECT_ROOT="$TEST_ROOT/project"
-  CONTROL_ROOT="$PROJECT_ROOT/.lbwc-planning"
+  CONTROL_ROOT="$PROJECT_ROOT/.meridian"
   mkdir -p "$CONTROL_ROOT"
   printf '%s\n' '{}' > "$CONTROL_ROOT/config.json"
 }
@@ -18,7 +18,7 @@ teardown() {
 }
 
 source_runtime() {
-  source "$REPO_ROOT/scripts/lib/lbwc-control-root.sh"
+  source "$REPO_ROOT/scripts/lib/meridian-control-root.sh"
   source "$REPO_ROOT/scripts/lib/tmux-runtime.sh"
   tmux_runtime_configure "$CONTROL_ROOT"
 }
@@ -63,14 +63,14 @@ plant_agent() {
       parent_id: .main.agent_id,
       contract_id: "contract-1",
       generated_name: $id,
-      tmux_target: "lbwc-test-main:0.1",
+      tmux_target: "meridian-test-main:0.1",
       tmux_pane_id: null,
       claude_session_id: $session,
       capability_hash: $hash,
       state: "registered",
       heartbeat_at_ms: null
     }]
-    | .routes[$id] = {inbox: $id, tmux_target: "lbwc-test-main:0.1"}
+    | .routes[$id] = {inbox: $id, tmux_target: "meridian-test-main:0.1"}
   ' <<<"$registry")
   tmux_runtime_write_registry_route_bundle "$updated"
   tmux_runtime_initialize_inbox "$agent_id"
@@ -87,7 +87,7 @@ install_dispatch_stubs() {
   cat > "$plugin/scripts/tmux-preflight.sh" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
-jq -n '{tmux_session:"lbwc-test-main",topology:"detached-new-session"}'
+jq -n '{tmux_session:"meridian-test-main",topology:"detached-new-session"}'
 EOF
   cat > "$plugin/scripts/tmux-agent-orchestrator.sh" <<EOF
 #!/usr/bin/env bash
@@ -97,7 +97,7 @@ shift
 capability="${MAIN_CAPABILITY}"
 case "\$subcommand" in
   provision)
-    jq -n --arg cap "\$capability" '{tmux_session:"lbwc-test-main",orchestrator_target:"lbwc-test-main:0.0",topology:"detached-new-session",main_capability:\$cap}'
+    jq -n --arg cap "\$capability" '{tmux_session:"meridian-test-main",orchestrator_target:"meridian-test-main:0.0",topology:"detached-new-session",main_capability:\$cap}'
     ;;
   split-group)
     if [ "\${SPLIT_FAIL:-}" = 1 ]; then
@@ -134,9 +134,9 @@ EOF
   [[ "$output" == *"duplicate generated agent name"* ]]
 
   run bash "$HELPER" build-agents --contract-id contract-1 --contract-digest digest-1 \
-    --spawn-ready-text $'ENGINEER: SPAWN_READY lbwc-web-engineer-aaaa\nCRITIC: SPAWN_READY lbwc-web-code-critic-bbbb\n'
+    --spawn-ready-text $'ENGINEER: SPAWN_READY meridian-web-engineer-aaaa\nCRITIC: SPAWN_READY meridian-web-code-critic-bbbb\n'
   [ "$status" -eq 0 ]
-  jq -e '.[0].agent_id == "lbwc-web-engineer-aaaa" and .[1].agent_id == "lbwc-web-code-critic-bbbb"' <<<"$output" >/dev/null
+  jq -e '.[0].agent_id == "meridian-web-engineer-aaaa" and .[1].agent_id == "meridian-web-code-critic-bbbb"' <<<"$output" >/dev/null
 }
 
 run_dispatch_without_main_id() {

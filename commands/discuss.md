@@ -6,7 +6,7 @@ allowed-tools: Read, Write, Edit, Bash, Glob, Grep, AskUserQuestion, LSP
 disable-model-invocation: true
 ---
 
-# LBWC Discuss: $ARGUMENTS
+# MERIDIAN Discuss: $ARGUMENTS
 
 ## Shared interaction contract
 
@@ -25,7 +25,7 @@ Working directory:
 Plugin root:
 
 ```bash
-!`SESSION_KEY="${CLAUDE_SESSION_ID:-default}"; L="/tmp/.lbwc-plugin-root-link-${SESSION_KEY}"; R="$L/scripts/resolve-plugin-root.sh"; [ -f "$R" ] || R="${CLAUDE_PLUGIN_ROOT:-}/scripts/resolve-plugin-root.sh"; [ -f "$R" ] || { echo "LBWC: plugin root unavailable. Restart this session to recreate $L." >&2; exit 1; }; bash "$R" >/dev/null || exit 1; bash "$L/scripts/phase-detect.sh" > "/tmp/.lbwc-phase-detect-${SESSION_KEY}.txt" 2>/dev/null || echo "phase_detect_error=true" > "/tmp/.lbwc-phase-detect-${SESSION_KEY}.txt"; echo "$L"`
+!`SESSION_KEY="${CLAUDE_SESSION_ID:-default}"; L="/tmp/.meridian-plugin-root-link-${SESSION_KEY}"; R="$L/scripts/resolve-plugin-root.sh"; [ -f "$R" ] || R="${CLAUDE_PLUGIN_ROOT:-}/scripts/resolve-plugin-root.sh"; [ -f "$R" ] || { echo "MERIDIAN: plugin root unavailable. Restart this session to recreate $L." >&2; exit 1; }; bash "$R" >/dev/null || exit 1; bash "$L/scripts/phase-detect.sh" > "/tmp/.meridian-phase-detect-${SESSION_KEY}.txt" 2>/dev/null || echo "phase_detect_error=true" > "/tmp/.meridian-phase-detect-${SESSION_KEY}.txt"; echo "$L"`
 ```
 
 Store the plugin root path output above as `{plugin-root}` for use in script/reference lookups below. Replace `{plugin-root}` with the literal `Plugin root` value from Context whenever a step below references a script or reference file.
@@ -34,8 +34,8 @@ Phase state:
 
 ```bash
 !`SESSION_KEY="${CLAUDE_SESSION_ID:-default}"
-L="/tmp/.lbwc-plugin-root-link-${SESSION_KEY}"
-P="/tmp/.lbwc-phase-detect-${SESSION_KEY}.txt"
+L="/tmp/.meridian-plugin-root-link-${SESSION_KEY}"
+P="/tmp/.meridian-phase-detect-${SESSION_KEY}.txt"
 PD=""
 _refresh_phase_detect() {
   local resolver root
@@ -67,7 +67,7 @@ else
 fi`
 ```
 
-!`bash "/tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/suggest-compact.sh" discuss 2>/dev/null || true`
+!`bash "/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/suggest-compact.sh" discuss 2>/dev/null || true`
 
 ## Guard
 
@@ -75,8 +75,8 @@ All phase-selection and discussion-state checks below are blocking guards.
 
 ## Guards
 
-- If `.lbwc-planning/` does not exist, STOP "Run /lbwc:init first."
-- If ROADMAP.md has no phases, STOP "No phases defined. Run /lbwc:vibe first."
+- If `.meridian/` does not exist, STOP "Run /meridian:init first."
+- If ROADMAP.md has no phases, STOP "No phases defined. Run /meridian:transit first."
 
 ## Phase Resolution
 
@@ -90,9 +90,9 @@ All phase-selection and discussion-state checks below are blocking guards.
 Determine the discussion mode before invoking the engine:
 
 1. If `$ARGUMENTS` contains `--assumptions` → mode is `assumptions`
-2. Else read `discussion_mode` from `.lbwc-planning/config.json` (via `jq -r '.discussion_mode // "questions"'`)
+2. Else read `discussion_mode` from `.meridian/config.json` (via `jq -r '.discussion_mode // "questions"'`)
 3. If config value is `"assumptions"` → mode is `assumptions`
-4. If config value is `"auto"` and `.lbwc-planning/codebase/META.md` exists → mode is `assumptions`
+4. If config value is `"auto"` and `.meridian/codebase/META.md` exists → mode is `assumptions`
 5. Otherwise → mode is `questions`
 
 Pass the resolved mode to the engine: "Discussion mode: {resolved_mode}"
@@ -106,17 +106,17 @@ Read `{plugin-root}/references/discussion-engine.md` and follow its protocol for
 **Discussion commit boundary (conditional):**
 
 ```bash
-PG_SCRIPT="/tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/planning-git.sh"
+PG_SCRIPT="/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/planning-git.sh"
 if [ -f "$PG_SCRIPT" ]; then
-  bash "$PG_SCRIPT" commit-boundary "discuss phase {NN}" .lbwc-planning/config.json
+  bash "$PG_SCRIPT" commit-boundary "discuss phase {NN}" .meridian/config.json
 else
-  echo "⚠ LBWC: planning-git.sh unavailable. Skipping planning git boundary commit." >&2
+  echo "⚠ MERIDIAN: planning-git.sh unavailable. Skipping planning git boundary commit." >&2
 fi
 ```
 
 With `planning_tracking=commit`, the helper commits `{NN}-CONTEXT.md` and `discovery.json` if changed. Other modes no-op.
 
-Run `bash /tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/suggest-next.sh discuss`.
+Run `bash /tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/suggest-next.sh discuss`.
 
 ## Failure and recovery
 
@@ -124,15 +124,15 @@ If phase detection fails, stop before changing discussion context and report the
 
 ## Output Format
 
-Follow @${CLAUDE_PLUGIN_ROOT}/references/lbwc-brand-essentials.md. Display the phase, confirmed decisions, unresolved questions, and no ANSI color codes.
+Follow @${CLAUDE_PLUGIN_ROOT}/references/meridian-brand-essentials.md. Display the phase, confirmed decisions, unresolved questions, and no ANSI color codes.
 
 ## Next Up
 
 ```text
 ➜ Next Up
-  /lbwc:plan {NN} - turn the discussion into an implementation plan
-  /lbwc:research "topic" - resolve an open question
-  /lbwc:status - review project state
+  /meridian:plan {NN} - turn the discussion into an implementation plan
+  /meridian:research "topic" - resolve an open question
+  /meridian:status - review project state
 ```
 
 ## Feedback card

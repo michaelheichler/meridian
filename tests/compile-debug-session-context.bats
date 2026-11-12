@@ -10,7 +10,7 @@ setup() {
   setup_unrelated_git_repo "$REPO"
   cd "$REPO" || return 1
   SCRIPT="$SCRIPTS_DIR/compile-debug-session-context.sh"
-  SESSION="$REPO/.lbwc-planning/debug/session.md"
+  SESSION="$REPO/.meridian/debug/session.md"
   mkdir -p "$(dirname "$SESSION")"
   EM_DASH=$'\xE2\x80\x94'
 }

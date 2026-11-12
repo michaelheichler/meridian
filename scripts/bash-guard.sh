@@ -1,10 +1,21 @@
 #!/bin/bash
+
+printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${BASH_SOURCE[0]}"
+case "$MERIDIAN_MIGRATION_SOURCE" in
+  *"/"*) printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${MERIDIAN_MIGRATION_SOURCE%"/"*}" ;;
+  *) printf -v MERIDIAN_MIGRATION_SOURCE '%s' . ;;
+esac
+if [ -f "$MERIDIAN_MIGRATION_SOURCE/lib/rename-migration.sh" ]; then
+  . "$MERIDIAN_MIGRATION_SOURCE/lib/rename-migration.sh"
+  meridian_migrate_environment
+fi
+unset MERIDIAN_MIGRATION_SOURCE
 set -u
 . "$(CDPATH='' cd -- "${BASH_SOURCE[0]%/*}" 2>/dev/null && pwd)/lib/debug-logging.sh" 2>/dev/null || true
 debug_logging_gate bash-guard.sh PreToolUse 2>/dev/null || true
 SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd)"
 PLUGIN_ROOT="$(dirname "$SCRIPT_DIR")"
-LBWC_PLANNING_DIR="${LBWC_PLANNING_DIR:-.lbwc-planning}"
+MERIDIAN_PLANNING_DIR="${MERIDIAN_PLANNING_DIR:-.meridian}"
 
 if ! command -v jq >/dev/null 2>&1; then
   echo "Blocked: jq not available, cannot validate bash command" >&2
@@ -27,7 +38,7 @@ COMMAND=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // ""' 2>/dev/null) 
 [ -z "$COMMAND" ] && exit 0
 
 ALLOW_DESTRUCTIVE=0
-[ "${LBWC_ALLOW_DESTRUCTIVE:-0}" = "1" ] && ALLOW_DESTRUCTIVE=1
+[ "${MERIDIAN_ALLOW_DESTRUCTIVE:-0}" = "1" ] && ALLOW_DESTRUCTIVE=1
 
 command_without_quoted_text() {
   local command="$1" index=0 length character output="" in_single=0 in_double=0 escaped=0
@@ -93,7 +104,7 @@ MASKED_COMMAND=$(command_without_quoted_text "$COMMAND")
 enforce_destructive_guard() {
   [ "$ALLOW_DESTRUCTIVE" != 1 ] || return 0
   PATTERNS=""
-  for PFILE in "$PLUGIN_ROOT/config/destructive-commands.txt" "$LBWC_PLANNING_DIR/destructive-commands.local.txt"; do
+  for PFILE in "$PLUGIN_ROOT/config/destructive-commands.txt" "$MERIDIAN_PLANNING_DIR/destructive-commands.local.txt"; do
     [ -f "$PFILE" ] || continue
     FILE_PATTERNS=$(grep -v '^[[:space:]]*#' "$PFILE" | grep -v '^[[:space:]]*$' | tr '\n' '|' | sed 's/|$//')
     [ -n "$FILE_PATTERNS" ] && { [ -n "$PATTERNS" ] && PATTERNS="$PATTERNS|$FILE_PATTERNS" || PATTERNS="$FILE_PATTERNS"; }
@@ -102,7 +113,7 @@ enforce_destructive_guard() {
   if [ -n "$PATTERNS" ] && printf '%s' "$MASKED_COMMAND" | grep -iqE "$PATTERNS"; then
     MATCH=$(printf '%s' "$MASKED_COMMAND" | grep -ioE "$PATTERNS" | head -1)
     echo "Blocked: destructive command detected ($MATCH)
-Hint: Use LBWC_ALLOW_DESTRUCTIVE=1 to override.
+Hint: Use MERIDIAN_ALLOW_DESTRUCTIVE=1 to override.
 See: config/destructive-commands.txt for the full blocklist." >&2
     exit 2
   fi
@@ -111,15 +122,15 @@ See: config/destructive-commands.txt for the full blocklist." >&2
 resolve_agent_role() {
   local identifier="$1" manifest_path
   [ -n "$identifier" ] || return 1
-  manifest_path="$LBWC_PLANNING_DIR/.agent-manifest.json"
+  manifest_path="$MERIDIAN_PLANNING_DIR/.agent-manifest.json"
   [ -f "$manifest_path" ] || return 1
   jq -r --arg id "$identifier" '.agents[$id].role // empty' "$manifest_path" 2>/dev/null
 }
 
 generated_agent_policy_state() {
   local identifier="$1" manifest_path
-  case "$identifier" in lbwc-?*) ;; *) return 1 ;; esac
-  manifest_path="$LBWC_PLANNING_DIR/.agent-manifest.json"
+  case "$identifier" in meridian-?*) ;; *) return 1 ;; esac
+  manifest_path="$MERIDIAN_PLANNING_DIR/.agent-manifest.json"
   [ -f "$manifest_path" ] || { printf '%s' "unverified"; return 0; }
   if ! jq -e --arg id "$identifier" '
     .agents[$id]
@@ -174,10 +185,10 @@ command_targets_protected_control_path() {
   local command="$1" normalized
   normalized=$(command_without_shell_syntax "$command")
   case "$command" in
-    *.runtime-snapshot.json*|*config/*|*.lbwc-planning/config.json*|*.lbwc-planning/.agent-manifest*|*.lbwc-planning/.contracts*|*.temporary-agent-runfiles*|*.claude/agents*|*.git/*|*scripts/agent-generator.sh*|*scripts/agent-lifecycle.sh*|*scripts/agent-spawn-guard.sh*|*scripts/bash-guard.sh*|*scripts/file-guard.sh*|*scripts/security-filter.sh*|*scripts/task-contract.sh*|*scripts/render-agent-template.sh*|*scripts/lib/agent-manifest.sh*) return 0 ;;
+    *.runtime-snapshot.json*|*config/*|*.meridian/config.json*|*.meridian/.agent-manifest*|*.meridian/.contracts*|*.temporary-agent-runfiles*|*.claude/agents*|*.git/*|*scripts/agent-generator.sh*|*scripts/agent-lifecycle.sh*|*scripts/agent-spawn-guard.sh*|*scripts/bash-guard.sh*|*scripts/file-guard.sh*|*scripts/security-filter.sh*|*scripts/task-contract.sh*|*scripts/render-agent-template.sh*|*scripts/lib/agent-manifest.sh*) return 0 ;;
   esac
   case "$normalized" in
-    *.runtime-snapshot.json*|*config/*|*.lbwc-planning/config.json*|*.lbwc-planning/.agent-manifest*|*.lbwc-planning/.contracts*|*.temporary-agent-runfiles*|*.claude/agents*|*.git/*|*scripts/agent-generator.sh*|*scripts/agent-lifecycle.sh*|*scripts/agent-spawn-guard.sh*|*scripts/bash-guard.sh*|*scripts/file-guard.sh*|*scripts/security-filter.sh*|*scripts/task-contract.sh*|*scripts/render-agent-template.sh*|*scripts/lib/agent-manifest.sh*) return 0 ;;
+    *.runtime-snapshot.json*|*config/*|*.meridian/config.json*|*.meridian/.agent-manifest*|*.meridian/.contracts*|*.temporary-agent-runfiles*|*.claude/agents*|*.git/*|*scripts/agent-generator.sh*|*scripts/agent-lifecycle.sh*|*scripts/agent-spawn-guard.sh*|*scripts/bash-guard.sh*|*scripts/file-guard.sh*|*scripts/security-filter.sh*|*scripts/task-contract.sh*|*scripts/render-agent-template.sh*|*scripts/lib/agent-manifest.sh*) return 0 ;;
   esac
   case "$normalized" in
     *python*-c*config*subagent-critical-execution.txt*|*python*-c*subagent-critical-execution.txt*config*) return 0 ;;

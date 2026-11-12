@@ -1,4 +1,15 @@
 #!/bin/bash
+
+printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${BASH_SOURCE[0]}"
+case "$MERIDIAN_MIGRATION_SOURCE" in
+  *"/"*) printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${MERIDIAN_MIGRATION_SOURCE%"/"*}" ;;
+  *) printf -v MERIDIAN_MIGRATION_SOURCE '%s' . ;;
+esac
+if [ -f "$MERIDIAN_MIGRATION_SOURCE/lib/rename-migration.sh" ]; then
+  . "$MERIDIAN_MIGRATION_SOURCE/lib/rename-migration.sh"
+  meridian_migrate_environment
+fi
+unset MERIDIAN_MIGRATION_SOURCE
 set -u
 
 SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd)"
@@ -98,7 +109,7 @@ case "$FILE_PATH" in
         [ -s "$TMP" ] && mv "$TMP" "$STATE_FILE"; then
         if [ "$NEW_STATUS" = complete ] && [ "$PREVIOUS_STATUS" != complete ] && \
           grep -q '^Status: complete$' "$STATE_FILE"; then
-          if ! LBWC_CONTROL_ROOT="$PLANNING_ROOT" LBWC_PLANNING_DIR="$PLANNING_ROOT" \
+          if ! MERIDIAN_CONTROL_ROOT="$PLANNING_ROOT" MERIDIAN_PLANNING_DIR="$PLANNING_ROOT" \
             bash "$SCRIPT_DIR/explorer-journal.sh" append \
             --trigger phase-end --next "Continue after phase ${ARTIFACT_PHASE_NUM}." >/dev/null 2>&1; then
             printf '%s\n' 'state-updater.sh could not append journal entry' >&2

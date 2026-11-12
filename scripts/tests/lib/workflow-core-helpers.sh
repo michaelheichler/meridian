@@ -22,7 +22,7 @@ check_test() {
 new_project() {
   local dir
   dir=$(mktemp -d "$WORK_ROOT/project.XXXXXX")
-  mkdir -p "$dir/.lbwc-planning"
+  mkdir -p "$dir/.meridian"
   printf '%s\n' "$dir"
 }
 

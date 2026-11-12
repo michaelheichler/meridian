@@ -1,4 +1,15 @@
 #!/usr/bin/env bash
+
+printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${BASH_SOURCE[0]}"
+case "$MERIDIAN_MIGRATION_SOURCE" in
+  *"/"*) printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${MERIDIAN_MIGRATION_SOURCE%"/"*}" ;;
+  *) printf -v MERIDIAN_MIGRATION_SOURCE '%s' . ;;
+esac
+if [ -f "$MERIDIAN_MIGRATION_SOURCE/lib/rename-migration.sh" ]; then
+  . "$MERIDIAN_MIGRATION_SOURCE/lib/rename-migration.sh"
+  meridian_migrate_environment
+fi
+unset MERIDIAN_MIGRATION_SOURCE
 set -euo pipefail
 
 usage() {
@@ -45,8 +56,8 @@ while [ "$#" -gt 0 ]; do
 done
 
 TEMPLATE_DEFAULTS="$PLUGIN_ROOT/templates/agent-roles/defaults.json"
-SETTINGS_LIB="$PLUGIN_ROOT/scripts/lib/lbwc-settings.sh"
-ROUTING_SCRIPT="${LBWC_ROUTING_SCRIPT:-$PLUGIN_ROOT/scripts/lbwc-routing.sh}"
+SETTINGS_LIB="$PLUGIN_ROOT/scripts/lib/meridian-settings.sh"
+ROUTING_SCRIPT="${MERIDIAN_ROUTING_SCRIPT:-$PLUGIN_ROOT/scripts/meridian-routing.sh}"
 
 [ -f "$TEMPLATE_DEFAULTS" ] || fail "role defaults not found: $TEMPLATE_DEFAULTS"
 [ -f "$SETTINGS_LIB" ] || fail "settings lib not found: $SETTINGS_LIB"
@@ -98,7 +109,7 @@ if [ "$TEMPORARY_ROUTING_MODE" = true ]; then
       WORKFLOW_EFFORT=$(normalize_workflow_effort "$CLI_WORKFLOW_EFFORT") || fail "invalid --effort value '$CLI_WORKFLOW_EFFORT'"
     fi
     if [ -z "$WORKFLOW_EFFORT" ]; then
-      MERGED_SETTINGS=$(lbwc_merged_config "$CONFIG_PATH")
+      MERGED_SETTINGS=$(meridian_merged_config "$CONFIG_PATH")
       WORKFLOW_EFFORT=$(normalize_workflow_effort "$(jq -r '.effort // "balanced"' <<< "$MERGED_SETTINGS")" 2>/dev/null || printf 'balanced')
     fi
     resolve_configured_turns "$PROJECT_CONFIG" "$TEMPLATE_DEFAULTS" "$ROLE" "$WORKFLOW_EFFORT" RESOLVED_MAX_TURNS || fail "$TURN_ERROR"
@@ -148,7 +159,7 @@ else
     WORKFLOW_EFFORT=$(normalize_workflow_effort "$CLI_WORKFLOW_EFFORT" 2>/dev/null || true)
   fi
   if [ -z "$WORKFLOW_EFFORT" ]; then
-    MERGED_SETTINGS=$(lbwc_merged_config "$CONFIG_PATH")
+    MERGED_SETTINGS=$(meridian_merged_config "$CONFIG_PATH")
     CFG_EFFORT=$(jq -r '.effort // "balanced"' <<< "$MERGED_SETTINGS")
     WORKFLOW_EFFORT=$(normalize_workflow_effort "$CFG_EFFORT" 2>/dev/null || echo "balanced")
   fi

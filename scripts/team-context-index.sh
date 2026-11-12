@@ -1,4 +1,15 @@
 #!/usr/bin/env bash
+
+printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${BASH_SOURCE[0]}"
+case "$MERIDIAN_MIGRATION_SOURCE" in
+  *"/"*) printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${MERIDIAN_MIGRATION_SOURCE%"/"*}" ;;
+  *) printf -v MERIDIAN_MIGRATION_SOURCE '%s' . ;;
+esac
+if [ -f "$MERIDIAN_MIGRATION_SOURCE/lib/rename-migration.sh" ]; then
+  . "$MERIDIAN_MIGRATION_SOURCE/lib/rename-migration.sh"
+  meridian_migrate_environment
+fi
+unset MERIDIAN_MIGRATION_SOURCE
 set -euo pipefail
 
 SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd -P)"
@@ -154,8 +165,8 @@ fi
 
 while IFS= read -r path; do
   [ -n "$path" ] || continue
-  add_candidate 'lbwc' 'verified-local' 2 "$path" 'project-local .lbwc-planning plan'
-done < <(plan_source_collect_lbwc "$PROJECT_ROOT")
+  add_candidate 'meridian' 'verified-local' 2 "$path" 'project-local .meridian plan'
+done < <(plan_source_collect_meridian "$PROJECT_ROOT")
 
 while IFS= read -r path; do
   [ -n "$path" ] || continue
@@ -220,7 +231,7 @@ PLAN_INDEX=$(jq -n \
   '{schema_version:1,mode:"authoritative",project_root:$project,
     precedence:[
       {tier:1,name:"explicit-plan-and-instruction"},
-      {tier:2,name:"active-lbwc"},
+      {tier:2,name:"active-meridian"},
       {tier:3,name:"recognized-project-adapter"},
       {tier:4,name:"generic-markdown"},
       {tier:5,name:"claude-code-plans"},
@@ -266,7 +277,7 @@ map_freshness() {
   fi
 }
 
-if [ -d "$PROJECT_ROOT/.lbwc-planning/codebase" ]; then
+if [ -d "$PROJECT_ROOT/.meridian/codebase" ]; then
   while IFS= read -r path; do
     [ -n "$path" ] || continue
     if [ "$(basename "$path")" = 'META.md' ]; then
@@ -274,8 +285,8 @@ if [ -d "$PROJECT_ROOT/.lbwc-planning/codebase" ]; then
     else
       freshness='unknown'
     fi
-    add_map_artifact 'lbwc' 'verified-local' "$path" "$freshness"
-  done < <(find "$PROJECT_ROOT/.lbwc-planning/codebase" -type f -print 2>/dev/null | LC_ALL=C sort)
+    add_map_artifact 'meridian' 'verified-local' "$path" "$freshness"
+  done < <(find "$PROJECT_ROOT/.meridian/codebase" -type f -print 2>/dev/null | LC_ALL=C sort)
 fi
 
 while IFS= read -r path; do
@@ -287,7 +298,7 @@ PROBE_RAW=''
 PROBE_ROUTE=''
 PROBE_STATUS='unknown'
 if [ -x "$SCRIPT_DIR/probe-map-tools.sh" ] || [ -f "$SCRIPT_DIR/probe-map-tools.sh" ]; then
-  PROBE_RAW=$(CDPATH='' cd -- "$PROJECT_ROOT" && LBWC_PLANNING_DIR="$PROJECT_ROOT/.lbwc-planning" bash "$SCRIPT_DIR/probe-map-tools.sh" 2>/dev/null || true)
+  PROBE_RAW=$(CDPATH='' cd -- "$PROJECT_ROOT" && MERIDIAN_PLANNING_DIR="$PROJECT_ROOT/.meridian" bash "$SCRIPT_DIR/probe-map-tools.sh" 2>/dev/null || true)
   PROBE_ROUTE=$(printf '%s' "$PROBE_RAW" | jq -r '.hookSpecificOutput.additionalContext | fromjson? | .recommended_route // empty' 2>/dev/null || true)
   [ -n "$PROBE_ROUTE" ] && PROBE_STATUS='detected'
 fi

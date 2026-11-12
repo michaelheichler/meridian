@@ -1,4 +1,4 @@
-If SKIP_INFERENCE=false, read `.lbwc-planning/inference.json` for the confirmed project context.
+If SKIP_INFERENCE=false, read `.meridian/inference.json` for the confirmed project context.
 Extract NAME from `name.value` and DESCRIPTION from `purpose.value`.
 For remaining user-authored content that inference does not cover, ask intentional freeform questions without options.
 

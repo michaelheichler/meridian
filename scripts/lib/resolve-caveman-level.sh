@@ -22,7 +22,7 @@ caveman_level_for_pct() {
 
 resolve_caveman_level() {
   local style="${1:-none}"
-  local planning_dir="${2:-.lbwc-planning}"
+  local planning_dir="${2:-.meridian}"
 
   if [[ "$style" != "auto" ]]; then
     RESOLVED_CAVEMAN_LEVEL="$style"

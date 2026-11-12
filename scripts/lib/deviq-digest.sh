@@ -1,5 +1,16 @@
 #!/usr/bin/env bash
 
+printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${BASH_SOURCE[0]}"
+case "$MERIDIAN_MIGRATION_SOURCE" in
+  *"/"*) printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${MERIDIAN_MIGRATION_SOURCE%"/"*}" ;;
+  *) printf -v MERIDIAN_MIGRATION_SOURCE '%s' . ;;
+esac
+if [ -f "$MERIDIAN_MIGRATION_SOURCE/rename-migration.sh" ]; then
+  . "$MERIDIAN_MIGRATION_SOURCE/rename-migration.sh"
+  meridian_migrate_environment
+fi
+unset MERIDIAN_MIGRATION_SOURCE
+
 newest_matching() {
   local phase="$1" file="$2" select="$3" format="$4"
   [ -s "$file" ] || return 0
@@ -42,7 +53,7 @@ deviq_print_sections() {
 }
 
 deviq_digest_main() {
-  local script_dir plugin_root root=".lbwc-planning/deviq" phase_filter="" open_issues recent_decisions
+  local script_dir plugin_root root=".meridian/deviq" phase_filter="" open_issues recent_decisions
   script_dir="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)" || return 1
   plugin_root="${CLAUDE_PLUGIN_ROOT:-$(CDPATH='' cd -- "$script_dir/../.." && pwd)}"
 

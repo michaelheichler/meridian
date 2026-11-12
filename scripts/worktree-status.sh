@@ -1,4 +1,15 @@
 #!/bin/bash
+
+printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${BASH_SOURCE[0]}"
+case "$MERIDIAN_MIGRATION_SOURCE" in
+  *"/"*) printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${MERIDIAN_MIGRATION_SOURCE%"/"*}" ;;
+  *) printf -v MERIDIAN_MIGRATION_SOURCE '%s' . ;;
+esac
+if [ -f "$MERIDIAN_MIGRATION_SOURCE/lib/rename-migration.sh" ]; then
+  . "$MERIDIAN_MIGRATION_SOURCE/lib/rename-migration.sh"
+  meridian_migrate_environment
+fi
+unset MERIDIAN_MIGRATION_SOURCE
 set -u
 
 
@@ -10,20 +21,20 @@ json_items=""
 
 current_path=""
 current_branch=""
-in_lbwc_worktree=0
+in_meridian_worktree=0
 
 process_stanza() {
   local path="$1"
   local branch="$2"
-  local is_lbwc="$3"
+  local is_meridian="$3"
 
-  [ "$is_lbwc" -eq 0 ] && return
+  [ "$is_meridian" -eq 0 ] && return
   [ -z "$path" ] && return
   [ -z "$branch" ] && return
 
   local short_branch="${branch#refs/heads/}"
 
-  local suffix="${short_branch#lbwc/}"
+  local suffix="${short_branch#meridian/}"
   local phase="${suffix%%-*}"
   local plan="${suffix#*-}"
 
@@ -44,10 +55,10 @@ process_stanza() {
 
 while IFS= read -r line || [ -n "$line" ]; do
   if [ -z "$line" ]; then
-    process_stanza "$current_path" "$current_branch" "$in_lbwc_worktree"
+    process_stanza "$current_path" "$current_branch" "$in_meridian_worktree"
     current_path=""
     current_branch=""
-    in_lbwc_worktree=0
+    in_meridian_worktree=0
     continue
   fi
 
@@ -58,8 +69,8 @@ while IFS= read -r line || [ -n "$line" ]; do
     worktree)
       current_path="$value"
       case "$value" in
-        *".lbwc-worktrees/"*) in_lbwc_worktree=1 ;;
-        *)                    in_lbwc_worktree=0 ;;
+        *".meridian-worktrees/"*) in_meridian_worktree=1 ;;
+        *)                    in_meridian_worktree=0 ;;
       esac
       ;;
     branch)
@@ -70,7 +81,7 @@ done <<EOF
 $PORCELAIN
 EOF
 
-process_stanza "$current_path" "$current_branch" "$in_lbwc_worktree"
+process_stanza "$current_path" "$current_branch" "$in_meridian_worktree"
 
 printf '[%s]\n' "$json_items"
 

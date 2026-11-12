@@ -243,7 +243,7 @@ def link_ack(source: Location, destination: Location) -> None:
     destination_parent, destination_name = destination
     os.link(source_name, destination_name, src_dir_fd=source_parent, dst_dir_fd=destination_parent, follow_symlinks=False)
     os.fsync(destination_parent)
-    if os.environ.get("LBWC_TMUX_FS_FAIL_AFTER_ACK_LINK") == "1":
+    if os.environ.get("MERIDIAN_TMUX_FS_FAIL_AFTER_ACK_LINK", os.environ.get("LBWC_TMUX_FS_FAIL_AFTER_ACK_LINK")) == "1":
         fail("injected acknowledgement interruption after link")
 
 

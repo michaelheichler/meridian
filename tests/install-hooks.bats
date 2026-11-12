@@ -61,7 +61,7 @@ install_in() {
 
   dir=$(repo legacy)
   hook="$dir/.git/hooks/pre-push"
-  write_text "$hook" '#!/usr/bin/env bash' '_lbwc_find_script() { :; }'
+  write_text "$hook" '#!/usr/bin/env bash' '_meridian_find_script() { :; }'
   install_in "$dir"
   expect_case "legacy" 0 "Updated"
   expect_same_digest "legacy-upgraded-to-current" "$hook" "$fresh"
@@ -72,7 +72,7 @@ install_in() {
   write_text "$hook" '#!/bin/sh' 'echo mine'
   before=$(file_digest "$hook")
   install_in "$dir"
-  expect_case "foreign" 0 "not managed by LBWC -- skipping"
+  expect_case "foreign" 0 "not managed by MERIDIAN -- skipping"
   expect_same_digest "foreign-untouched" "$hook" "$before"
 
   dir=$(repo foreign-link)

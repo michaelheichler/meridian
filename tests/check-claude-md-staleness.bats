@@ -9,7 +9,7 @@ setup() {
   WORK="$BATS_TEST_TMPDIR/work"
   mkdir -p "$WORK" "$BATS_TEST_TMPDIR/home"
   export HOME="$BATS_TEST_TMPDIR/home"
-  unset LBWC_PLANNING_DIR
+  unset MERIDIAN_PLANNING_DIR
   CHECK="$SCRIPTS_DIR/check-claude-md-staleness.sh"
   INSTALLED=$(jq -r '.version' "$PROJECT_ROOT/.claude-plugin/plugin.json")
   reset_case_failures
@@ -21,7 +21,7 @@ teardown() {
 
 project() {
   local dir="$WORK/$1"
-  mkdir -p "$dir/.lbwc-planning"
+  mkdir -p "$dir/.meridian"
   git init -q "$dir"
   printf '%s\n' "$dir"
 }
@@ -56,7 +56,7 @@ check_in() {
   write_text "$dir/CLAUDE.md" "# App" "" "## Active Context" "" "Prefer LSP over grep for lookups."
   check_in "$dir"
   expect_status "missing-text" 1
-  expect_output_has "missing-text-lists-rules" "- ## LBWC Rules"
+  expect_output_has "missing-text-lists-rules" "- ## MERIDIAN Rules"
   expect_output_has "missing-text-lists-isolation" "- ## Plugin Isolation"
   expect_output_lacks "missing-text-prose-counts-as-code-intelligence" "## Code Intelligence"
   expect_output_has "missing-text-reports-unrecorded-version" "installed=$INSTALLED"
@@ -64,12 +64,12 @@ check_in() {
   expect_status "missing-json" 1
   expect_jq_output "missing-json-body" \
     '.reason == "missing_sections" and .version_mismatch == true and .marker_version == "none"
-      and (.missing_sections | index("## LBWC Rules") and index("## Plugin Isolation") and (index("## Code Intelligence") | not))'
+      and (.missing_sections | index("## MERIDIAN Rules") and index("## Plugin Isolation") and (index("## Code Intelligence") | not))'
 
   dir=$(project fenced)
-  write_text "$dir/CLAUDE.md" '```' "## Active Context" "## LBWC Rules" "## Code Intelligence" \
+  write_text "$dir/CLAUDE.md" '```' "## Active Context" "## MERIDIAN Rules" "## Code Intelligence" \
     "## Plugin Isolation" "Prefer LSP over grep" '```'
-  printf '%s\n' "$INSTALLED" > "$dir/.lbwc-planning/.claude-md-version"
+  printf '%s\n' "$INSTALLED" > "$dir/.meridian/.claude-md-version"
   check_in "$dir" --json
   expect_status "fenced-headings" 1
   expect_jq_output "fenced-headings-do-not-count" '.missing_sections | length == 4'
@@ -77,7 +77,7 @@ check_in() {
   assert_no_case_failures
 }
 
-@test "check-claude-md-staleness --fix refreshes LBWC sections in place and records the version" {
+@test "check-claude-md-staleness --fix refreshes MERIDIAN sections in place and records the version" {
   local dir before
 
   dir=$(project fix-text)
@@ -86,8 +86,8 @@ check_in() {
   expect_case "fix-text" 0 "$INSTALLED"
   expect_exact_line "fix-text-keeps-user-line" "$dir/CLAUDE.md" "user line"
   expect_headings "fix-text-adds-sections" "$dir/CLAUDE.md" \
-    $'## Active Context\n## LBWC Rules\n## Code Intelligence\n## Plugin Isolation'
-  expect_file_equals "fix-text-records-version" "$dir/.lbwc-planning/.claude-md-version" "$INSTALLED"
+    $'## Active Context\n## MERIDIAN Rules\n## Code Intelligence\n## Plugin Isolation'
+  expect_file_equals "fix-text-records-version" "$dir/.meridian/.claude-md-version" "$INSTALLED"
 
   dir=$(project fix-json)
   write_text "$dir/CLAUDE.md" "# App"
@@ -104,7 +104,7 @@ check_in() {
   PATH="$WORK/failing-bin:$PATH" check_in "$dir" --fix
   expect_status "fix-fails" 2
   expect_same_digest "fix-fails-keeps-file" "$dir/CLAUDE.md" "$before"
-  expect_no_path "fix-fails-writes-no-marker" "$dir/.lbwc-planning/.claude-md-version"
+  expect_no_path "fix-fails-writes-no-marker" "$dir/.meridian/.claude-md-version"
 
   assert_no_case_failures
 }

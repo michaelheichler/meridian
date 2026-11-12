@@ -1,9 +1,20 @@
 #!/usr/bin/env bash
 
+printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${BASH_SOURCE[0]}"
+case "$MERIDIAN_MIGRATION_SOURCE" in
+  *"/"*) printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${MERIDIAN_MIGRATION_SOURCE%"/"*}" ;;
+  *) printf -v MERIDIAN_MIGRATION_SOURCE '%s' . ;;
+esac
+if [ -f "$MERIDIAN_MIGRATION_SOURCE/lib/rename-migration.sh" ]; then
+  . "$MERIDIAN_MIGRATION_SOURCE/lib/rename-migration.sh"
+  meridian_migrate_environment
+fi
+unset MERIDIAN_MIGRATION_SOURCE
+
 set -u
 
-PHASES_DIR="${1:-.lbwc-planning/phases}"
-OUTPUT_PATH="${2:-.lbwc-planning/ROLLING-CONTEXT.md}"
+PHASES_DIR="${1:-.meridian/phases}"
+OUTPUT_PATH="${2:-.meridian/ROLLING-CONTEXT.md}"
 
 
 SUMMARY_FILES=""

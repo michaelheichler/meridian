@@ -7,11 +7,11 @@ argument-hint: "[problem description]"
 allowed-tools: Read, Bash, Glob, Grep, AskUserQuestion, mcp__plugin_gitkraken_gitkraken__issues_create
 ---
 
-# LBWC Report $ARGUMENTS
+# MERIDIAN Report $ARGUMENTS
 
 ## Context
 
-Resolve the canonical plugin root through `/tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/resolve-plugin-root.sh`. Read its VERSION, the local Claude Code version, operating system, LBWC hook health, project phase detector output, and project configuration validation status.
+Resolve the canonical plugin root through `/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/resolve-plugin-root.sh`. Read its VERSION, the local Claude Code version, operating system, MERIDIAN hook health, project phase detector output, and project configuration validation status.
 
 @${CLAUDE_PLUGIN_ROOT}/references/ask-user-question.md
 
@@ -27,19 +27,19 @@ Creating a GitHub issue mutates shared third-party state. Collect and preview th
 
 ## Scope
 
-This command may collect redacted diagnostics, write session-scoped temporary files with mode 600, and create one issue in `michaelheichler/lbwc` after immediate confirmation. It does not change project source, planning state, Git history, plugin configuration, or user credentials.
+This command may collect redacted diagnostics, write session-scoped temporary files with mode 600, and create one issue in `michaelheichler/meridian` after immediate confirmation. It does not change project source, planning state, Git history, plugin configuration, or user credentials.
 
 ## Steps
 
-1. **Collect redacted diagnostics.** Use one trusted Bash call with `umask 077`. Write `/tmp/lbwc-diag-report-${CLAUDE_SESSION_ID:-default}.txt` containing only:
+1. **Collect redacted diagnostics.** Use one trusted Bash call with `umask 077`. Write `/tmp/meridian-diag-report-${CLAUDE_SESSION_ID:-default}.txt` containing only:
 
    Environment:
-   - LBWC and Claude Code versions
+   - MERIDIAN and Claude Code versions
    - OS name and architecture
    - plugin-root resolution and hooks JSON parse status
 
    Project validation:
-   - `lbwc-config.sh validate` and `lbwc-model validate` results when initialized
+   - `meridian-config.sh validate` and `meridian-model validate` results when initialized
    - `phase-detect.sh` status fields, excluding artifact contents
 
    Optional integration health:
@@ -58,7 +58,7 @@ This command may collect redacted diagnostics, write session-scoped temporary fi
 
    ```markdown
    **Command**
-   {the /lbwc:* command that triggered the issue, or "Not specified"}
+   {the /meridian:* command that triggered the issue, or "Not specified"}
 
    **What happened**
    {problem description from $ARGUMENTS, or "Not provided, please edit this section"}
@@ -100,13 +100,13 @@ This command may collect redacted diagnostics, write session-scoped temporary fi
    - `Copy only`: Display the final title and body without filing.
    - `Cancel`: Delete the temporary diagnostics and stop.
 
-6. **File only after confirmation.** Use this ordered fallback chain and stop at the first successful method. The confirmed repository (`michaelheichler/lbwc`), title, label, and body must not change after confirmation.
+6. **File only after confirmation.** Use this ordered fallback chain and stop at the first successful method. The confirmed repository (`michaelheichler/meridian`), title, label, and body must not change after confirmation.
 
-   **Method 1, `gh` CLI (if installed and authenticated):** Check `gh auth status 2>/dev/null`. If it succeeds, create a mode-600 body file and call `gh issue create --repo michaelheichler/lbwc --title <title> --label <bug|enhancement> --body-file <file>`. The body file must contain the literal template sections above and the complete diagnostic report from the temp file under `**Additional context**`. Delete both temporary files after success or failure.
+   **Method 1, `gh` CLI (if installed and authenticated):** Check `gh auth status 2>/dev/null`. If it succeeds, create a mode-600 body file and call `gh issue create --repo michaelheichler/meridian --title <title> --label <bug|enhancement> --body-file <file>`. The body file must contain the literal template sections above and the complete diagnostic report from the temp file under `**Additional context**`. Delete both temporary files after success or failure.
 
-   **Method 2, GitHub MCP equivalent (if available):** If `gh` is unavailable or unauthenticated, check whether `mcp__plugin_gitkraken_gitkraken__issues_create` is available in the tool list. If it is, re-derive `DIAG_FILE="/tmp/lbwc-diag-report-${CLAUDE_SESSION_ID:-default}.txt"`, read its diagnostics, and compose the complete confirmed body with the same literal template and fenced `**Additional context**`. Call the tool with `provider: github`, `repository_organization: michaelheichler`, `repository_name: lbwc`, the confirmed `title`, the complete `body`, `labels: ["bug"]` or `["enhancement"]`, and `assignees: []`. Leave Jira-only `issue_type` empty. Delete the diagnostic temp file after the MCP call succeeds or fails. Never invoke an unavailable MCP tool or silently replace this method with a different mutation.
+   **Method 2, GitHub MCP equivalent (if available):** If `gh` is unavailable or unauthenticated, check whether `mcp__plugin_gitkraken_gitkraken__issues_create` is available in the tool list. If it is, re-derive `DIAG_FILE="/tmp/meridian-diag-report-${CLAUDE_SESSION_ID:-default}.txt"`, read its diagnostics, and compose the complete confirmed body with the same literal template and fenced `**Additional context**`. Call the tool with `provider: github`, `repository_organization: michaelheichler`, `repository_name: meridian`, the confirmed `title`, the complete `body`, `labels: ["bug"]` or `["enhancement"]`, and `assignees: []`. Leave Jira-only `issue_type` empty. Delete the diagnostic temp file after the MCP call succeeds or fails. Never invoke an unavailable MCP tool or silently replace this method with a different mutation.
 
-   **Method 3, manual last resort:** If neither automatic method is available or either method fails, re-derive `DIAG_FILE="/tmp/lbwc-diag-report-${CLAUDE_SESSION_ID:-default}.txt"`, read the diagnostics into the confirmed body, delete the temp file, and display the title, body, and `https://github.com/michaelheichler/lbwc/issues/new?template=bug_report.md` for bugs or `https://github.com/michaelheichler/lbwc/issues/new?template=feature_request.md` for enhancements. Do not install software or start interactive login automatically. If the user wants interactive authentication in this session, tell them to run `! gh auth login --web` and re-run `/lbwc:report`.
+   **Method 3, manual last resort:** If neither automatic method is available or either method fails, re-derive `DIAG_FILE="/tmp/meridian-diag-report-${CLAUDE_SESSION_ID:-default}.txt"`, read the diagnostics into the confirmed body, delete the temp file, and display the title, body, and `https://github.com/michaelheichler/meridian/issues/new?template=bug_report.md` for bugs or `https://github.com/michaelheichler/meridian/issues/new?template=feature_request.md` for enhancements. Do not install software or start interactive login automatically. If the user wants interactive authentication in this session, tell them to run `! gh auth login --web` and re-run `/meridian:report`.
 
 ## Failure and recovery
 

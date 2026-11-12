@@ -1,4 +1,15 @@
 #!/usr/bin/env bash
+
+printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${BASH_SOURCE[0]}"
+case "$MERIDIAN_MIGRATION_SOURCE" in
+  *"/"*) printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${MERIDIAN_MIGRATION_SOURCE%"/"*}" ;;
+  *) printf -v MERIDIAN_MIGRATION_SOURCE '%s' . ;;
+esac
+if [ -f "$MERIDIAN_MIGRATION_SOURCE/lib/rename-migration.sh" ]; then
+  . "$MERIDIAN_MIGRATION_SOURCE/lib/rename-migration.sh"
+  meridian_migrate_environment
+fi
+unset MERIDIAN_MIGRATION_SOURCE
 set -u
 
 
@@ -15,7 +26,7 @@ fi
 
 SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd)"
 DEFAULTS_FILE="$SCRIPT_DIR/../config/settings.json"
-CONFIG_FILE="${1:-.lbwc-planning/config.json}"
+CONFIG_FILE="${1:-.meridian/config.json}"
 SOURCE_CONFIG_FILE="$CONFIG_FILE"
 STAGED_CONFIG_FILE=""
 
@@ -47,7 +58,7 @@ if ! jq empty "$CONFIG_FILE" >/dev/null 2>&1; then
   exit 1
 fi
 
-if ! STAGED_CONFIG_FILE=$(mktemp "${SOURCE_CONFIG_FILE}.lbwc-migrate.XXXXXX"); then
+if ! STAGED_CONFIG_FILE=$(mktemp "${SOURCE_CONFIG_FILE}.meridian-migrate.XXXXXX"); then
   echo "ERROR: Config migration failed while creating a staging file: $SOURCE_CONFIG_FILE" >&2
   exit 1
 fi
@@ -240,7 +251,7 @@ else
   exit 1
 fi
 
-if ! jq -c '.tmux_execution' "$CONFIG_FILE" | bash "$SCRIPT_DIR/lbwc-config.sh" validate-tmux-execution-json >/dev/null; then
+if ! jq -c '.tmux_execution' "$CONFIG_FILE" | bash "$SCRIPT_DIR/meridian-config.sh" validate-tmux-execution-json >/dev/null; then
   echo "ERROR: Config migration failed (invalid tmux execution configuration): $SOURCE_CONFIG_FILE" >&2
   exit 1
 fi

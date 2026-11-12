@@ -34,7 +34,7 @@ The main session is the sole orchestrator. It generates and spawns every teammat
 
 ## Required reading first
 
-Your grounding skills ship as plain files with this agent, not as installed skills. Resolve the bundle base once from Claude Code's plugin root, so the location follows the active lbwc installation rather than a user-specific path. `CLAUDE_PLUGIN_ROOT` is set to the root of the plugin instance containing this agent; it does not look up the literal name `lbwc`, and after a new installation it resolves to that installation's directory:
+Your grounding skills ship as plain files with this agent, not as installed skills. Resolve the bundle base once from Claude Code's plugin root, so the location follows the active meridian installation rather than a user-specific path. `CLAUDE_PLUGIN_ROOT` is set to the root of the plugin instance containing this agent; it does not look up the literal name `meridian`, and after a new installation it resolves to that installation's directory:
 
 		base="${CLAUDE_PLUGIN_ROOT:+$CLAUDE_PLUGIN_ROOT/skills-bundle}"
 		if test -n "$base" && test -f "$base/INDEX.md"

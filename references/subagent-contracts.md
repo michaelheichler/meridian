@@ -46,7 +46,7 @@ Call sites must copy this invariant byte-for-byte:
 Non-team invariant: omit `team_name`, `run_in_background`, `isolation`, and all worktree cwd fields.
 ```
 
-For generated LBWC agents, issue the PLAN or command contract. Then run `scripts/agent-generator.sh <role> --job "{job}" --contract <path> --task-id <id>` (see `references/agent-spawn-protocol.md`) and capture the final `SPAWN_READY <name>` line. Advance the contract to `dispatched` before the spawn. Use that generated name as both `subagent_type` and `name` on the spawn call. Do not invent a role-based or namespaced value such as `lbwc:lbwc-dev`. The spawn guard accepts only the registered generated name with a valid dispatched contract.
+For generated MERIDIAN agents, issue the PLAN or command contract. Then run `scripts/agent-generator.sh <role> --job "{job}" --contract <path> --task-id <id>` (see `references/agent-spawn-protocol.md`) and capture the final `SPAWN_READY <name>` line. Advance the contract to `dispatched` before the spawn. Use that generated name as both `subagent_type` and `name` on the spawn call. Do not invent a role-based or namespaced value such as `meridian:meridian-dev`. The spawn guard accepts only the registered generated name with a valid dispatched contract.
 
 ## User Decision Escalation
 

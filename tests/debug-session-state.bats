@@ -8,9 +8,9 @@ SKIPPED="skipped_no_fix_required"
 
 setup() {
   setup_temp_dir
-  export LBWC_PLANNING_DIR="$TEST_TEMP_DIR/.lbwc-planning"
-  DBG="$LBWC_PLANNING_DIR/debugging"
-  mkdir -p "$LBWC_PLANNING_DIR"
+  export MERIDIAN_PLANNING_DIR="$TEST_TEMP_DIR/.meridian"
+  DBG="$MERIDIAN_PLANNING_DIR/debugging"
+  mkdir -p "$MERIDIAN_PLANNING_DIR"
 }
 
 teardown() {
@@ -18,7 +18,7 @@ teardown() {
 }
 
 dss() {
-  bash "$SCRIPTS_DIR/debug-session-state.sh" "$1" "$LBWC_PLANNING_DIR" "${@:2}"
+  bash "$SCRIPTS_DIR/debug-session-state.sh" "$1" "$MERIDIAN_PLANNING_DIR" "${@:2}"
 }
 
 run_piped() {
@@ -29,12 +29,12 @@ run_piped() {
 
 run_capturing_stderr() {
   STDERR_FILE="$TEST_TEMP_DIR/stderr.tmp"
-  run bash -c 'bash "$1" "$2" "$3" 2>"$4"' -- "$SCRIPTS_DIR/debug-session-state.sh" "$1" "$LBWC_PLANNING_DIR" "$STDERR_FILE"
+  run bash -c 'bash "$1" "$2" "$3" 2>"$4"' -- "$SCRIPTS_DIR/debug-session-state.sh" "$1" "$MERIDIAN_PLANNING_DIR" "$STDERR_FILE"
 }
 
 reset_planning() {
-  rm -rf "$LBWC_PLANNING_DIR"
-  mkdir -p "$LBWC_PLANNING_DIR"
+  rm -rf "$MERIDIAN_PLANNING_DIR"
+  mkdir -p "$MERIDIAN_PLANNING_DIR"
 }
 
 start_session() {
@@ -283,7 +283,7 @@ debug_start_from_todo() {
   local first_session_name
 
   run_piped '{"mode":"source-todo","text":"Investigate parser crash","raw_line":"- Investigate parser crash (ref:abcd1234)","ref":"abcd1234","detail_status":"ok","related_files":["src/parser.sh"],"detail_context":"Persisted detail"}' \
-    start-with-source-todo "$LBWC_PLANNING_DIR" "source-todo-success"
+    start-with-source-todo "$MERIDIAN_PLANNING_DIR" "source-todo-success"
   expect_status source-todo-success 0
   eval "$output"
   expect_file source-todo-success "$session_file"
@@ -293,7 +293,7 @@ debug_start_from_todo() {
   expect_file_grep source-todo-success "$session_file" 'Persisted detail'
 
   reset_planning
-  run_piped 'not-json' start-with-source-todo "$LBWC_PLANNING_DIR" "source-todo-failure"
+  run_piped 'not-json' start-with-source-todo "$MERIDIAN_PLANNING_DIR" "source-todo-failure"
   expect_status source-todo-rollback 1
   expect_no_file source-todo-rollback-pointer "$DBG/.active-session"
   run find "$DBG/active" -maxdepth 1 -type f -name '*.md'
@@ -303,7 +303,7 @@ debug_start_from_todo() {
   reset_planning
   start_session first-bug
   first_session_name=$(basename "$session_file")
-  run_piped 'not-json' start-with-source-todo "$LBWC_PLANNING_DIR" "source-todo-failure"
+  run_piped 'not-json' start-with-source-todo "$MERIDIAN_PLANNING_DIR" "source-todo-failure"
   expect_status source-todo-restores-pointer 1
   expect_file source-todo-restores-pointer "$DBG/.active-session"
   [ "$(cat "$DBG/.active-session")" = "$first_session_name" ] || fail_case source-todo-restores-pointer "pointer is $(cat "$DBG/.active-session")"
@@ -311,7 +311,7 @@ debug_start_from_todo() {
 
   reset_planning
   run_piped '{"command_text":"Investigate parser crash","normalized_text":"Investigate parser crash","line":"- [HIGH] Investigate parser crash (added 2026-04-01) (ref:abcd1234)","ref":"abcd1234"}' \
-    start-with-selected-todo "$LBWC_PLANNING_DIR" "selected-todo-no-detail" none
+    start-with-selected-todo "$MERIDIAN_PLANNING_DIR" "selected-todo-no-detail" none
   expect_status selected-no-detail 0
   eval "$output"
   expect_file selected-no-detail "$session_file"
@@ -325,7 +325,7 @@ debug_start_from_todo() {
   reset_planning
   export TODO_DETAIL_RESULT_JSON='{"status":"ok","detail":{"context":"Persisted detail context","files":["src/parser.sh","tests/parser.bats"]}}'
   run_piped '{"command_text":"Investigate parser crash","line":"- Investigate parser crash (ref:abcd1234)","ref":"abcd1234"}' \
-    start-with-selected-todo "$LBWC_PLANNING_DIR" "selected-todo-with-detail" ok
+    start-with-selected-todo "$MERIDIAN_PLANNING_DIR" "selected-todo-with-detail" ok
   unset TODO_DETAIL_RESULT_JSON
   expect_status selected-with-detail 0
   eval "$output"
@@ -380,7 +380,7 @@ CASES
       eval "$helper_output"
       printf "active_session=%s\nsession_status=%s\nsession_id=%s\nsession_file=%s\n" \
         "${active_session:-}" "${session_status:-}" "${session_id:-}" "${session_file:-}"
-    ' -- "$SCRIPTS_DIR/debug-session-state.sh" "$command" "$LBWC_PLANNING_DIR" "$sid"
+    ' -- "$SCRIPTS_DIR/debug-session-state.sh" "$command" "$MERIDIAN_PLANNING_DIR" "$sid"
     expect_status "$label" 0
     expect_line "$label" "active_session=$expected_active"
     expect_line "$label" "session_status=investigating"

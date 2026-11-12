@@ -5,7 +5,7 @@ load gate_case_helper
 
 build_workspace() {
   WS="${1:-$TEST_TEMP_DIR}"
-  PLANNING="$WS/.lbwc-planning"
+  PLANNING="$WS/.meridian"
   PHASE_DIR="$PLANNING/phases/${2:-02-test-phase}"
   PLAN="$PHASE_DIR/02-01-PLAN.md"
 
@@ -60,8 +60,8 @@ create_alternate_context_workspace() {
 
 init_test_repo() {
   git init -q
-  git config user.name "LBWC Test"
-  git config user.email "lbwc-tests@example.com"
+  git config user.name "MERIDIAN Test"
+  git config user.email "meridian-tests@example.com"
 }
 
 mut_rerun() { :; }
@@ -89,7 +89,7 @@ mut_rolling_off() {
 }
 mut_env_planning_dir() {
   create_alternate_context_workspace
-  [ "$1" = v1 ] || HASH_ENV="LBWC_PLANNING_DIR=$ALT_PLANNING_DIR"
+  [ "$1" = v1 ] || HASH_ENV="MERIDIAN_PLANNING_DIR=$ALT_PLANNING_DIR"
   return 0
 }
 
@@ -206,7 +206,7 @@ CASES
 }
 
 compile_in_workspace() {
-  run bash "$SCRIPTS_DIR/compile-context.sh" 02 "$1" .lbwc-planning/phases .lbwc-planning/phases/02-test-phase/02-01-PLAN.md
+  run bash "$SCRIPTS_DIR/compile-context.sh" 02 "$1" .meridian/phases .meridian/phases/02-test-phase/02-01-PLAN.md
 }
 
 expect_context_has() {
@@ -267,7 +267,7 @@ expect_context_lacks() {
     build_workspace "$TEST_TEMP_DIR/research-$label"
     cd "$WS" || return 1
     [ "$write_research" = no ] || printf '## Findings\n- Test finding\n' > "$PHASE_DIR/02-RESEARCH.md"
-    run bash "$SCRIPTS_DIR/compile-context.sh" 02 lead .lbwc-planning/phases
+    run bash "$SCRIPTS_DIR/compile-context.sh" 02 lead .meridian/phases
     expect_case "$label" 0
     heading_count=$(grep -c "Research Findings" "$PHASE_DIR/.context-lead.md" || true)
     finding_count=$(grep -c "Test finding" "$PHASE_DIR/.context-lead.md" || true)
@@ -282,7 +282,7 @@ CASES
   cd "$WS" || return 1
   printf '%s\n' '# State' '' '## Decisions' '- Keep feature flags conservative' '' \
     '### skills' '**Installed:** foo, bar' '**Suggested:** baz' '' \
-    '### Pending Todos' '- Migrate session store' > .lbwc-planning/STATE.md
+    '### Pending Todos' '- Migrate session store' > .meridian/STATE.md
   compile_in_workspace lead
   expect_case legacy-decisions 0
   expect_context_has legacy-decisions lead 'Keep feature flags conservative'
@@ -293,9 +293,9 @@ CASES
   build_workspace "$TEST_TEMP_DIR/explicit-paths"
   create_alternate_context_workspace
   cd "$WS" || return 1
-  run env LBWC_PLANNING_DIR="$ALT_PLANNING_DIR" \
-    bash "$SCRIPTS_DIR/compile-context.sh" 02 lead .lbwc-planning/phases \
-    .lbwc-planning/phases/02-test-phase/02-01-PLAN.md
+  run env MERIDIAN_PLANNING_DIR="$ALT_PLANNING_DIR" \
+    bash "$SCRIPTS_DIR/compile-context.sh" 02 lead .meridian/phases \
+    .meridian/phases/02-test-phase/02-01-PLAN.md
   expect_case explicit-paths 0
   expect_context_has explicit-paths lead 'Test goal'
   expect_context_lacks explicit-paths-ignores-alternate lead 'Alternate goal'
@@ -308,7 +308,7 @@ cache_input_rows() {
   cd "$TEST_TEMP_DIR" || return 1
   git init -q
   reset_case_failures
-  printf '%s\n' '.lbwc-planning/' > .gitignore
+  printf '%s\n' '.meridian/' > .gitignore
   git -c user.name=Test -c user.email=test@example.invalid commit --allow-empty -qm baseline
   await_git_ai
   mkdir -p "$PLANNING/codebase"

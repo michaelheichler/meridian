@@ -22,9 +22,9 @@ def publisher(root: Path, planning: Path, published: list) -> Callable:
         staged = list(set(planning.iterdir()) - existing)
         assert len(staged) == 1, "estimate must reach the closed staging file before publication"
         assert staged[0].read_text().startswith("s1|"), "estimate staging file was empty"
-        subprocess.run(["bash", str(root / "scripts/lbwc-statusline.sh")], input=payload,
+        subprocess.run(["bash", str(root / "scripts/meridian-statusline.sh")], input=payload,
                        text=True, stdout=subprocess.DEVNULL, check=True, timeout=10,
-                       env=dict(os.environ, LBWC_PLANNING_DIR=str(planning)))
+                       env=dict(os.environ, MERIDIAN_PLANNING_DIR=str(planning)))
         published.append(True)
 
     return publish_after_close
@@ -32,13 +32,16 @@ def publisher(root: Path, planning: Path, published: list) -> Callable:
 
 def main() -> None:
     root = Path(sys.argv[1])
-    planning = Path.cwd() / ".lbwc-planning"
+    planning = Path.cwd() / ".meridian"
     published = []
+    previous_path = sys.path[:]
     sys.setprofile(publisher(root, planning, published))
     try:
         sys.argv = [str(root / "hooks/context_usage.py")]
+        sys.path.insert(0, str(root / "hooks"))
         runpy.run_path(sys.argv[0], run_name="__main__")
     finally:
+        sys.path[:] = previous_path
         sys.setprofile(None)
     assert published, "the native publisher never ran after staging closed"
     assert (planning / ".context-usage").read_text().strip() == "s1|72.5|1000000|statusline", (

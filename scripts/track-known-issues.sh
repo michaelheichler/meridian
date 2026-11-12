@@ -1,4 +1,15 @@
 #!/usr/bin/env bash
+
+printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${BASH_SOURCE[0]}"
+case "$MERIDIAN_MIGRATION_SOURCE" in
+  *"/"*) printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${MERIDIAN_MIGRATION_SOURCE%"/"*}" ;;
+  *) printf -v MERIDIAN_MIGRATION_SOURCE '%s' . ;;
+esac
+if [ -f "$MERIDIAN_MIGRATION_SOURCE/lib/rename-migration.sh" ]; then
+  . "$MERIDIAN_MIGRATION_SOURCE/lib/rename-migration.sh"
+  meridian_migrate_environment
+fi
+unset MERIDIAN_MIGRATION_SOURCE
 # Signature keys entries because a repeated issue must stay one entry.
 set -euo pipefail
 
@@ -11,7 +22,7 @@ usage() {
   cat >&2 <<'EOF'
 usage: track-known-issues.sh <status|sync-summaries|sync-verification|promote-todos|resolve|clear|lookup-signature|suppress> <phase-dir> [verification-file|signature]
 
-Registry: .lbwc-planning/phases/{NN}-{slug}/known-issues.json
+Registry: .meridian/phases/{NN}-{slug}/known-issues.json
 Each entry carries a deterministic 12-hex signature (sha256 of normalized
 test+file+error) as its unique identifier, so the same issue reported twice
 is one entry, and resolution is checked against evidence, not agent claims.
@@ -49,7 +60,7 @@ esac
 
 PHASE_DIR="$(CDPATH='' cd -- "$PHASE_DIR" 2>/dev/null && pwd -P)" || { echo "known_issues_status=missing_phase_dir" >&2; exit 1; }
 case "$PHASE_DIR" in
-  */.lbwc-planning/phases/*) ;;
+  */.meridian/phases/*) ;;
   *) echo "known_issues_status=invalid_phase_dir" >&2; exit 1 ;;
 esac
 PLANNING_DIR="$(CDPATH='' cd -- "$PHASE_DIR/../.." && pwd -P)"

@@ -8,7 +8,7 @@ setup() {
   REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/.." && pwd -P)"
   SCRIPT="$REPO_ROOT/scripts/runtime-snapshot.sh"
   TEST_ROOT="$(mktemp -d)"
-  PLANNING_DIR="$TEST_ROOT/project/.lbwc-planning"
+  PLANNING_DIR="$TEST_ROOT/project/.meridian"
   PHASE_DIR="$PLANNING_DIR/phases/01-runtime-freeze"
   SNAPSHOT_PATH="$PHASE_DIR/.runtime-snapshot.json"
   CANCEL_PATH="$PHASE_DIR/.runtime-cancelled.json"
@@ -29,7 +29,7 @@ write_config() {
       agent_execution_mode: "in_process",
       tmux_execution: {
         enabled: false,
-        session_name_prefix: "lbwc",
+        session_name_prefix: "meridian",
         max_agents: 3,
         attach_policy: "orchestrator_only",
         heartbeat_interval_seconds: 30,
@@ -287,8 +287,8 @@ freeze_rejected_row() {
 doc_path() {
   case "$1" in
     build) printf '%s\n' "$REPO_ROOT/commands/build.md" ;;
-    vibe) printf '%s\n' "$REPO_ROOT/commands/vibe.md" ;;
-    execute-protocol) printf '%s\n' "$REPO_ROOT/references/vibe-mode-execute.md" ;;
+    transit) printf '%s\n' "$REPO_ROOT/commands/transit.md" ;;
+    execute-protocol) printf '%s\n' "$REPO_ROOT/references/transit-mode-execute.md" ;;
   esac
 }
 
@@ -300,19 +300,19 @@ doc_fragment_rows() {
   done
 }
 
-@test "vibe and build command documents wire the snapshot helper and the explicit tmux spawn branch and drop the retired spawn wording" {
+@test "transit and build command documents wire the snapshot helper and the explicit tmux spawn branch and drop the retired spawn wording" {
   doc_fragment_rows expect_doc_has <<'FRAGMENTS'
-vibe|scripts/runtime-snapshot.sh" validate
-vibe|scripts/runtime-snapshot.sh" freeze
-vibe|scripts/runtime-snapshot.sh" cancel
-vibe|.runtime-cancelled.json
-vibe|--assert-snapshot
-vibe|agent-generator.sh --execution-backend
-vibe|Schema 2 generation omits `--execution-backend`
-vibe|If `snapshot.resolved_backend` is `in_process`
-vibe|If `snapshot.resolved_backend` is `tmux`
-vibe|references/tmux-spawn-protocol.md
-vibe|Do not call native Agent.
+transit|scripts/runtime-snapshot.sh" validate
+transit|scripts/runtime-snapshot.sh" freeze
+transit|scripts/runtime-snapshot.sh" cancel
+transit|.runtime-cancelled.json
+transit|--assert-snapshot
+transit|agent-generator.sh --execution-backend
+transit|Schema 2 generation omits `--execution-backend`
+transit|If `snapshot.resolved_backend` is `in_process`
+transit|If `snapshot.resolved_backend` is `tmux`
+transit|references/tmux-spawn-protocol.md
+transit|Do not call native Agent.
 build|scripts/runtime-snapshot.sh" validate
 build|scripts/runtime-snapshot.sh" freeze
 build|scripts/runtime-snapshot.sh" cancel
@@ -352,7 +352,7 @@ FRAGMENTS
 build|MAIN_ID=main-session
 build|$AGENTS_JSON
 build|Pane spawn is not wired
-vibe|Pane spawn is not wired
+transit|Pane spawn is not wired
 execute-protocol|MAIN_ID=main-session
 execute-protocol|$AGENTS_JSON
 execute-protocol|Pane spawn is not wired

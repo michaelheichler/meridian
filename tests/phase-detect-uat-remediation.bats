@@ -236,7 +236,7 @@ stale-pass-after-later-commit#sc_dormant stale_pass#$dormant~qa_attention_reason
 failed-authoritative-qa#sc_dormant failed_authoritative#$dormant~qa_status=none
 phase-sorting-helper-fails#sc_dormant sort_helper_fails#$dormant~phase_detect_complete=true~phase_count=2
 uat-reread-degraded#sc_dormant uat_reread_degraded#next_phase=01~next_phase_state=needs_verification~qa_status=none~qa_reason=uat_cutover~qa_after_uat_dormant=true~!next_phase_state=needs_qa_remediation
-registry-not-rebuilt-after-cutover#sc_dormant registry_not_rebuilt#$dormant~qa_status=none~-.lbwc-planning/phases/01-test/known-issues.json
+registry-not-rebuilt-after-cutover#sc_dormant registry_not_rebuilt#$dormant~qa_status=none~-.meridian/phases/01-test/known-issues.json
 round-scoped-gate-failure#sc_dormant round_scoped_gate_failure#$dormant~qa_status=none
 git-freshness-probe-fails#sc_dormant git_probe_fails#$dormant~phase_detect_complete=true~qa_status=none
 auto-uat-verification-suppresses-qa-gate#sc_dormant auto_uat_verification#next_phase=01~next_phase_state=needs_verification~qa_status=none~qa_reason=uat_cutover~qa_after_uat_dormant=true~!next_phase_state=needs_qa_remediation

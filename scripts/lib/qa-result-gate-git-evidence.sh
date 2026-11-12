@@ -73,7 +73,7 @@ git_ignored_metadata_worktree_paths() {
       printf '%s\n' "$path"
     fi
   done < <(git -C "$repo_root" ls-files --others --ignored --exclude-standard \
-    -- .lbwc-planning .claude 2>/dev/null || true)
+    -- .meridian .claude 2>/dev/null || true)
 }
 
 commit_is_ancestor_or_same() {

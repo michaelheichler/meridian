@@ -5,7 +5,7 @@ load gate_case_helper
 
 setup() {
   setup_temp_dir
-  PLANNING_ROOT="$TEST_TEMP_DIR/.lbwc-planning"
+  PLANNING_ROOT="$TEST_TEMP_DIR/.meridian"
   GATE_DIR="$TEST_TEMP_DIR/gate-scripts"
   FAKE_BIN="$TEST_TEMP_DIR/fake-bin"
   cd "$TEST_TEMP_DIR"
@@ -132,7 +132,7 @@ run_summary_gap_decision() {
 }
 
 run_gate_adapter() {
-  run env PATH="$FAKE_BIN:$PATH" LBWC_PLANNING_DIR="$PLANNING_ROOT" bash "$GATE_DIR/qa-gate.sh" </dev/null
+  run env PATH="$FAKE_BIN:$PATH" MERIDIAN_PLANNING_DIR="$PLANNING_ROOT" bash "$GATE_DIR/qa-gate.sh" </dev/null
 }
 
 reset_gate_world() {
@@ -224,7 +224,7 @@ dependency_missing() {
 
 @test "qa-gate passes clean or complete phases and fails closed on partial phases and missing dependencies" {
   rm -rf "$PLANNING_ROOT"
-  run env LBWC_PLANNING_DIR="$PLANNING_ROOT" bash "$PROJECT_ROOT/scripts/qa-gate.sh"
+  run env MERIDIAN_PLANNING_DIR="$PLANNING_ROOT" bash "$PROJECT_ROOT/scripts/qa-gate.sh"
   expect_case_silent no-planning-dir 0
 
   reset_gate_world
@@ -241,7 +241,7 @@ dependency_missing() {
 
   reset_gate_world
   make_gap_phase partial
-  run env LBWC_PLANNING_DIR="$PLANNING_ROOT" bash "$PROJECT_ROOT/scripts/qa-gate.sh" </dev/null
+  run env MERIDIAN_PLANNING_DIR="$PLANNING_ROOT" bash "$PROJECT_ROOT/scripts/qa-gate.sh" </dev/null
   expect_case shipped-dependencies-without-git 2 "SUMMARY.md gap detected"
   [[ "$output" != *"dependency load failed"* ]] \
     || record_case_failure shipped-dependencies-load "output=$output"

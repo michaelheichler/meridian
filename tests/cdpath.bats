@@ -20,7 +20,7 @@ teardown() {
 invoke_script() {
   local stdin_payload="$1"
   shift
-  printf '%s' "$stdin_payload" | LBWC_PLANNING_DIR="$TEST_TEMP_DIR/.lbwc-planning" bash "$@"
+  printf '%s' "$stdin_payload" | MERIDIAN_PLANNING_DIR="$TEST_TEMP_DIR/.meridian" bash "$@"
 }
 
 expect_stdout_ignores_cdpath() {

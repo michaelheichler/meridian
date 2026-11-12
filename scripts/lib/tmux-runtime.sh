@@ -1,5 +1,16 @@
 #!/usr/bin/env bash
 
+printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${BASH_SOURCE[0]}"
+case "$MERIDIAN_MIGRATION_SOURCE" in
+  *"/"*) printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${MERIDIAN_MIGRATION_SOURCE%"/"*}" ;;
+  *) printf -v MERIDIAN_MIGRATION_SOURCE '%s' . ;;
+esac
+if [ -f "$MERIDIAN_MIGRATION_SOURCE/rename-migration.sh" ]; then
+  . "$MERIDIAN_MIGRATION_SOURCE/rename-migration.sh"
+  meridian_migrate_environment
+fi
+unset MERIDIAN_MIGRATION_SOURCE
+
 TMUX_RUNTIME_LOCKS=()
 
 tmux_runtime_fail() {
@@ -54,7 +65,7 @@ tmux_runtime_existing_private_directory() {
 
 tmux_runtime_configure() {
   local requested_control_root="$1" control_root
-  control_root=$(lbwc_control_root_validate "$requested_control_root" 0) || { tmux_runtime_fail "invalid control root: $requested_control_root"; return 1; }
+  control_root=$(meridian_control_root_validate "$requested_control_root" 0) || { tmux_runtime_fail "invalid control root: $requested_control_root"; return 1; }
   TMUX_RUNTIME_CONTROL_ROOT="$control_root"
   TMUX_RUNTIME_ROOT="$control_root/.runtime"
   TMUX_RUNTIME_BUS_ROOT="$TMUX_RUNTIME_ROOT/tmux-bus"

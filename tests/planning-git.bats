@@ -4,7 +4,7 @@ load test_helper
 load gate_case_helper
 load isolated_case_helper
 
-AGENT_PATTERN='.claude/agents/lbwc-*-*-*-*.md'
+AGENT_PATTERN='.claude/agents/meridian-*-*-*-*.md'
 
 setup() {
   setup_temp_dir
@@ -19,7 +19,7 @@ teardown() {
 
 fresh_repo() {
   local repo="$TEST_TEMP_DIR/$1"
-  mkdir -p "$repo/.lbwc-planning"
+  mkdir -p "$repo/.meridian"
   cd "$repo" || return 1
   git init -q
   git config user.email "test@test.com"
@@ -37,7 +37,7 @@ repo_with_remote() {
 }
 
 tracking_config() {
-  printf '{"planning_tracking":"%s","auto_push":"%s"}\n' "$1" "$2" > .lbwc-planning/config.json
+  printf '{"planning_tracking":"%s","auto_push":"%s"}\n' "$1" "$2" > .meridian/config.json
 }
 
 planning_git() {
@@ -46,17 +46,17 @@ planning_git() {
 
 ignore_state() {
   planning_git "$@" || return
-  printf 'planning-ignored=%s\n' "$(git check-ignore -q .lbwc-planning/STATE.md && echo yes || echo no)"
-  printf 'transient-ignored=%s\n' "$(git check-ignore -q .lbwc-planning/.execution-state.json && echo yes || echo no)"
-  printf 'agent-ignored=%s\n' "$(git check-ignore -q .claude/agents/lbwc-dev-01-02-abc.md && echo yes || echo no)"
+  printf 'planning-ignored=%s\n' "$(git check-ignore -q .meridian/STATE.md && echo yes || echo no)"
+  printf 'transient-ignored=%s\n' "$(git check-ignore -q .meridian/.execution-state.json && echo yes || echo no)"
+  printf 'agent-ignored=%s\n' "$(git check-ignore -q .claude/agents/meridian-dev-01-02-abc.md && echo yes || echo no)"
   printf 'agent-pattern-lines=%s\n' "$(grep -cFx "$AGENT_PATTERN" .gitignore)"
-  printf 'planning-lines=%s\n' "$(grep -cx '\.lbwc-planning/' .gitignore)"
+  printf 'planning-lines=%s\n' "$(grep -cx '\.meridian/' .gitignore)"
   printf 'kept-user-rule=%s\n' "$(grep -cx 'node_modules/' .gitignore)"
 }
 
 listing_after() {
   planning_git "$@" || return
-  ls -A . .lbwc-planning
+  ls -A . .meridian
 }
 
 commit_state() {
@@ -83,12 +83,12 @@ reject_invalid_commands() {
 }
 
 leave_non_repository_untouched() {
-  mkdir -p "$TEST_TEMP_DIR/plain/.lbwc-planning"
+  mkdir -p "$TEST_TEMP_DIR/plain/.meridian"
   cd "$TEST_TEMP_DIR/plain"
-  printf '{"planning_tracking":"commit","auto_push":"after_phase"}\n' > .lbwc-planning/config.json
+  printf '{"planning_tracking":"commit","auto_push":"after_phase"}\n' > .meridian/config.json
 
   run listing_after ensure-generated-agent-ignore
-  expect_case agent-ignore-outside-repo 0 ".lbwc-planning"
+  expect_case agent-ignore-outside-repo 0 ".meridian"
   expect_case_absent agent-ignore-outside-repo ".gitignore"
 
   run listing_after sync-ignore
@@ -140,13 +140,13 @@ sync_tracking_mode_ignores() {
 
   fresh_repo ignore-mode-repeat
   tracking_config ignore never
-  printf '.lbwc-planning/\n' > .gitignore
-  run ignore_state sync-ignore .lbwc-planning/config.json
+  printf '.meridian/\n' > .gitignore
+  run ignore_state sync-ignore .meridian/config.json
   expect_case ignore-mode-repeat 0 "planning-lines=1"
 
   fresh_repo commit-mode
   tracking_config commit never
-  printf 'node_modules/\n.lbwc-planning/\n' > .gitignore
+  printf 'node_modules/\n.meridian/\n' > .gitignore
   run ignore_state sync-ignore
   expect_case commit-mode 0 "planning-ignored=no"
   expect_case commit-mode 0 "transient-ignored=yes"
@@ -161,13 +161,13 @@ sync_tracking_mode_ignores() {
   fresh_repo context-transients
   tracking_config commit never
   planning_git sync-ignore
-  run git check-ignore -q .lbwc-planning/.context-usage-reset
+  run git check-ignore -q .meridian/.context-usage-reset
   expect_case baseline-transient 0
-  run git check-ignore -q .lbwc-planning/.context-usage.statusline.12345
+  run git check-ignore -q .meridian/.context-usage.statusline.12345
   expect_case statusline-temp-transient 0
-  run git check-ignore -q .lbwc-planning/STATE.md
+  run git check-ignore -q .meridian/STATE.md
   expect_case project-state-still-tracked 1
-  run git check-ignore -q .lbwc-planning/.runtime/worker-worktrees/worker-a/src/main.py
+  run git check-ignore -q .meridian/.runtime/worker-worktrees/worker-a/src/main.py
   expect_case isolated-worktree-runtime-stays-untracked 0
 
   assert_no_case_failures
@@ -176,12 +176,12 @@ sync_tracking_mode_ignores() {
 commit_and_push_configured_boundaries() {
   fresh_repo commit-tracking
   tracking_config commit never
-  printf '# State\n' > .lbwc-planning/STATE.md
+  printf '# State\n' > .meridian/STATE.md
   printf '# Claude\n' > CLAUDE.md
-  printf '{}\n' > .lbwc-planning/.execution-state.json
+  printf '{}\n' > .meridian/.execution-state.json
   run commit_state commit-boundary "archive milestone 01-auth"
-  expect_case commit-tracking 0 "subject=chore(lbwc): archive milestone 01-auth"
-  expect_case commit-tracking 0 ".lbwc-planning/STATE.md,"
+  expect_case commit-tracking 0 "subject=chore(meridian): archive milestone 01-auth"
+  expect_case commit-tracking 0 ".meridian/STATE.md,"
   expect_case commit-tracking 0 "CLAUDE.md,"
   expect_case_absent commit-tracking ".execution-state.json"
 
@@ -189,11 +189,11 @@ commit_and_push_configured_boundaries() {
   tracking_config commit never
   planning_git commit-boundary "first boundary"
   run commit_state commit-boundary "second boundary"
-  expect_case nothing-staged 0 "subject=chore(lbwc): first boundary"
+  expect_case nothing-staged 0 "subject=chore(meridian): first boundary"
 
   fresh_repo manual-tracking
   tracking_config manual never
-  printf '# State\n' > .lbwc-planning/STATE.md
+  printf '# State\n' > .meridian/STATE.md
   run commit_state commit-boundary "archive milestone 01-auth"
   expect_case manual-tracking 0 "subject=chore: init"
 
@@ -201,12 +201,12 @@ commit_and_push_configured_boundaries() {
   tracking_config commit always
   run commit_state commit-boundary "archive milestone 01-auth"
   expect_case push-always 0 "remote-head=$(git rev-parse HEAD)"
-  expect_case push-always 0 "subject=chore(lbwc): archive milestone 01-auth"
+  expect_case push-always 0 "subject=chore(meridian): archive milestone 01-auth"
 
   fresh_repo push-always-without-upstream
   tracking_config commit always
   run commit_state commit-boundary "archive milestone 01-auth"
-  expect_case push-always-without-upstream 0 "subject=chore(lbwc): archive milestone 01-auth"
+  expect_case push-always-without-upstream 0 "subject=chore(meridian): archive milestone 01-auth"
 
   assert_no_case_failures
 }
@@ -230,7 +230,7 @@ push_after_phase_with_upstream() {
   repo_with_remote never-push
   tracking_config manual never
   git commit -q --allow-empty -m "feat: phase work"
-  run commit_state push-after-phase .lbwc-planning/config.json
+  run commit_state push-after-phase .meridian/config.json
   expect_case_absent never-push "remote-head=$(git rev-parse HEAD)"
   expect_case never-push 0 "local-head=$(git rev-parse HEAD)"
 

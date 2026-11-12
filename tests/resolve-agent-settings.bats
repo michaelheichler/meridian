@@ -7,14 +7,14 @@ load rejection_case_helper
 RESOLVER="${SCRIPTS_DIR}/resolve-agent-settings.sh"
 
 setup() {
-  TEST_TEMP_DIR=$(cd "$(mktemp -d "${TMPDIR:-/tmp}/lbwc-resolver.XXXXXX")" && pwd -P)
+  TEST_TEMP_DIR=$(cd "$(mktemp -d "${TMPDIR:-/tmp}/meridian-resolver.XXXXXX")" && pwd -P)
   export TEST_TEMP_DIR
   export _ORIG_HOME="${HOME:-}"
-  export _ORIG_LBWC_PLANNING_DIR="${LBWC_PLANNING_DIR:-}"
+  export _ORIG_MERIDIAN_PLANNING_DIR="${MERIDIAN_PLANNING_DIR:-}"
   export HOME="$TEST_TEMP_DIR"
-  unset LBWC_PLANNING_DIR CLAUDE_SESSION_ID 2>/dev/null || true
-  mkdir -p "$TEST_TEMP_DIR/.lbwc-planning"
-  CONFIG_PATH="$TEST_TEMP_DIR/.lbwc-planning/config.json"
+  unset MERIDIAN_PLANNING_DIR CLAUDE_SESSION_ID 2>/dev/null || true
+  mkdir -p "$TEST_TEMP_DIR/.meridian"
+  CONFIG_PATH="$TEST_TEMP_DIR/.meridian/config.json"
   write_catalog
   write_config
   cp "$CONFIG_PATH" "$CONFIG_PATH.pristine"
@@ -44,7 +44,7 @@ write_catalog() {
         model_associations: {"nova-route": ["deliberate"]}
       }
     }
-  ' > "$TEST_TEMP_DIR/.lbwc-planning/claude-capabilities.json"
+  ' > "$TEST_TEMP_DIR/.meridian/claude-capabilities.json"
 }
 
 write_config() {
@@ -211,8 +211,8 @@ render_row() {
 }
 
 @test "render-agent-template renders the role templates with the supplied settings" {
-  render_row docs-template docs lbwc-docs-test "write a README" nova-route deliberate
-  render_row qa-author-template qa-author lbwc-qa-author-test "write failing tests" ember-path swift
+  render_row docs-template docs meridian-docs-test "write a README" nova-route deliberate
+  render_row qa-author-template qa-author meridian-qa-author-test "write failing tests" ember-path swift
 
   assert_no_case_failures
 }

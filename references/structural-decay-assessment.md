@@ -1,6 +1,6 @@
 # Structural decay assessment
 
-An automated reviewer claimed god-function structure in `scripts/lbwc-config.sh`,
+An automated reviewer claimed god-function structure in `scripts/meridian-config.sh`,
 `scripts/agent-generator.sh`, `scripts/task-contract.sh`, and
 `scripts/command-contract.sh`. Two of its supporting claims were already
 found false. It called `task-contract.sh` a Python script when its entry
@@ -65,7 +65,7 @@ nothing here for this plan to have made worse.
 
 **Recommendation:** none. Not revisited further.
 
-## `scripts/lbwc-config.sh` (741 lines)
+## `scripts/meridian-config.sh` (741 lines)
 
 **Diff from this plan:** +10/-4 lines, entirely inside `validate_config_json`,
 `migrate_config_json`, `setting_is_writable`, and
@@ -82,8 +82,8 @@ declarative style as the roughly 39 clauses already there.
 
 **Judgment:** the size is real but not the classic god-function shape, one
 function doing several unrelated jobs. It is one job, "assert the full
-config schema," repeated once per config key, and LBWC's config surface
-genuinely has around forty keys. The plan's change is a single clause added
+config schema," repeated once per config key, and MERIDIAN's config surface
+has around forty keys. The plan's change is a single clause added
 in the existing pattern. It did not introduce a new responsibility or a new
 shape of complexity to the function.
 
@@ -153,11 +153,11 @@ roughly an hour, not a byproduct of adding one execution backend.
 | --- | --- | --- | --- |
 | `task-contract.sh` | 867 lines | +20/-2 | Unchanged. Pre-existing large functions untouched, new code is a clean small addition |
 | `agent-generator.sh` | 741 lines | +3/-3 (net 0) | Unchanged. Minimal enum-value diff |
-| `lbwc-config.sh` | 741 lines | +10/-4 | Unchanged. One more schema clause in an already-long declarative validator |
+| `meridian-config.sh` | 741 lines | +10/-4 | Unchanged. One more schema clause in an already-long declarative validator |
 | `command-contract.sh` | 462 lines | +186/-0 (67% growth) | Worsened. Two new prose-heuristic validators, each internally clean, now share a file with the original structural checks and a different failure mode |
 
 Only `command-contract.sh` shows a cohesion cost this plan actually
-introduced. The other three files are unchanged in kind, even where their
+introduced. The other three files keep the same structure, even where their
 pre-existing size (particularly `task-contract.sh`'s `validate_contract`
-and `lbwc-config.sh`'s `validate_config_json`) would be worth a future,
+and `meridian-config.sh`'s `validate_config_json`) would be worth a future,
 separately-scoped look.

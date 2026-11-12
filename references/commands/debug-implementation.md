@@ -1,6 +1,6 @@
 **Implementation after diagnosis:** If the validated `debugger_report` says `needs_change`, the main session must derive a de-duplicated list of exact existing or new product file paths from the report. Reject empty, directory, glob, planning-artifact, test-path, or unverified paths. If the report is `already_fixed` or `inconclusive`, do not issue an implementation contract and skip this entire block, including the execution-backend choice below.
 
-**Choose the execution backend.** Follow step 0 of `{plugin-root}/references/workflow-spawn-protocol.md`, with `<control-root>` bound to `.lbwc-planning`. Use these literal `AskUserQuestion` fields when that step's `ask` branch applies:
+**Choose the execution backend.** Follow step 0 of `{plugin-root}/references/workflow-spawn-protocol.md`, with `<control-root>` bound to `.meridian`. Use these literal `AskUserQuestion` fields when that step's `ask` branch applies:
 
 - header: `Implementation execution`
 - question: `Where should this implementation run? Workflow run applies it through a committed background script. Native spawn keeps the current single-agent implementation.`
@@ -26,7 +26,7 @@ Read its emitted spawn values and invoke only printed `subagent_type`, `name`, a
 When `RESOLVED_BACKEND` is `workflow`, follow `{plugin-root}/references/workflow-spawn-protocol.md`. Issue the same solo Debugger contract as a schema 3 contract, repeating each exact path as a `--write-capability file:{path}` instead of a `--write-allowance`:
 
 ```bash
-CONTROL_ROOT="$PROJECT_ROOT/.lbwc-planning"
+CONTROL_ROOT="$PROJECT_ROOT/.meridian"
 IMPL_BRIEF="implement diagnosed debug fix: {one-line plan}. Also evaluate available MCP tools in your system context relevant to this investigation and note them in the task context."
 CONTRACT_PATH=$(bash "{plugin-root}/scripts/task-contract.sh" issue "$PROJECT_ROOT" "debug-implement-{task-slug}" --command debug --role debugger --team solo --job "$IMPL_BRIEF" --control-root "$CONTROL_ROOT" --requested-backend workflow --resolved-backend workflow --write-capability "file:{exact diagnosed product path}" [--write-capability "file:{another exact diagnosed product path}"]) || exit 1
 TASK_ID=$(basename "$CONTRACT_PATH" .json)

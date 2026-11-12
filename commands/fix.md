@@ -6,7 +6,7 @@ argument-hint: "<description of what to fix or change>"
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep, WebFetch, Agent, Skill, LSP, AskUserQuestion, Workflow
 ---
 
-# LBWC Fix: $ARGUMENTS
+# MERIDIAN Fix: $ARGUMENTS
 
 ## Context
 
@@ -19,7 +19,7 @@ Working directory:
 Plugin root:
 
 ```bash
-!`L="/tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID:-default}"; R="$L/scripts/resolve-plugin-root.sh"; [ -f "$R" ] || R="${CLAUDE_PLUGIN_ROOT:-}/scripts/resolve-plugin-root.sh"; [ -f "$R" ] || { echo "LBWC: plugin root unavailable. Restart this session to recreate $L." >&2; exit 1; }; bash "$R" >/dev/null || exit 1; echo "$L"`
+!`L="/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}"; R="$L/scripts/resolve-plugin-root.sh"; [ -f "$R" ] || R="${CLAUDE_PLUGIN_ROOT:-}/scripts/resolve-plugin-root.sh"; [ -f "$R" ] || { echo "MERIDIAN: plugin root unavailable. Restart this session to recreate $L." >&2; exit 1; }; bash "$R" >/dev/null || exit 1; echo "$L"`
 ```
 
 Store the plugin root path output above as `{plugin-root}` for use in script invocations below. Replace `{plugin-root}` with the literal `Plugin root` value from Context whenever a step below references a script or reference file.
@@ -33,25 +33,25 @@ The SessionStart hook pre-injects config.
 Refresh the saved Claude capability catalog before any Dev contract or spawn:
 
 ```bash
-bash "{plugin-root}/scripts/lbwc-model" refresh .lbwc-planning
+bash "{plugin-root}/scripts/meridian-model" refresh .meridian
 ```
 
-This persists workflow-backend availability as `.workflow` on `.lbwc-planning/claude-capabilities.json`, the authority the execution-mode choice below reads before offering or resolving `workflow`. A non-zero exit here does not stop the fix. It leaves `RESOLVED_BACKEND` at `in_process`, so the fix proceeds on whatever catalog already exists. Step 0 of `workflow-spawn-protocol.md` and the live re-validation in `workflow-generator.sh` can still block a run at generation time, but only when the run goes on to request or choose `workflow`. Skip this gate when `.lbwc-planning/` is missing. Do not create a planning directory here.
+This persists workflow-backend availability as `.workflow` on `.meridian/claude-capabilities.json`, the authority the execution-mode choice below reads before offering or resolving `workflow`. A non-zero exit here does not stop the fix. It leaves `RESOLVED_BACKEND` at `in_process`, so the fix proceeds on whatever catalog already exists. Step 0 of `workflow-spawn-protocol.md` and the live re-validation in `workflow-generator.sh` can still block a run at generation time, but only when the run goes on to request or choose `workflow`. Skip this gate when `.meridian/` is missing. Do not create a planning directory here.
 
 ## Guard
 
-- Not initialized (no .lbwc-planning/ dir): STOP "Run /lbwc:init first."
-- If $ARGUMENTS is absent, STOP "Usage: /lbwc:fix \"description of what to fix\""
+- Not initialized (no .meridian/ dir): STOP "Run /meridian:init first."
+- If $ARGUMENTS is absent, STOP "Usage: /meridian:fix \"description of what to fix\""
 
 ## Steps
 
-1. **Resolve todo number:** If $ARGUMENTS is a bare integer (matches `^[0-9]+$` with no other text or flags), preserve the original numeric-selection marker before rewriting anything. Resolve the todo item against the persisted session snapshot of the last `/lbwc:list-todos` view:
+1. **Resolve todo number:** If $ARGUMENTS is a bare integer (matches `^[0-9]+$` with no other text or flags), preserve the original numeric-selection marker before rewriting anything. Resolve the todo item against the persisted session snapshot of the last `/meridian:list-todos` view:
 
 ```bash
   bash "{plugin-root}/scripts/resolve-todo-item.sh" &lt;N&gt; --session-snapshot --require-unfiltered --validate-live
 ```
 
-  Parse the JSON output. If `status` is `"ok"`, store the full payload as `TODO_SELECTED_JSON`, preserve `TODO_SELECTED=true`, and replace $ARGUMENTS with the item's `command_text` value (not the old duplicated `description` form). If the resolved `state_path` points under `.lbwc-planning/milestones/`, STOP with `This todo came from archived milestone state. Restore the writable root STATE.md first by restarting so session-start.sh can run migration, or run 'bash scripts/migrate-orphaned-state.sh .lbwc-planning'.` Do not continue using the archived description as live work input. If `status` is `"error"`, STOP with the `message` value.
+  Parse the JSON output. If `status` is `"ok"`, store the full payload as `TODO_SELECTED_JSON`, preserve `TODO_SELECTED=true`, and replace $ARGUMENTS with the item's `command_text` value (not the old duplicated `description` form). If the resolved `state_path` points under `.meridian/milestones/`, STOP with `This todo came from archived milestone state. Restore the writable root STATE.md first by restarting so session-start.sh can run migration, or run 'bash scripts/migrate-orphaned-state.sh .meridian'.` Do not continue using the archived description as live work input. If `status` is `"error"`, STOP with the `message` value.
 
 1. **Parse:** Entire $ARGUMENTS (minus flags) = fix description. If `TODO_SELECTED_JSON` exists, treat its `command_text` as the fix description and its `ref` as the already-resolved ref before any additional parsing. Otherwise, if the description contains a `(ref:HASH)` suffix (8 hex characters), extract the hash and strip the ref tag from the description before further processing. If you found a ref, load extended detail:
 
@@ -67,9 +67,9 @@ Command shape: `bash "{plugin-root}/scripts/todo-details.sh" get <hash>`.
 ```
 
   In all cases, continue without detail.
-  **Post-parse validation:** If the fix description is empty or whitespace-only after stripping flags and ref, check whether you found a ref AND its detail loaded successfully (status `"ok"`). If yes, proceed, the detail provides the fix context. If you found no ref, or the ref detail failed to load, STOP: `"Usage: /lbwc:fix \"description of what to fix\""`.
+  **Post-parse validation:** If the fix description is empty or whitespace-only after stripping flags and ref, check whether you found a ref AND its detail loaded successfully (status `"ok"`). If yes, proceed, the detail provides the fix context. If you found no ref, or the ref detail failed to load, STOP: `"Usage: /meridian:fix \"description of what to fix\""`.
 
-1. **State:** Use `.lbwc-planning/STATE.md`.
+1. **State:** Use `.meridian/STATE.md`.
 2. . **Set delegation marker:** Before spawning Dev, activate the delegation guard so the orchestrator cannot accidentally write product files directly:
 
 ```bash
@@ -81,12 +81,12 @@ Command shape: `bash "{plugin-root}/scripts/todo-details.sh" get <hash>`.
 
   ```bash
 
-    bash "{plugin-root}/scripts/todo-lifecycle.sh" pickup /lbwc:fix {DETAIL_STATUS} {cleanup_policy}
+    bash "{plugin-root}/scripts/todo-lifecycle.sh" pickup /meridian:fix {DETAIL_STATUS} {cleanup_policy}
   ```
 
     Use `safe` for `{cleanup_policy}` when `DETAIL_STATUS=ok`, otherwise use `keep`. If the helper returns `status="error"`, STOP with its `message` value. If it returns `status="partial"`, continue but surface its `warning` value in the final result so cleanup state is explicit. This pickup path only applies to true numeric todo selections, never to manual text or manual `(ref:HASH)` inputs.
 
-1. **Choose the execution backend.** Follow step 0 of `{plugin-root}/references/workflow-spawn-protocol.md`, with `<control-root>` bound to `.lbwc-planning`. Use these literal `AskUserQuestion` fields when that step's `ask` branch applies:
+1. **Choose the execution backend.** Follow step 0 of `{plugin-root}/references/workflow-spawn-protocol.md`, with `<control-root>` bound to `.meridian`. Use these literal `AskUserQuestion` fields when that step's `ask` branch applies:
 
   - header: `Fix execution`
   - question: `Where should this fix run? Workflow run applies it through a committed background script. Native spawn keeps the current single-agent fix.`
@@ -114,7 +114,7 @@ Command shape: `bash "{plugin-root}/scripts/todo-details.sh" get <hash>`.
 
   ```bash
     PROJECT_ROOT=$(pwd)
-    CONTROL_ROOT="$PROJECT_ROOT/.lbwc-planning"
+    CONTROL_ROOT="$PROJECT_ROOT/.meridian"
     DEV_BRIEF="{fix description from the Parse step}"
     CONTRACT_PATH=$(bash "{plugin-root}/scripts/task-contract.sh" issue "$PROJECT_ROOT" "fix-{task-slug}" --command fix --role coding-dijkstra --team solo --job "$DEV_BRIEF" --control-root "$CONTROL_ROOT" --requested-backend workflow --resolved-backend workflow --write-capability "file:{exact diagnosed product path}") || exit 1
     TASK_ID=$(basename "$CONTRACT_PATH" .json)
@@ -135,10 +135,10 @@ Command shape: `bash "{plugin-root}/scripts/todo-details.sh" get <hash>`.
 
   If you preselected one or more skills, run `bash "{plugin-root}/scripts/extract-skill-follow-up-files.sh" "{all preselected skill names from the activation block}" 2>/dev/null || true` before spawning the Dev. If the helper prints a `<skill_follow_up_files>` block, paste it immediately after the follow-up-read sentence in the spawned payload. Otherwise omit that block.
 
-  **Discover research context** (optional, from prior `/lbwc:research`):
+  **Discover research context** (optional, from prior `/meridian:research`):
 
   ```bash
-    RESEARCH_CONTEXT=$(bash "{plugin-root}/scripts/compile-research-context.sh" .lbwc-planning "{fix description from Step 1}" 2>/dev/null || echo "")
+    RESEARCH_CONTEXT=$(bash "{plugin-root}/scripts/compile-research-context.sh" .meridian "{fix description from Step 1}" 2>/dev/null || echo "")
   ```
 
   Replace `{fix description from Step 1}` with the actual parsed fix description. If `RESEARCH_CONTEXT` is non-empty, include it in the Dev task prompt below. If empty, omit the `<standalone_research_context>` block entirely.
@@ -149,7 +149,7 @@ Command shape: `bash "{plugin-root}/scripts/todo-details.sh" get <hash>`.
     Quick fix (Turbo mode). Effort: low.
     Task: {fix description}.
     {Include RESEARCH_CONTEXT and loaded todo detail only when present.}
-    Write only the exact product paths in the dispatched task contract. If `.lbwc-planning/codebase/META.md` exists, read CONVENTIONS.md, PATTERNS.md, STRUCTURE.md, and DEPENDENCIES.md (whichever exist) from `.lbwc-planning/codebase/` before implementing.
+    Write only the exact product paths in the dispatched task contract. If `.meridian/codebase/META.md` exists, read CONVENTIONS.md, PATTERNS.md, STRUCTURE.md, and DEPENDENCIES.md (whichever exist) from `.meridian/codebase/` before implementing.
     Implement and report changed files, tests run, and any pre-existing issues. Do not write planning artifacts, ask the user questions, or run Git commands. The main session verifies and commits.
     If ambiguous or requires architectural decisions, stop and report back.
 ```
@@ -170,7 +170,7 @@ Command shape: `bash "{plugin-root}/scripts/todo-details.sh" get <hash>`.
       Files: {changed files}
 ```
 
-  Run `bash "{plugin-root}/scripts/write-fix-marker.sh" .lbwc-planning 2>/dev/null || true` silently, this persists fix context for inline QA/UAT.
+  Run `bash "{plugin-root}/scripts/write-fix-marker.sh" .meridian 2>/dev/null || true` silently, this persists fix context for inline QA/UAT.
     Run `bash "{plugin-root}/scripts/suggest-next.sh" fix` and display.
 
   Committed, with discovered issues (Dev reported pre-existing failures):
@@ -187,14 +187,14 @@ Command shape: `bash "{plugin-root}/scripts/todo-details.sh" get <hash>`.
       Discovered Issues:
         ⚠ testName (path/to/file): error message
         ⚠ testName (path/to/file): error message
-      Suggest: /lbwc:todo <description> to track
+      Suggest: /meridian:todo <description> to track
 ```
 
   This is **display-only**. Do NOT edit STATE.md, do NOT add todos, do NOT
-  invoke /lbwc:todo, and do NOT enter an interactive loop. The user decides
+  invoke /meridian:todo, and do NOT enter an interactive loop. The user decides
   whether to track these. If there are no discovered issues, omit the section entirely.
   After displaying discovered issues, **STOP. Do not take further action** on discovered issues (no auto-fix, no auto-track, no investigation), display them only.
-  Run `bash "{plugin-root}/scripts/write-fix-marker.sh" .lbwc-planning 2>/dev/null || true` silently, this persists fix context for inline QA/UAT.
+  Run `bash "{plugin-root}/scripts/write-fix-marker.sh" .meridian 2>/dev/null || true` silently, this persists fix context for inline QA/UAT.
   Run `bash "{plugin-root}/scripts/suggest-next.sh" fix` and display.
 
   Dev stopped:
@@ -210,7 +210,7 @@ Command shape: `bash "{plugin-root}/scripts/todo-details.sh" get <hash>`.
 
 - If contract issuance, generation, spawn, or verification fails, clear the delegation marker, preserve the working tree, and report the failure verbatim. Do not create an uncontracted fallback.
 - If the workflow generator fails or a guard or the user denies the `Workflow` call, clear the delegation marker, leave the contract `planned`, and report the failure verbatim. Do not fall back to `in_process`.
-- If the Dev reports ambiguity, stop without a commit and direct the user to `/lbwc:debug`.
+- If the Dev reports ambiguity, stop without a commit and direct the user to `/meridian:debug`.
 
 ## Output Format
 
@@ -218,7 +218,7 @@ Use the existing success, discovered-issues, and stopped result blocks above. In
 
 ## Next Up
 
-Use `suggest-next.sh` output. For an unresolved issue, recommend `/lbwc:debug`.
+Use `suggest-next.sh` output. For an unresolved issue, recommend `/meridian:debug`.
 
 ## Feedback card
 

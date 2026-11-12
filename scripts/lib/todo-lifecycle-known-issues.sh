@@ -168,16 +168,16 @@ rewrite_state_stage_item() {
   local direct_count tmp_file
 
   if ! direct_count=$(extract_section_lines "$state_path" "$section_name" 2>/dev/null | sed '/^$/d' | wc -l | tr -d ' '); then
-    error_json "rewrite_prepare_failed" "Could not inspect the current todo section in STATE.md. Rerun /lbwc:list-todos."
+    error_json "rewrite_prepare_failed" "Could not inspect the current todo section in STATE.md. Rerun /meridian:list-todos."
     return 0
   fi
   tmp_file=$(make_temp_with_suffix "$state_path" rewrite) || {
-    error_json "rewrite_prepare_failed" "Could not prepare a temporary STATE.md rewrite. Rerun /lbwc:list-todos."
+    error_json "rewrite_prepare_failed" "Could not prepare a temporary STATE.md rewrite. Rerun /meridian:list-todos."
     return 0
   }
   if ! rewrite_state_apply_line "$state_path" "$line_no" "$direct_count" "$tmp_file"; then
     rm -f "$tmp_file"
-    error_json "rewrite_prepare_failed" "Could not stage the updated todo section. Rerun /lbwc:list-todos."
+    error_json "rewrite_prepare_failed" "Could not stage the updated todo section. Rerun /meridian:list-todos."
     return 0
   fi
   jq -cn --arg status "ok" --arg tmp_file "$tmp_file" '{status:$status, tmp_file:$tmp_file}'
@@ -190,12 +190,12 @@ rewrite_state_finalize_item() {
 
   if ! append_activity_entry "$tmp_file" "$activity_message"; then
     rm -f "$tmp_file"
-    error_json "activity_write_failed" "Could not append the activity breadcrumb to STATE.md. Rerun /lbwc:list-todos."
+    error_json "activity_write_failed" "Could not append the activity breadcrumb to STATE.md. Rerun /meridian:list-todos."
     return 0
   fi
   if ! mv "$tmp_file" "$state_path"; then
     rm -f "$tmp_file"
-    error_json "rewrite_finalize_failed" "Could not finalize the STATE.md rewrite. Rerun /lbwc:list-todos."
+    error_json "rewrite_finalize_failed" "Could not finalize the STATE.md rewrite. Rerun /meridian:list-todos."
     return 0
   fi
   ok_json --arg status "ok" --arg state_path "$state_path" '{status:$status, state_path:$state_path}'
@@ -210,7 +210,7 @@ rewrite_state_for_item() {
   section_name=$(printf '%s' "$item_json" | jq -r '.section // empty')
   line_no=$(printf '%s' "$item_json" | jq -r '.line_no // empty')
   if [ -z "$state_path" ] || [ -z "$section_name" ] || [ -z "$line_no" ]; then
-    error_json "invalid_item" "Todo selection payload is missing required metadata. Rerun /lbwc:list-todos."
+    error_json "invalid_item" "Todo selection payload is missing required metadata. Rerun /meridian:list-todos."
     return 0
   fi
   if state_path_is_archived "$state_path"; then

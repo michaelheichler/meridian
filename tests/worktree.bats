@@ -18,9 +18,9 @@ prepare_repo_setup() {
   local base
   case "$1" in
     plain) plain_dir ;;
-    plain-with-directory) plain_dir; mkdir -p .lbwc-worktrees/01-01 ;;
+    plain-with-directory) plain_dir; mkdir -p .meridian-worktrees/01-01 ;;
     repo) fresh_repo ;;
-    repo-with-branch) fresh_repo; git branch lbwc/02-03 ;;
+    repo-with-branch) fresh_repo; git branch meridian/02-03 ;;
     repo-with-two-commits)
       fresh_repo
       echo "second" > second.txt
@@ -30,7 +30,7 @@ prepare_repo_setup() {
     repo-with-feature-branch|repo-with-conflicting-branch)
       fresh_repo
       base=$(git rev-parse --abbrev-ref HEAD)
-      git checkout -q -b lbwc/01-01
+      git checkout -q -b meridian/01-01
       if [ "$1" = "repo-with-feature-branch" ]; then
         echo "feature" > feature.txt
         git add feature.txt
@@ -60,15 +60,15 @@ prepare_repo_setup() {
     case "$expectation" in
       empty) expect_output_empty "$label" ;;
       existing-path)
-        [[ "$output" == *".lbwc-worktrees/01-01" ]] || fail_case "$label" "expected a path ending in .lbwc-worktrees/01-01"
+        [[ "$output" == *".meridian-worktrees/01-01" ]] || fail_case "$label" "expected a path ending in .meridian-worktrees/01-01"
         ;;
       on-branch)
-        [[ "$output" == *".lbwc-worktrees/02-03" ]] || fail_case "$label" "expected a path ending in .lbwc-worktrees/02-03"
-        [ "$(git -C .lbwc-worktrees/02-03 rev-parse --abbrev-ref HEAD)" = "lbwc/02-03" ] || fail_case "$label" "worktree is not on lbwc/02-03"
-        [ "$(grep -cxF '.lbwc-worktrees/' .gitignore)" -eq 1 ] || fail_case "$label" "gitignore does not list .lbwc-worktrees/ exactly once"
+        [[ "$output" == *".meridian-worktrees/02-03" ]] || fail_case "$label" "expected a path ending in .meridian-worktrees/02-03"
+        [ "$(git -C .meridian-worktrees/02-03 rev-parse --abbrev-ref HEAD)" = "meridian/02-03" ] || fail_case "$label" "worktree is not on meridian/02-03"
+        [ "$(grep -cxF '.meridian-worktrees/' .gitignore)" -eq 1 ] || fail_case "$label" "gitignore does not list .meridian-worktrees/ exactly once"
         ;;
       at-base)
-        [ "$(git -C .lbwc-worktrees/02-03 rev-parse HEAD)" = "$(git rev-parse HEAD~1)" ] || fail_case "$label" "worktree does not start at the base commit"
+        [ "$(git -C .meridian-worktrees/02-03 rev-parse HEAD)" = "$(git rev-parse HEAD~1)" ] || fail_case "$label" "worktree does not start at the base commit"
         ;;
     esac
   done <<'CASES'
@@ -109,16 +109,16 @@ conflicting-merge|repo-with-conflicting-branch|01 01|conflict
 CASES
 }
 
-@test "worktree-status lists only LBWC worktrees as phase and plan entries" {
+@test "worktree-status lists only MERIDIAN worktrees as phase and plan entries" {
   while IFS='|' read -r label setup extra_worktrees expected; do
     [ -n "$label" ] || continue
     prepare_repo_setup "$setup"
     case "$extra_worktrees" in
-      lbwc) git worktree add -q .lbwc-worktrees/01-02 -b lbwc/01-02 ;;
+      meridian) git worktree add -q .meridian-worktrees/01-02 -b meridian/01-02 ;;
       foreign) git worktree add -q foreign-tree -b feature/other ;;
       both)
         git worktree add -q foreign-tree -b feature/other
-        git worktree add -q .lbwc-worktrees/01-02 -b lbwc/01-02
+        git worktree add -q .meridian-worktrees/01-02 -b meridian/01-02
         ;;
     esac
 
@@ -126,13 +126,13 @@ CASES
 
     expect_status "$label" 0
     [ "$(printf '%s' "$output" | jq -c 'map({branch,phase,plan})')" = "$expected" ] || fail_case "$label" "entries differ from $expected"
-    printf '%s' "$output" | jq -e 'all(.[]; .path | endswith(".lbwc-worktrees/" + "01-02"))' >/dev/null || fail_case "$label" "entry path is not the worktree directory"
+    printf '%s' "$output" | jq -e 'all(.[]; .path | endswith(".meridian-worktrees/" + "01-02"))' >/dev/null || fail_case "$label" "entry path is not the worktree directory"
   done <<'CASES'
 no-repository|plain||[]
 repository-without-worktrees|repo||[]
 only-a-foreign-worktree|repo|foreign|[]
-lbwc-worktree-listed|repo|lbwc|[{"branch":"lbwc/01-02","phase":"01","plan":"02"}]
-foreign-worktree-filtered-out|repo|both|[{"branch":"lbwc/01-02","phase":"01","plan":"02"}]
+meridian-worktree-listed|repo|meridian|[{"branch":"meridian/01-02","phase":"01","plan":"02"}]
+foreign-worktree-filtered-out|repo|both|[{"branch":"meridian/01-02","phase":"01","plan":"02"}]
 CASES
 }
 
@@ -150,8 +150,8 @@ CASES
       *) expect_output_equals "$label" "$expected" ;;
     esac
     case "$file_state" in
-      present) expect_exists "$label" .lbwc-planning/.agent-worktrees/dev-01.json ;;
-      absent) expect_missing "$label" .lbwc-planning/.agent-worktrees/dev-01.json ;;
+      present) expect_exists "$label" .meridian/.agent-worktrees/dev-01.json ;;
+      absent) expect_missing "$label" .meridian/.agent-worktrees/dev-01.json ;;
     esac
   done <<'CASES'
 set-then-get-returns-the-path|set dev-01 /work/tree|get dev-01|/work/tree|present
@@ -176,44 +176,44 @@ cleanup_residual_row() {
   local label="$1" parent="$2"
   run bash "$SCRIPTS_DIR/worktree-cleanup.sh" 01 01
   expect_status "$label" 0
-  expect_missing "$label" .lbwc-worktrees/01-01
+  expect_missing "$label" .meridian-worktrees/01-01
   case "$parent" in
-    removed) expect_missing "$label" .lbwc-worktrees ;;
-    kept) expect_exists "$label" .lbwc-worktrees ;;
+    removed) expect_missing "$label" .meridian-worktrees ;;
+    kept) expect_exists "$label" .meridian-worktrees ;;
   esac
 }
 
 residual_layout() {
   plain_dir
-  mkdir -p .lbwc-worktrees/01-01/.lbwc-planning
+  mkdir -p .meridian-worktrees/01-01/.meridian
 }
 
 registered_layout() {
-  local maps=".lbwc-planning/.agent-worktrees"
+  local maps=".meridian/.agent-worktrees"
   fresh_repo
-  git worktree add -q -b lbwc/01-01 .lbwc-worktrees/01-01 HEAD
-  [ "$1" != "locked" ] || git worktree lock .lbwc-worktrees/01-01
+  git worktree add -q -b meridian/01-01 .meridian-worktrees/01-01 HEAD
+  [ "$1" != "locked" ] || git worktree lock .meridian-worktrees/01-01
   mkdir -p "$maps"
-  echo "{\"worktree_path\":\"$PWD/.lbwc-worktrees/01-01\"}" > "$maps/lbwc-dev-01-01.json"
+  echo "{\"worktree_path\":\"$PWD/.meridian-worktrees/01-01\"}" > "$maps/meridian-dev-01-01.json"
   echo '{}' > "$maps/agent-01-01.json"
   echo '{}' > "$maps/dev-01-01-01.json"
-  echo '{}' > "$maps/lbwc-dev-02-02.json"
+  echo '{}' > "$maps/meridian-dev-02-02.json"
 }
 
 cleanup_registered_row() {
-  local label="$1" maps=".lbwc-planning/.agent-worktrees"
+  local label="$1" maps=".meridian/.agent-worktrees"
   run bash "$SCRIPTS_DIR/worktree-cleanup.sh" 01 01
   expect_status "$label" 0
-  expect_missing "$label" .lbwc-worktrees/01-01
+  expect_missing "$label" .meridian-worktrees/01-01
   expect_output_lacks "$label" "scan_only"
   [ -z "$(git worktree list | grep 01-01)" ] || fail_case "$label" "git still lists the worktree"
-  [ -z "$(branch_listing)" ] || fail_case "$label" "branch lbwc/01-01 survived"
+  [ -z "$(branch_listing)" ] || fail_case "$label" "branch meridian/01-01 survived"
   expect_no_match_under "$label" .git/worktrees 01-01
-  expect_missing "$label" "$maps/lbwc-dev-01-01.json"
+  expect_missing "$label" "$maps/meridian-dev-01-01.json"
   expect_missing "$label" "$maps/agent-01-01.json"
   expect_missing "$label" "$maps/dev-01-01-01.json"
-  expect_exists "$label" "$maps/lbwc-dev-02-02.json"
-  run git worktree add -b lbwc/01-01 .lbwc-worktrees/01-01 HEAD
+  expect_exists "$label" "$maps/meridian-dev-02-02.json"
+  run git worktree add -b meridian/01-01 .meridian-worktrees/01-01 HEAD
   expect_status "$label" 0
 }
 
@@ -234,18 +234,18 @@ cleanup_registered_row() {
   residual_layout
   cleanup_residual_row residual-directory-and-empty-parent removed
   residual_layout
-  touch .lbwc-worktrees/.DS_Store
+  touch .meridian-worktrees/.DS_Store
   cleanup_residual_row sibling-ds-store kept
-  expect_exists sibling-ds-store .lbwc-worktrees/.DS_Store
+  expect_exists sibling-ds-store .meridian-worktrees/.DS_Store
   residual_layout
-  touch .lbwc-worktrees/.DS_Store .lbwc-worktrees/.localized
+  touch .meridian-worktrees/.DS_Store .meridian-worktrees/.localized
   cleanup_residual_row sibling-hidden-files kept
-  expect_exists sibling-hidden-files .lbwc-worktrees/.DS_Store
-  expect_exists sibling-hidden-files .lbwc-worktrees/.localized
+  expect_exists sibling-hidden-files .meridian-worktrees/.DS_Store
+  expect_exists sibling-hidden-files .meridian-worktrees/.localized
   residual_layout
-  mkdir -p .lbwc-worktrees/02-01
+  mkdir -p .meridian-worktrees/02-01
   cleanup_residual_row sibling-worktree kept
-  expect_exists sibling-worktree .lbwc-worktrees/02-01
+  expect_exists sibling-worktree .meridian-worktrees/02-01
 
   registered_layout unlocked
   cleanup_registered_row registered-worktree

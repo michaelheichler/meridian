@@ -6,7 +6,7 @@ load gate_case_helper
 setup() {
   setup_temp_dir
   export CLAUDE_SESSION_ID="covw2-persist-$$-$BATS_TEST_NUMBER"
-  SESSION_LINK="/tmp/.lbwc-plugin-root-link-$CLAUDE_SESSION_ID"
+  SESSION_LINK="/tmp/.meridian-plugin-root-link-$CLAUDE_SESSION_ID"
   cd "$TEST_TEMP_DIR"
   reset_case_failures
 }

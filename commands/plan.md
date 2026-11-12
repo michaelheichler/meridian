@@ -1,6 +1,6 @@
 ---
 category: core
-description: Plan one existing phase through the full Vibe Plan protocol.
+description: Plan one existing phase through the full Transit Plan protocol.
 argument-hint: "<phase number or name>"
 allowed-tools: Read, Glob, Grep, Bash, AskUserQuestion, Agent
 disable-model-invocation: true
@@ -16,11 +16,11 @@ The main session owns all planning state, user questions, contracts, generated-a
 
 ## Guard
 
-Initialized, roadmap exists, phase exists. If plans exist for every phase, stop with `All phases planned. Specify phase: /lbwc:vibe --plan N`. If the phase directory is inside `.lbwc-planning/milestones/`, stop with `Cannot plan inside archived milestones.` Archived milestones are read-only.
+Initialized, roadmap exists, phase exists. If plans exist for every phase, stop with `All phases planned. Specify phase: /meridian:transit --plan N`. If the phase directory is inside `.meridian/milestones/`, stop with `Cannot plan inside archived milestones.` Archived milestones are read-only.
 
 ## Steps
 
-Follow `@references/vibe-mode-plan.md` in full. It is the authoritative Vibe Plan protocol for phase detection, effort selection, research, context compilation, generated-agent contracts, planning, filename normalization, validation, state updates, commit boundaries, and autonomy handling. Do not replace its required Phase 3 helper guards with local approximations.
+Follow `@references/transit-mode-plan.md` in full. It is the authoritative Transit Plan protocol for phase detection, effort selection, research, context compilation, generated-agent contracts, planning, filename normalization, validation, state updates, commit boundaries, and autonomy handling. Do not replace its required Phase 3 helper guards with local approximations.
 
 ## Review and handoff
 
@@ -32,11 +32,11 @@ Follow the reference's failure behavior exactly. Stop and report contract, gener
 
 ## Output Format
 
-Use the Phase Banner and planning output defined in `@references/vibe-mode-plan.md`, including plans, titles, waves, task counts, and effort. Report any allowed research warning or blocking failure plainly.
+Use the Phase Banner and planning output defined in `@references/transit-mode-plan.md`, including plans, titles, waves, task counts, and effort. Report any allowed research warning or blocking failure plainly.
 
 ## Next Up
 
-When planning completes, use the reference's autonomy gate. If the user approves execution or the autonomy gate auto-chains it, direct the user to `Next Up: /lbwc:build <phase>`. On a cautious stop or blocker, show only the documented next action.
+When planning completes, use the reference's autonomy gate. If the user approves execution or the autonomy gate auto-chains it, direct the user to `Next Up: /meridian:build <phase>`. On a cautious stop or blocker, show only the documented next action.
 
 ## Feedback card
 

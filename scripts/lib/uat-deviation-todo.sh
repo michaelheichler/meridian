@@ -39,7 +39,7 @@ planning_root_for_phase() {
   [ -n "$phase_dir" ] || return 1
   dir=$(CDPATH='' cd -- "$phase_dir" 2>/dev/null && pwd -P) || return 1
   while [ "$dir" != "/" ] && [ -n "$dir" ]; do
-    if [ "$(basename "$dir")" = ".lbwc-planning" ]; then
+    if [ "$(basename "$dir")" = ".meridian" ]; then
       printf '%s\n' "$dir"
       return 0
     fi

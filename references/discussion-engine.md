@@ -1,6 +1,6 @@
 # Discussion Engine
 
-One engine, two entry points: `/lbwc:vibe` auto-dispatches here when phase detection reports `needs_discussion`, and `/lbwc:discuss` invokes it directly. The user is the visionary, the orchestrator is the builder. The engine's job is to surface decisions that downstream agents (`lead`, engineers) need so they never ask the user again mid-phase. No agent is spawned for this, the main session runs it inline.
+One engine has two entry points. `/meridian:transit` auto-dispatches here when phase detection reports `needs_discussion`, and `/meridian:discuss` invokes it directly. The user is the visionary, the orchestrator is the builder. The engine's job is to surface decisions that downstream agents (`lead`, engineers) need so they never ask the user again mid-phase. No agent is spawned for this, the main session runs it inline.
 
 ## Shared decision boundary
 
@@ -8,7 +8,7 @@ Follow `references/ask-user-question.md`. The main session asks one bounded, sin
 
 ## Step 1: Calibrate
 
-Infer user sophistication from conversation signals, never ask: language in prior messages (jargon vs plain), project description complexity, and whether they typed `/lbwc:discuss` explicitly or arrived via `/lbwc:vibe`.
+Infer user sophistication without asking. Use conversation signals including language in prior messages (jargon vs plain), project description complexity, and whether they typed `/meridian:discuss` explicitly or arrived via `/meridian:transit`.
 
 | Mode | Signals | Question style |
 | --- | --- | --- |
@@ -29,13 +29,13 @@ An alternative to the question-driven flow: read the codebase first, form eviden
 Activation, first match wins:
 
 1. `--assumptions` in `$ARGUMENTS` → assumptions path
-2. `discussion_mode` is `"assumptions"` in `.lbwc-planning/config.json` → assumptions path
-3. `discussion_mode` is `"auto"` and `.lbwc-planning/codebase/META.md` exists → assumptions path
+2. `discussion_mode` is `"assumptions"` in `.meridian/config.json` → assumptions path
+3. `discussion_mode` is `"auto"` and `.meridian/codebase/META.md` exists → assumptions path
 4. Otherwise → questions path (Step 2)
 
-If the assumptions path activates but no codebase map exists, say so and fall back to questions: "Assumptions mode works best with codebase context. Run `/lbwc:map` first for evidence-backed assumptions, or falling back to questions mode."
+If the assumptions path activates but no codebase map exists, say so and fall back to questions: "Assumptions mode works best with codebase context. Run `/meridian:map` first for evidence-backed assumptions, or falling back to questions mode."
 
-**A1: Codebase analysis.** Read `.lbwc-planning/codebase/ARCHITECTURE.md`, `PATTERNS.md`, and `CONCERNS.md` when present, plus the phase goal from ROADMAP.md. For gray areas needing deeper evidence, read the actual source files, do not form assumptions from summaries alone when the source is readily available.
+**A1. Codebase analysis.** Read `.meridian/codebase/ARCHITECTURE.md`, `PATTERNS.md`, and `CONCERNS.md` when present, plus the phase goal from ROADMAP.md. For gray areas needing deeper evidence, read the actual source files, do not form assumptions from summaries alone when the source is readily available.
 
 **A2: Form assumptions.** Identify gray areas the same way Step 2 does, then structure each as:
 
@@ -84,7 +84,7 @@ For each selected area, a natural conversation, not a form:
 
 ## Step 4: Capture
 
-Write or update `.lbwc-planning/phases/{NN}-{slug}/{NN}-CONTEXT.md` from `templates/CONTEXT.md`. The `{NN}-` prefix is load-bearing: `phase-detect.sh`'s `needs_discussion` check only counts canonical `[0-9]*-CONTEXT.md` names.
+Write or update `.meridian/phases/{NN}-{slug}/{NN}-CONTEXT.md` from `templates/CONTEXT.md`. The `{NN}-` prefix is load-bearing: `phase-detect.sh`'s `needs_discussion` check only counts canonical `[0-9]*-CONTEXT.md` names.
 
 **Continuation mode:** do not overwrite. Merge: new `### [Gray Area]` subsections appended under `## Decisions Made`, new entries appended to Deferred Ideas. Never remove, rewrite, or reorder existing content, the original decisions still stand. If the user selected `None: discussion is complete`, write nothing.
 
@@ -94,6 +94,6 @@ Write or update `.lbwc-planning/phases/{NN}-{slug}/{NN}-CONTEXT.md` from `templa
 
 ## Design principles
 
-- **One engine.** `/lbwc:vibe` dispatch and standalone `/lbwc:discuss` run the same protocol.
+- **One engine.** `/meridian:transit` dispatch and standalone `/meridian:discuss` run the same protocol.
 - **Calibrate silently.** Never ask "are you technical?".
 - **Orient from the phase, not from templates.** Gray areas come from analysis, not predefined lists.

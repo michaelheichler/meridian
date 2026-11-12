@@ -1,4 +1,15 @@
 #!/usr/bin/env bash
+
+printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${BASH_SOURCE[0]}"
+case "$MERIDIAN_MIGRATION_SOURCE" in
+  *"/"*) printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${MERIDIAN_MIGRATION_SOURCE%"/"*}" ;;
+  *) printf -v MERIDIAN_MIGRATION_SOURCE '%s' . ;;
+esac
+if [ -f "$MERIDIAN_MIGRATION_SOURCE/lib/rename-migration.sh" ]; then
+  . "$MERIDIAN_MIGRATION_SOURCE/lib/rename-migration.sh"
+  meridian_migrate_environment
+fi
+unset MERIDIAN_MIGRATION_SOURCE
 set -euo pipefail
 
 
@@ -175,7 +186,7 @@ all_active_phases_are_remediation() {
 
 extract_project_name() {
   local project_file="$PLANNING_DIR/PROJECT.md"
-  local project_name="LBWC Project"
+  local project_name="MERIDIAN Project"
 
   if [ -f "$project_file" ]; then
     heading=$(awk '/^# / {sub(/^# /, "", $0); print; exit }' "$project_file" 2>/dev/null || true)

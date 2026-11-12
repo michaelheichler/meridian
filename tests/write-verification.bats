@@ -5,7 +5,7 @@ load test_helper
 setup() {
   setup_temp_dir
   SCRIPT="$SCRIPTS_DIR/write-verification.sh"
-  PHASE_DIR="$TEST_TEMP_DIR/.lbwc-planning/phases/01-verification"
+  PHASE_DIR="$TEST_TEMP_DIR/.meridian/phases/01-verification"
   TARGET="$PHASE_DIR/01-VERIFICATION.md"
   mkdir -p "$PHASE_DIR"
 }

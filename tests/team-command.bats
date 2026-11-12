@@ -14,7 +14,7 @@ setup() {
   PROJECT="$TEST_ROOT/project"
   mkdir -p "$PROJECT/src" "$TEST_ROOT/claude"
   (cd "$PROJECT" && git init -q)
-  export LBWC_SETTINGS_PATH="$SETTINGS"
+  export MERIDIAN_SETTINGS_PATH="$SETTINGS"
   export CLAUDE_CONFIG_DIR="$TEST_ROOT/claude"
   unset CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS || true
   use_claude_fixture "$TEST_ROOT/host-claude"
@@ -29,7 +29,7 @@ prepare_run() {
   local run_id="$1"
   shift
   RUN_ID="$run_id"
-  LBWC_SETTINGS_PATH="$SETTINGS" run bash "$TRANSACTION" prepare \
+  MERIDIAN_SETTINGS_PATH="$SETTINGS" run bash "$TRANSACTION" prepare \
     --project-root "$PROJECT" --run-id "$run_id" --instruction "implement scoped change" "$@"
   [ "$status" -eq 0 ]
   CONTRACT_ID=$(jq -r '.contract_id' <<< "$output")
@@ -85,7 +85,7 @@ record_full_roster() {
 
 seed_saved_routing_root() {
   local route_binary="$TEST_ROOT/claude-route-fixture" route_sha
-  mkdir -p "$PROJECT/.lbwc-planning"
+  mkdir -p "$PROJECT/.meridian"
   printf '%s\n' '#!/usr/bin/env bash' 'printf "%s\n" "fixture"' > "$route_binary"
   chmod +x "$route_binary"
   route_sha=$(shasum -a 256 "$route_binary" | awk '{print $1}')
@@ -96,7 +96,7 @@ seed_saved_routing_root() {
       models: [{selector: "nova-route", label: "Nova Route", description: "Fixture selector"}],
       reasoning: {scope: "global", accepted_values: ["deliberate"], model_associations: {"nova-route": ["deliberate"]}}
     }
-  ' > "$PROJECT/.lbwc-planning/claude-capabilities.json"
+  ' > "$PROJECT/.meridian/claude-capabilities.json"
   jq --slurpfile defaults "$REPO_ROOT/templates/agent-roles/defaults.json" '
     . + {
       schema_version: 1,
@@ -111,7 +111,7 @@ seed_saved_routing_root() {
         }
       }
     }
-  ' "$REPO_ROOT/config/settings.json" > "$PROJECT/.lbwc-planning/config.json"
+  ' "$REPO_ROOT/config/settings.json" > "$PROJECT/.meridian/config.json"
 }
 
 run_seeded_host_model() {
@@ -122,14 +122,14 @@ run_seeded_host_model() {
 
 copy_plugin() {
   PLUGIN="$TEST_ROOT/plugin"
-  mkdir -p "$PLUGIN/templates" "$PROJECT/.lbwc-planning"
+  mkdir -p "$PLUGIN/templates" "$PROJECT/.meridian"
   cp -R "$REPO_ROOT/scripts" "$PLUGIN/scripts"
   ln -s "$REPO_ROOT/config" "$PLUGIN/config"
   cp -R "$REPO_ROOT/templates/." "$PLUGIN/templates/"
 }
 
 write_routing_stub() {
-  printf '%s\n' '#!/usr/bin/env bash' "printf '%s\\n' '$1'" > "$PLUGIN/scripts/lbwc-routing.sh"
+  printf '%s\n' '#!/usr/bin/env bash' "printf '%s\\n' '$1'" > "$PLUGIN/scripts/meridian-routing.sh"
 }
 
 run_plugin_preflight() {
@@ -149,7 +149,7 @@ expect_refused() {
 preflight_turns_row() {
   local label="$1" engineer="$2" config="$3" defaults_filter="$4" want="$5"
   jq "$defaults_filter" "$REPO_ROOT/templates/agent-roles/defaults.json" > "$PLUGIN/templates/agent-roles/defaults.json"
-  printf '%s\n' "$config" > "$PROJECT/.lbwc-planning/config.json"
+  printf '%s\n' "$config" > "$PROJECT/.meridian/config.json"
   run_plugin_preflight --engineer "$engineer"
 }
 
@@ -188,7 +188,7 @@ resolve_preflight_routes_and_turn_budgets() {
   expect_jq_output seeded-prefers-sonnet '.routing.mode == "seeded" and .routing.model == "sonnet"'
 
   copy_plugin
-  printf '%s\n' '{"routing":{"active_profile":"balanced"}}' > "$PROJECT/.lbwc-planning/config.json"
+  printf '%s\n' '{"routing":{"active_profile":"balanced"}}' > "$PROJECT/.meridian/config.json"
   write_routing_stub '{"model":"nova-route","profile":null,"reasoning":"deliberate","role":"web-engineer"}'
   run_plugin_preflight
   expect_case null-saved-profile 0
@@ -199,7 +199,7 @@ resolve_preflight_routes_and_turn_budgets() {
   while IFS='|' read -r label effort expected; do
     [ -n "$label" ] || continue
     jq -n --arg effort "$effort" '{routing: {active_profile: "balanced"}, effort: $effort}' \
-      > "$PROJECT/.lbwc-planning/config.json"
+      > "$PROJECT/.meridian/config.json"
     run_plugin_preflight
     expect_case "$label" 0
     [ "$(jq -r '.routing.max_turns' <<< "$output")" = "$(( (base * expected + 5) / 10 ))" ] \
@@ -340,8 +340,8 @@ prepare_pair_and_trio_contracts() {
   expect_path init-run-json "$RUN_ROOT/run.json"
   expect_path init-run-contract "$RUN_ROOT/contract.json"
   expect_path init-diagnostics "$RUN_ROOT/diagnostics.jsonl"
-  expect_path init-manifest "$PROJECT/.lbwc-planning/.agent-manifest.json"
-  expect_path init-task-contract "$PROJECT/.lbwc-planning/.contracts/tasks/$CONTRACT_ID.json"
+  expect_path init-manifest "$PROJECT/.meridian/.agent-manifest.json"
+  expect_path init-task-contract "$PROJECT/.meridian/.contracts/tasks/$CONTRACT_ID.json"
 
   assert_no_case_failures
 }
@@ -387,7 +387,7 @@ gate_task_steps_on_teammate_evidence() {
 
   prepare_run run-record --scope src
   run bash "$TRANSACTION" record-spawn --project-root "$PROJECT" --run-root "$RUN_ROOT" \
-    --contract-id "$CONTRACT_ID" --teammate "lbwc-ghost"
+    --contract-id "$CONTRACT_ID" --teammate "meridian-ghost"
   expect_refused record-spawn-unknown "not registered"
   name=$(jq -r '.teammates[0].name' "$RUN_ROOT/run.json")
   run bash "$TRANSACTION" record-spawn --project-root "$PROJECT" --run-root "$RUN_ROOT" \

@@ -12,14 +12,14 @@ on:
       - commands/models.md
       - config/settings.json
       - scripts/claude-capabilities.sh
-      - scripts/lbwc-config.sh
-      - scripts/lbwc-model
-      - scripts/lbwc-routing.sh
+      - scripts/meridian-config.sh
+      - scripts/meridian-model
+      - scripts/meridian-routing.sh
       - templates/agent-roles/defaults.json
       - tests/claude-capabilities.bats
-      - tests/lbwc-config.bats
-      - tests/lbwc-model.bats
-      - tests/lbwc-routing.bats
+      - tests/meridian-config.bats
+      - tests/meridian-model.bats
+      - tests/meridian-routing.bats
       - tests/model-config-commands.bats
       - tests/test_helper.bash
   push:
@@ -30,14 +30,14 @@ on:
       - commands/models.md
       - config/settings.json
       - scripts/claude-capabilities.sh
-      - scripts/lbwc-config.sh
-      - scripts/lbwc-model
-      - scripts/lbwc-routing.sh
+      - scripts/meridian-config.sh
+      - scripts/meridian-model
+      - scripts/meridian-routing.sh
       - templates/agent-roles/defaults.json
       - tests/claude-capabilities.bats
-      - tests/lbwc-config.bats
-      - tests/lbwc-model.bats
-      - tests/lbwc-routing.bats
+      - tests/meridian-config.bats
+      - tests/meridian-model.bats
+      - tests/meridian-routing.bats
       - tests/model-config-commands.bats
       - tests/test_helper.bash
   workflow_dispatch:
@@ -67,7 +67,7 @@ jobs:
         run: >-
           bats
           tests/claude-capabilities.bats
-          tests/lbwc-config.bats
-          tests/lbwc-routing.bats
-          tests/lbwc-model.bats
+          tests/meridian-config.bats
+          tests/meridian-routing.bats
+          tests/meridian-model.bats
           tests/model-config-commands.bats

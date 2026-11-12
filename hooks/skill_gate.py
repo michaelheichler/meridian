@@ -71,7 +71,7 @@ def _agent_identifier(data) -> "str | None":
 
 def _state_path(key):
     safe = "".join(char if char.isalnum() or char in "-_" else "_" for char in (key or "no-session"))
-    return os.path.join(tempfile.gettempdir(), f"lbwc-skillgate-{safe}.json")
+    return os.path.join(tempfile.gettempdir(), f"meridian-skillgate-{safe}.json")
 
 
 def _load_agent_state(key):
@@ -106,7 +106,7 @@ def _has_satisfied(key, identifier, requirement):
 def _find_project_root(start):
     current = os.path.abspath(start or os.getcwd())
     while True:
-        if os.path.isdir(os.path.join(current, ".lbwc-planning")):
+        if os.path.isdir(os.path.join(current, ".meridian")):
             return current
         parent = os.path.dirname(current)
         if parent == current:
@@ -118,7 +118,7 @@ def _manifest_entry_for_identifier(identifier, cwd) -> "dict | None":
     root = _find_project_root(cwd)
     if not root:
         return None
-    manifest_path = os.path.join(root, ".lbwc-planning", ".agent-manifest.json")
+    manifest_path = os.path.join(root, ".meridian", ".agent-manifest.json")
     try:
         with open(manifest_path) as manifest_file:
             manifest = json.load(manifest_file)

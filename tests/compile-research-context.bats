@@ -6,8 +6,8 @@ load test_helper
 
 setup() {
   setup_temp_dir
-  export LBWC_PLANNING_DIR="$TEST_TEMP_DIR/.lbwc-planning"
-  mkdir -p "$LBWC_PLANNING_DIR"
+  export MERIDIAN_PLANNING_DIR="$TEST_TEMP_DIR/.meridian"
+  mkdir -p "$MERIDIAN_PLANNING_DIR"
 
   cd "$TEST_TEMP_DIR"
   git init --quiet
@@ -47,7 +47,7 @@ compile_context() {
 create_research_file() {
   local slug="$1"
   cd "$TEST_TEMP_DIR"
-  eval "$(bash "$SCRIPTS_DIR/research-session-state.sh" start "$LBWC_PLANNING_DIR" "$slug")"
+  eval "$(bash "$SCRIPTS_DIR/research-session-state.sh" start "$MERIDIAN_PLANNING_DIR" "$slug")"
   cat > "$research_file" << ENDCONTENT
 ---
 title: ${slug}
@@ -72,7 +72,7 @@ build_fixture() {
       done:*) create_research_file "${entry#done:}" > /dev/null ;;
       active:*)
         cd "$TEST_TEMP_DIR"
-        bash "$SCRIPTS_DIR/research-session-state.sh" start "$LBWC_PLANNING_DIR" "${entry#active:}" > /dev/null
+        bash "$SCRIPTS_DIR/research-session-state.sh" start "$MERIDIAN_PLANNING_DIR" "${entry#active:}" > /dev/null
         ;;
     esac
   done
@@ -84,8 +84,8 @@ add_commits() {
   while [ "$index" -lt "$count" ]; do
     index=$((index + 1))
     if [ "$target" = "planning" ]; then
-      echo "change $index" > "$TEST_TEMP_DIR/.lbwc-planning/state-change-$index"
-      git -C "$TEST_TEMP_DIR" add .lbwc-planning
+      echo "change $index" > "$TEST_TEMP_DIR/.meridian/state-change-$index"
+      git -C "$TEST_TEMP_DIR" add .meridian
     else
       echo "change $index" >> "$TEST_TEMP_DIR/dummy"
       git -C "$TEST_TEMP_DIR" add dummy
@@ -98,15 +98,15 @@ add_commits() {
   local label fixture description expected absent commits target want_content want_warning
   while IFS='|' read -r label fixture description; do
     [ -n "$label" ] || continue
-    rm -rf "$LBWC_PLANNING_DIR/research"
+    rm -rf "$MERIDIAN_PLANNING_DIR/research"
     build_fixture "$fixture"
     cd "$TEST_TEMP_DIR"
     if [ "$fixture" = "MISSING" ]; then
       run --separate-stderr compile_context "/nonexistent/dir" "$description"
     elif [ -z "$description" ]; then
-      run --separate-stderr compile_context "$LBWC_PLANNING_DIR"
+      run --separate-stderr compile_context "$MERIDIAN_PLANNING_DIR"
     else
-      run --separate-stderr compile_context "$LBWC_PLANNING_DIR" "$description"
+      run --separate-stderr compile_context "$MERIDIAN_PLANNING_DIR" "$description"
     fi
     [ "$status" -eq 0 ] || fail_case "$label" "status=0" "status=$status output=$output"
     [ -z "$output" ] || fail_case "$label" "empty stdout" "$output"
@@ -124,10 +124,10 @@ CASES
 
   while IFS='|' read -r label fixture description expected absent; do
     [ -n "$label" ] || continue
-    rm -rf "$LBWC_PLANNING_DIR/research"
+    rm -rf "$MERIDIAN_PLANNING_DIR/research"
     build_fixture "$fixture"
     cd "$TEST_TEMP_DIR"
-    run --separate-stderr compile_context "$LBWC_PLANNING_DIR" "$description"
+    run --separate-stderr compile_context "$MERIDIAN_PLANNING_DIR" "$description"
     [ "$status" -eq 0 ] || fail_case "$label" "status=0" "status=$status output=$output"
     expect_has "$label" "$expected" "$output"
     expect_lacks "$label fresh" "commits have landed" "$output"
@@ -139,10 +139,10 @@ CASES
 
   while IFS='|' read -r label commits target want_content want_warning; do
     [ -n "$label" ] || continue
-    rm -rf "$LBWC_PLANNING_DIR/research"
+    rm -rf "$MERIDIAN_PLANNING_DIR/research"
     create_research_file "stale-case" > /dev/null
     add_commits "$commits" "$target"
-    run --separate-stderr compile_context "$LBWC_PLANNING_DIR" "stale case"
+    run --separate-stderr compile_context "$MERIDIAN_PLANNING_DIR" "stale case"
     [ "$status" -eq 0 ] || fail_case "$label" "status=0" "status=$status output=$output"
     if [ "$want_content" = "yes" ]; then
       expect_has "$label content" "Research findings about stale-case" "$output"
@@ -167,10 +167,10 @@ CASES
   local label commits rfile
   while IFS='|' read -r label commits; do
     [ -n "$label" ] || continue
-    rm -rf "$LBWC_PLANNING_DIR/research"
+    rm -rf "$MERIDIAN_PLANNING_DIR/research"
     rfile=$(create_research_file "override-$label")
     add_commits "$commits" dummy
-    run --separate-stderr compile_context "$LBWC_PLANNING_DIR" --file "$rfile"
+    run --separate-stderr compile_context "$MERIDIAN_PLANNING_DIR" --file "$rfile"
     [ "$status" -eq 0 ] || fail_case "$label" "status=0" "status=$status output=$output"
     expect_has "$label" "Research findings about override-$label" "$output"
     expect_lacks "$label" "commits have landed" "$output"
@@ -179,7 +179,7 @@ fresh|0
 stale|11
 CASES
 
-  run --separate-stderr compile_context "$LBWC_PLANNING_DIR" --file "/nonexistent/path.md"
+  run --separate-stderr compile_context "$MERIDIAN_PLANNING_DIR" --file "/nonexistent/path.md"
   [ "$status" -eq 0 ]
   [ -z "$output" ]
 }

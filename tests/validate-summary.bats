@@ -7,7 +7,7 @@ load text_case_helper
 
 setup() {
   WORK="$BATS_TEST_TMPDIR/work"
-  PHASE="$WORK/.lbwc-planning/phases/01-core"
+  PHASE="$WORK/.meridian/phases/01-core"
   mkdir -p "$PHASE" "$BATS_TEST_TMPDIR/home"
   export HOME="$BATS_TEST_TMPDIR/home"
   git init -q "$WORK"

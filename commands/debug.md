@@ -6,7 +6,7 @@ argument-hint: "bug description | todo number | --resume | --session ID"
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep, WebFetch, Agent, Skill, LSP, AskUserQuestion, Workflow
 ---
 
-# LBWC Debug: $ARGUMENTS
+# MERIDIAN Debug: $ARGUMENTS
 
 Store the plugin root path from Context at the end of this command as `{plugin-root}` for script invocations. Replace `{plugin-root}` with that literal path whenever a step references a script or reference file.
 
@@ -18,12 +18,12 @@ Every Debugger and QA spawn follows `{plugin-root}/references/agent-spawn-protoc
 
 ## Workflow capability gate
 
-Refresh the saved Claude capability catalog with `bash "{plugin-root}/scripts/lbwc-model" refresh .lbwc-planning` before the implementation debugger's contract or spawn. This persists workflow-backend availability as `.workflow` on `.lbwc-planning/claude-capabilities.json`, the authority `### Spawn investigation` reads before offering or resolving `workflow`. A non-zero exit here does not stop debugging. It leaves `RESOLVED_BACKEND` at `in_process`, so investigation and implementation proceed on whatever catalog already exists. Step 0 of `workflow-spawn-protocol.md` and `workflow-generator.sh`'s own live re-validation at generation time can still block an implementation spawn that requests or chooses `workflow`, but no other spawn. Skip this gate when `.lbwc-planning/` is missing. Do not create a planning directory here.
+Refresh the saved Claude capability catalog with `bash "{plugin-root}/scripts/meridian-model" refresh .meridian` before the implementation debugger's contract or spawn. This persists workflow-backend availability as `.workflow` on `.meridian/claude-capabilities.json`, the authority `### Spawn investigation` reads before offering or resolving `workflow`. A non-zero exit here does not stop debugging. It leaves `RESOLVED_BACKEND` at `in_process`, so investigation and implementation proceed on whatever catalog already exists. Step 0 of `workflow-spawn-protocol.md` and `workflow-generator.sh`'s own live re-validation at generation time can still block an implementation spawn that requests or chooses `workflow`, but no other spawn. Skip this gate when `.meridian/` is missing. Do not create a planning directory here.
 
 ## Guard
 
-- Not initialized (no .lbwc-planning/ dir): STOP "Run /lbwc:init first."
-- If there are no $ARGUMENTS and no `--resume` flag and no `--session` flag, STOP "Usage: `/lbwc:debug \"description of the bug or error message\" [--competing|--parallel|--serial]` | `/lbwc:debug <todo-number> [--competing|--parallel|--serial]` | `/lbwc:debug --resume` | `/lbwc:debug --session <id>`"
+- Not initialized (no .meridian/ dir): STOP "Run /meridian:init first."
+- If there are no $ARGUMENTS and no `--resume` flag and no `--session` flag, STOP "Usage: `/meridian:debug \"description of the bug or error message\" [--competing|--parallel|--serial]` | `/meridian:debug <todo-number> [--competing|--parallel|--serial]` | `/meridian:debug --resume` | `/meridian:debug --session <id>`"
 
 ## Resolve selected todo number
 When arguments minus supported routing flags contain exactly one numeric token and no freeform text, Read `{plugin-root}/references/commands/debug-selected-todo.md` before session routing.
@@ -55,7 +55,7 @@ If resuming `session_status=qa_failed`, Read `{plugin-root}/references/commands/
 If resuming a session with `session_status=uat_pending`, skip investigation, jump directly to `<debug_inline_uat>` below to run UAT inline.
 If resuming `session_status=uat_failed`, Read `{plugin-root}/references/commands/debug-uat-failure.md` before continuing investigation.
 
-If resuming a session with `session_status=complete`, STOP "This debug session is already complete. Use `/lbwc:debug --session <id>` to inspect another session, or start a new one with `/lbwc:debug \"description of the bug or error message\"` or `/lbwc:debug <todo-number>`."
+If resuming a session with `session_status=complete`, STOP "This debug session is already complete. Use `/meridian:debug --session <id>` to inspect another session, or start a new one with `/meridian:debug \"description of the bug or error message\"` or `/meridian:debug <todo-number>`."
 </debug_session_routing>
 
 ## Steps
@@ -110,8 +110,8 @@ Execute the `Inline UAT` section of `references/debug-inline-verification.md`. F
 <debug_session_next_step>
 Session-aware next step (only shown when the inline flow did not run):
 
-- If investigation completed but you applied no fix (session status is `investigating`): `➜ Next: /lbwc:debug --resume -- Continue investigation and apply fix`
-- If session was not created (error or guard stopped execution): `➜ Next: /lbwc:status -- View project status`
+- If investigation completed but you applied no fix (session status is `investigating`): `➜ Next: /meridian:debug --resume -- Continue investigation and apply fix`
+- If session was not created (error or guard stopped execution): `➜ Next: /meridian:status -- View project status`
 </debug_session_next_step>
 
 ## Failure and recovery
@@ -139,7 +139,7 @@ Working directory:
 Plugin root:
 
 ```bash
-!`L="/tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID:-default}"; R="$L/scripts/resolve-plugin-root.sh"; [ -f "$R" ] || R="${CLAUDE_PLUGIN_ROOT:-}/scripts/resolve-plugin-root.sh"; [ -f "$R" ] || { echo "LBWC: plugin root unavailable. Restart this session to recreate $L." >&2; exit 1; }; bash "$R" >/dev/null || exit 1; echo "$L"`
+!`L="/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}"; R="$L/scripts/resolve-plugin-root.sh"; [ -f "$R" ] || R="${CLAUDE_PLUGIN_ROOT:-}/scripts/resolve-plugin-root.sh"; [ -f "$R" ] || { echo "MERIDIAN: plugin root unavailable. Restart this session to recreate $L." >&2; exit 1; }; bash "$R" >/dev/null || exit 1; echo "$L"`
 ```
 
 Recent commits:

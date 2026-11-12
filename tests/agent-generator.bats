@@ -9,15 +9,15 @@ GENERATOR="${SCRIPTS_DIR}/agent-generator.sh"
 export GENERATOR
 
 setup() {
-  TEST_TEMP_DIR=$(cd "$(mktemp -d "${TMPDIR:-/tmp}/lbwc-generator.XXXXXX")" && pwd -P)
+  TEST_TEMP_DIR=$(cd "$(mktemp -d "${TMPDIR:-/tmp}/meridian-generator.XXXXXX")" && pwd -P)
   export TEST_TEMP_DIR
   export _ORIG_HOME="${HOME:-}"
-  export _ORIG_LBWC_PLANNING_DIR="${LBWC_PLANNING_DIR:-}"
+  export _ORIG_MERIDIAN_PLANNING_DIR="${MERIDIAN_PLANNING_DIR:-}"
   export HOME="$TEST_TEMP_DIR"
-  unset LBWC_PLANNING_DIR CLAUDE_SESSION_ID 2>/dev/null || true
-  mkdir -p "$TEST_TEMP_DIR/.lbwc-planning"
+  unset MERIDIAN_PLANNING_DIR CLAUDE_SESSION_ID 2>/dev/null || true
+  mkdir -p "$TEST_TEMP_DIR/.meridian"
   write_generator_fixture "$TEST_TEMP_DIR"
-  cp "$TEST_TEMP_DIR/.lbwc-planning/config.json" "$TEST_TEMP_DIR/.lbwc-planning/config.pristine"
+  cp "$TEST_TEMP_DIR/.meridian/config.json" "$TEST_TEMP_DIR/.meridian/config.pristine"
   CONTRACT_SEQUENCE=0
   reset_case_failures
 }
@@ -32,7 +32,7 @@ generate() {
   if [ "${arguments[0]:-}" = "--pair" ]; then mode=pair; index=1; fi
   if [ "${arguments[0]:-}" = "--trio" ]; then mode=trio; index=1; fi
   role="${arguments[$index]:-}"
-  if [[ " ${arguments[*]} " != *" --contract "* ]] && jq -e --arg role "${role#lbwc-}" 'has($role)' "$PROJECT_ROOT/templates/agent-roles/defaults.json" >/dev/null 2>&1; then
+  if [[ " ${arguments[*]} " != *" --contract "* ]] && jq -e --arg role "${role#meridian-}" 'has($role)' "$PROJECT_ROOT/templates/agent-roles/defaults.json" >/dev/null 2>&1; then
     index=$((index + 1))
     while [ "$index" -lt "${#arguments[@]}" ]; do
       value=${arguments[$index]}
@@ -50,7 +50,7 @@ generate() {
       CONTRACT_SEQUENCE=$((CONTRACT_SEQUENCE + 1))
       task_id="test-${BATS_TEST_NUMBER:-0}-${CONTRACT_SEQUENCE}"
       contract=$(bash "$SCRIPTS_DIR/task-contract.sh" issue "$TEST_TEMP_DIR" "$task_id" \
-        --command test --role "${role#lbwc-}" --team "$mode" --job "$job" "${contract_args[@]}")
+        --command test --role "${role#meridian-}" --team "$mode" --job "$job" "${contract_args[@]}")
       arguments+=(--contract "$contract" --task-id "$(basename "$contract" .json)")
     fi
   fi
@@ -73,11 +73,11 @@ generate_raw() {
 }
 
 manifest_path() {
-  printf '%s' "$TEST_TEMP_DIR/.lbwc-planning/.agent-manifest.json"
+  printf '%s' "$TEST_TEMP_DIR/.meridian/.agent-manifest.json"
 }
 
 generated_name() {
-  printf '%s\n' "$output" | grep -o "lbwc-$1-[a-z0-9-]*" | head -1
+  printf '%s\n' "$output" | grep -o "meridian-$1-[a-z0-9-]*" | head -1
 }
 
 agent_file_count() {
@@ -93,12 +93,12 @@ reset_generated_state() {
 }
 
 restore_pristine_config() {
-  cp "$TEST_TEMP_DIR/.lbwc-planning/config.pristine" "$TEST_TEMP_DIR/.lbwc-planning/config.json"
+  cp "$TEST_TEMP_DIR/.meridian/config.pristine" "$TEST_TEMP_DIR/.meridian/config.json"
 }
 
 edit_config() {
-  jq "$1" "$TEST_TEMP_DIR/.lbwc-planning/config.json" > "$TEST_TEMP_DIR/.lbwc-planning/config.next"
-  mv "$TEST_TEMP_DIR/.lbwc-planning/config.next" "$TEST_TEMP_DIR/.lbwc-planning/config.json"
+  jq "$1" "$TEST_TEMP_DIR/.meridian/config.json" > "$TEST_TEMP_DIR/.meridian/config.next"
+  mv "$TEST_TEMP_DIR/.meridian/config.next" "$TEST_TEMP_DIR/.meridian/config.json"
 }
 
 expect_manifest_jq() {
@@ -154,12 +154,12 @@ stub_resolver_row() {
   reset_generated_state
   printf '%s\n' '#!/usr/bin/env bash' \
     "printf \"%s\\n\" \"RESOLVED_AGENT_MODEL='nova-route'\" \"RESOLVED_MAX_TURNS=''\" \"RESOLVED_REASONING_JSON='null'\"" > "$resolver"
-  LBWC_AGENT_SETTINGS_SCRIPT="$resolver" generate docs --job "write a README"
+  MERIDIAN_AGENT_SETTINGS_SCRIPT="$resolver" generate docs --job "write a README"
   expect_rejected_without_mutation "$label" "resolver omitted the max turns value"
 }
 
 host_enum_gap_row() {
-  local label="$1" catalog="$TEST_TEMP_DIR/.lbwc-planning/claude-capabilities.json"
+  local label="$1" catalog="$TEST_TEMP_DIR/.meridian/claude-capabilities.json"
   reset_generated_state
   cp "$catalog" "$catalog.saved"
   jq '. + {host_agent_enum: ["sonnet"], agent_model_ids: {sonnet: "sonnet"}}
@@ -184,9 +184,9 @@ stale_fingerprint_row() {
 pending_decision_row() {
   local label="$1"
   run bash -c 'bash "$1" create "$2" session-1 && bash "$1" record-bounded "$2" session-1 Fast' \
-    _ "$SCRIPTS_DIR/pending-decision.sh" "$TEST_TEMP_DIR/.lbwc-planning"
+    _ "$SCRIPTS_DIR/pending-decision.sh" "$TEST_TEMP_DIR/.meridian"
   expect_case "$label" 2 "direct decision transitions are disabled"
-  [ ! -e "$TEST_TEMP_DIR/.lbwc-planning/.runtime" ] || record_case_failure "$label" "runtime state was created"
+  [ ! -e "$TEST_TEMP_DIR/.meridian/.runtime" ] || record_case_failure "$label" "runtime state was created"
 }
 
 @test "agent-generator and pending-decision reject invalid requests, stale routes and mismatched contracts before any mutation" {
@@ -216,11 +216,11 @@ pending_decision_row() {
 naming_row() {
   local label="$1" seed="$2" name
   reset_generated_state
-  LBWC_AGENT_RANDOM_SEED="$seed" generate docs --job "write a README"
+  MERIDIAN_AGENT_RANDOM_SEED="$seed" generate docs --job "write a README"
   expect_case "$label" 0
   name=$(generated_name docs)
   expect_fragment "$label" "SPAWN_READY $name"
-  [[ "$name" =~ ^lbwc-docs-[a-z0-9]+-[a-z0-9]+-[a-z0-9]+$ ]] || record_case_failure "$label" "name=$name"
+  [[ "$name" =~ ^meridian-docs-[a-z0-9]+-[a-z0-9]+-[a-z0-9]+$ ]] || record_case_failure "$label" "name=$name"
   [ -f "$(agent_definition "$name")" ] || record_case_failure "$label" "definition missing for $name"
   expect_manifest_jq "$label" "$name" '.agents | has($name)'
 }
@@ -228,12 +228,12 @@ naming_row() {
 deterministic_seed_row() {
   local label="$1" first
   reset_generated_state
-  LBWC_AGENT_RANDOM_SEED=42 generate docs --job "first"
+  MERIDIAN_AGENT_RANDOM_SEED=42 generate docs --job "first"
   expect_case "$label-first" 0
   first=$(generated_name docs)
   [ -n "$first" ] || record_case_failure "$label-first" "no generated name"
   reset_generated_state
-  LBWC_AGENT_RANDOM_SEED=42 generate docs --job "second"
+  MERIDIAN_AGENT_RANDOM_SEED=42 generate docs --job "second"
   expect_case "$label" 0 "SPAWN_READY $first"
 }
 
@@ -312,7 +312,7 @@ write_allowance_row() {
 max_turns_generation_row() {
   local label="$1" filter="$2" want="$3" name definition lines expected_lines=1
   reset_generated_state
-  jq "$filter" "$TEST_TEMP_DIR/.lbwc-planning/config.pristine" > "$TEST_TEMP_DIR/.lbwc-planning/config.json"
+  jq "$filter" "$TEST_TEMP_DIR/.meridian/config.pristine" > "$TEST_TEMP_DIR/.meridian/config.json"
 
   generate docs --job "write a README"
 
@@ -538,8 +538,8 @@ trio_scoped_allowance_rejected_row() {
 
 @test "pair, trio and exclusive generation register the right roles and allowances within the live-agent capacity and fail closed on blocked or malformed lifecycle states" {
   generate --pair python-engineer --job "build a parser"
-  expect_case pair-spawn-lines 0 "ENGINEER: SPAWN_READY lbwc-python-engineer-"
-  expect_fragment pair-spawn-lines "CRITIC: SPAWN_READY lbwc-python-critic-"
+  expect_case pair-spawn-lines 0 "ENGINEER: SPAWN_READY meridian-python-engineer-"
+  expect_fragment pair-spawn-lines "CRITIC: SPAWN_READY meridian-python-critic-"
   [ "$(printf '%s\n' "$output" | grep -c 'SPAWN_READY')" -eq 2 ] || record_case_failure pair-spawn-lines "SPAWN_READY count is not 2"
 
   reset_generated_state

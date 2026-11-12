@@ -81,7 +81,7 @@ init_integration() {
   binary=$(command -v rtk) || die 'init requires an RTK binary already on PATH'
   "$binary" --version >/dev/null 2>&1 || die 'RTK binary validation failed'
   directory=$(claude_config_dir)
-  TEMP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/lbwc-rtk-init.XXXXXX") || die 'cannot stage RTK integration'
+  TEMP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/meridian-rtk-init.XXXXXX") || die 'cannot stage RTK integration'
   original="$TEMP_DIR/settings.json"
   if [ -e "$directory/settings.json" ]; then
     cp "$directory/settings.json" "$original" || die 'cannot read Claude Code settings'
@@ -173,7 +173,7 @@ integration_smoke() {
   local json="$1" state
   assert_safe_state
   RTK_BINARY=$(integration_binary) || die 'smoke requires an existing RTK binary'
-  TEMP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/lbwc-rtk-smoke.XXXXXX") || die 'cannot isolate RTK smoke tracking'
+  TEMP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/meridian-rtk-smoke.XXXXXX") || die 'cannot isolate RTK smoke tracking'
   state=$(RTK_DB_PATH="$TEMP_DIR/tracking.db" smoke) || die 'RTK local proxy smoke failed'
   if [ "$json" = true ]; then
     require_jq

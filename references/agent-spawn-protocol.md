@@ -1,6 +1,6 @@
 # Agent Spawn Protocol
 
-This document defines how an LBWC command mints and starts a teammate. Every spawning command follows it. This includes `/lbwc:vibe`, `/lbwc:plan`, `/lbwc:build`, `/lbwc:fix`, `/lbwc:qa`, `/lbwc:research`, `/lbwc:debug`, `/lbwc:docs`, and `/lbwc:map`. Do not duplicate this mechanic at a call site. Cite this file instead.
+This document defines how an MERIDIAN command mints and starts a teammate. Every spawning command follows it. This includes `/meridian:transit`, `/meridian:plan`, `/meridian:build`, `/meridian:fix`, `/meridian:qa`, `/meridian:research`, `/meridian:debug`, `/meridian:docs`, and `/meridian:map`. Do not duplicate this mechanic at a call site. Cite this file instead.
 
 ## Roles
 
@@ -18,7 +18,7 @@ w="${CLAUDE_PLUGIN_ROOT:+$CLAUDE_PLUGIN_ROOT/scripts/agent-generator.sh}"
 c="${CLAUDE_PLUGIN_ROOT:+$CLAUDE_PLUGIN_ROOT/scripts/task-contract.sh}"
 if [ ! -f "$w" ] || [ ! -f "$c" ]
 then
-  printf '%s\n' 'Unable to resolve LBWC contract or generator script: CLAUDE_PLUGIN_ROOT is not set or incomplete' >&2
+  printf '%s\n' 'Unable to resolve MERIDIAN contract or generator script: CLAUDE_PLUGIN_ROOT is not set or incomplete' >&2
   exit 1
 fi
 CONTRACT_PATH=$(bash "$c" issue "$PROJECT_ROOT" "<task-slug>" --command "<command>" --role "<role>" --team solo --job "$BRIEF" --write-allowance "<exact-path>")
@@ -27,7 +27,7 @@ bash "$w" <role> --job "$BRIEF" --contract "$CONTRACT_PATH" --task-id "$TASK_ID"
 bash "$c" state "$PROJECT_ROOT" "$TASK_ID" dispatched >/dev/null
 ```
 
-Match the contract and generator team options. Pairs use `--team pair` with `issue` and `--pair` with the generator, while trios use `--team trio` and `--trio`. Repeat every anchor `--write-allowance` and every `--role-write-allowance role:path` on both calls. A read-only role still needs a contract, with no allowance flags. The writer stores contracts under `.lbwc-planning/.contracts/tasks/` and rejects protected framework paths. Do not hand-author or edit contract JSON.
+Match the contract and generator team options. Pairs use `--team pair` with `issue` and `--pair` with the generator, while trios use `--team trio` and `--trio`. Repeat every anchor `--write-allowance` and every `--role-write-allowance role:path` on both calls. A read-only role still needs a contract, with no allowance flags. The writer stores contracts under `.meridian/.contracts/tasks/` and rejects protected framework paths. Do not hand-author or edit contract JSON.
 
 `issue` assigns a unique shell-owned run group when the caller omits `--group`. This lets a command run again without reopening a terminal contract. Pass `--group <exact-group>` only when the calling command already owns a stable grouping identity.
 
@@ -39,9 +39,9 @@ The spawn guard accepts only a contract that the main session advanced to `dispa
 
 ## Admit one task team at a time
 
-Every `/lbwc:build` generator call includes the standalone `--exclusive` option after the role and its other options. This applies to a solo such as `bash "$w" qa-author --job "<brief>" --write-allowance <test-path> --exclusive`, a pair such as `bash "$w" --pair <role> --job "<brief>" --exclusive`, and a trio such as `bash "$w" --trio <role> --job "<brief>" --exclusive`.
+Every `/meridian:build` generator call includes the standalone `--exclusive` option after the role and its other options. This applies to a solo such as `bash "$w" qa-author --job "<brief>" --write-allowance <test-path> --exclusive`, a pair such as `bash "$w" --pair <role> --job "<brief>" --exclusive`, and a trio such as `bash "$w" --trio <role> --job "<brief>" --exclusive`.
 
-Generate one build grouping when its task becomes runnable. Use a solo red stage for TDD, otherwise generate the admitted pair or trio. Do not call the generator for the next grouping until every manifest member of the current grouping is `used` or `expired`. A TDD `qa-author` must reach `used` or `expired` after its `tests_ready` report and red-stage commit before `/lbwc:build` generates the engineer pair with `--exclusive`. Within a dependency wave, the calling command preserves PLAN order and completes this admission cycle once per grouping. Dependency-wave ordering remains unchanged.
+Generate one build grouping when its task becomes runnable. Use a solo red stage for TDD, otherwise generate the admitted pair or trio. Do not call the generator for the next grouping until every manifest member of the current grouping is `used` or `expired`. A TDD `qa-author` must reach `used` or `expired` after its `tests_ready` report and red-stage commit before `/meridian:build` generates the engineer pair with `--exclusive`. Within a dependency wave, the calling command preserves PLAN order and completes this admission cycle once per grouping. Dependency-wave ordering remains unchanged.
 
 Do not generate the next task's pair or trio until every manifest member of the current task team is `used` or `expired`.
 
@@ -71,7 +71,7 @@ Build the brief accordingly instead of hitting these blind:
 
 - `skill_gate.py`: each teammate's first `Write`, `Edit`, or `NotebookEdit` is denied until it has read a bundled skill file from `skills-bundle/`. Expect that as their first read, not a stall.
 - `message_scope_guard.py`: native-team contracts allow peer and lead messages. Legacy `critic-relay` contracts allow only the critic, or `test-dev` in a trio, to report to `main`.
-- `test_scope_guard.py`: `coding-dijkstra`, `python-engineer`, and `web-engineer` are denied writes under `tests?/` or to `*.test.*` / `*.spec.*` files. In a non-TDD trio that lane belongs to `test-dev`. In a TDD task, it belongs to the solo `qa-author` red stage. Don't ask the engineer role to also write tests.
+- `scope_guard.py`: `coding-dijkstra`, `python-engineer`, and `web-engineer` are denied writes under `tests?/` or to `*.test.*` / `*.spec.*` files. In a non-TDD trio that lane belongs to `test-dev`. In a TDD task, it belongs to the solo `qa-author` red stage. Don't ask the engineer role to also write tests.
 - `qa`'s own role definition denies it `Write`, `Edit`, `NotebookEdit`, and `ExitPlanMode`. It reports a verdict, it never touches files.
 - `scout`'s own role definition denies it `Edit` and `NotebookEdit`. It writes new research files, it never edits existing ones.
 - `debugger`'s own role definition denies `TaskCreate`. It works the single bug itself and does not spawn further.
@@ -86,7 +86,7 @@ An oracle is a third kind of teammate alongside the pair (engineer plus critic) 
 
 **How the primary agent invokes it.** The primary agent, and in a trio `test-dev` as well, reaches the oracle by name via `SendMessage`. This is the same peer-to-peer channel `web-engineer` already uses to reach `web-code-critic`. It sends the concrete question with the relevant flow and candidate pattern, explaining the constraint that makes the choice difficult. The oracle replies once with a grounded recommendation. The primary agent is then free to act on it, or state its own reasoning and disagree. `message_scope_guard.py` only blocks a non-critic role's `SendMessage` to `"main"`. Peer-to-peer messages between spawned teammates already pass, so an oracle needs no hook change to receive or answer a message from its paired primary role.
 
-**What an oracle is not.** It carries no write scope at all, so it does not need the carve-out `test_scope_guard.py` gives `test-dev` over test files, an oracle never touches files in the first place. It produces no artifact and runs no ranked-findings review. A task that needs an artifact (a wireframe, a written persona, a filled brief) belongs to a different, artifact-producing role, not an oracle.
+**What an oracle is not.** It carries no write scope at all, so it does not need the carve-out `scope_guard.py` gives `test-dev` over test files, an oracle never touches files in the first place. It produces no artifact and runs no ranked-findings review. A task that needs an artifact (a wireframe, a written persona, a filled brief) belongs to a different, artifact-producing role, not an oracle.
 
 ## Ownership
 

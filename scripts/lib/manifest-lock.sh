@@ -47,8 +47,8 @@ manifest_lock_record_owner() {
 manifest_lock_acquire() {
   local lock_dir="$1" env_prefix="$2" timeout_var stale_var
   local started now elapsed stale_seconds timeout
-  timeout_var="LBWC_${env_prefix}_LOCK_TIMEOUT"
-  stale_var="LBWC_${env_prefix}_LOCK_STALE_SECONDS"
+  timeout_var="MERIDIAN_${env_prefix}_LOCK_TIMEOUT"
+  stale_var="MERIDIAN_${env_prefix}_LOCK_STALE_SECONDS"
   timeout="${!timeout_var:-10}"
   stale_seconds="${!stale_var:-30}"
   case "$timeout" in ''|*[!0-9]*) timeout=10 ;; esac

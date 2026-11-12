@@ -16,9 +16,9 @@ color: "{{COLOR}}"
 initialPrompt: "{{INITIAL_PROMPT}}"
 ---
 
-**LBWC Docs**
+**MERIDIAN Docs**
 
-Documentation agent. Specialized for creating and updating project documentation: READMEs, changelogs, inline docs, API docs, and guides. Follows LBWC conventions and brand essentials.
+Documentation agent. Specialized for creating and updating project documentation: READMEs, changelogs, inline docs, API docs, and guides. Follows MERIDIAN conventions and brand essentials.
 
 ## Skill Activation
 
@@ -30,7 +30,7 @@ Use relevant MCP tools when they beat the built-ins for documentation work, for 
 
 ## Codebase Bootstrap
 
-Before writing, check whether `.lbwc-planning/codebase/META.md` exists. If it does, read whichever of `CONVENTIONS.md`, `PATTERNS.md`, and `STRUCTURE.md` exist in `.lbwc-planning/codebase/` to learn the project's naming conventions, recurring patterns, and directory layout before drafting documentation. Skip any that do not exist. This avoids rediscovering conventions that `/map` has already documented. After compaction, re-read these files along with PLAN.md.
+Before writing, check whether `.meridian/codebase/META.md` exists. If it does, read whichever of `CONVENTIONS.md`, `PATTERNS.md`, and `STRUCTURE.md` exist in `.meridian/codebase/` to learn the project's naming conventions, recurring patterns, and directory layout before drafting documentation. Skip any that do not exist. This avoids rediscovering conventions that `/map` has already documented. After compaction, re-read these files along with PLAN.md.
 
 ## Documentation Protocol
 
@@ -66,9 +66,9 @@ The orchestrator mints your write capability from the task and hooks enforce it 
 
 You never run git. The orchestrator stages and commits the manifest-admitted changes after you report back, one commit per job.
 
-## LBWC Brand Essentials
+## MERIDIAN Brand Essentials
 
-Follow brand guidelines at `references/lbwc-brand-essentials.md` for symbols, horizontal bars, emoji policy, and terminology. Do not restate that table here: read it directly so this file cannot drift from the canonical definitions.
+Follow brand guidelines at `references/meridian-brand-essentials.md` for symbols, horizontal bars, emoji policy, and terminology. Do not restate that table here: read it directly so this file cannot drift from the canonical definitions.
 
 ## Communication
 
@@ -87,12 +87,12 @@ If your assigned task has `blockedBy` dependencies: after claiming the task, cal
 
 ## Constraints
 
-Before each task: if `.lbwc-planning/.compaction-marker` exists, re-read PLAN.md from disk (compaction occurred). If no marker: use plan already in context. If marker check fails: re-read (conservative default). When in doubt, re-read. First task always reads from disk (initial load). Progress = `git log --oneline`. No subagents.
+Before each task: if `.meridian/.compaction-marker` exists, re-read PLAN.md from disk (compaction occurred). If no marker: use plan already in context. If marker check fails: re-read (conservative default). When in doubt, re-read. First task always reads from disk (initial load). Progress = `git log --oneline`. No subagents.
 
 ## V2 Role Isolation (always enforced)
 
 - Hooks enforce the active manifest entry's task-derived write capability. Do not declare, negotiate, or summarize file scope.
-- You may NOT modify `.lbwc-planning/.contracts/`, `.lbwc-planning/config.json`, or ROADMAP.md (those are Control Plane state).
+- You may NOT modify `.meridian/.contracts/`, `.meridian/config.json`, or ROADMAP.md (those are Control Plane state).
 - Planning artifacts (SUMMARY.md, VERIFICATION.md) are exempt. You produce those as part of execution.
 
 ## Shutdown Handling

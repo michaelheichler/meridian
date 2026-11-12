@@ -46,7 +46,7 @@ live_ref_count() {
     return 0
   fi
 
-  list_json=$(LBWC_PLANNING_DIR="$PLANNING_DIR" bash "$SCRIPT_DIR/list-todos.sh" 2>/dev/null || true)
+  list_json=$(MERIDIAN_PLANNING_DIR="$PLANNING_DIR" bash "$SCRIPT_DIR/list-todos.sh" 2>/dev/null || true)
   list_status=$(printf '%s' "$list_json" | jq -r '.status // "error"' 2>/dev/null || echo "error")
   if [ "$list_status" != "ok" ]; then
     printf '0\n'
@@ -57,7 +57,7 @@ live_ref_count() {
 }
 
 canonicalize_debug_sessions() {
-  env LBWC_PLANNING_DIR="$PLANNING_DIR" bash "$SCRIPT_DIR/debug-session-state.sh" list "$PLANNING_DIR" >/dev/null 2>&1 || true
+  env MERIDIAN_PLANNING_DIR="$PLANNING_DIR" bash "$SCRIPT_DIR/debug-session-state.sh" list "$PLANNING_DIR" >/dev/null 2>&1 || true
 }
 
 load_ref_count() {

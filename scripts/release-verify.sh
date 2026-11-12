@@ -1,4 +1,15 @@
 #!/usr/bin/env bash
+
+printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${BASH_SOURCE[0]}"
+case "$MERIDIAN_MIGRATION_SOURCE" in
+  *"/"*) printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${MERIDIAN_MIGRATION_SOURCE%"/"*}" ;;
+  *) printf -v MERIDIAN_MIGRATION_SOURCE '%s' . ;;
+esac
+if [ -f "$MERIDIAN_MIGRATION_SOURCE/lib/rename-migration.sh" ]; then
+  . "$MERIDIAN_MIGRATION_SOURCE/lib/rename-migration.sh"
+  meridian_migrate_environment
+fi
+unset MERIDIAN_MIGRATION_SOURCE
 set -euo pipefail
 
 ROOT="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
@@ -9,6 +20,6 @@ usage() {
 
 [ "$#" -eq 0 ] || { usage >&2; exit 2; }
 bash "$ROOT/scripts/version-bump.sh" --verify
-jq -e '.name == "lbwc" and (has("hooks") | not)' "$ROOT/.claude-plugin/plugin.json" >/dev/null
+jq -e '.name == "meridian" and (has("hooks") | not)' "$ROOT/.claude-plugin/plugin.json" >/dev/null
 [ -x "$ROOT/scripts/rtk-manager.sh" ] || { printf 'release verify: rtk-manager.sh is not executable\n' >&2; exit 2; }
 printf 'release verify: local release metadata is ready for a separate publish decision\n'

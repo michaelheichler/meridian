@@ -1,4 +1,15 @@
 #!/usr/bin/env bash
+
+printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${BASH_SOURCE[0]}"
+case "$MERIDIAN_MIGRATION_SOURCE" in
+  *"/"*) printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${MERIDIAN_MIGRATION_SOURCE%"/"*}" ;;
+  *) printf -v MERIDIAN_MIGRATION_SOURCE '%s' . ;;
+esac
+if [ -f "$MERIDIAN_MIGRATION_SOURCE/lib/rename-migration.sh" ]; then
+  . "$MERIDIAN_MIGRATION_SOURCE/lib/rename-migration.sh"
+  meridian_migrate_environment
+fi
+unset MERIDIAN_MIGRATION_SOURCE
 set -u
 
 
@@ -14,28 +25,28 @@ PLAN_PATH_INPUT="${4:-}"
 TARGET_SCOPE_EXPLICIT=0
 SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-. "${SCRIPT_DIR}/lib/lbwc-target-root.sh"
-. "${SCRIPT_DIR}/lib/lbwc-settings.sh"
+. "${SCRIPT_DIR}/lib/meridian-target-root.sh"
+. "${SCRIPT_DIR}/lib/meridian-settings.sh"
 
-if [ -n "${LBWC_PLANNING_DIR:-}" ] || [ $# -ge 3 ] || [ $# -ge 4 ]; then
+if [ -n "${MERIDIAN_PLANNING_DIR:-}" ] || [ $# -ge 3 ] || [ $# -ge 4 ]; then
   TARGET_SCOPE_EXPLICIT=1
 fi
 
 resolve_preferred_planning_dir() {
   local explicit_planning_dir
 
-  explicit_planning_dir=$(lbwc_resolve_target_planning_dir "1" "$CONFIG_PATH_INPUT" "$PLAN_PATH_INPUT" 2>/dev/null || true)
+  explicit_planning_dir=$(meridian_resolve_target_planning_dir "1" "$CONFIG_PATH_INPUT" "$PLAN_PATH_INPUT" 2>/dev/null || true)
   if [ -n "$explicit_planning_dir" ]; then
     printf '%s\n' "$explicit_planning_dir"
     return 0
   fi
 
-  if [ -n "${LBWC_PLANNING_DIR:-}" ]; then
-    printf '%s\n' "$LBWC_PLANNING_DIR"
+  if [ -n "${MERIDIAN_PLANNING_DIR:-}" ]; then
+    printf '%s\n' "$MERIDIAN_PLANNING_DIR"
     return 0
   fi
 
-  lbwc_resolve_target_planning_dir "$TARGET_SCOPE_EXPLICIT" "$CONFIG_PATH_INPUT" "$PLAN_PATH_INPUT" 2>/dev/null || printf '%s\n' '.lbwc-planning'
+  meridian_resolve_target_planning_dir "$TARGET_SCOPE_EXPLICIT" "$CONFIG_PATH_INPUT" "$PLAN_PATH_INPUT" 2>/dev/null || printf '%s\n' '.meridian'
 }
 
 resolve_existing_dir() {
@@ -68,15 +79,15 @@ PLANNING_DIR=$(resolve_preferred_planning_dir)
 PLANNING_DIR=$(resolve_existing_dir "$PLANNING_DIR")
 CONFIG_PATH="${CONFIG_PATH_INPUT:-$PLANNING_DIR/config.json}"
 CONFIG_PATH=$(resolve_existing_file "$CONFIG_PATH")
-MERGED_CONFIG=$(lbwc_merged_config "$CONFIG_PATH")
+MERGED_CONFIG=$(meridian_merged_config "$CONFIG_PATH")
 PLAN_PATH="$PLAN_PATH_INPUT"
 if [ -n "$PLAN_PATH" ]; then
   PLAN_PATH=$(resolve_existing_file "$PLAN_PATH")
 fi
 CACHE_DIR="$PLANNING_DIR/.cache/context"
-TARGET_ROOT=$(lbwc_resolve_target_root "$TARGET_SCOPE_EXPLICIT" "$PLAN_PATH" "$PLANNING_DIR" || true)
-TARGET_GIT_ROOT=$(lbwc_resolve_target_git_root "$TARGET_SCOPE_EXPLICIT" "$PLAN_PATH" "$PLANNING_DIR" || true)
-WORKSPACE_SUBPATH=$(lbwc_workspace_subpath_from_git_root "$TARGET_ROOT" "$TARGET_GIT_ROOT" 2>/dev/null || true)
+TARGET_ROOT=$(meridian_resolve_target_root "$TARGET_SCOPE_EXPLICIT" "$PLAN_PATH" "$PLANNING_DIR" || true)
+TARGET_GIT_ROOT=$(meridian_resolve_target_git_root "$TARGET_SCOPE_EXPLICIT" "$PLAN_PATH" "$PLANNING_DIR" || true)
+WORKSPACE_SUBPATH=$(meridian_workspace_subpath_from_git_root "$TARGET_ROOT" "$TARGET_GIT_ROOT" 2>/dev/null || true)
 
 fingerprint_file() {
   local path="$1" missing_label="$2"
@@ -179,8 +190,8 @@ if [[ "$ROLE" =~ ^(dev|scout|debugger)$ ]] && [ -f "${SCRIPT_DIR}/delta-files.sh
       DELTA_LIST_SUM=$(printf '%s\n' "$DELTA_FILES" | shasum -a 256 2>/dev/null | cut -d' ' -f1 || echo "nodelta")
       DELTA_CONTENT_SUM=$(printf '%s\n' "$DELTA_FILES" | while IFS= read -r file; do
         [ -n "$file" ] || continue
-        lbwc_is_safe_relative_path "$file" || continue
-        local_path=$(lbwc_resolve_repo_path "$TARGET_ROOT" "$file") || continue
+        meridian_is_safe_relative_path "$file" || continue
+        local_path=$(meridian_resolve_repo_path "$TARGET_ROOT" "$file") || continue
         printf 'FILE:%s\n' "$file"
         if [ -f "$local_path" ]; then
           shasum -a 256 "$local_path" 2>/dev/null || true

@@ -10,14 +10,14 @@ snapshot_path_for_session_id() {
 
   session_key=$(printf '%s' "$raw_session_id" | tr -c 'A-Za-z0-9_.-' '_')
   session_key="${session_key:-default}"
-  printf '/tmp/.lbwc-last-list-view-%s.json\n' "$session_key"
+  printf '/tmp/.meridian-last-list-view-%s.json\n' "$session_key"
 }
 
 setup() {
   setup_temp_dir
   create_test_config
   reset_case_failures
-  export LBWC_PLANNING_DIR="$TEST_TEMP_DIR/.lbwc-planning"
+  export MERIDIAN_PLANNING_DIR="$TEST_TEMP_DIR/.meridian"
   export CLAUDE_SESSION_ID="debug-start-selected-${BATS_TEST_NUMBER:-0}-$$-$RANDOM"
   SCRIPT="$SCRIPTS_DIR/debug-start-selected-todo.sh"
   LIFECYCLE_SCRIPT="$SCRIPTS_DIR/todo-lifecycle.sh"
@@ -28,14 +28,14 @@ setup() {
 }
 
 teardown() {
-  chmod u+w "$LBWC_PLANNING_DIR" 2>/dev/null || true
+  chmod u+w "$MERIDIAN_PLANNING_DIR" 2>/dev/null || true
   rm -f "$TEST_SNAPSHOT_PATH" 2>/dev/null || true
   teardown_temp_dir
 }
 
 reset_world() {
-  rm -rf "$LBWC_PLANNING_DIR/debugging" "$LBWC_PLANNING_DIR/milestones" \
-    "$LBWC_PLANNING_DIR/todo-details.json" "$LBWC_PLANNING_DIR/STATE.md"
+  rm -rf "$MERIDIAN_PLANNING_DIR/debugging" "$MERIDIAN_PLANNING_DIR/milestones" \
+    "$MERIDIAN_PLANNING_DIR/todo-details.json" "$MERIDIAN_PLANNING_DIR/STATE.md"
   rm -f "$TEST_SNAPSHOT_PATH"
 }
 
@@ -45,20 +45,20 @@ write_state() {
     '- Investigate detail-backed crash (added 2026-04-02) (ref:deadbeef)' \
     '- Empty detail item (added 2026-04-03) (ref:feedcafe)' \
     '- Missing detail item (added 2026-04-04) (ref:f78562c0)' \
-    '' '## Recent Activity' '- 2026-04-01: Existing note' > "$LBWC_PLANNING_DIR/STATE.md"
+    '' '## Recent Activity' '- 2026-04-01: Existing note' > "$MERIDIAN_PLANNING_DIR/STATE.md"
 }
 
 write_todos_state() {
   { printf '%s\n' '# Project State' '' '## Todos'; printf '%s\n' "$@"; printf '%s\n' '' '## Activity Log' '- 2026-04-01: Existing note'; } \
-    > "$LBWC_PLANNING_DIR/STATE.md"
+    > "$MERIDIAN_PLANNING_DIR/STATE.md"
 }
 
 add_detail() {
-  bash "$DETAILS_SCRIPT" add "$1" "$2" "$LBWC_PLANNING_DIR/todo-details.json" >/dev/null
+  bash "$DETAILS_SCRIPT" add "$1" "$2" "$MERIDIAN_PLANNING_DIR/todo-details.json" >/dev/null
 }
 
 save_snapshot() {
-  (cd "$TEST_TEMP_DIR" && LBWC_PLANNING_DIR="$LBWC_PLANNING_DIR" bash "$LIFECYCLE_SCRIPT" list-with-snapshot) >/dev/null
+  (cd "$TEST_TEMP_DIR" && MERIDIAN_PLANNING_DIR="$MERIDIAN_PLANNING_DIR" bash "$LIFECYCLE_SCRIPT" list-with-snapshot) >/dev/null
 }
 
 seed_complete_session() {
@@ -66,8 +66,8 @@ seed_complete_session() {
   source_json=$(jq -cn --arg mode source-todo --arg text "$text" --arg raw_line "$raw_line" --arg ref "$ref" \
     --arg detail_status "$detail_status" \
     '{mode:$mode,text:$text,raw_line:$raw_line,ref:$ref,detail_status:$detail_status,related_files:[],detail_context:""}')
-  eval "$(printf '%s' "$source_json" | bash "$STATE_SCRIPT" start-with-source-todo "$LBWC_PLANNING_DIR" "$slug")"
-  bash "$STATE_SCRIPT" set-status "$LBWC_PLANNING_DIR" complete >/dev/null
+  eval "$(printf '%s' "$source_json" | bash "$STATE_SCRIPT" start-with-source-todo "$MERIDIAN_PLANNING_DIR" "$slug")"
+  bash "$STATE_SCRIPT" set-status "$MERIDIAN_PLANNING_DIR" complete >/dev/null
 }
 
 session_file_from_output() {
@@ -75,7 +75,7 @@ session_file_from_output() {
 }
 
 count_sessions() {
-  find "$LBWC_PLANNING_DIR/debugging/$1" -maxdepth 1 -type f -name '*.md' 2>/dev/null | wc -l | tr -d ' '
+  find "$MERIDIAN_PLANNING_DIR/debugging/$1" -maxdepth 1 -type f -name '*.md' 2>/dev/null | wc -l | tr -d ' '
 }
 
 expect_count() {
@@ -84,7 +84,7 @@ expect_count() {
 }
 
 pending_todos_contain() {
-  awk '/^## Todos$/{found=1; next} found && /^## /{exit} found {print}' "${2:-$LBWC_PLANNING_DIR/STATE.md}" | grep -qF "$1"
+  awk '/^## Todos$/{found=1; next} found && /^## /{exit} found {print}' "${2:-$MERIDIAN_PLANNING_DIR/STATE.md}" | grep -qF "$1"
 }
 
 expect_pending() {
@@ -114,7 +114,7 @@ instrument_list_todos() {
   reset_world
   write_state
   save_snapshot
-  run bash "$SCRIPT" "$LBWC_PLANNING_DIR" 1
+  run bash "$SCRIPT" "$MERIDIAN_PLANNING_DIR" 1
   session_file=$(session_file_from_output "$output")
   expect_status "no-ref" 0
   expect_jq_output "no-ref-fields" '.status == "ok" and .bug_desc == "Fix parser bug" and .detail_status == "none" and .pickup.status == "ok" and .pickup.auto_note == "Selected todo was already picked up automatically."'
@@ -122,8 +122,8 @@ instrument_list_todos() {
   expect_path "no-ref-session-file" "$session_file"
   expect_file_line "no-ref-source-heading" "$session_file" '^## Source Todo$'
   expect_file_line "no-ref-source-text" "$session_file" '\*\*Text:\*\* Fix parser bug'
-  expect_no_file_line "no-ref-root-todo-removed" "$LBWC_PLANNING_DIR/STATE.md" '^- Fix parser bug'
-  expect_file_line "no-ref-activity-note" "$LBWC_PLANNING_DIR/STATE.md" 'Picked up todo via /lbwc:debug: Fix parser bug'
+  expect_no_file_line "no-ref-root-todo-removed" "$MERIDIAN_PLANNING_DIR/STATE.md" '^- Fix parser bug'
+  expect_file_line "no-ref-activity-note" "$MERIDIAN_PLANNING_DIR/STATE.md" 'Picked up todo via /meridian:debug: Fix parser bug'
   run bash "$LIFECYCLE_SCRIPT" list-with-snapshot
   expect_jq_output "no-ref-gone-from-list" '[.items[]?.command_text | select(. == "Fix parser bug")] | length == 0'
 
@@ -131,21 +131,21 @@ instrument_list_todos() {
   write_state
   add_detail deadbeef '{"summary":"Investigate detail-backed crash","context":"Crash detail context","files":["src/parser.sh","tests/parser.bats"],"added":"2026-04-02","source":"session"}'
   save_snapshot
-  run bash "$SCRIPT" "$LBWC_PLANNING_DIR" 2
+  run bash "$SCRIPT" "$MERIDIAN_PLANNING_DIR" 2
   session_file=$(session_file_from_output "$output")
   expect_status "detail-ok" 0
   expect_jq_output "detail-ok-fields" '.status == "ok" and .detail_status == "ok" and .detail_has_signal == true and .detail.files[0] == "src/parser.sh"'
   expect_file_line "detail-ok-session-context" "$session_file" 'Crash detail context'
   expect_file_line "detail-ok-session-files" "$session_file" 'src/parser.sh'
   expect_not_pending "detail-ok-root-todo-removed" 'Investigate detail-backed crash'
-  run bash "$DETAILS_SCRIPT" get deadbeef "$LBWC_PLANNING_DIR/todo-details.json"
+  run bash "$DETAILS_SCRIPT" get deadbeef "$MERIDIAN_PLANNING_DIR/todo-details.json"
   expect_jq_output "detail-ok-sidecar-removed" '.status == "not_found"'
 
   reset_world
   write_state
   add_detail feedcafe '{"summary":"Empty detail item","context":"","files":[],"added":"2026-04-03","source":"session"}'
   save_snapshot
-  run bash "$SCRIPT" "$LBWC_PLANNING_DIR" 3
+  run bash "$SCRIPT" "$MERIDIAN_PLANNING_DIR" 3
   expect_status "detail-sparse" 0
   expect_jq_output "detail-sparse-fields" '.status == "ok" and .detail_status == "ok" and .detail_has_signal == false'
   expect_not_pending "detail-sparse-root-todo-removed" 'Empty detail item'
@@ -153,17 +153,17 @@ instrument_list_todos() {
   reset_world
   write_state
   save_snapshot
-  run bash "$SCRIPT" "$LBWC_PLANNING_DIR" 4
+  run bash "$SCRIPT" "$MERIDIAN_PLANNING_DIR" 4
   expect_status "detail-missing" 0
   expect_jq_output "detail-missing-fields" '.status == "ok" and .detail_status == "not_found" and .pickup.status == "partial"'
   expect_jq_output "detail-missing-warning" '.pickup.warning | contains("sidecar registry was left untouched")'
   expect_not_pending "detail-missing-root-todo-removed" 'Missing detail item'
-  expect_file_line "detail-missing-warning-recorded" "$LBWC_PLANNING_DIR/STATE.md" 'Detail for ref f78562c0 could not be loaded'
+  expect_file_line "detail-missing-warning-recorded" "$MERIDIAN_PLANNING_DIR/STATE.md" 'Detail for ref f78562c0 could not be loaded'
 
   reset_world
   write_state
   save_snapshot
-  run bash "$SCRIPT" "$LBWC_PLANNING_DIR" 1 --parallel --serial
+  run bash "$SCRIPT" "$MERIDIAN_PLANNING_DIR" 1 --parallel --serial
   expect_status "routing-flags" 0
   expect_jq_output "routing-flags-preserved" '.routing_flags == ["--parallel","--serial"]'
 
@@ -171,7 +171,7 @@ instrument_list_todos() {
   write_todos_state '- [KNOWN-ISSUE] Marker bug (added 2026-04-01) (ref:decafbad)'
   add_detail decafbad '{"summary":"Marker bug","context":"Accepted UAT summary deviation","files":[],"added":"2026-04-01","source":"uat-deviation","uat_deviation":{"id":"D1"},"known_issue_signature":{"disposition":"accepted-process-exception"}}'
   save_snapshot
-  run bash "$SCRIPT" "$LBWC_PLANNING_DIR" 1
+  run bash "$SCRIPT" "$MERIDIAN_PLANNING_DIR" 1
   expect_status "markers" 0
   expect_jq_output "markers-known-issue" '.accepted_exception_markers | index("[KNOWN-ISSUE]") != null'
   expect_jq_output "markers-disposition" '.accepted_exception_markers | index("known_issue_signature.disposition") != null'
@@ -181,13 +181,13 @@ instrument_list_todos() {
 
   reset_world
   other_root="$BATS_TEST_TMPDIR/other"
-  target_planning="$BATS_TEST_TMPDIR/target/.lbwc-planning"
-  other_planning="$other_root/.lbwc-planning"
+  target_planning="$BATS_TEST_TMPDIR/target/.meridian"
+  other_planning="$other_root/.meridian"
   mkdir -p "$target_planning" "$other_planning"
   printf '%s\n' '# Project State' '' '## Todos' '- Target-only bug (added 2026-04-01) (ref:deadbeef)' '' '## Activity Log' '- 2026-04-01: Target note' > "$target_planning/STATE.md"
   printf '%s\n' '# Project State' '' '## Todos' '- Other repo bug (added 2026-04-01) (ref:deadbeef)' '' '## Activity Log' '- 2026-04-01: Other note' > "$other_planning/STATE.md"
   bash "$DETAILS_SCRIPT" add deadbeef '{"summary":"Target-only bug","context":"target context","files":["target.sh"],"added":"2026-04-01","source":"session"}' "$target_planning/todo-details.json" >/dev/null
-  (cd "$BATS_TEST_TMPDIR/target" && LBWC_PLANNING_DIR="$target_planning" bash "$LIFECYCLE_SCRIPT" list-with-snapshot) >/dev/null
+  (cd "$BATS_TEST_TMPDIR/target" && MERIDIAN_PLANNING_DIR="$target_planning" bash "$LIFECYCLE_SCRIPT" list-with-snapshot) >/dev/null
   run bash -c 'cd "$1" && bash "$2" "$3" 1' -- "$other_root" "$SCRIPT" "$target_planning"
   expect_status "other-cwd" 0
   expect_jq_output "other-cwd-detail-from-target" '.status == "ok" and .detail.context == "target context"'
@@ -200,7 +200,7 @@ instrument_list_todos() {
   seed_complete_session 'Already completed bug' '- Already completed bug (added 2026-04-04) (ref:f78562c0)' f78562c0 not_found already-completed-bug
   expect_count "ref-completed-seeded" "$(count_sessions completed)" 1
   save_snapshot
-  run bash "$SCRIPT" "$LBWC_PLANNING_DIR" 1
+  run bash "$SCRIPT" "$MERIDIAN_PLANNING_DIR" 1
   expect_status "ref-completed" 0
   expect_jq_output "ref-completed-fields" '.status == "already_complete" and .session.status == "complete"'
   expect_count "ref-completed-no-active-session" "$(count_sessions active)" 0
@@ -210,22 +210,22 @@ instrument_list_todos() {
   reset_world
   write_todos_state '- Legacy completed bug (added 2026-04-04) (ref:deadbeef)'
   seed_complete_session 'Legacy completed bug' '- Legacy completed bug (added 2026-04-04) (ref:deadbeef)' deadbeef not_found legacy-completed-bug
-  mv "$LBWC_PLANNING_DIR/debugging/completed/${session_id}.md" "$LBWC_PLANNING_DIR/debugging/${session_id}.md"
-  rmdir "$LBWC_PLANNING_DIR/debugging/completed"
+  mv "$MERIDIAN_PLANNING_DIR/debugging/completed/${session_id}.md" "$MERIDIAN_PLANNING_DIR/debugging/${session_id}.md"
+  rmdir "$MERIDIAN_PLANNING_DIR/debugging/completed"
   save_snapshot
-  run bash "$SCRIPT" "$LBWC_PLANNING_DIR" 1
+  run bash "$SCRIPT" "$MERIDIAN_PLANNING_DIR" 1
   expect_status "legacy-flat" 0
   expect_jq_output "legacy-flat-fields" '.status == "already_complete" and .session.status == "complete"'
   expect_count "legacy-flat-no-active-session" "$(count_sessions active)" 0
   expect_count "legacy-flat-migrated-to-completed" "$(count_sessions completed)" 1
-  expect_no_path "legacy-flat-file-moved" "$LBWC_PLANNING_DIR/debugging/${session_id}.md"
+  expect_no_path "legacy-flat-file-moved" "$MERIDIAN_PLANNING_DIR/debugging/${session_id}.md"
   expect_not_pending "legacy-flat-root-todo-removed" 'Legacy completed bug'
 
   reset_world
   write_todos_state '- Duplicate bug (added 2026-04-01)' '- Duplicate bug (added 2026-04-01)'
   seed_complete_session 'Duplicate bug' '- Duplicate bug (added 2026-04-01)' none none duplicate-bug
   save_snapshot
-  run bash "$SCRIPT" "$LBWC_PLANNING_DIR" 1
+  run bash "$SCRIPT" "$MERIDIAN_PLANNING_DIR" 1
   expect_status "refless-duplicates" 0
   expect_jq_output "refless-duplicates-new-session" '.status == "ok"'
   expect_count "refless-duplicates-active-session" "$(count_sessions active)" 1
@@ -239,7 +239,7 @@ instrument_list_todos() {
   seed_complete_session 'Old same-ref bug two' '- Old same-ref bug two (added 2026-03-02) (ref:cafebabe)' cafebabe none old-two
   save_snapshot
   : > "$count_file"
-  run bash "$BATS_TEST_TMPDIR/instrumented-scripts/debug-start-selected-todo.sh" "$LBWC_PLANNING_DIR" 1
+  run bash "$BATS_TEST_TMPDIR/instrumented-scripts/debug-start-selected-todo.sh" "$MERIDIAN_PLANNING_DIR" 1
   expect_status "same-ref-cache" 0
   expect_jq_output "same-ref-cache-fields" '.status == "ok"'
   expect_count "same-ref-cache-active-session" "$(count_sessions active)" 1
@@ -253,7 +253,7 @@ instrument_list_todos() {
 
 @test "debug-start-selected-todo reports failures as JSON without losing or corrupting state" {
   reset_world
-  run bash "$SCRIPT" "$LBWC_PLANNING_DIR"
+  run bash "$SCRIPT" "$MERIDIAN_PLANNING_DIR"
   expect_status "usage-missing-selection" 0
   expect_jq_output "usage-missing-selection-json" '.status == "error" and .code == "usage"'
   expect_output_has "usage-missing-selection-text" "Usage: debug-start-selected-todo.sh <planning-dir> <N>"
@@ -262,11 +262,11 @@ instrument_list_todos() {
   expect_status "usage-missing-planning-dir" 0
   expect_jq_output "usage-missing-planning-dir-json" '.status == "error" and .code == "usage"'
 
-  run bash "$SCRIPT" "$LBWC_PLANNING_DIR" not-a-number
+  run bash "$SCRIPT" "$MERIDIAN_PLANNING_DIR" not-a-number
   expect_status "usage-not-a-number" 0
   expect_jq_output "usage-not-a-number-json" '.status == "error" and .code == "usage"'
 
-  run bash "$SCRIPT" "$LBWC_PLANNING_DIR" 1 --unknown
+  run bash "$SCRIPT" "$MERIDIAN_PLANNING_DIR" 1 --unknown
   expect_status "usage-unknown-flag" 0
   expect_jq_output "usage-unknown-flag-json" '.status == "error" and .code == "usage"'
   expect_output_has "usage-unknown-flag-text" "--unknown"
@@ -278,29 +278,29 @@ instrument_list_todos() {
   reset_world
   write_state
   save_snapshot
-  run bash "$SCRIPT" "$LBWC_PLANNING_DIR" 99
+  run bash "$SCRIPT" "$MERIDIAN_PLANNING_DIR" 99
   expect_status "invalid-selection" 0
   expect_jq_output "invalid-selection-json" '.status == "error" and .code == "invalid_selection"'
-  expect_no_path "invalid-selection-no-session-dir" "$LBWC_PLANNING_DIR/debugging/active"
-  expect_file_line "invalid-selection-state-intact" "$LBWC_PLANNING_DIR/STATE.md" 'Fix parser bug'
+  expect_no_path "invalid-selection-no-session-dir" "$MERIDIAN_PLANNING_DIR/debugging/active"
+  expect_file_line "invalid-selection-state-intact" "$MERIDIAN_PLANNING_DIR/STATE.md" 'Fix parser bug'
 
   reset_world
-  mkdir -p "$LBWC_PLANNING_DIR/milestones/old"
-  printf '%s\n' '# Project State' '' '## Todos' '- Archived bug (added 2026-04-01)' > "$LBWC_PLANNING_DIR/milestones/old/STATE.md"
+  mkdir -p "$MERIDIAN_PLANNING_DIR/milestones/old"
+  printf '%s\n' '# Project State' '' '## Todos' '- Archived bug (added 2026-04-01)' > "$MERIDIAN_PLANNING_DIR/milestones/old/STATE.md"
   save_snapshot
-  run bash "$SCRIPT" "$LBWC_PLANNING_DIR" 1
+  run bash "$SCRIPT" "$MERIDIAN_PLANNING_DIR" 1
   expect_status "archived-state" 0
   expect_jq_output "archived-state-json" '.status == "error"'
-  expect_no_path "archived-state-no-session-dir" "$LBWC_PLANNING_DIR/debugging/active"
-  expect_file_line "archived-state-untouched" "$LBWC_PLANNING_DIR/milestones/old/STATE.md" 'Archived bug'
+  expect_no_path "archived-state-no-session-dir" "$MERIDIAN_PLANNING_DIR/debugging/active"
+  expect_file_line "archived-state-untouched" "$MERIDIAN_PLANNING_DIR/milestones/old/STATE.md" 'Archived bug'
 
   reset_world
   write_todos_state '- Pickup failure bug (added 2026-04-01)'
   save_snapshot
-  mkdir -p "$LBWC_PLANNING_DIR/debugging/active"
-  chmod u-w "$LBWC_PLANNING_DIR"
-  run bash "$SCRIPT" "$LBWC_PLANNING_DIR" 1
-  chmod u+w "$LBWC_PLANNING_DIR"
+  mkdir -p "$MERIDIAN_PLANNING_DIR/debugging/active"
+  chmod u-w "$MERIDIAN_PLANNING_DIR"
+  run bash "$SCRIPT" "$MERIDIAN_PLANNING_DIR" 1
+  chmod u+w "$MERIDIAN_PLANNING_DIR"
   expect_status "pickup-failure" 0
   expect_jq_output "pickup-failure-json" '.status == "error" and .code == "pickup_failed_after_session" and (.session.id | length > 0) and .session.status == "investigating" and .pickup.status == "error"'
   expect_jq_output "pickup-failure-message" '((.pickup.message // .message // "") | length > 0)'

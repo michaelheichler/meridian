@@ -3,7 +3,7 @@ plain_dir() {
   rm -rf case-dir
   mkdir case-dir
   cd case-dir || return 1
-  mkdir -p .lbwc-planning
+  mkdir -p .meridian
 }
 
 fresh_repo() {
@@ -17,7 +17,7 @@ fresh_repo() {
   echo "init" > init.txt
   git add init.txt
   git commit -q -m "chore: init"
-  mkdir -p .lbwc-planning
+  mkdir -p .meridian
 }
 
 set_stale_mtime_3h() {
@@ -31,36 +31,36 @@ set_stale_mtime_3h() {
 }
 
 build_layout() {
-  local name="$1" worktree="$PWD/.lbwc-worktrees/01-01" maps=".lbwc-planning/.agent-worktrees"
+  local name="$1" worktree="$PWD/.meridian-worktrees/01-01" maps=".meridian/.agent-worktrees"
   case "$name" in
     none) return 0 ;;
     absent-with-map)
       mkdir -p "$maps"
-      echo '{"worktree_path":"/active/worktree"}' > "$maps/lbwc-dev-01-01.json"
+      echo '{"worktree_path":"/active/worktree"}' > "$maps/meridian-dev-01-01.json"
       return 0
       ;;
-    unowned) mkdir -p .lbwc-worktrees/01-01 ;;
-    *) git worktree add -q .lbwc-worktrees/01-01 -b lbwc/01-01 >/dev/null ;;
+    unowned) mkdir -p .meridian-worktrees/01-01 ;;
+    *) git worktree add -q .meridian-worktrees/01-01 -b meridian/01-01 >/dev/null ;;
   esac
   case "$name" in
     mapped)
       mkdir -p "$maps"
-      echo "{\"worktree_path\":\"$worktree\"}" > "$maps/lbwc-dev-01.json"
+      echo "{\"worktree_path\":\"$worktree\"}" > "$maps/meridian-dev-01.json"
       ;;
     malformed-map)
       mkdir -p "$maps"
-      printf '{' > "$maps/lbwc-dev-01.json"
+      printf '{' > "$maps/meridian-dev-01.json"
       ;;
     dirty)
       mkdir -p "$maps"
-      echo "dirty" > .lbwc-worktrees/01-01/dirty.txt
+      echo "dirty" > .meridian-worktrees/01-01/dirty.txt
       ;;
     clean) mkdir -p "$maps" ;;
   esac
 }
 
 branch_listing() {
-  git for-each-ref --format='%(refname:short)' refs/heads/lbwc
+  git for-each-ref --format='%(refname:short)' refs/heads/meridian
 }
 
 run_session_stop() {

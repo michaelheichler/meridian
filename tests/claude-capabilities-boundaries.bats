@@ -24,7 +24,7 @@ expect_refresh_refused() {
 }
 
 @test "refresh refuses traversal, symlinked state directories and a symlinked catalog without writing through them" {
-  local traversal="$TEST_ROOT/project/unused/../.lbwc-planning" label link_name external link catalog_target before
+  local traversal="$TEST_ROOT/project/unused/../.meridian" label link_name external link catalog_target before
   reset_case_failures
 
   mkdir -p "$TEST_ROOT/project/unused"
@@ -43,7 +43,7 @@ expect_refresh_refused() {
     [ ! -e "$external/claude-capabilities.json" ] \
       || record_case_failure "$label" "wrote through the link into $external"
   done <<'CASES'
-named-planning-link|linked-project/.lbwc-planning
+named-planning-link|linked-project/.meridian
 arbitrary-name-link|linked-planning
 CASES
 

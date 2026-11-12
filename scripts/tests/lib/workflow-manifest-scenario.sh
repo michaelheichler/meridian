@@ -6,7 +6,7 @@ CONTRACT_D=$(bash "$TASK_CONTRACT" issue "$PROJECT_D" manifest-1 \
   --control-root "$CONTROL_ROOT_D" --requested-backend workflow --resolved-backend workflow \
   --write-capability directory:notes)
 TASK_ID_D=$(basename "$CONTRACT_D" .json)
-AGEN_OUT_D=$(LBWC_AGENT_RANDOM_SEED=303 run_with_modern_bash "$AGENT_GENERATOR" scout \
+AGEN_OUT_D=$(MERIDIAN_AGENT_RANDOM_SEED=303 run_with_modern_bash "$AGENT_GENERATOR" scout \
   --job "manifest mismatch job" --contract "$CONTRACT_D" --task-id "$TASK_ID_D" \
   --control-root "$CONTROL_ROOT_D" --write-capability directory:notes \
   --execution-backend workflow 2>&1)

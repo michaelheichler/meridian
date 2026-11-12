@@ -12,7 +12,7 @@ import skill_gate
 
 
 def _manifest(tmp_root, agents):
-    planning_dir = os.path.join(tmp_root, ".lbwc-planning")
+    planning_dir = os.path.join(tmp_root, ".meridian")
     os.makedirs(planning_dir, exist_ok=True)
     manifest_path = os.path.join(planning_dir, ".agent-manifest.json")
     with open(manifest_path, "w") as manifest_file:

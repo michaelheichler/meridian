@@ -1,10 +1,10 @@
-# LBWC Destructive Command Blocklist
+# MERIDIAN Destructive Command Blocklist
 # One regex pattern per line. Case-insensitive matching via grep -iE.
 # Lines starting with # are comments. Empty lines ignored.
 # Patterns match against the full Bash command string.
 #
-# Override: LBWC_ALLOW_DESTRUCTIVE=1 env var.
-# Extend: .lbwc-planning/destructive-commands.local.txt (project-specific)
+# Override with MERIDIAN_ALLOW_DESTRUCTIVE=1.
+# Extend: .meridian/destructive-commands.local.txt (project-specific)
 
 # === Git (force-pushing rewrites shared history) ===
 git\s+push\b(\s+\S+)*\s+(--force(-with-lease)?|-f)\b

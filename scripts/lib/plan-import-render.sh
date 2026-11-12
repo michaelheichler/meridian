@@ -16,9 +16,9 @@ import_project_name() {
 
 render_config() {
   local output="$1" defaults validated
-  defaults=$("$SCRIPT_DIR/lbwc-config.sh" default-config 2>/dev/null) \
+  defaults=$("$SCRIPT_DIR/meridian-config.sh" default-config 2>/dev/null) \
     || import_fail 'could not build canonical configuration defaults'
-  validated=$("$SCRIPT_DIR/lbwc-config.sh" validate-config-json <<< "$defaults" 2>/dev/null) \
+  validated=$("$SCRIPT_DIR/meridian-config.sh" validate-config-json <<< "$defaults" 2>/dev/null) \
     || import_fail 'canonical configuration defaults failed repository validation'
   write_text "$output/config.json" "$validated"
 }
@@ -30,7 +30,7 @@ $MD_H1 $name
 
 $description
 
-**Core value:** Unknown; set during the first /lbwc:vibe session.
+**Core value:** Unknown; set during the first /meridian:transit session.
 
 $MD_H2 Requirements
 
@@ -50,14 +50,14 @@ $MD_H2 Key Decisions
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Imported external plan | Source digest recorded under .lbwc-planning/imports/ | Pending review |
+| Imported external plan | Source digest recorded under .meridian/imports/ | Pending review |
 EOF
 }
 
 render_project() {
   local ir="$1" output="$2" name description
   name=$(import_project_name "$ir")
-  description=$(jq -r '.project.description // "Imported from an external plan source. See .lbwc-planning/imports/ for provenance."' "$ir")
+  description=$(jq -r '.project.description // "Imported from an external plan source. See .meridian/imports/ for provenance."' "$ir")
   write_text "$output/PROJECT.md" "$(project_document "$name" "$description")"
 }
 
@@ -78,7 +78,7 @@ requirements_document() {
   cat <<EOF
 $MD_H1 $name Requirements
 
-Defined: $(date -u +%Y-%m-%d) | Core value: unknown until the first /lbwc:vibe session
+Defined: $(date -u +%Y-%m-%d) | Core value: unknown until the first /meridian:transit session
 
 $MD_H2 v1 Requirements
 
@@ -130,7 +130,7 @@ render_roadmap() {
   lines=$(roadmap_lines "$ir")
   write_text "$output/ROADMAP.md" "$MD_H1 $name Roadmap
 
-Imported from an external plan source; see .lbwc-planning/imports/ for provenance.
+Imported from an external plan source; see .meridian/imports/ for provenance.
 
 $lines"
 }
@@ -343,11 +343,11 @@ render_plans() {
 render_tree() {
   local ir="$1" tree="$2"
   rm -rf "$tree"
-  mkdir -p "$tree/.lbwc-planning"
-  render_project "$ir" "$tree/.lbwc-planning"
-  render_requirements "$ir" "$tree/.lbwc-planning"
-  render_roadmap "$ir" "$tree/.lbwc-planning"
-  render_state "$ir" "$tree/.lbwc-planning"
-  render_config "$tree/.lbwc-planning"
-  render_plans "$ir" "$tree/.lbwc-planning"
+  mkdir -p "$tree/.meridian"
+  render_project "$ir" "$tree/.meridian"
+  render_requirements "$ir" "$tree/.meridian"
+  render_roadmap "$ir" "$tree/.meridian"
+  render_state "$ir" "$tree/.meridian"
+  render_config "$tree/.meridian"
+  render_plans "$ir" "$tree/.meridian"
 }

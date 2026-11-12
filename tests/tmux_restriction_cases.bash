@@ -1,5 +1,5 @@
 restriction_snapshot() {
-  jq -n --argjson value "$1" '{tmux_execution:{restrictions:{allow_agent_git:$value,allow_nested_spawn:$value,allow_agent_ask_user:$value}}}' > "$LBWC_PLANNING_DIR/phases/one/.runtime-snapshot.json"
+  jq -n --argjson value "$1" '{tmux_execution:{restrictions:{allow_agent_git:$value,allow_nested_spawn:$value,allow_agent_ask_user:$value}}}' > "$MERIDIAN_PLANNING_DIR/phases/one/.runtime-snapshot.json"
 }
 
 restriction_input() {
@@ -28,20 +28,20 @@ restriction_guard() {
 }
 
 restriction_bad_snapshot() {
-  local kind=$1 path="$LBWC_PLANNING_DIR/phases/one/.runtime-snapshot.json"
+  local kind=$1 path="$MERIDIAN_PLANNING_DIR/phases/one/.runtime-snapshot.json"
   restriction_snapshot true
   case "$kind" in
     missing) rm "$path" ;;
-    two) mkdir -p "$LBWC_PLANNING_DIR/phases/two"; cp "$path" "$LBWC_PLANNING_DIR/phases/two/.runtime-snapshot.json" ;;
-    symlink) mv "$path" "$LBWC_PLANNING_DIR/saved.json"; ln -s "$LBWC_PLANNING_DIR/saved.json" "$path" ;;
-    parent) mv "$LBWC_PLANNING_DIR/phases/one" "$LBWC_PLANNING_DIR/saved"; ln -s "$LBWC_PLANNING_DIR/saved" "$LBWC_PLANNING_DIR/phases/one" ;;
+    two) mkdir -p "$MERIDIAN_PLANNING_DIR/phases/two"; cp "$path" "$MERIDIAN_PLANNING_DIR/phases/two/.runtime-snapshot.json" ;;
+    symlink) mv "$path" "$MERIDIAN_PLANNING_DIR/saved.json"; ln -s "$MERIDIAN_PLANNING_DIR/saved.json" "$path" ;;
+    parent) mv "$MERIDIAN_PLANNING_DIR/phases/one" "$MERIDIAN_PLANNING_DIR/saved"; ln -s "$MERIDIAN_PLANNING_DIR/saved" "$MERIDIAN_PLANNING_DIR/phases/one" ;;
     string) restriction_snapshot '"true"' ;;
     integer) restriction_snapshot 1 ;;
     absent) printf '{}\n' > "$path" ;;
   esac
   restriction_invalid_snapshot_tools "$kind"
-  rm -rf "$LBWC_PLANNING_DIR/phases" "$LBWC_PLANNING_DIR/saved" "$LBWC_PLANNING_DIR/saved.json"
-  mkdir -p "$LBWC_PLANNING_DIR/phases/one"
+  rm -rf "$MERIDIAN_PLANNING_DIR/phases" "$MERIDIAN_PLANNING_DIR/saved" "$MERIDIAN_PLANNING_DIR/saved.json"
+  mkdir -p "$MERIDIAN_PLANNING_DIR/phases/one"
 }
 
 restriction_invalid_snapshot_tools() {
@@ -99,7 +99,7 @@ restriction_frozen_rows() {
     restriction_snapshot "$value"
     opposite=true
     [ "$value" != true ] || opposite=false
-    jq -n --argjson value "$opposite" '{tmux_execution:{restrictions:{allow_nested_spawn:$value,allow_agent_git:$value,allow_agent_ask_user:$value}}}' > "$LBWC_PLANNING_DIR/config.json"
+    jq -n --argjson value "$opposite" '{tmux_execution:{restrictions:{allow_nested_spawn:$value,allow_agent_git:$value,allow_agent_ask_user:$value}}}' > "$MERIDIAN_PLANNING_DIR/config.json"
     code=2
     [ "$value" != true ] || code=0
     for tool in Agent Bash AskUserQuestion; do
@@ -121,7 +121,7 @@ restriction_scope_rows() {
     esac
     payload=$(restriction_input "$tool" 'echo safe')
     case "$tool" in
-      Task) payload=$(jq '.tool_input.subagent_type="lbwc-unregistered"' <<< "$payload") ;;
+      Task) payload=$(jq '.tool_input.subagent_type="meridian-unregistered"' <<< "$payload") ;;
       Write) payload=$(jq '.tool_input.file_path=".runtime-snapshot.json"' <<< "$payload") ;;
     esac
     run restriction_scope_call ordinary "$guard" "$payload"
@@ -137,10 +137,10 @@ restriction_scope_call() {
   local kind=$1 guard=$2 payload=$3
   local scope=() command=()
   case "$kind" in
-    orchestrator) scope=(-u LBWC_TMUX_AGENT) ;;
-    ordinary) scope=(-u LBWC_TMUX_AGENT -u TMUX -u TMUX_PANE) ;;
+    orchestrator) scope=(-u MERIDIAN_TMUX_AGENT) ;;
+    ordinary) scope=(-u MERIDIAN_TMUX_AGENT -u TMUX -u TMUX_PANE) ;;
     no-tmux) scope=(-u TMUX) ;;
-    disabled) scope=(LBWC_TMUX_AGENT=0) ;;
+    disabled) scope=(MERIDIAN_TMUX_AGENT=0) ;;
   esac
   case "$guard" in
     question) command=(python3 -B "$PROJECT_ROOT/hooks/user_question_guard.py" pretool) ;;
@@ -186,7 +186,7 @@ restriction_question_rows() {
   payload=$(jq '.session_id="question-invalid" | .tool_input.questions=[]' <<< "$payload")
   run python3 -B "$PROJECT_ROOT/hooks/user_question_guard.py" pretool <<< "$payload"
   expect_case question-validation 0 'permissionDecision'
-  run env -u LBWC_TMUX_AGENT python3 -B "$PROJECT_ROOT/hooks/user_question_guard.py" pretool <<< "$payload"
+  run env -u MERIDIAN_TMUX_AGENT python3 -B "$PROJECT_ROOT/hooks/user_question_guard.py" pretool <<< "$payload"
   expect_case ordinary-subagent-question 0 'reserved for the main session'
 }
 
@@ -205,8 +205,8 @@ restriction_existing_guard_rows() {
   done
   run restriction_guard bash-guard "$(restriction_input Bash 'git commit')"
   expect_case git-write-allowed 0
-  jq '.agents.worker.role="scout"' "$LBWC_PLANNING_DIR/.agent-manifest.json" > "$BATS_TEST_TMPDIR/manifest-next"
-  cp "$BATS_TEST_TMPDIR/manifest-next" "$LBWC_PLANNING_DIR/.agent-manifest.json"
+  jq '.agents.worker.role="scout"' "$MERIDIAN_PLANNING_DIR/.agent-manifest.json" > "$BATS_TEST_TMPDIR/manifest-next"
+  cp "$BATS_TEST_TMPDIR/manifest-next" "$MERIDIAN_PLANNING_DIR/.agent-manifest.json"
   run restriction_guard bash-guard "$(restriction_input Bash 'git commit > result' | jq '.agent_id="worker"')"
   expect_case git-existing-role-guard 2 'read-only'
   expect_case_absent git-existing-role-guard 'tmux_execution.restrictions'
@@ -226,28 +226,28 @@ restriction_contract_wrappers() {
 }
 
 restriction_source_rows() {
-  local source="$LBWC_PLANNING_DIR/phases/source/plan.md"
+  local source="$MERIDIAN_PLANNING_DIR/phases/source/plan.md"
   mkdir -p "${source%/*}"
   restriction_snapshot true
-  cp "$LBWC_PLANNING_DIR/phases/one/.runtime-snapshot.json" "${source%/*}/.runtime-snapshot.json"
-  jq -n --arg source "$source" '{source_path:$source}' > "$LBWC_PLANNING_DIR/contract.json"
-  jq -n --arg path "$LBWC_PLANNING_DIR/contract.json" '{agents:{worker:{contract_path:$path}}}' > "$LBWC_PLANNING_DIR/.agent-manifest.json"
-  export LBWC_TMUX_AGENT_ID=worker
+  cp "$MERIDIAN_PLANNING_DIR/phases/one/.runtime-snapshot.json" "${source%/*}/.runtime-snapshot.json"
+  jq -n --arg source "$source" '{source_path:$source}' > "$MERIDIAN_PLANNING_DIR/contract.json"
+  jq -n --arg path "$MERIDIAN_PLANNING_DIR/contract.json" '{agents:{worker:{contract_path:$path}}}' > "$MERIDIAN_PLANNING_DIR/.agent-manifest.json"
+  export MERIDIAN_TMUX_AGENT_ID=worker
   run restriction_policy "$(restriction_input Task)"
   expect_case source-snapshot 0
   rm "${source%/*}/.runtime-snapshot.json"
   run restriction_policy "$(restriction_input Task)"
   expect_case source-no-fallback 2
-  printf '[]\n' > "$LBWC_PLANNING_DIR/contract.json"
+  printf '[]\n' > "$MERIDIAN_PLANNING_DIR/contract.json"
   run restriction_policy "$(restriction_input Task)"
   expect_case invalid-contract 2
   restriction_contract_wrappers
-  printf '{}\n' > "$LBWC_PLANNING_DIR/contract.json"
+  printf '{}\n' > "$MERIDIAN_PLANNING_DIR/contract.json"
   run restriction_policy "$(restriction_input Task)"
   expect_case command-single-phase 0
-  cp "$LBWC_PLANNING_DIR/phases/one/.runtime-snapshot.json" "${source%/*}/.runtime-snapshot.json"
+  cp "$MERIDIAN_PLANNING_DIR/phases/one/.runtime-snapshot.json" "${source%/*}/.runtime-snapshot.json"
   run restriction_policy "$(restriction_input Task)"
   expect_case command-ambiguous-phase 2
   rm "${source%/*}/.runtime-snapshot.json"
-  unset LBWC_TMUX_AGENT_ID
+  unset MERIDIAN_TMUX_AGENT_ID
 }

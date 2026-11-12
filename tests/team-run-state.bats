@@ -48,7 +48,7 @@ expect_scopes() {
   [ -d "$run_one/contracts" ] || record_case_failure create-contracts-dir "contracts directory missing"
   [ -d "$run_one/generated-agents" ] || record_case_failure create-agents-dir "generated-agents directory missing"
   expect_jq create-planned-root-scope "$run_one/run.json" '.status == "planned" and .scopes == ["."]'
-  expect_no_path create-no-planning-config "$ROOT/.lbwc-planning/config.json"
+  expect_no_path create-no-planning-config "$ROOT/.meridian/config.json"
 
   run bash "$SCRIPT" create --project-root "$ROOT" --run-id run-summary
   expect_status summary-create 0

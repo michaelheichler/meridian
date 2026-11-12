@@ -67,7 +67,7 @@ check_exclusive_generation() {
 }
 
 check_agent_cap() {
-  local cap="${LBWC_AGENT_CAP:-$DEFAULT_AGENT_CAP}" needed=1 live
+  local cap="${MERIDIAN_AGENT_CAP:-$DEFAULT_AGENT_CAP}" needed=1 live
   [ -n "$PAIR_MODE" ] && needed=2
   [ -n "$TRIO_MODE" ] && needed="${#TRIO_ROLES[@]}"
   live=$(manifest_live_count)

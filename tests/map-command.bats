@@ -5,7 +5,7 @@ load gate_case_helper
 
 setup() {
   setup_temp_dir
-  mkdir -p "$TEST_TEMP_DIR/map-steps/.lbwc-planning"
+  mkdir -p "$TEST_TEMP_DIR/map-steps/.meridian"
   MAP_PROJECT=$(cd -P "$TEST_TEMP_DIR/map-steps" && pwd -P)
   git -C "$MAP_PROJECT" init -q
   reset_case_failures
@@ -18,7 +18,7 @@ teardown() {
 generate_map_scout_workflow() {
   local domain="$1" project control_root contract task_id agen_out name wgen_out
   project="$TEST_TEMP_DIR/project-$domain"
-  mkdir -p "$project/.lbwc-planning"
+  mkdir -p "$project/.meridian"
   control_root="$project/.temporary-agent-runfiles/runs/map-$domain"
   mkdir -p "$control_root"
   jq -n '{workflow_execution:{enabled:true}}' > "$control_root/config.json"
@@ -59,8 +59,8 @@ map_step_row() {
 }
 
 prefer_teams_never() {
-  bash "$SCRIPTS_DIR/lbwc-config.sh" init "$MAP_PROJECT/.lbwc-planning" >/dev/null
-  bash "$SCRIPTS_DIR/lbwc-config.sh" set "$MAP_PROJECT/.lbwc-planning" prefer_teams '"never"' >/dev/null
+  bash "$SCRIPTS_DIR/meridian-config.sh" init "$MAP_PROJECT/.meridian" >/dev/null
+  bash "$SCRIPTS_DIR/meridian-config.sh" set "$MAP_PROJECT/.meridian" prefer_teams '"never"' >/dev/null
 }
 
 workflow_scout_row() {

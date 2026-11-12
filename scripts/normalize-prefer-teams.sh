@@ -1,8 +1,19 @@
 #!/usr/bin/env bash
+
+printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${BASH_SOURCE[0]}"
+case "$MERIDIAN_MIGRATION_SOURCE" in
+  *"/"*) printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${MERIDIAN_MIGRATION_SOURCE%"/"*}" ;;
+  *) printf -v MERIDIAN_MIGRATION_SOURCE '%s' . ;;
+esac
+if [ -f "$MERIDIAN_MIGRATION_SOURCE/lib/rename-migration.sh" ]; then
+  . "$MERIDIAN_MIGRATION_SOURCE/lib/rename-migration.sh"
+  meridian_migrate_environment
+fi
+unset MERIDIAN_MIGRATION_SOURCE
 set -u
 
 SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-. "$SCRIPT_DIR/lib/lbwc-settings.sh"
+. "$SCRIPT_DIR/lib/meridian-settings.sh"
 
 read_raw_value() {
   local config_path="$1"
@@ -12,7 +23,7 @@ read_raw_value() {
     return 0
   fi
 
-  jq -r '.prefer_teams // "auto"' <<< "$(lbwc_merged_config "$config_path")" 2>/dev/null || echo "auto"
+  jq -r '.prefer_teams // "auto"' <<< "$(meridian_merged_config "$config_path")" 2>/dev/null || echo "auto"
 }
 
 normalize_prefer_teams() {
@@ -38,4 +49,4 @@ if [ "${1:-}" = "--value" ]; then
   exit 0
 fi
 
-normalize_prefer_teams "$(read_raw_value "${1:-.lbwc-planning/config.json}")"
+normalize_prefer_teams "$(read_raw_value "${1:-.meridian/config.json}")"

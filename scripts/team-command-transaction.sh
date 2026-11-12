@@ -1,12 +1,23 @@
 #!/usr/bin/env bash
+
+printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${BASH_SOURCE[0]}"
+case "$MERIDIAN_MIGRATION_SOURCE" in
+  *"/"*) printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${MERIDIAN_MIGRATION_SOURCE%"/"*}" ;;
+  *) printf -v MERIDIAN_MIGRATION_SOURCE '%s' . ;;
+esac
+if [ -f "$MERIDIAN_MIGRATION_SOURCE/lib/rename-migration.sh" ]; then
+  . "$MERIDIAN_MIGRATION_SOURCE/lib/rename-migration.sh"
+  meridian_migrate_environment
+fi
+unset MERIDIAN_MIGRATION_SOURCE
 set -euo pipefail
 
 SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd -P)"
-. "$SCRIPT_DIR/lib/lbwc-control-root.sh"
-. "$SCRIPT_DIR/lib/lbwc-settings.sh"
+. "$SCRIPT_DIR/lib/meridian-control-root.sh"
+. "$SCRIPT_DIR/lib/meridian-settings.sh"
 . "$SCRIPT_DIR/lib/turn-value.sh"
 
-SETTINGS_PATH="${LBWC_SETTINGS_PATH:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json}"
+SETTINGS_PATH="${MERIDIAN_SETTINGS_PATH:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json}"
 
 fail() {
   printf 'team-command-transaction: %s\n' "$1" >&2
@@ -60,7 +71,7 @@ is_valid_record_id() {
 protected_scope_path() {
   local value="$1"
   case "$value" in
-    .git|.git/*|.temporary-agent-runfiles|.temporary-agent-runfiles/*|.lbwc-planning|.lbwc-planning/*|.claude|.claude/*) return 0 ;;
+    .git|.git/*|.temporary-agent-runfiles|.temporary-agent-runfiles/*|.meridian|.meridian/*|.claude|.claude/*) return 0 ;;
     .env|.env.*|*/.env|*/.env.*) return 0 ;;
     *credentials.json|*secrets.json|*service-account.json) return 0 ;;
     *.pem|*.key|*.cert|*.p12|*.pfx) return 0 ;;
@@ -214,7 +225,7 @@ reject_protected_scopes() {
 
 read_agent_teams_status() {
   local project_root="$1" out_status="$2" status_json
-  status_json=$(bash "$SCRIPT_DIR/lbwc-config.sh" agent-teams-status --project-root "$project_root") \
+  status_json=$(bash "$SCRIPT_DIR/meridian-config.sh" agent-teams-status --project-root "$project_root") \
     || fail 'could not read agent teams status'
   printf -v "$out_status" '%s' "$status_json"
 }
@@ -253,8 +264,8 @@ case "$ACTION" in
     require_file "$SCRIPT_DIR/team-context-index.sh" 'context index helper not found'
     require_file "$SCRIPT_DIR/task-contract.sh" 'contract helper not found'
     require_file "$SCRIPT_DIR/agent-generator.sh" 'generator helper not found'
-    require_file "$SCRIPT_DIR/lbwc-config.sh" 'config helper not found'
-    require_file "$SCRIPT_DIR/lbwc-routing.sh" 'routing helper not found'
+    require_file "$SCRIPT_DIR/meridian-config.sh" 'config helper not found'
+    require_file "$SCRIPT_DIR/meridian-routing.sh" 'routing helper not found'
     resolve_scopes
     reject_protected_scopes
     resolve_active_control_root

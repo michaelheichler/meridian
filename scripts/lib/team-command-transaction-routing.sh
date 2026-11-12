@@ -2,7 +2,7 @@ resolve_active_control_root() {
   ACTIVE_CONTROL_ROOT=""
   CONTROL_ROOT_KIND="temporary-run"
   local candidate
-  candidate=$(lbwc_control_root_validate "$PROJECT_ROOT/.lbwc-planning" 1 2>/dev/null) || return 0
+  candidate=$(meridian_control_root_validate "$PROJECT_ROOT/.meridian" 1 2>/dev/null) || return 0
   ACTIVE_CONTROL_ROOT="$candidate"
   CONTROL_ROOT_KIND="active-planning"
 }
@@ -15,9 +15,9 @@ planning_routing_available() {
 
 resolve_routing_saved() {
   local engineer="$1" out_record="$2" route_json merged_config workflow_effort saved_record
-  route_json=$(bash "$SCRIPT_DIR/lbwc-routing.sh" resolve "$ACTIVE_CONTROL_ROOT" "$engineer") \
+  route_json=$(bash "$SCRIPT_DIR/meridian-routing.sh" resolve "$ACTIVE_CONTROL_ROOT" "$engineer") \
     || fail "route resolution failed for '$engineer': $route_json"
-  merged_config=$(lbwc_merged_config "$ACTIVE_CONTROL_ROOT/config.json")
+  merged_config=$(meridian_merged_config "$ACTIVE_CONTROL_ROOT/config.json")
   workflow_effort=$(jq -r '.effort // "balanced"' <<< "$merged_config")
   case "$workflow_effort" in thorough|balanced|fast|turbo) ;; *) workflow_effort="balanced" ;; esac
   saved_record=$(jq -c --arg workflow_effort "$workflow_effort" '{
@@ -34,7 +34,7 @@ resolve_routing_seeded() {
     binary_path=$(command -v claude 2>/dev/null || true)
   fi
   [ -n "$binary_path" ] && [ -f "$binary_path" ] \
-    || fail "routing authority requires an initialized .lbwc-planning or the Claude Code executable; run /lbwc:models refresh first or install Claude Code"
+    || fail "routing authority requires an initialized .meridian or the Claude Code executable; run /meridian:models refresh first or install Claude Code"
   catalog_json=$(bash "$SCRIPT_DIR/claude-capabilities.sh" refresh-from-binary "$binary_path") \
     || fail "could not extract capability catalog from $binary_path"
   require_file "$SCRIPT_DIR/lib/seeded-host-model.jq" 'seeded host model filter not found'

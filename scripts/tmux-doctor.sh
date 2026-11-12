@@ -1,13 +1,24 @@
 #!/usr/bin/env bash
+
+printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${BASH_SOURCE[0]}"
+case "$MERIDIAN_MIGRATION_SOURCE" in
+  *"/"*) printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${MERIDIAN_MIGRATION_SOURCE%"/"*}" ;;
+  *) printf -v MERIDIAN_MIGRATION_SOURCE '%s' . ;;
+esac
+if [ -f "$MERIDIAN_MIGRATION_SOURCE/lib/rename-migration.sh" ]; then
+  . "$MERIDIAN_MIGRATION_SOURCE/lib/rename-migration.sh"
+  meridian_migrate_environment
+fi
+unset MERIDIAN_MIGRATION_SOURCE
 set -u
 set -eo pipefail
 set -E
 umask 077
 
 SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
-source "$SCRIPT_DIR/lib/lbwc-control-root.sh"
+source "$SCRIPT_DIR/lib/meridian-control-root.sh"
 source "$SCRIPT_DIR/lib/tmux-runtime.sh"
-source "$SCRIPT_DIR/lib/lbwc-config-files.sh"
+source "$SCRIPT_DIR/lib/meridian-config-files.sh"
 source "$SCRIPT_DIR/lib/tmux-heartbeat-settings.sh"
 
 usage() {
@@ -86,8 +97,8 @@ if [ ! -d "$requested_control_root" ]; then
   emit PASS 'no tmux runtime'
 fi
 
-control_root=$(lbwc_control_root_validate "$requested_control_root" 0 2>/dev/null) || emit PASS 'no tmux runtime'
-resolved_project_root=$(lbwc_control_root_project_root "$control_root" 2>/dev/null) || emit PASS 'no tmux runtime'
+control_root=$(meridian_control_root_validate "$requested_control_root" 0 2>/dev/null) || emit PASS 'no tmux runtime'
+resolved_project_root=$(meridian_control_root_project_root "$control_root" 2>/dev/null) || emit PASS 'no tmux runtime'
 [ "$resolved_project_root" = "$project_root" ] || emit PASS 'no tmux runtime'
 
 registry_path="$control_root/.runtime/tmux-bus/registry.json"

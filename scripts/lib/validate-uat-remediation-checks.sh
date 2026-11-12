@@ -11,7 +11,7 @@ validate_legacy_shape() {
   fi
 
   LEGACY_PHASE_DIR=$(artifact_phase_dir "$ARTIFACT_PATH") \
-    || emit_failure "artifact path must point at an active .lbwc-planning/phases/ artifact"
+    || emit_failure "artifact path must point at an active .meridian/phases/ artifact"
 
   if [ "$(dirname "$ARTIFACT_PATH")" != "$LEGACY_PHASE_DIR" ]; then
     emit_failure "legacy phase-root artifacts must be direct children of the active phase directory"
@@ -132,16 +132,16 @@ validate_layout_path() {
   local expected_suffix="$1"
 
   case "$ARTIFACT_PATH" in
-    */.lbwc-planning/phases/*/remediation/uat/round-[0-9]*/*)
+    */.meridian/phases/*/remediation/uat/round-[0-9]*/*)
       REMEDIATION_KIND="uat"
       validate_round_dir_artifact_path "uat" "$expected_suffix"
       ;;
-    */.lbwc-planning/phases/*/remediation/qa/round-[0-9]*/*)
+    */.meridian/phases/*/remediation/qa/round-[0-9]*/*)
       REMEDIATION_KIND="qa"
       [ "$ARTIFACT_TYPE" = "plan" ] || emit_failure "QA remediation validation currently supports plan artifacts only"
       validate_round_dir_artifact_path "qa" "PLAN"
       ;;
-    */.lbwc-planning/phases/*/remediation/qa/*)
+    */.meridian/phases/*/remediation/qa/*)
       emit_failure "artifact path must match the expected QA remediation plan filename shape"
       ;;
     *) validate_legacy_phase_root_path "$expected_suffix" ;;

@@ -9,7 +9,7 @@ setup() {
   SCRIPT="$REPO_ROOT/scripts/map-staleness.sh"
   TEST_ROOT="$(cd "$(mktemp -d)" && pwd -P)"
   WORK="$TEST_ROOT/work"
-  PLANNING_DIR="$TEST_ROOT/.lbwc-planning"
+  PLANNING_DIR="$TEST_ROOT/.meridian"
   mkdir -p "$WORK" "$PLANNING_DIR/codebase"
   git -C "$WORK" init -q
   git -C "$WORK" config user.email "test@test.com"
@@ -43,7 +43,7 @@ commit_new_files() {
 }
 
 run_map_staleness() {
-  run env LBWC_PLANNING_DIR="$PLANNING_DIR" bash "$SCRIPT"
+  run env MERIDIAN_PLANNING_DIR="$PLANNING_DIR" bash "$SCRIPT"
 }
 
 @test "map-staleness reports no_map, fresh, stale or no_git and stays silent right after a compaction" {

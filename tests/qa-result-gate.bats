@@ -10,9 +10,9 @@ SCRIPT="$REPO_ROOT/scripts/qa-result-gate.sh"
 setup() {
   TEST_DIR="$(mktemp -d)"
   TEST_DIR="$(cd "$TEST_DIR" && pwd -P)"
-  PHASE_DIR="$TEST_DIR/.lbwc-planning/phases/01-test-phase"
-  mkdir -p "$PHASE_DIR" "$TEST_DIR/.lbwc-planning"
-  printf '{}\n' > "$TEST_DIR/.lbwc-planning/config.json"
+  PHASE_DIR="$TEST_DIR/.meridian/phases/01-test-phase"
+  mkdir -p "$PHASE_DIR" "$TEST_DIR/.meridian"
+  printf '{}\n' > "$TEST_DIR/.meridian/config.json"
 }
 
 teardown() {

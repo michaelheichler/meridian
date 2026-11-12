@@ -9,8 +9,8 @@ NAME_MAX_ATTEMPTS=100
 LIVE_AGENT_MAX_AGE_SECONDS=3600
 DEFAULT_AGENT_CAP=4
 
-WORDLIST_A="${LBWC_AGENT_WORDLIST_A:-$PLUGIN_ROOT/config/agent-generator-adjectives.txt}"
-WORDLIST_B="${LBWC_AGENT_WORDLIST_B:-$PLUGIN_ROOT/config/agent-generator-nouns.txt}"
+WORDLIST_A="${MERIDIAN_AGENT_WORDLIST_A:-$PLUGIN_ROOT/config/agent-generator-adjectives.txt}"
+WORDLIST_B="${MERIDIAN_AGENT_WORDLIST_B:-$PLUGIN_ROOT/config/agent-generator-nouns.txt}"
 
 load_words() {
   local file="$1" word
@@ -39,12 +39,12 @@ name_is_available() {
 
 choose_name() {
   local role="$1" manifest="$2" agents_dir="$3" left right noun attempt name
-  [ -n "${LBWC_AGENT_RANDOM_SEED:-}" ] && RANDOM="$LBWC_AGENT_RANDOM_SEED"
+  [ -n "${MERIDIAN_AGENT_RANDOM_SEED:-}" ] && RANDOM="$MERIDIAN_AGENT_RANDOM_SEED"
   for ((attempt = 0; attempt < NAME_MAX_ATTEMPTS; attempt++)); do
     pick_word A left
     pick_word A right
     pick_word B noun
-    name="lbwc-$role-$left-$right-$noun"
+    name="meridian-$role-$left-$right-$noun"
     if name_is_available "$name" "$manifest" "$agents_dir"; then
       printf '%s\n' "$name"
       return 0

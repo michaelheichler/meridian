@@ -1,14 +1,25 @@
 #!/usr/bin/env bash
+
+printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${BASH_SOURCE[0]}"
+case "$MERIDIAN_MIGRATION_SOURCE" in
+  *"/"*) printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${MERIDIAN_MIGRATION_SOURCE%"/"*}" ;;
+  *) printf -v MERIDIAN_MIGRATION_SOURCE '%s' . ;;
+esac
+if [ -f "$MERIDIAN_MIGRATION_SOURCE/lib/rename-migration.sh" ]; then
+  . "$MERIDIAN_MIGRATION_SOURCE/lib/rename-migration.sh"
+  meridian_migrate_environment
+fi
+unset MERIDIAN_MIGRATION_SOURCE
 set -euo pipefail
 
 
 SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PLANNING_DIR="${LBWC_PLANNING_DIR:-.lbwc-planning}"
+PLANNING_DIR="${MERIDIAN_PLANNING_DIR:-.meridian}"
 export DETAILS_PATH="${PLANNING_DIR}/todo-details.json"
 RAW_SESSION_KEY="${CLAUDE_SESSION_ID:-default}"
 SESSION_KEY="$(printf '%s' "$RAW_SESSION_KEY" | tr -c 'A-Za-z0-9_.-' '_')"
 SESSION_KEY="${SESSION_KEY:-default}"
-SNAPSHOT_PATH="/tmp/.lbwc-last-list-view-${SESSION_KEY}.json"
+SNAPSHOT_PATH="/tmp/.meridian-last-list-view-${SESSION_KEY}.json"
 CMD="${1:-}"
 shift || true
 
@@ -61,19 +72,19 @@ list_with_snapshot() {
 
 snapshot_show() {
   if [ ! -f "$SNAPSHOT_PATH" ] || [ -L "$SNAPSHOT_PATH" ]; then
-    error_json "snapshot_missing" "Todo snapshot missing. Rerun /lbwc:list-todos first."
+    error_json "snapshot_missing" "Todo snapshot missing. Rerun /meridian:list-todos first."
     return 0
   fi
 
   local json_input
   json_input=$(cat "$SNAPSHOT_PATH" 2>/dev/null || true)
   if ! printf '%s' "$json_input" | jq empty >/dev/null 2>&1; then
-    error_json "snapshot_invalid" "Todo snapshot is malformed. Rerun /lbwc:list-todos first."
+    error_json "snapshot_invalid" "Todo snapshot is malformed. Rerun /meridian:list-todos first."
     return 0
   fi
 
   if ! snapshot_validate_schema "$json_input"; then
-    error_json "snapshot_invalid" "Todo snapshot is malformed. Rerun /lbwc:list-todos first."
+    error_json "snapshot_invalid" "Todo snapshot is malformed. Rerun /meridian:list-todos first."
     return 0
   fi
 
@@ -86,7 +97,7 @@ trim() {
 
 state_path_is_archived() {
   case "$1" in
-    */.lbwc-planning/milestones/*|.lbwc-planning/milestones/*) return 0 ;;
+    */.meridian/milestones/*|.meridian/milestones/*) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -142,7 +153,7 @@ validate_item_cmd() {
   local item_json validated_json validated_status
   item_json=$(read_stdin)
   if ! printf '%s' "$item_json" | jq empty >/dev/null 2>&1; then
-    error_json "invalid_item" "Todo selection payload is invalid. Rerun /lbwc:list-todos."
+    error_json "invalid_item" "Todo selection payload is invalid. Rerun /meridian:list-todos."
     return 0
   fi
   validated_json=$(validate_item_against_live "$item_json")
@@ -225,7 +236,7 @@ detail_warning() {
     return 0
   fi
   if ! append_activity_entry "$state_path" "Detail for ref ${ref_hash} could not be loaded"; then
-    error_json "activity_write_failed" "Could not record the detail warning in STATE.md. Rerun /lbwc:list-todos or inspect STATE.md manually."
+    error_json "activity_write_failed" "Could not record the detail warning in STATE.md. Rerun /meridian:list-todos or inspect STATE.md manually."
     return 0
   fi
   ok_json --arg status "ok" --arg action "logged" --arg state_path "$state_path" '{status:$status, action:$action, state_path:$state_path}'
@@ -292,7 +303,7 @@ mutate_item() {
 
   item_json=$(read_stdin)
   if ! printf '%s' "$item_json" | jq empty >/dev/null 2>&1; then
-    error_json "invalid_item" "Todo selection payload is invalid. Rerun /lbwc:list-todos."
+    error_json "invalid_item" "Todo selection payload is invalid. Rerun /meridian:list-todos."
     return 0
   fi
 
@@ -306,7 +317,7 @@ mutate_item() {
   activity_text=$(printf '%s' "$validated_json" | jq -r '.display_identity // .normalized_text // "todo"')
   case "$mode" in
     pickup) activity_text="Picked up todo via ${command_label}: ${activity_text}" ;;
-    remove) activity_text="Removed todo via /lbwc:list-todos: ${activity_text}" ;;
+    remove) activity_text="Removed todo via /meridian:list-todos: ${activity_text}" ;;
     *) activity_text="Updated todo: ${activity_text}" ;;
   esac
 
@@ -363,7 +374,7 @@ case "$CMD" in
     mutate_item "pickup" "${1:-}" "${2:-none}" "${3:-keep}"
     ;;
   remove)
-    mutate_item "remove" "/lbwc:list-todos" "${1:-none}" "${2:-keep}"
+    mutate_item "remove" "/meridian:list-todos" "${1:-none}" "${2:-keep}"
     ;;
   *)
     usage

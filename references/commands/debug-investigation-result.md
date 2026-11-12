@@ -46,18 +46,18 @@ echo "$INVESTIGATION_JSON" | bash "{plugin-root}/scripts/write-debug-session.sh"
 Then update session state from `INVESTIGATION_OUTCOME`. For `fixed_now`, set status to `qa_pending`:
 
 ```bash
-bash "{plugin-root}/scripts/debug-session-state.sh" set-status .lbwc-planning qa_pending
+bash "{plugin-root}/scripts/debug-session-state.sh" set-status .meridian qa_pending
 ```
 
 For `already_fixed`, mark the investigation complete using the existing completed-session workflow:
 
 ```bash
-bash "{plugin-root}/scripts/debug-session-state.sh" set-status .lbwc-planning complete
-PG_SCRIPT="/tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/planning-git.sh"
+bash "{plugin-root}/scripts/debug-session-state.sh" set-status .meridian complete
+PG_SCRIPT="/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/planning-git.sh"
 if [ -f "$PG_SCRIPT" ]; then
-  bash "$PG_SCRIPT" commit-boundary "complete debug session" .lbwc-planning/config.json
+  bash "$PG_SCRIPT" commit-boundary "complete debug session" .meridian/config.json
 else
-  echo "⚠ LBWC: planning-git.sh unavailable. Skipping planning git boundary commit." >&2
+  echo "⚠ MERIDIAN: planning-git.sh unavailable. Skipping planning git boundary commit." >&2
 fi
 ```
 
@@ -70,7 +70,7 @@ Always clear the marker, regardless of outcome:
 bash "{plugin-root}/scripts/delegated-workflow.sh" clear
 ```
 
-Per @${CLAUDE_PLUGIN_ROOT}/references/lbwc-brand-essentials.md:
+Per @${CLAUDE_PLUGIN_ROOT}/references/meridian-brand-essentials.md:
 
 ```text
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -86,7 +86,7 @@ Bug Investigation Complete
   Files Modified: {list}
 ```
 
-If `SELECTED_TODO_MODE=true`, any numbered list captured before pickup is stale because helper pickup has already changed `STATE.md`. Use `SELECTED_TODO_START_JSON.pickup.status`, `.pickup.warning`, and `.pickup.auto_note` instead of inventing fresh numbered cleanup advice. Never tell the user to `remove N` for the selected todo, `/lbwc:debug` already picked it up automatically. The helper auto note says the helper picked up the selected todo automatically. Emit `.pickup.auto_note` verbatim. Never cite a remaining todo number unless you first refresh through the existing snapshot/resolver flow. For default low-token UX, use unnumbered prose only, emit `.pickup.auto_note` and, when related backlog items may still exist, say `Rerun /lbwc:list-todos for fresh numbering.` If `.pickup.status` is `partial` and `.pickup.warning` is non-empty, surface that warning explicitly.
+If `SELECTED_TODO_MODE=true`, any numbered list captured before pickup is stale because helper pickup has already changed `STATE.md`. Use `SELECTED_TODO_START_JSON.pickup.status`, `.pickup.warning`, and `.pickup.auto_note` instead of inventing fresh numbered cleanup advice. Never tell the user to `remove N` for the selected todo, `/meridian:debug` already picked it up automatically. The helper auto note says the helper picked up the selected todo automatically. Emit `.pickup.auto_note` verbatim. Never cite a remaining todo number unless you first refresh through the existing snapshot/resolver flow. For default low-token UX, use unnumbered prose only, emit `.pickup.auto_note` and, when related backlog items may still exist, say `Rerun /meridian:list-todos for fresh numbering.` If `.pickup.status` is `partial` and `.pickup.warning` is non-empty, surface that warning explicitly.
 
 **Discovered Issues:** If the Debugger reported pre-existing failures, out-of-scope bugs, or issues unrelated to the investigated bug, append after the result box. Cap the list at 20 entries. if more exist, show the first 20 and append `... and {N} more`:
 
@@ -94,12 +94,12 @@ If `SELECTED_TODO_MODE=true`, any numbered list captured before pickup is stale 
 Discovered Issues:
   ⚠ testName (path/to/file): error message
   ⚠ testName (path/to/file): error message
-Suggest: /lbwc:todo <description> to track
+Suggest: /meridian:todo <description> to track
 ```
 
-This is **display-only**. Do NOT edit STATE.md, do NOT add todos, do NOT invoke /lbwc:todo, and do NOT enter an interactive loop. The user decides whether to track these. If there are no discovered issues, omit the section entirely.
+This is **display-only**. Do NOT edit STATE.md, do NOT add todos, do NOT invoke /meridian:todo, and do NOT enter an interactive loop. The user decides whether to track these. If there are no discovered issues, omit the section.
 
-If `INVESTIGATION_OUTCOME=no_fix_yet` (session status is still `investigating`): STOP with `➜ Next: /lbwc:debug --resume -- Continue investigation and apply fix`. Do not enter inline QA.
+If `INVESTIGATION_OUTCOME=no_fix_yet` (session status is still `investigating`): STOP with `➜ Next: /meridian:debug --resume -- Continue investigation and apply fix`. Do not enter inline QA.
 
 If `INVESTIGATION_OUTCOME=already_fixed`, STOP with `➜ Debug session complete. Investigation confirmed the fix was already present.` Do not enter inline QA.
 

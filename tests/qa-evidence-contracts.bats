@@ -14,7 +14,7 @@ setup() {
   git add app.py
   git -c core.hooksPath=/dev/null commit -qm initial
   BASE=$(git rev-parse HEAD)
-  PHASE="$(pwd -P)/.lbwc-planning/phases/01-work"
+  PHASE="$(pwd -P)/.meridian/phases/01-work"
   ROUND="$PHASE/remediation/qa/round-01"
   SCRIPT="$SCRIPTS_DIR/qa-result-gate.sh"
   reset_case_failures
@@ -129,7 +129,7 @@ CASES
 }
 
 @test "ignored planning evidence stays usable for process exceptions and reports that provenance" {
-  printf '.lbwc-planning/\n' > .gitignore
+  printf '.meridian/\n' > .gitignore
   git add .gitignore
   git -c core.hooksPath=/dev/null commit -qm ignore
   round_fixture 'type: process-exception, rationale: historical commit cannot change' 'files_modified: [remediation/qa/round-01/R01-SUMMARY.md]'

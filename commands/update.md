@@ -1,116 +1,117 @@
 ---
 category: advanced
 disable-model-invocation: true
-description: Update LBWC to the latest version with automatic cache refresh.
+description: Update Meridian to the latest version with automatic cache refresh.
 argument-hint: "[--check]"
 allowed-tools: Read, Bash, Glob
 ---
 
-# LBWC Update $ARGUMENTS
+# Meridian Update $ARGUMENTS
 
 ## Context
 
 Plugin root:
 ```
-!`L="/tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID:-default}"; R="$L/scripts/resolve-plugin-root.sh"; [ -f "$R" ] || R="${CLAUDE_PLUGIN_ROOT:-}/scripts/resolve-plugin-root.sh"; [ -f "$R" ] || { echo "LBWC: plugin root unavailable. Restart this session to recreate $L." >&2; exit 1; }; bash "$R" >/dev/null || exit 1; echo "$L"`
+!`L="/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}"; R="$L/scripts/resolve-plugin-root.sh"; [ -f "$R" ] || R="${CLAUDE_PLUGIN_ROOT:-}/scripts/resolve-plugin-root.sh"; [ -f "$R" ] || { echo "MERIDIAN: plugin root unavailable. Restart this session to recreate $L." >&2; exit 1; }; bash "$R" >/dev/null || exit 1; echo "$L"`
 ```
 
-Store the plugin root path output above as `{plugin-root}` for use in file/script lookups below. Replace `{plugin-root}` with the literal `Plugin root` value from Context whenever a step below references a script or file in the installed plugin.
+Store the plugin root output as `{plugin-root}` and substitute that literal path in script and file lookups below.
 
-**Resolve config directory:** Try in order: env var `CLAUDE_CONFIG_DIR` (if set and directory exists), `~/.config/claude-code` (if exists), otherwise `~/.claude`. Store result as `CLAUDE_DIR`. Use for all config paths below.
+**Resolve config directory.** Try `CLAUDE_CONFIG_DIR` first if it names an existing directory, then `~/.config/claude-code` if it exists, and otherwise `~/.claude`. Store the result as `CLAUDE_DIR` for all config paths below.
 
 ## Steps
 
-### Step 1: Read current INSTALLED version
+### Step 1. Read the installed version
 
-Read the **cached** version (what user actually has installed):
+Read the cached version, which identifies the installed plugin.
 ```bash
 for _d in "${CLAUDE_CONFIG_DIR:-}" "$HOME/.config/claude-code" "$HOME/.claude"
 do
   [ -z "$_d" ] && continue
-  v=$(cat "$_d"/plugins/cache/lbwc-marketplace/lbwc/*/VERSION 2>/dev/null | sort -V | tail -1 || true)
+  v=$(cat "$_d"/plugins/cache/meridian-marketplace/meridian/*/VERSION 2>/dev/null | sort -V | tail -1 || true)
   [ -n "$v" ] && echo "$v" && break
 done
 ```
-Store as `old_version`. If empty, fall back to `{plugin-root}/VERSION`.
+Store the result as `old_version`. If empty, fall back to `{plugin-root}/VERSION`.
 
-**CRITICAL:** Do NOT read `{plugin-root}/VERSION` as primary, in dev sessions it resolves to source repo (may be ahead), causing false "already up to date."
+Do not use `{plugin-root}/VERSION` as the primary source because a development session may resolve it to a newer source checkout and incorrectly report that the installed plugin needs no update.
 
-### Step 2: Handle --check
+### Step 2. Handle --check
 
-If `--check`: display version banner with installed version and STOP.
+If the user supplied `--check`, display a version banner with the installed version and stop.
 
-### Step 3: Check for update
+### Step 3. Check for an update
 
 ```bash
 curl -sf --max-time 5 "https://raw.githubusercontent.com/michaelheichler/vibe-better-with-claude-code-lbwc/main/VERSION"
 ```
-Store as `remote_version`. Curl fails → STOP: "⚠ Could not reach GitHub to check for updates."
-If remote == old: display "✓ Already at latest (v{old_version}). Refreshing cache..." Continue to Step 4 for clean cache refresh.
+Store the result as `remote_version`. If curl fails, stop and display "⚠ Could not reach GitHub to check for updates."
+If the remote and installed versions match, display "✓ Already at latest (v{old_version}). Refreshing cache..." and continue to Step 4.
 
-### Step 4: Nuclear cache wipe
+### Step 4. Refresh the cache
 
 ```bash
 bash "{plugin-root}/scripts/cache-nuke.sh"
 ```
-Removes CLAUDE_DIR/plugins/cache/lbwc-marketplace/lbwc/, CLAUDE_DIR/commands/lbwc/, /tmp/lbwc-* for pristine update.
+The helper removes `CLAUDE_DIR/plugins/cache/meridian-marketplace/meridian/` and `CLAUDE_DIR/commands/meridian/`, along with `/tmp/meridian-*`.
 
-### Step 5: Perform update
+### Step 5. Perform the update
 
-Same version: "Refreshing LBWC v{old_version} cache..." Different: "Updating LBWC v{old_version}..."
+For the same version, display "Refreshing Meridian v{old_version} cache..." Otherwise display "Updating Meridian v{old_version}..."
 
-**CRITICAL: All `claude plugin` commands MUST be prefixed with `unset CLAUDECODE &&`**, without this, Claude Code detects the parent session's env var and blocks with "cannot be launched inside another Claude Code session."
+Prefix every `claude plugin` command with `unset CLAUDECODE &&` because Claude Code otherwise detects the parent session variable and rejects nested execution.
 
-**Refresh marketplace FIRST** (stale checkout → plugin update re-caches old code):
+Refresh the marketplace first because a stale checkout causes the plugin update to cache old code again.
 ```bash
-unset CLAUDECODE && claude plugin marketplace update lbwc-marketplace 2>&1
+unset CLAUDECODE && claude plugin marketplace update meridian-marketplace 2>&1
 ```
-If fails: "⚠ Marketplace refresh failed, trying update anyway..."
+If that fails, display "⚠ Marketplace refresh failed, trying update anyway..."
 
-Try in order (stop at first success):
-- **A) Platform update:** `unset CLAUDECODE && claude plugin update lbwc@lbwc-marketplace 2>&1`
-- **B) Reinstall:** `unset CLAUDECODE && claude plugin uninstall lbwc@lbwc-marketplace 2>&1 && unset CLAUDECODE && claude plugin install lbwc@lbwc-marketplace 2>&1`
-- **C) Manual fallback:** display commands for user to run manually, STOP.
+Try these options in order and stop at the first success.
 
-**Clean stale global commands** (after A or B succeeds):
+- **Platform update.** `unset CLAUDECODE && claude plugin update meridian@meridian-marketplace 2>&1`
+- **Reinstall.** `unset CLAUDECODE && claude plugin uninstall meridian@meridian-marketplace 2>&1 && unset CLAUDECODE && claude plugin install meridian@meridian-marketplace 2>&1`
+- **Manual fallback.** Display the commands for the user to run and stop.
+
+After a platform update or reinstall succeeds, remove stale global commands.
 ```bash
 for _d in "${CLAUDE_CONFIG_DIR:-}" "$HOME/.config/claude-code" "$HOME/.claude"
 do
   [ -z "$_d" ] && continue
-  rm -rf "$_d/commands/lbwc" 2>/dev/null
+  rm -rf "$_d/commands/meridian" 2>/dev/null
 done
 ```
-This removes stale copies that break `{plugin-root}` resolution. Commands load from the plugin cache where the resolved plugin root is guaranteed.
+This removes copies that break `{plugin-root}` resolution, so commands load from the plugin cache instead.
 
-### Step 5.5: Ensure LBWC statusline
+### Step 5.5. Ensure Meridian statusline
 
-Read `CLAUDE_DIR/settings.json`, check `statusLine` (string or object .command). If contains `lbwc-statusline`: skip. Otherwise update to:
+Read `CLAUDE_DIR/settings.json` and check `statusLine` (a string or the object `.command`). If it contains `meridian-statusline`, skip this step. Otherwise use this command.
 ```json
-{"type": "command", "command": "bash -c 'for _d in \"${CLAUDE_CONFIG_DIR:-}\" \"$HOME/.config/claude-code\" \"$HOME/.claude\"\\n do\\n   [ -z \"$_d\" ] && continue\\n   f=$(ls -1 \"$_d\"/plugins/cache/lbwc-marketplace/lbwc/*/scripts/lbwc-statusline.sh 2>/dev/null | sort -V | tail -1 || true)\\n   [ -f \"$f\" ] && exec bash \"$f\"\\n done'"}
+{"type": "command", "command": "bash -c 'for _d in \"${CLAUDE_CONFIG_DIR:-}\" \"$HOME/.config/claude-code\" \"$HOME/.claude\"\\n do\\n   [ -z \"$_d\" ] && continue\\n   f=$(ls -1 \"$_d\"/plugins/cache/meridian-marketplace/meridian/*/scripts/meridian-statusline.sh 2>/dev/null | sort -V | tail -1 || true)\\n   [ -f \"$f\" ] && exec bash \"$f\"\\n done'"}
 ```
-Use jq to write (backup, update, restore on failure). Display `✓ Statusline restored (restart to activate)` if changed.
+Use jq to write the setting after creating a backup and restore that backup on failure. Display `✓ Statusline restored (restart to activate)` if the setting changes.
 
-### Step 6: Verify update
+### Step 6. Verify the update
 
 ```bash
 NEW_CACHED=$(for _d in "${CLAUDE_CONFIG_DIR:-}" "$HOME/.config/claude-code" "$HOME/.claude"
 do
   [ -z "$_d" ] && continue
-  v=$(cat "$_d"/plugins/cache/lbwc-marketplace/lbwc/*/VERSION 2>/dev/null | sort -V | tail -1 || true)
+  v=$(cat "$_d"/plugins/cache/meridian-marketplace/meridian/*/VERSION 2>/dev/null | sort -V | tail -1 || true)
   [ -n "$v" ] && echo "$v" && break
 done)
 ```
-Use NEW_CACHED as authoritative version. If empty or equals old_version when it shouldn't: "⚠ Update may not have applied. Try /lbwc:update again after restart."
+Use `NEW_CACHED` as the authoritative version. If it is empty or still equals `old_version` after an expected upgrade, display "⚠ Update may not have applied. Try /meridian:update again after restart."
 
-### Step 7: Display result
+### Step 7. Display the result
 
-Use NEW_CACHED for all display. Same version = "LBWC Cache Refreshed" banner + "Changes active immediately". Different = "LBWC Updated" banner with old→new + "Changes active immediately" + "/lbwc:whats-new" suggestion.
+Use `NEW_CACHED` for every version display. For the same version, show the "Meridian Cache Refreshed" banner and "Changes active immediately". For a new version, show the "Meridian Updated" banner with old and new versions, followed by "Changes active immediately" and `/meridian:whats-new`.
 
-**Edge case:** If Step 6 verification failed (NEW_CACHED empty/unchanged when upgrade expected): keep restart suggestion as diagnostic fallback.
+If Step 6 found an empty or unchanged version after an expected upgrade, keep the restart suggestion as a diagnostic fallback.
 
 ## Output Format
 
-Follow @${CLAUDE_PLUGIN_ROOT}/references/lbwc-brand-essentials.md, double-line box, ✓ success, ⚠ fallback warning, Next Up, no ANSI.
+Follow @${CLAUDE_PLUGIN_ROOT}/references/meridian-brand-essentials.md. Use the double-line box and ✓ for success or ⚠ for a fallback warning, followed by Next Up. Do not use ANSI.
 
 ## Guard
 
@@ -118,4 +119,4 @@ Follow @${CLAUDE_PLUGIN_ROOT}/references/lbwc-brand-essentials.md, double-line b
 
 ## Next Up
 
-After verification, show `/lbwc:whats-new` and stop.
+After verification, show `/meridian:whats-new` and stop.

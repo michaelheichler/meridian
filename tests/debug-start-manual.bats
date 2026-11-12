@@ -30,7 +30,7 @@ run_manual() {
   local session_file BUG_DESC SLUG MANUAL_REF MANUAL_DETAIL_CONTEXT MANUAL_DETAIL_FILES DETAIL_STATUS
   while IFS='|' read -r label input detail_status detail_json ref want_desc want_slug want_context want_files want_ref; do
     [ -n "$label" ] || continue
-    planning="$BATS_TEST_TMPDIR/$label/.lbwc-planning"
+    planning="$BATS_TEST_TMPDIR/$label/.meridian"
     mkdir -p "$planning"
     session_file=""
     run_manual "$planning" "$input" "${detail_status:-none}" "$detail_json" "$ref"
@@ -59,13 +59,13 @@ CASES
   local planning_arg fragment
   while IFS='|' read -r label planning_arg input detail_status detail_json fragment; do
     [ -n "$label" ] || continue
-    planning="$BATS_TEST_TMPDIR/$label/.lbwc-planning"
+    planning="$BATS_TEST_TMPDIR/$label/.meridian"
     mkdir -p "$planning"
     [ "$planning_arg" = "-" ] && planning=""
     run_manual "$planning" "$input" "${detail_status:-none}" "$detail_json" ""
     expect_case "$label" 1 "$fragment"
-    expect_no_path "$label-no-session" "$BATS_TEST_TMPDIR/$label/.lbwc-planning/debugging/.active-session"
-    expect_no_path "$label-no-active-dir" "$BATS_TEST_TMPDIR/$label/.lbwc-planning/debugging/active"
+    expect_no_path "$label-no-session" "$BATS_TEST_TMPDIR/$label/.meridian/debugging/.active-session"
+    expect_no_path "$label-no-active-dir" "$BATS_TEST_TMPDIR/$label/.meridian/debugging/active"
   done <<'CASES'
 missing-planning-dir|-|Parser crash|||planning directory is required
 invalid-detail-status|+|Parser crash|bogus||invalid detail status: bogus

@@ -8,14 +8,14 @@ on:
     paths:
       - .github/workflows/skills-discovery.yml
       - commands/skills.md
-      - scripts/lbwc-skills.sh
-      - tests/lbwc-skills.bats
+      - scripts/meridian-skills.sh
+      - tests/meridian-skills.bats
   push:
     paths:
       - .github/workflows/skills-discovery.yml
       - commands/skills.md
-      - scripts/lbwc-skills.sh
-      - tests/lbwc-skills.bats
+      - scripts/meridian-skills.sh
+      - tests/meridian-skills.bats
   workflow_dispatch:
 
 jobs:
@@ -40,7 +40,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y bats jq shellcheck
 
       - name: Check shell
-        run: shellcheck -x scripts/lbwc-skills.sh
+        run: shellcheck -x scripts/meridian-skills.sh
 
       - name: Run skills discovery tests
-        run: bats tests/lbwc-skills.bats
+        run: bats tests/meridian-skills.bats

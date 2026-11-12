@@ -105,7 +105,7 @@ path_is_repo_hygiene_artifact() {
 path_is_metadata_artifact() {
   local path="${1:-}"
   case "$path" in
-    .lbwc-planning/*|.claude/*)
+    .meridian/*|.claude/*)
       return 0
       ;;
   esac
@@ -118,7 +118,7 @@ path_is_metadata_artifact() {
 path_is_code_fix_support_artifact() {
   local path="${1:-}"
   case "$path" in
-    .lbwc-planning/*|.claude/*|.claude-plugin/*)
+    .meridian/*|.claude/*|.claude-plugin/*)
       return 0
       ;;
   esac

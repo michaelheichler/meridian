@@ -16,7 +16,7 @@ config_definition_copy_row() {
   [ "$(bus_state_digest)" = "$before" ]
   [ "$(pane_count "$SESSION")" = 1 ]
   [ ! -d "$CONTROL_ROOT/.runtime/worker-worktrees/worker-a" ]
-  git -C "$PROJECT_ROOT" show-ref --verify --quiet refs/heads/lbwc-worker/worker-a
+  git -C "$PROJECT_ROOT" show-ref --verify --quiet refs/heads/meridian-worker/worker-a
 }
 
 config_worktree_record_row() {
@@ -34,11 +34,11 @@ config_worktree_record_row() {
   [ "$(bus_state_digest)" = "$before" ]
   [ "$(pane_count "$SESSION")" = 1 ]
   [ ! -d "$CONTROL_ROOT/.runtime/worker-worktrees/worker-a" ]
-  git -C "$PROJECT_ROOT" show-ref --verify --quiet refs/heads/lbwc-worker/worker-a
+  git -C "$PROJECT_ROOT" show-ref --verify --quiet refs/heads/meridian-worker/worker-a
 }
 
 config_existing_branch_row() {
-  local before branch=lbwc-worker/worker-a
+  local before branch=meridian-worker/worker-a
   isolation_tmux_repo
   git -C "$PROJECT_ROOT" branch "$branch"
   before=$(git -C "$PROJECT_ROOT" rev-parse "$branch")

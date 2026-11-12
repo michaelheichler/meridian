@@ -1,7 +1,18 @@
 #!/bin/bash
+
+printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${BASH_SOURCE[0]}"
+case "$MERIDIAN_MIGRATION_SOURCE" in
+  *"/"*) printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${MERIDIAN_MIGRATION_SOURCE%"/"*}" ;;
+  *) printf -v MERIDIAN_MIGRATION_SOURCE '%s' . ;;
+esac
+if [ -f "$MERIDIAN_MIGRATION_SOURCE/lib/rename-migration.sh" ]; then
+  . "$MERIDIAN_MIGRATION_SOURCE/lib/rename-migration.sh"
+  meridian_migrate_environment
+fi
+unset MERIDIAN_MIGRATION_SOURCE
 set -u
 
-PLANNING_DIR="${LBWC_PLANNING_DIR:-.lbwc-planning}"
+PLANNING_DIR="${MERIDIAN_PLANNING_DIR:-.meridian}"
 MARKER_FILE="$PLANNING_DIR/.delegated-workflow.json"
 EXEC_STATE_FILE="$PLANNING_DIR/.execution-state.json"
 STALE_SECS=14400
@@ -209,7 +220,7 @@ case "$ACTION" in
       echo "Usage: delegated-workflow.sh set <mode> [effort] [delegation_mode] [team_name]" >&2
       exit 1
     fi
-    [ -d "$PLANNING_DIR" ] || { echo "No .lbwc-planning/ directory" >&2; exit 1; }
+    [ -d "$PLANNING_DIR" ] || { echo "No .meridian/ directory" >&2; exit 1; }
     STARTED_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || date +%s)
     SESSION_ID="${CLAUDE_SESSION_ID:-}"
     CORRELATION_ID=""

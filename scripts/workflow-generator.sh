@@ -1,4 +1,15 @@
 #!/usr/bin/env bash
+
+printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${BASH_SOURCE[0]}"
+case "$MERIDIAN_MIGRATION_SOURCE" in
+  *"/"*) printf -v MERIDIAN_MIGRATION_SOURCE '%s' "${MERIDIAN_MIGRATION_SOURCE%"/"*}" ;;
+  *) printf -v MERIDIAN_MIGRATION_SOURCE '%s' . ;;
+esac
+if [ -f "$MERIDIAN_MIGRATION_SOURCE/lib/rename-migration.sh" ]; then
+  . "$MERIDIAN_MIGRATION_SOURCE/lib/rename-migration.sh"
+  meridian_migrate_environment
+fi
+unset MERIDIAN_MIGRATION_SOURCE
 set -euo pipefail
 set -E
 umask 077
@@ -119,8 +130,8 @@ CONTRACT_SCHEMA_PREVIEW=$(jq -r '.schema_version // empty' "$CONTRACT_PATH" 2>/d
 
 CONTRACT_CONTROL_ROOT_RAW=$(jq -r '.control_root // empty' "$CONTRACT_PATH" 2>/dev/null) || fail "invalid contract"
 [ -n "$CONTROL_ROOT_ARG" ] || CONTROL_ROOT_ARG="$CONTRACT_CONTROL_ROOT_RAW"
-CONTROL_ROOT=$(lbwc_control_root_validate "$CONTROL_ROOT_ARG" 0) || fail "control root is unavailable or invalid"
-CONTRACT_CONTROL_ROOT=$(lbwc_control_root_validate "$CONTRACT_CONTROL_ROOT_RAW" 0) || fail "contract control root is unavailable"
+CONTROL_ROOT=$(meridian_control_root_validate "$CONTROL_ROOT_ARG" 0) || fail "control root is unavailable or invalid"
+CONTRACT_CONTROL_ROOT=$(meridian_control_root_validate "$CONTRACT_CONTROL_ROOT_RAW" 0) || fail "contract control root is unavailable"
 [ "$CONTROL_ROOT" = "$CONTRACT_CONTROL_ROOT" ] || fail "contract control root mismatch"
 
 assert_workflow_capability "$CONTROL_ROOT"
@@ -349,7 +360,7 @@ if grep -qE 'new[[:space:]]+Date[[:space:]]*\([[:space:]]*\)' <<< "$CODE_OUTSIDE
 fi
 
 if command -v node >/dev/null 2>&1; then
-  SYNTAX_CHECK_FILE=$(mktemp "${TMPDIR:-/tmp}/lbwc-workflow-syntax.XXXXXX")
+  SYNTAX_CHECK_FILE=$(mktemp "${TMPDIR:-/tmp}/meridian-workflow-syntax.XXXXXX")
   { printf '(async () => {\n'; tail -n +2 "$TARGET"; printf '\n})\n'; } > "$SYNTAX_CHECK_FILE"
   SYNTAX_ERROR=$(node --check --input-type=module - < "$SYNTAX_CHECK_FILE" 2>&1) || {
     rm -f "$SYNTAX_CHECK_FILE"
