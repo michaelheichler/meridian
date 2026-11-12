@@ -8,7 +8,7 @@ When routed here, skip the standard phase-resolution Steps entirely. Instead:
 
 2. Increment the UAT round:
    ```bash
-  eval "$(bash "{plugin-root}/scripts/debug-session-state.sh" increment-uat .lbwc-planning)"
+  eval "$(bash "{plugin-root}/scripts/debug-session-state.sh" increment-uat .meridian)"
    ```
 
 3. Generate 1-3 UAT checkpoints from the session context. These must require HUMAN judgment:
@@ -38,8 +38,8 @@ When routed here, skip the standard phase-resolution Steps entirely. Instead:
    ```
 
 6. Update session status based on results:
-   - All checkpoints pass (no issues) → `bash .../debug-session-state.sh set-status .lbwc-planning complete`
-   - Any issues found → `bash .../debug-session-state.sh set-status .lbwc-planning uat_failed`
+   - All checkpoints pass (no issues) → `bash .../debug-session-state.sh set-status .meridian complete`
+   - Any issues found → `bash .../debug-session-state.sh set-status .meridian uat_failed`
 
 7. Present debug-session UAT result:
    ```text
@@ -54,6 +54,6 @@ When routed here, skip the standard phase-resolution Steps entirely. Instead:
 
    ```
    - If COMPLETE: `➜ Debug session complete. UAT verified the fix.`
-   - If ISSUES: `➜ Next: /lbwc:debug --resume -- Address UAT issues`
+   - If ISSUES: `➜ Next: /meridian:debug --resume -- Address UAT issues`
 
    STOP after presenting. Do not continue to the standard phase UAT steps.

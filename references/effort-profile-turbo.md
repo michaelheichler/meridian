@@ -20,12 +20,12 @@ This guidance does not select a model or reasoning value for a role. The saved `
 ## Use the profile
 
 ```sh
-scripts/lbwc-model refresh .lbwc-planning
-scripts/lbwc-model activate .lbwc-planning turbo
-scripts/lbwc-model validate .lbwc-planning
+scripts/meridian-model refresh .meridian
+scripts/meridian-model activate .meridian turbo
+scripts/meridian-model validate .meridian
 ```
 
-Inspect the detected catalog and active routes with `scripts/lbwc-model show .lbwc-planning`. Configure a route only with a selector and reasoning value accepted by that catalog. See `@references/model-profiles.md`.
+Inspect the detected catalog and active routes with `scripts/meridian-model show .meridian`. Configure a route only with a selector and reasoning value accepted by that catalog. See `@references/model-profiles.md`.
 
 ## Boundaries
 

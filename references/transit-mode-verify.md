@@ -1,7 +1,7 @@
 ## Main-session Decision Handoffs
 
 Only the main session can call `AskUserQuestion`. Before each `AskUserQuestion`
-call, the main session follows `references/lbwc-brand-essentials.md`. A worker
+call, the main session follows `references/meridian-brand-essentials.md`. A worker
 that reaches a decision boundary returns the `user_decision_required` JSON from
 `references/subagent-contracts.md`. The worker does not mutate state or claim a
 todo until the main session responds. It also does not start the next stage
@@ -9,17 +9,17 @@ before that response. A declined choice keeps the state and reports the
 documented Next Up command.
 
 **Guard:** Initialized, phase has `*-SUMMARY.md` files.
-If no SUMMARY.md exists, STOP "Phase {NN} has no completed plans. Run /lbwc:vibe first."
-**Phase auto-detection:** First phase with `*-SUMMARY.md` but no canonical `*-UAT.md` (exclude `*-SOURCE-UAT.md` copies). If every phase has UAT results, STOP "All phases have UAT results. To re-run UAT for a specific phase, use `/lbwc:vibe --verify {NN}`."
+If no SUMMARY.md exists, STOP "Phase {NN} has no completed plans. Run /meridian:transit first."
+**Phase auto-detection:** First phase with `*-SUMMARY.md` but no canonical `*-UAT.md` (exclude `*-SOURCE-UAT.md` copies). If every phase has UAT results, STOP "All phases have UAT results. To re-run UAT for a specific phase, use `/meridian:transit --verify {NN}`."
 
-**Inline execution (NON-NEGOTIABLE):** UAT is an interactive human conversation through AskUserQuestion CHECKPOINT prompts. Do NOT spawn a QA agent, Dev agent, or any subagent for UAT verification. Do NOT use TaskCreate to delegate UAT. The AskUserQuestion tool is only available to the orchestrator. Subagents cannot interact with the user, so delegating UAT to a subagent bypasses user input entirely and produces auto-written UAT files without human judgment. Run the verify.md CHECKPOINT loop directly in this conversation, the same way UAT Remediation coordinates its stages inline.
+**Inline execution (NON-NEGOTIABLE):** UAT is an interactive human conversation through AskUserQuestion CHECKPOINT prompts. Do NOT spawn a QA agent, Dev agent, or any subagent for UAT verification. Do NOT use TaskCreate to delegate UAT. The AskUserQuestion tool is only available to the orchestrator. Subagents cannot interact with the user, so delegating UAT to a subagent skips user input and produces auto-written UAT files without human judgment. Run the verify.md CHECKPOINT loop directly in this conversation, the same way UAT Remediation coordinates its stages inline.
 
 **Steps:**
 1. Resolve the final target phase from the selected Verify route before compiling context. An explicit `--verify N` target wins. Otherwise, use the phase chosen by state-driven Verify or auto-UAT routing. Set `PHASE_DIR` to that exact active phase directory. Check whether an upstream re-verification or QA-remediation transition in this turn already produced fresh verify context and UAT resume metadata for the same `PHASE_DIR`. If so, reuse that output. Otherwise run:
    ```bash
    SESSION_KEY="${CLAUDE_SESSION_ID:-default}"
-   L="/tmp/.lbwc-plugin-root-link-${SESSION_KEY}"
-   P="/tmp/.lbwc-phase-detect-${SESSION_KEY}.txt"
+   L="/tmp/.meridian-plugin-root-link-${SESSION_KEY}"
+   P="/tmp/.meridian-phase-detect-${SESSION_KEY}.txt"
    PDIR="$PHASE_DIR"
    PD=""
    _PD_START_TS=$(date +%s 2>/dev/null || echo 0)
@@ -51,7 +51,7 @@ If no SUMMARY.md exists, STOP "Phase {NN} has no completed plans. Run /lbwc:vibe
    done
    if _phase_detect_cache_retryable && [ -L "$L" ] && [ -f "$L/scripts/phase-detect.sh" ]
    then
-     LOCK="/tmp/.lbwc-phase-detect-live-${SESSION_KEY}.lock"
+     LOCK="/tmp/.meridian-phase-detect-live-${SESSION_KEY}.lock"
      i=0
      while [ $i -lt 100 ]
      do
@@ -100,15 +100,15 @@ If no SUMMARY.md exists, STOP "Phase {NN} has no completed plans. Run /lbwc:vibe
      fi
    )
    ```
-   This runtime call is route-local. Do not compile verify context while parsing inputs or routing to Plan, Discuss, Scope, Archive, or any other non-Verify mode. Read `/tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID:-default}/commands/verify.md` and use `VERIFY_CONTEXT` plus `UAT_RESUME` as the active protocol context. **Error guard:** Check `VERIFY_CONTEXT` for `verify_context_error=true` or `verify_context=unavailable`. On either value, display: "⚠ Verify context compilation failed. Run `bash /tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/compile-verify-context-for-uat.sh .lbwc-planning/phases/{NN}-{slug}` manually to debug." STOP. Do NOT improvise by scanning PLAN/SUMMARY files manually in this routed path.
+   This runtime call is route-local. Do not compile verify context while parsing inputs or routing to Plan, Discuss, Scope, Archive, or any other non-Verify mode. Read `/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/commands/verify.md` and use `VERIFY_CONTEXT` plus `UAT_RESUME` as the active protocol context. **Error guard:** Check `VERIFY_CONTEXT` for `verify_context_error=true` or `verify_context=unavailable`. On either value, display: "⚠ Verify context compilation failed. Run `bash /tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/compile-verify-context-for-uat.sh .meridian/phases/{NN}-{slug}` manually to debug." STOP. Do NOT improvise by scanning PLAN/SUMMARY files manually in this routed path.
 2. Execute the verify.md steps inline in this conversation. Specifically, generate test scenarios (verify.md Step 4). Then run the CHECKPOINT loop (verify.md Step 5), presenting one test at a time via AskUserQuestion. Wait for the user's response before proceeding to the next test. Use the active `VERIFY_CONTEXT` aggregation and `UAT_RESUME` metadata for the target phase. Pass the full UAT resume metadata through to the verify protocol. Include `uat_resume_scenario`, `uat_resume_expected`, and any present summary-deviation source fields. This metadata lets verify.md ask the first resumed checkpoint without re-reading the UAT file. After each persisted answer, verify.md re-runs `extract-uat-resume.sh` and uses the refreshed deterministic fields for the next checkpoint. Do NOT read individual PLAN/SUMMARY files or scan-parse UAT.md for resume state.
 3. Display results per verify.md output format.
-4. **UAT Remediation Auto-Continuation:** This step applies only to a verify.md result that emitted `remediation_continue=true`. That signal appears only with `verify_scope=remediation` AND `status=issues_found` AND a run in orchestrated mode from vibe.md. If `remediation_continue` was not set (first-time UAT, complete result, or standalone verify), skip this step entirely. The command ends after step 3.
+4. **UAT Remediation Auto-Continuation:** This step applies only to a verify.md result that emitted `remediation_continue=true`. That signal appears only with `verify_scope=remediation` AND `status=issues_found` AND a run in orchestrated mode from transit.md. If `remediation_continue` was not set (first-time UAT, complete result, or standalone verify), skip this step. The command ends after step 3.
 
    **Prepare the next remediation round through the safe transition helper:** Run `prepare-reverification.sh` exactly once for this transition. This helper finalizes and checks the active UAT before state mutation and applies the UAT remediation round cap. If nothing blocks the transition, the helper then performs the next-round transition. A direct `needs-round` call is not the transition path here because it can mutate `.uat-remediation-stage` before the current UAT is terminal.
 
    ```bash
-   _prepare_output=$(bash /tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/prepare-reverification.sh "{phase-dir}" 2>&1)
+   _prepare_output=$(bash /tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/prepare-reverification.sh "{phase-dir}" 2>&1)
    _prepare_status=$?
    ```
 
@@ -137,7 +137,7 @@ If no SUMMARY.md exists, STOP "Phase {NN} has no completed plans. Run /lbwc:vibe
    **Resolve the new round:** Prefer the `round=` value that `prepare-reverification.sh` emits. If `round=` is absent after a successful prepare, read the current round as a read-only fallback:
    ```bash
    if [ -z "$_round" ]; then
-     _round=$(bash /tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/uat-remediation-state.sh current-round "{phase-dir}" 2>/dev/null)
+     _round=$(bash /tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/uat-remediation-state.sh current-round "{phase-dir}" 2>/dev/null)
    fi
    ```
    If `_round` is empty after both attempts, treat the prepare output as malformed and STOP.

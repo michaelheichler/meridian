@@ -1,24 +1,24 @@
-The user now has project-defining files and can run `/lbwc:vibe` when ready.
-Display a banner per @${CLAUDE_PLUGIN_ROOT}/references/lbwc-brand-essentials.md with the title "LBWC Initialization Complete".
+The user now has project-defining files and can run `/meridian:transit` when ready.
+Display a banner per @${CLAUDE_PLUGIN_ROOT}/references/meridian-brand-essentials.md with the title "MERIDIAN Initialization Complete".
 
 ```text
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-LBWC Initialization Complete
+MERIDIAN Initialization Complete
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
 Display all files that this command created or updated.
 Include the core project artifacts.
 
-- `✓ .lbwc-planning/PROJECT.md`
-- `✓ .lbwc-planning/REQUIREMENTS.md`
-- `✓ .lbwc-planning/ROADMAP.md`
-- `✓ .lbwc-planning/STATE.md`
+- `✓ .meridian/PROJECT.md`
+- `✓ .meridian/REQUIREMENTS.md`
+- `✓ .meridian/ROADMAP.md`
+- `✓ .meridian/STATE.md`
 
 Include configuration and instructions.
 
 - `✓ CLAUDE.md`
-- `✓ .lbwc-planning/config.json`
+- `✓ .meridian/config.json`
 
 Include conditional artifacts only when their conditions apply.
 
@@ -28,6 +28,6 @@ Include conditional artifacts only when their conditions apply.
 Display the next steps.
 
 ```text
-➜ Next: Run /lbwc:vibe to start planning your first milestone
-  Or:   Run /lbwc:status to review project state
+➜ Next: Run /meridian:transit to start planning your first milestone
+  Or:   Run /meridian:status to review project state
 ```

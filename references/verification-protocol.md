@@ -1,15 +1,15 @@
-# LBWC execution adaptation
+# MERIDIAN execution adaptation
 
 This is a behavior-preserving port. The main session owns task contracts, generated-agent admission, mutable planning state, verification persistence, telemetry, git, and user-facing output. A worker must not change any path outside the exact paths in its dispatched contract. `scripts/phase-detect.sh`, `scripts/qa-result-gate.sh`, `scripts/write-verification.sh`, `scripts/remediation-round.sh`, and `references/agent-spawn-protocol.md` replace source-specific routing, persistence, and lifecycle authority.
 
-# LBWC Verification Protocol
+# MERIDIAN Verification Protocol
 
-Authoritative spec for the LBWC verification pipeline. QA returns structured evidence only. The main session checks that evidence and persists `VERIFICATION.md` with `scripts/write-verification.sh`.
+Authoritative spec for the MERIDIAN verification pipeline. QA returns structured evidence only. The main session checks that evidence and persists `VERIFICATION.md` with `scripts/write-verification.sh`.
 
 ## 1. Contexts
 
-- **Post-build:** Automatic after `/lbwc:vibe` execute mode unless an explicit `--skip-qa` option or installed configuration rule applies
-- **On-demand:** Triggered by `/lbwc:vibe`, `/lbwc:debug`, or the hidden internal `/lbwc:qa` protocol command
+- **Post-build:** Automatic after `/meridian:transit` execute mode unless an explicit `--skip-qa` option or installed configuration rule applies
+- **On-demand:** Triggered by `/meridian:transit`, `/meridian:debug`, or the hidden internal `/meridian:qa` protocol command
 
 ## 1.5 Known-Issues Lifecycle (VRFY-KI)
 
@@ -50,7 +50,7 @@ Standard, plus:
 
 ## 3. Auto-Selection Heuristic (VRFY-01)
 
-**LBWC superseder:** the command supplies an explicit tier or reads `config_verification_tier` from the detector output. A generated name, model, reasoning setting, or workflow effort never selects verification scope.
+**MERIDIAN superseder:** the command supplies an explicit tier or reads `config_verification_tier` from the detector output. A generated name, model, reasoning setting, or workflow effort never selects verification scope.
 
 | Evidence | Tier |
 |----------|------|
@@ -76,7 +76,7 @@ Start from desired outcomes, derive testable conditions, check against artifacts
 
 ## 5. Convention Verification (VRFY-06)
 
-If `.lbwc-planning/codebase/CONVENTIONS.md` exists, this verification is active. Otherwise QA skips it silently.
+If `.meridian/codebase/CONVENTIONS.md` exists, this verification is active. Otherwise QA skips it silently.
 
 | Tier | Behavior |
 |------|----------|

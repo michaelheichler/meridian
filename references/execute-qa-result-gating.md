@@ -1,4 +1,4 @@
-# LBWC execution adaptation
+# MERIDIAN execution adaptation
 
 This is a behavior-preserving port. The main session owns task contracts, generated-agent admission, mutable planning state, verification persistence, telemetry, git, and user-facing output. A worker can change only the exact paths in its dispatched contract. `scripts/phase-detect.sh`, `scripts/qa-result-gate.sh`, `scripts/write-verification.sh`, `scripts/remediation-round.sh`, and `references/agent-spawn-protocol.md` replace source-specific routing, persistence, and lifecycle authority. This fragment runs after `references/execute-protocol.md` resolves `PLUGIN_ROOT`.
 
@@ -11,7 +11,7 @@ A sync failure blocks the QA contract and stops routing.
 
 - Phase-level VERIFICATION writes merge new pre-existing issues into the existing registry without clearing the execution-time backlog.
 - Round-scoped `R{RR}-VERIFICATION.md` writes are authoritative for unresolved known issues only while the current remediation kind is QA.
-- The current `qa-result-gate.sh` has no UAT-round scope. A UAT-round result cannot use this gate or claim `PROCEED_TO_UAT`. LBWC does not implement UAT-round deterministic gating yet.
+- The current `qa-result-gate.sh` has no UAT-round scope. A UAT-round result cannot use this gate or claim `PROCEED_TO_UAT`. MERIDIAN does not implement UAT-round deterministic gating yet.
 
 After root QA or QA-round QA completes, run the supported deterministic gate:
 ```bash
@@ -29,7 +29,7 @@ bash "${PLUGIN_ROOT}/scripts/qa-result-gate.sh" "{phase-dir}"
 
 **QA Remediation Loop (inline, same session):**
 
-This loop runs inline during execution. If the session ends mid-loop, `phase-detect.sh` routes to `needs_qa_remediation` on the next `/lbwc:vibe` call.
+This loop runs inline during execution. If the session ends mid-loop, `phase-detect.sh` routes to `needs_qa_remediation` on the next `/meridian:transit` call.
 
 1. **Init or resume state:**
    - On an initial root QA failure, call `remediation-round.sh open "$PHASE_DIR" qa` before any `current` query.
@@ -88,7 +88,7 @@ This loop runs inline during execution. If the session ends mid-loop, `phase-det
 
     - Do NOT omit the `known_issues_input` or `known_issue_resolutions` keys. Do NOT omit a carried known issue from either array. If QA writes `PASS`, the deterministic gate still treats missing coverage as a failed remediation round.
    - Scope the plan to those failures (what to fix, which files, acceptance criteria)
-  - **LBWC Lead superseder:** The main session issues a read-only command contract for role `lead`. It passes the identical remediation brief to `scripts/agent-generator.sh lead --contract <path> --task-id <id>`, advances the contract to `dispatched`, and uses the final `SPAWN_READY` name. The Lead returns complete plan content. The main session writes `{round_dir}/R{RR}-PLAN.md`. The generated output supplies model and permitted parameters.
+  - **MERIDIAN Lead superseder:** The main session issues a read-only command contract for role `lead`. It passes the identical remediation brief to `scripts/agent-generator.sh lead --contract <path> --task-id <id>`, advances the contract to `dispatched`, and uses the final `SPAWN_READY` name. The Lead returns complete plan content. The main session writes `{round_dir}/R{RR}-PLAN.md`. The generated output supplies model and permitted parameters.
   - The Lead brief includes the authoritative host paths, failed-check source, known-issue source, every classification and resolution rule above, and `templates/REMEDIATION-PLAN.md`. It never receives a worker cwd or isolation option.
   - After the Lead returns, apply the no-tool circuit breaker before filename validation, plan validation, or state advance. A no-tool result leaves the round in `plan`. If the breaker triggers (unavailable tools are a provisioning failure), STOP without advancing state or retrying the same prompt.
   - Normalize plan filenames before validation:
@@ -107,9 +107,9 @@ This loop runs inline during execution. If the session ends mid-loop, `phase-det
     If validation fails, display the validator error and STOP without advancing `.qa-remediation-stage`. Do not search for an alternate PLAN.md.
   - After plan validation passes, advance state: `bash "${PLUGIN_ROOT}/scripts/qa-remediation-state.sh" advance "{phase-dir}"`
 
-   **`stage=execute`:** Execute `R{RR}-PLAN.md` through `/lbwc:build {NN}`.
+   **`stage=execute`:** Execute `R{RR}-PLAN.md` through `/meridian:build {NN}`.
    - The build command creates one PLAN task contract per grouping, derives agent shape from the task, and calls the generic agent generator. It replaces a role-specific source Dev generator and static model resolution.
-   - QA remediation does not create a durable agent team. Each exclusive solo, pair, or trio grouping uses the normal LBWC contract and manifest lifecycle. A worktree cwd, isolation option, `team_name`, and background emulation remain prohibited.
+   - QA remediation does not create a durable agent team. Each exclusive solo, pair, or trio grouping uses the normal MERIDIAN contract and manifest lifecycle. A worktree cwd, isolation option, `team_name`, and background emulation remain prohibited.
    - The main session verifies each task, commits its observed contract-limited output, and writes `R{RR}-SUMMARY.md` from `templates/REMEDIATION-SUMMARY.md`.
    - The summary frontmatter includes aggregate `commit_hashes`, `files_modified`, and `deviations`. It records `known_issue_outcomes` for each carried known issue and uses dispositions matching the plan resolution.
    - A missing, nonterminal, or unsupported summary leaves the round in `execute`. Apply the no-tool circuit breaker before summary inspection or stage advance. If it triggers (unavailable tools are a provisioning failure), STOP without advancing state or retrying the same prompt.
@@ -117,7 +117,7 @@ This loop runs inline during execution. If the session ends mid-loop, `phase-det
 
    **`stage=verify`:** Re-run QA:
    - Run `compile-verify-context.sh --remediation-only {phase-dir}` to get compounded verification history plus the current round's plan/summary context only
-   - Spawn QA through a fresh read-only LBWC command contract. QA returns `qa_verdict` evidence. The main session checks it and writes it to `{verification_path}`.
+   - Spawn QA through a fresh read-only MERIDIAN command contract. QA returns `qa_verdict` evidence. The main session checks it and writes it to `{verification_path}`.
      - Output path: `{round_dir}/R{RR}-VERIFICATION.md`, phase-level VERIFICATION.md stays frozen
     - After QA returns, apply the no-tool circuit breaker in `references/subagent-contracts.md` before syncing known issues or running the deterministic gate. If it triggers (unavailable tools are a provisioning failure), STOP without advancing `.qa-remediation-stage` or any other state, and do not retry the same prompt.
      - After the main session persists `{verification_path}`, immediately sync tracked known issues from that round artifact:

@@ -44,17 +44,17 @@ _uat_state_exists=false
 **If `_uat_state_exists=true` AND `verify_scope=remediation`:**
 - If `status=issues_found`, handle based on calling context:
 
-  **Orchestrated mode** (called from vibe.md, you are executing inside vibe.md's Verify mode): Do NOT call `needs-round`. The caller will advance state after checking the round cap. Emit this signal for the calling orchestrator: `remediation_continue=true issues={N}` (where `{N}` is the issue count from finalization above).
+  **Orchestrated mode** (called from transit.md, you are executing inside transit.md's Verify mode): Do NOT call `needs-round`. The caller will advance state after checking the round cap. Emit this signal for the calling orchestrator: `remediation_continue=true issues={N}` (where `{N}` is the issue count from finalization above).
 
-  **Standalone mode** (running via `/lbwc:verify` directly, not called from vibe.md): Check the shared UAT remediation round-cap contract before mutating state:
+  **Standalone mode** (running via `/meridian:verify` directly, not called from transit.md): Check the shared UAT remediation round-cap contract before mutating state:
   ```bash
   _current_round=$(bash "{plugin-root}/scripts/uat-remediation-state.sh" current-round "{phase-dir}")
-  _cap_decision=$(bash "{plugin-root}/scripts/resolve-uat-remediation-round-limit.sh" --next-round-decision .lbwc-planning/config.json "${_current_round}" 2>/dev/null)
+  _cap_decision=$(bash "{plugin-root}/scripts/resolve-uat-remediation-round-limit.sh" --next-round-decision .meridian/config.json "${_current_round}" 2>/dev/null)
   _next_round=$(printf '%s\n' "$_cap_decision" | awk -F= '/^next_round=/{print $2; exit}')
   _max_rounds=$(printf '%s\n' "$_cap_decision" | awk -F= '/^max_rounds=/{print $2; exit}')
   _cap_reached=$(printf '%s\n' "$_cap_decision" | awk -F= '/^cap_reached=/{print $2; exit}')
   ```
-  - If `_cap_reached` is empty or `_cap_decision` is empty, the round-cap helper failed or returned malformed output. Display: "⚠ Could not determine UAT remediation round cap. Run `/lbwc:verify` to retry." STOP. Do NOT call `needs-round`, no state mutation on error paths.
+  - If `_cap_reached` is empty or `_cap_decision` is empty, the round-cap helper failed or returned malformed output. Display: "⚠ Could not determine UAT remediation round cap. Run `/meridian:verify` to retry." STOP. Do NOT call `needs-round`, no state mutation on error paths.
   - If `_cap_reached=true`, display:
     ```text
     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -102,23 +102,23 @@ _uat_state_exists=false
 
 - If issues found:
   - Any issue severity is `critical` or `major`:
-    - `Suggest /lbwc:vibe to continue UAT remediation directly from {uat_path}`
+    - `Suggest /meridian:transit to continue UAT remediation directly from {uat_path}`
   - All issues are `minor`:
-    - `Suggest /lbwc:fix to address recorded issues.`
+    - `Suggest /meridian:fix to address recorded issues.`
 
 **Planning artifact boundary commit (conditional):**
 ```bash
-PG_SCRIPT="/tmp/.lbwc-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/planning-git.sh"
+PG_SCRIPT="/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/planning-git.sh"
 if [ -f "$PG_SCRIPT" ]; then
-  bash "$PG_SCRIPT" commit-boundary "verify phase {NN}" .lbwc-planning/config.json
+  bash "$PG_SCRIPT" commit-boundary "verify phase {NN}" .meridian/config.json
 else
-  echo "⚠ LBWC: planning-git.sh unavailable. Skipping planning git boundary commit." >&2
+  echo "⚠ MERIDIAN: planning-git.sh unavailable. Skipping planning git boundary commit." >&2
 fi
 ```
-- `planning_tracking=commit`: commits `.lbwc-planning/` + `CLAUDE.md` when changed (includes UAT report)
+- `planning_tracking=commit`: commits `.meridian/` + `CLAUDE.md` when changed (includes UAT report)
 - `planning_tracking=manual|ignore`: no-op
 - `auto_push=always`: push happens inside the boundary commit command when upstream exists
 
-When executed inline from `/lbwc:vibe`, the calling mode handles auto-continuation based on `remediation_continue`. The `suggest-next.sh` output and severity-based suggestions above serve as the standalone `/lbwc:verify` fallback.
+When executed inline from `/meridian:transit`, the calling mode handles auto-continuation based on `remediation_continue`. The `suggest-next.sh` output and severity-based suggestions above serve as the standalone `/meridian:verify` fallback.
 
 Run `bash "{plugin-root}/scripts/suggest-next.sh" verify {result} {phase}` and display.

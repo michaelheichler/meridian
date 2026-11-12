@@ -1,6 +1,6 @@
 # Scout Live Validation Policy
 
-Read-only live-validation policy for the LBWC scout role when investigating bugs, issues, or external data sources (APIs, databases, third-party services). Only the scout uses this policy. No other LBWC agent performs live validation this way.
+Read-only live-validation policy for the MERIDIAN scout role when investigating bugs, issues, or external data sources (APIs, databases, third-party services). Only the scout uses this policy. No other MERIDIAN agent performs live validation this way.
 
 ## Bash Usage
 

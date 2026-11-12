@@ -1,6 +1,6 @@
 # AskUserQuestion Contract
 
-Use this contract whenever the main session asks the user to choose the next step. It applies to `/lbwc:*` commands, `.lbwc-planning` workflows, and `commands/teach.md`.
+Use this contract whenever the main session asks the user to choose the next step. It applies to `/meridian:*` commands, `.meridian` workflows, and `commands/teach.md`.
 
 ## Main-session decision boundary
 

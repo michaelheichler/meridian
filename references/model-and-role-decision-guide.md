@@ -9,9 +9,9 @@ The detected Claude Code catalog is the only source of valid selectors and reaso
 | Component | Responsibility |
 | --- | --- |
 | `scripts/claude-capabilities.sh` | Detects selectors and reasoning values from the installed Claude Code executable. |
-| `scripts/lbwc-model` | Refreshes, displays, validates, activates, copies, and updates routing profiles. |
-| `scripts/lbwc-config.sh` | Creates and validates the planning configuration. |
-| `scripts/lbwc-routing.sh` | Resolves a role from the active routing profile and validates its stored route against the saved catalog. |
+| `scripts/meridian-model` | Refreshes, displays, validates, activates, copies, and updates routing profiles. |
+| `scripts/meridian-config.sh` | Creates and validates the planning configuration. |
+| `scripts/meridian-routing.sh` | Resolves a role from the active routing profile and validates its stored route against the saved catalog. |
 | `scripts/resolve-agent-settings.sh` | Resolves and validates the route immediately before one agent spawn. |
 
 The final resolver output wins. Commands and agents must not infer a selector from a role, a profile name, a benchmark, a provider family, or this document.
@@ -25,9 +25,9 @@ Workflow effort is separate. It controls command depth and turn scaling. It does
 Use the model interface to inspect or change routing:
 
 ```sh
-scripts/lbwc-model refresh .lbwc-planning
-scripts/lbwc-model show .lbwc-planning
-scripts/lbwc-model validate .lbwc-planning
+scripts/meridian-model refresh .meridian
+scripts/meridian-model show .meridian
+scripts/meridian-model validate .meridian
 ```
 
 After a Claude Code update, refresh before dispatching work. A saved catalog that no longer matches the executable is rejected.
@@ -54,13 +54,13 @@ A stored reasoning value is either a detected string or JSON `null`.
 - `null` means omit the reasoning parameter and use the Claude Code default.
 - A detected string, including `"default"` when the catalog exposes it, is an explicit value and must be passed as a string.
 
-The values are different. Do not replace `null` with `"default"`, or the reverse. `scripts/lbwc-routing.sh` validates stored cells, and `scripts/resolve-agent-settings.sh` validates the route again at spawn time.
+The values are different. Do not replace `null` with `"default"`, or the reverse. `scripts/meridian-routing.sh` validates stored cells, and `scripts/resolve-agent-settings.sh` validates the route again at spawn time.
 
 ## Operating rules
 
 1. Refresh the catalog after a Claude Code update.
 2. Inspect detected options before changing a route.
-3. Set or activate a route through `scripts/lbwc-model` only.
+3. Set or activate a route through `scripts/meridian-model` only.
 4. Pass the resolver output unchanged to the agent spawn.
 5. Treat an unresolved or rejected route as a stop condition, not a prompt to choose a replacement by judgment.
 

@@ -9,5 +9,5 @@ For Step 3d, combine curated results from 2b and registry results from 3c in one
 Tag each result `(curated)` or `(registry)`.
 Use at most four visible choices, including `Skip`.
 If more than three skills qualify, show the top three plus `Skip`.
-Point broader discovery to `/lbwc:skills`.
+Point broader discovery to `/meridian:skills`.
 Install selected skills into the current project with `npx skills add <skill> -y`.

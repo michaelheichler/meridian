@@ -1,12 +1,12 @@
 # Routing lock token diagnostics
 
 Tracked record for two limitations in the `acquire_config_lock` diagnostics
-added to `scripts/lbwc-routing.sh`. Referenced from `FOLLOW_UP.md`.
+added to `scripts/meridian-routing.sh`. Referenced from `FOLLOW_UP.md`.
 
 ## Token flake (hypothesis, not a proven root cause)
 
 `acquire_config_lock` occasionally fails to generate its owner token during
-`tests/lbwc-execution-config.bats` and `tests/self-check.bats`. Fork exhaustion
+`tests/meridian-execution-config.bats` and `tests/self-check.bats`. Fork exhaustion
 in the test host is a proposed cause, but nobody has proven it. A
 synthetic `ulimit -u` harness showed fork exhaustion CAN break the `od`/`env`
 subprocess construct used there, but the one captured run landed the failure
@@ -61,14 +61,14 @@ assertion, not as something this repository can independently confirm.
 
 ## Routing-lock test split (a provable pure move)
 
-`tests/lbwc-routing.bats` grew to 972 lines while adding the diagnostic
+`tests/meridian-routing.bats` grew to 972 lines while adding the diagnostic
 tests above, past the file length threshold. It split into
-`tests/lbwc-routing.bats` (routing command behavior, 26 tests) and
-`tests/lbwc-routing-lock.bats` (lock and token mechanics, 17 tests). Unlike
+`tests/meridian-routing.bats` (routing command behavior, 26 tests) and
+`tests/meridian-routing-lock.bats` (lock and token mechanics, 17 tests). Unlike
 the render-workflow-template split, this one is independently checkable
-against git. `git show HEAD:tests/lbwc-routing.bats` has 40 tests. The
+against git. `git show HEAD:tests/meridian-routing.bats` has 40 tests. The
 working tree before the split had 41 (one test added earlier in this
 line of work). The two split files together hold 43 tests with no
 duplicate names, which is exactly 41 plus the two new od diagnostic cases
-above. Both files pass in full: `bats tests/lbwc-routing.bats` (26/26) and
-`bats tests/lbwc-routing-lock.bats` (17/17).
+above. Both files pass in full: `bats tests/meridian-routing.bats` (26/26) and
+`bats tests/meridian-routing-lock.bats` (17/17).

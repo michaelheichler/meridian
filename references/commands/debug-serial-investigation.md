@@ -24,7 +24,7 @@ Bug investigation. Effort: {EFFORT_PROFILE}.
 Bug report: {description}.
 {Include research, detail, and sparse enrichment only when present.}
 Working directory: {pwd}.
-If `.lbwc-planning/codebase/META.md` exists, read ARCHITECTURE.md, CONCERNS.md, PATTERNS.md, and DEPENDENCIES.md (whichever exist) before investigating.
+If `.meridian/codebase/META.md` exists, read ARCHITECTURE.md, CONCERNS.md, PATTERNS.md, and DEPENDENCIES.md (whichever exist) before investigating.
 Evaluate all relevant hypotheses, reproduce, gather evidence, and diagnose. Also evaluate available MCP tools in your system context relevant to this investigation and note them in the task context. Return `debugger_report` using `{plugin-root}/references/handoff-schemas.md`, with an explicit `resolution_observation` of `already_fixed`, `needs_change`, or `inconclusive`, exact diagnosed product file paths, proposed changes, verification commands, and pre-existing issues. Include the no-tool circuit breaker result for unrelated failures.
 Do not edit files, write planning artifacts, run mutating Bash or Git commands, ask user questions, or claim final session ownership.
 ```

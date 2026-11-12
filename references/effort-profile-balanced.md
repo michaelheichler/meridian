@@ -22,12 +22,12 @@ This guidance does not select a model or reasoning value for a role. The saved `
 Refresh the detected Claude Code catalog before configuring routes, especially after a Claude Code update:
 
 ```sh
-scripts/lbwc-model refresh .lbwc-planning
-scripts/lbwc-model activate .lbwc-planning balanced
-scripts/lbwc-model validate .lbwc-planning
+scripts/meridian-model refresh .meridian
+scripts/meridian-model activate .meridian balanced
+scripts/meridian-model validate .meridian
 ```
 
-Use `scripts/lbwc-model show .lbwc-planning` to inspect the active routes. Change a route only through `scripts/lbwc-model set` with a selector and reasoning value displayed by the refreshed catalog. `@references/model-profiles.md` defines the catalog, validation, and null reasoning semantics.
+Use `scripts/meridian-model show .meridian` to inspect the active routes. Change a route only through `scripts/meridian-model set` with a selector and reasoning value displayed by the refreshed catalog. `@references/model-profiles.md` defines the catalog, validation, and null reasoning semantics.
 
 ## Boundaries
 

@@ -4,7 +4,7 @@ Selected-todo mode applies when `$ARGUMENTS`, after removing only supported rout
 When selected-todo mode applies, call the deterministic helper exactly once:
 
 ```bash
-bash "{plugin-root}/scripts/debug-start-selected-todo.sh" .lbwc-planning <N> [--competing|--parallel|--serial]
+bash "{plugin-root}/scripts/debug-start-selected-todo.sh" .meridian <N> [--competing|--parallel|--serial]
 ```
 
 Treat the helper stdout as `helper_output`, the single source of truth for selected-todo startup. The helper owns numbered selection resolution, optional detail loading, completed-session stale-state repair, debug session creation, `## Source Todo` persistence, and selected-todo pickup from writable root `STATE.md`. Do not reimplement those state transitions in command markdown.
@@ -21,7 +21,7 @@ Parse `.status` first and branch explicitly:
 - If `.status == "ok"`, store `SELECTED_TODO_MODE=true`, store `SELECTED_TODO_START_JSON=helper_output`, replace `$ARGUMENTS` with `.bug_desc`, set `session_id=.session.id`, `session_file=.session.file`, and `session_status=.session.status`, then continue the workflow using helper-provided fields.
 - If `.status == "already_complete"`, show the completed session id/file/status, the helper message, and any pickup warning. STOP. Do not create, resume, or investigate another session.
 - If `.status == "error"` and `.session` exists, show that the debug session already exists or that the helper created it before the pickup/session error, include `.session.id`, `.session.file`, `.session.status`, surface `.message`, and tell the user to inspect or resume that session instead of implying no session exists. STOP.
-- For any other error, STOP with `.message // "Selected todo startup failed. Rerun /lbwc:list-todos and try again."`.
+- For any other error, STOP with `.message // "Selected todo startup failed. Rerun /meridian:list-todos and try again."`.
 
 All selected-todo consumers must read `SELECTED_TODO_START_JSON`. Parse/effort uses `.bug_desc` and `.ref`, sparse enrichment uses `.detail_has_signal`, `.detail.context`, and `.detail.files`, accepted-exception prompt text uses `.accepted_exception_markers`, pickup UX uses `.pickup.*`. The command must not preserve selected-todo JSON variables, preserve raw detail-helper JSON for the selected path, or pipe selected-todo JSON between resolver/detail/session/pickup helpers.
 </selected_todo_start_helper>

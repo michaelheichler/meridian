@@ -1,4 +1,4 @@
-# LBWC execution adaptation
+# MERIDIAN execution adaptation
 
 This is a behavior-preserving port. The main session owns task contracts, generated-agent admission, mutable planning state, verification persistence, telemetry, git, and user-facing output. A worker must not change any path outside the exact paths in its dispatched contract. `scripts/phase-detect.sh`, `scripts/qa-result-gate.sh`, `scripts/write-verification.sh`, `scripts/remediation-round.sh`, and `references/agent-spawn-protocol.md` replace source-specific routing, persistence, and lifecycle authority.
 
@@ -17,8 +17,8 @@ Assume `references/execute-protocol.md` resolved `PLUGIN_ROOT` before this fragm
 
 Read autonomy and auto_uat from config:
 ```bash
-AUTONOMY=$(jq -r '.autonomy // "standard"' .lbwc-planning/config.json)
-AUTO_UAT=$(jq -r '.auto_uat // false' .lbwc-planning/config.json)
+AUTONOMY=$(jq -r '.autonomy // "standard"' .meridian/config.json)
+AUTO_UAT=$(jq -r '.auto_uat // false' .meridian/config.json)
 ```
 
 If `AUTO_UAT` is not `true` and autonomy is confident or pure-vibe, display "○ UAT verification skipped (autonomy: {level})" and proceed to Step 5.
@@ -29,15 +29,15 @@ Require a fresh authoritative root or QA-remediation verification before creatin
 
 ```bash
 VERIFICATION_PATH=$(bash "${PLUGIN_ROOT}/scripts/resolve-verification-path.sh" authoritative "$PHASE_DIR")
-[ -f "$VERIFICATION_PATH" ] || { printf '%s\n' 'LBWC: authoritative verification artifact is missing' >&2; exit 1; }
+[ -f "$VERIFICATION_PATH" ] || { printf '%s\n' 'MERIDIAN: authoritative verification artifact is missing' >&2; exit 1; }
 . "${PLUGIN_ROOT}/scripts/verification-freshness.sh"
 if verification_is_stale "$VERIFICATION_PATH" "$PHASE_DIR" || [ "$VERIFICATION_FRESHNESS_REASON" != fresh ]; then
-  printf 'LBWC: verification freshness is not proven (%s)\n' "$VERIFICATION_FRESHNESS_REASON" >&2
+  printf 'MERIDIAN: verification freshness is not proven (%s)\n' "$VERIFICATION_FRESHNESS_REASON" >&2
   exit 1
 fi
 ```
 
-Require the persisted result to be PASS and require a supported `qa-result-gate.sh` `PROCEED_TO_UAT` result. A UAT remediation round has no supported deterministic gate or authoritative verification resolver. LBWC does not implement that gate or resolver yet, so the round cannot enter UAT from this protocol.
+Require the persisted result to be PASS and require a supported `qa-result-gate.sh` `PROCEED_TO_UAT` result. A UAT remediation round has no supported deterministic gate or authoritative verification resolver. MERIDIAN does not implement that gate or resolver yet, so the round cannot enter UAT from this protocol.
 
 Resolve the UAT filename before proceeding:
 ```bash
@@ -48,7 +48,7 @@ UAT_NAME=$(bash "${PLUGIN_ROOT}/scripts/resolve-artifact-path.sh" uat "{phase-di
 2. Generate test scenarios from the compiled UAT verification context:
   ```bash
   UAT_CONTEXT_HELPER="${PLUGIN_ROOT}/scripts/compile-verify-context-for-uat.sh"
-  [ -f "$UAT_CONTEXT_HELPER" ] || { printf '%s\n' 'LBWC: UAT context helper is unavailable' >&2; exit 1; }
+  [ -f "$UAT_CONTEXT_HELPER" ] || { printf '%s\n' 'MERIDIAN: UAT context helper is unavailable' >&2; exit 1; }
   UAT_VERIFY_CONTEXT=$(bash "$UAT_CONTEXT_HELPER" "{phase-dir}") || exit 1
   ```
 
@@ -138,7 +138,7 @@ UAT_NAME=$(bash "${PLUGIN_ROOT}/scripts/resolve-artifact-path.sh" uat "{phase-di
 
   A deviation review has these visible options:
   - `Pass`: Accept this deviation as non-blocking for this phase.
-  - `Track Todo`: Accept this deviation and add an LBWC todo.
+  - `Track Todo`: Accept this deviation and add an MERIDIAN todo.
   - `Skip`: Leave this deviation unaccepted for now.
 
   These options stay within the AskUserQuestion limit. Normal product checkpoints keep `Pass` and `Skip`. Freeform input that rejects the deviation or reports a product defect records a UAT issue, except for high-confidence todo intent handled below.
@@ -180,7 +180,7 @@ Do not emulate the `scripts/track-uat-deviations.sh` result, state transition, o
    - If no issues, proceed to Step 5
    - If issues found, display the issue summary. For an initial UAT failure, run `scripts/remediation-round.sh open "$PHASE_DIR" uat` and retain its emitted `plan_path`. For a detector-selected existing UAT round, use `scripts/remediation-round.sh current "$PHASE_DIR" uat` only to resume. Write the exact `R{RR}-PLAN.md` from `templates/REMEDIATION-PLAN.md`.
    - Check the written UAT remediation plan before build. Run `scripts/validate-uat-remediation-artifact.sh plan "$PLAN_PATH"`. Until it passes, report the validation blocker and do not route to build.
-   - Only after validation passes, transition `plan` to `execute` with `scripts/remediation-round.sh stage "$PHASE_DIR" uat execute`. Then report `Next Up: /lbwc:build {NN}`. Stop without starting build or QA.
+   - Only after validation passes, transition `plan` to `execute` with `scripts/remediation-round.sh stage "$PHASE_DIR" uat execute`. Then report `Next Up: /meridian:build {NN}`. Stop without starting build or QA.
 
 **Inline execution (NON-NEGOTIABLE):** The orchestrator runs the CHECKPOINT loop directly in the main conversation. This is NOT a subagent operation. Do NOT spawn a QA agent, Dev agent, or any subagent for UAT. Do NOT use TaskCreate to delegate UAT. The AskUserQuestion tool is only available to the orchestrator. Subagents cannot interact with the user, so delegating UAT to a subagent bypasses user input entirely. The orchestrator must wait for user input at each checkpoint.
 
@@ -189,4 +189,4 @@ Do not emulate the `scripts/track-uat-deviations.sh` result, state transition, o
 
 After every checkpoint has a Result, the main session is the only writer of the UAT artifact and state. `status: complete` requires no `Result: issue` entry. `status: issues_found` requires a persisted remediation route, plus a persisted issue description and severity. Never claim completion from a skipped or absent artifact.
 
-A clean result reports the UAT path, total checkpoints, pass count, skip count, issue count, and `Next Up: /lbwc:vibe`. An issue result reports the exact UAT path, current remediation round, the cap result for a round-helper exit code of 3, and `Next Up: /lbwc:build {NN}`. A resumed UAT reports its next incomplete checkpoint and waits for the human. A worker, agent, or automatic follow-up must never replace that wait.
+A clean result reports the UAT path, total checkpoints, pass count, skip count, issue count, and `Next Up: /meridian:transit`. An issue result reports the exact UAT path, current remediation round, the cap result for a round-helper exit code of 3, and `Next Up: /meridian:build {NN}`. A resumed UAT reports its next incomplete checkpoint and waits for the human. A worker, agent, or automatic follow-up must never replace that wait.

@@ -3,7 +3,7 @@ For the ambiguous path (`INVESTIGATION_MODE=parallel`), create three independent
 ```bash
 PROJECT_ROOT=$(pwd)
 BUG_DESC="{bug description from Step 1}"
-RESEARCH_CONTEXT=$(bash "{plugin-root}/scripts/compile-research-context.sh" .lbwc-planning "$BUG_DESC" 2>/dev/null || echo "")
+RESEARCH_CONTEXT=$(bash "{plugin-root}/scripts/compile-research-context.sh" .meridian "$BUG_DESC" 2>/dev/null || echo "")
 CAUSE_BRIEF="Hypothesis: cause. Investigate the most likely root cause of $BUG_DESC; gather evidence for and against this cause. Also evaluate available MCP tools in your system context relevant to this investigation and note them in the task context."
 AREA_BRIEF="Hypothesis: codebase area. Investigate which codebase area, component, boundary, or execution path owns $BUG_DESC; gather evidence for and against this area. Also evaluate available MCP tools in your system context relevant to this investigation and note them in the task context."
 EVIDENCE_BRIEF="Hypothesis: confirming evidence. Investigate which reproduction, log, test, trace, or other evidence would confirm or reject the competing explanations for $BUG_DESC; gather that evidence. Also evaluate available MCP tools in your system context relevant to this investigation and note them in the task context."
@@ -47,7 +47,7 @@ Hypothesis brief: {hypothesis brief}.
 Bug report: {description}.
 {Include research, detail, and sparse enrichment only when present.}
 Working directory: {pwd}.
-If `.lbwc-planning/codebase/META.md` exists, read ARCHITECTURE.md, CONCERNS.md, PATTERNS.md, and DEPENDENCIES.md (whichever exist) before investigating.
+If `.meridian/codebase/META.md` exists, read ARCHITECTURE.md, CONCERNS.md, PATTERNS.md, and DEPENDENCIES.md (whichever exist) before investigating.
 Evaluate the assigned hypothesis, reproduce, gather evidence, and diagnose. Return `debugger_report` using `{plugin-root}/references/handoff-schemas.md`, with an explicit `resolution_observation` of `already_fixed`, `needs_change`, or `inconclusive`, exact diagnosed product file paths, proposed changes, verification commands, and pre-existing issues. Also evaluate available MCP tools in your system context relevant to this investigation and note them in the task context.
 Do not edit files, write planning artifacts, run mutating Bash or Git commands, ask user questions, or claim final session ownership.
 ```

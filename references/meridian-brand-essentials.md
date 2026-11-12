@@ -1,4 +1,4 @@
-# LBWC Brand Vocabulary
+# MERIDIAN Brand Vocabulary
 
 ## Semantic Symbols
 
@@ -16,7 +16,7 @@
 
 Character: ━ (U+2501, BOX DRAWINGS HEAVY HORIZONTAL)
 
-Use horizontal bars as header/footer delimiters when the LLM generates the content (commands, agents). Plain markdown body between bars, no side borders, no padding math. LLMs cannot reliably align box-drawing side borders, so bars avoid the misalignment problem entirely.
+Use horizontal bars as header/footer delimiters when the LLM generates the content (commands, agents). Plain markdown body between bars, no side borders, no padding math. LLMs cannot reliably align box-drawing side borders, so bars never misalign.
 
 Example:
 ```text

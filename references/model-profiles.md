@@ -1,15 +1,15 @@
 # Detected Routing Profiles
 
-LBWC does not ship a static model roster, alias table, price table, or reasoning ladder. Claude Code capabilities detected for this installation are the only candidates that may be stored or used. This document explains that system. It does not choose a route.
+MERIDIAN does not ship a static model roster, alias table, price table, or reasoning ladder. Claude Code capabilities detected for this installation are the only candidates that may be stored or used. This document explains that system. It does not choose a route.
 
 ## Authority
 
 | Component | Authority |
 | --- | --- |
-| `scripts/claude-capabilities.sh` | Detects the installed Claude Code model selectors and accepted reasoning values, then records them in `.lbwc-planning/claude-capabilities.json`. |
-| `scripts/lbwc-config.sh` | Creates, migrates, and validates the planning configuration shape. |
-| `scripts/lbwc-routing.sh` | Validates stored profile routes against the saved catalog and resolves a role from the active profile. |
-| `scripts/lbwc-model` | Provides transactional refresh, display, activation, copy, set, catalog, and validation operations. |
+| `scripts/claude-capabilities.sh` | Detects the installed Claude Code model selectors and accepted reasoning values, then records them in `.meridian/claude-capabilities.json`. |
+| `scripts/meridian-config.sh` | Creates, migrates, and validates the planning configuration shape. |
+| `scripts/meridian-routing.sh` | Validates stored profile routes against the saved catalog and resolves a role from the active profile. |
+| `scripts/meridian-model` | Provides transactional refresh, display, activation, copy, set, catalog, and validation operations. |
 | `scripts/resolve-agent-settings.sh` | Resolves and revalidates the route used by one agent spawn. |
 
 These scripts are the selector and reasoning authority. A command, an orchestrator, and a spawned agent must use their output rather than choose a model or reasoning value by judgment. If this document conflicts with a script result, the script result is correct.
@@ -33,19 +33,19 @@ A profile is a set of per-role route cells. Each cell stores a detected model se
 Run these commands from the plugin root with the project planning directory as the target:
 
 ```sh
-scripts/lbwc-model refresh .lbwc-planning
-scripts/lbwc-model show .lbwc-planning
-scripts/lbwc-model validate .lbwc-planning
+scripts/meridian-model refresh .meridian
+scripts/meridian-model show .meridian
+scripts/meridian-model validate .meridian
 ```
 
 Refresh after upgrading Claude Code or when the saved catalog no longer matches the executable. Routing validation rejects a catalog whose recorded executable fingerprint differs from the installed binary.
 
-Use only selectors shown by `scripts/lbwc-model catalog .lbwc-planning` or `show`. To change a route, use the transactional interface:
+Use only selectors shown by `scripts/meridian-model catalog .meridian` or `show`. To change a route, use the transactional interface:
 
 ```sh
-scripts/lbwc-model set .lbwc-planning <quality|balanced|turbo> <role> <detected-selector> <reasoning-json>
-scripts/lbwc-model copy .lbwc-planning <source-profile> <destination-profile>
-scripts/lbwc-model activate .lbwc-planning <quality|balanced|turbo>
+scripts/meridian-model set .meridian <quality|balanced|turbo> <role> <detected-selector> <reasoning-json>
+scripts/meridian-model copy .meridian <source-profile> <destination-profile>
+scripts/meridian-model activate .meridian <quality|balanced|turbo>
 ```
 
 The setter rejects an unknown role, selector, reasoning value, or selector and reasoning combination. It records the route as resolved only after those checks pass.
@@ -59,7 +59,7 @@ A route's `reasoning` field is either a detected string or JSON `null`.
 
 Those values are not interchangeable. `null` is a request to use the Claude Code default. `"default"` is a catalog value whose meaning comes from the detected Claude Code installation. Never replace one with the other because their text looks similar.
 
-The catalog can describe global reasoning values or values associated with particular selectors. `scripts/lbwc-routing.sh` enforces either form, and `scripts/resolve-agent-settings.sh` checks again at spawn time.
+The catalog can describe global reasoning values or values associated with particular selectors. `scripts/meridian-routing.sh` enforces either form, and `scripts/resolve-agent-settings.sh` checks again at spawn time.
 
 ## Role guidance
 
