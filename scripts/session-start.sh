@@ -3,8 +3,13 @@ set -u
 unset CDPATH
 
 SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd)"
-PLANNING_DIR="${LBWC_PLANNING_DIR:-.lbwc-planning}"
 CANONICAL_ROOT="$(CDPATH='' cd -- "$SCRIPT_DIR/.." && pwd -P)"
+source "$SCRIPT_DIR/lib/rename-migration.sh"
+meridian_migrate_environment
+MIGRATION_PROJECT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+meridian_migrate_planning "$MIGRATION_PROJECT_ROOT" || exit 1
+[ "$MERIDIAN_MIGRATION_CONFLICT" = 0 ] || exit 0
+PLANNING_DIR="${MERIDIAN_PLANNING_DIR:-.meridian}"
 
 TMUX_BIND_JSON=""
 

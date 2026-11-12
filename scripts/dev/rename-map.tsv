@@ -1,0 +1,44 @@
+kind	from	to	scope
+path	hooks/test_scope_guard.py	hooks/scope_guard.py	literal
+content	hooks/test_scope_guard.py	hooks/scope_guard.py	literal
+content	.lbwc-plugin-root-link-	.meridian-plugin-root-link-	literal
+content	Love Better With Claude	Meridian	literal
+content	love-better-with-claude	meridian	literal
+content	test_scope_guard.py	scope_guard.py	literal
+path	commands/vibe.md	commands/transit.md	literal
+content	commands/vibe.md	commands/transit.md	literal
+content	lbwc-marketplace	meridian-marketplace	literal
+content	test_scope_guard	scope_guard	literal
+content	.lbwc-planning	.meridian	literal
+path	.lbwc-planning	.meridian	literal
+content	/lbwc:vibe	/meridian:transit	command
+content	LBWC Vibe	Meridian Transit	literal
+content	Vibe Plan	Transit Plan	literal
+content	.lbwc-	.meridian-	literal
+content	LBWC_	MERIDIAN_	literal
+content	lbwc_	meridian_	literal
+content	lbwc-	meridian-	literal
+path	lbwc-	meridian-	literal
+path	lbwc_	meridian_	literal
+content	/vibe	/transit	command
+content	LBWC	MERIDIAN	literal
+content	Lbwc	Meridian	literal
+content	lbwc	meridian	literal
+path	LBWC	MERIDIAN	literal
+path	Lbwc	Meridian	literal
+path	lbwc	meridian	literal
+content	vibe	transit	command-word
+content	Vibe	Transit	command-word
+content	VIBE	TRANSIT	command-word
+path	vibe	transit	command-word
+content	CHANGELOG.md	CHANGELOG.md	exclude history
+content	scripts/dev/rename-map.tsv	scripts/dev/rename-map.tsv	exclude migration map
+content	scripts/dev/rename-apply.sh	scripts/dev/rename-apply.sh	exclude migration tool
+content	scripts/lib/rename-migration.sh	scripts/lib/rename-migration.sh	exclude compatibility reads and state migration
+content	hooks/rename_migration.py	hooks/rename_migration.py	exclude compatibility reads
+content	commands/init.md	commands/init.md	exclude-block <!-- rename-migration:start --> <!-- rename-migration:end -->
+content	.git	.git	exclude tree
+content	.claude/worktrees	.claude/worktrees	exclude tree
+content	pure-vibe	pure-vibe	preserve persisted autonomy value
+content	Pure-Vibe	Pure-Vibe	preserve autonomy label
+content	vibe-better-with-claude-code-lbwc	vibe-better-with-claude-code-lbwc	preserve remote repository slug until owner authorizes GitHub rename
