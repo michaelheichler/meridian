@@ -213,7 +213,7 @@ Before loading the execute protocol, resolve `{PHASE_DIR}` as the selected canon
      - `TMUX panes`: Start each grouping as a fresh pane session through provision and split-group.
      - `Cancel spawn`: Do not spawn any grouping for this execution.
    - question when `.workflow.available` or `.workflow_execution.enabled` is not `true`: `Where should this phase's task groupings run? Native keeps the current Claude Code Agent spawn. TMUX starts each grouping as a fresh pane session.`
-   - options when `.workflow.available` or `.workflow_execution.enabled` is not `true`, the same three options without `Workflow run`:
+   - options when `.workflow.available` or `.workflow_execution.enabled` is not `true`. Show these three options and omit `Workflow run`:
      - `Native spawn`: Keep the current native Agent spawn.
      - `TMUX panes`: Start each grouping as a fresh pane session through provision and split-group.
      - `Cancel spawn`: Do not spawn any grouping for this execution.
