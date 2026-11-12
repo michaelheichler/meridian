@@ -53,7 +53,7 @@ bash "/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/todo
 ```
 Continue without detail.
 
-**Pre-parse (ref tag extraction)**: Before you evaluate the paths below, look for a `(ref:HASH)` suffix (8 hex characters) at the end of $ARGUMENTS. If you find one, extract the hash and strip the ref tag (including any leading space) from $ARGUMENTS. All later parsing uses the cleaned arguments. The ref must not interfere with flag detection or keyword routing. It must not interfere with mode selection either. Store the extracted hash for later use. If `TODO_SELECTED_JSON` already exists from the numbered-todo path above, reuse its resolved ref/detail metadata and do not reload detail here. For non-todo manual `(ref:HASH)` inputs, defer detail loading until an action-bearing mode needs it. If you find no ref tag, there is no hash to store.
+**Pre-parse (ref tag extraction)**: Before you evaluate the paths below, look for a `(ref:HASH)` suffix (8 hex characters) at the end of $ARGUMENTS. If you find one, extract the hash and strip the ref tag (including any leading space) from $ARGUMENTS. All later parsing uses the cleaned arguments. The ref must not interfere with flag detection or keyword routing. It must not interfere with mode selection either. Store the extracted hash for later use. If `TODO_SELECTED_JSON` already exists from the numbered-todo path above, reuse its resolved ref/detail metadata and do not reload detail here. For non-todo manual `(ref:HASH)` inputs, defer detail loading until a mode that acts on the todo needs it. If you find no ref tag, there is no hash to store.
 
 **Todo pickup boundary (non-negotiable)**: Claim a numbered todo selected through `TODO_SELECTED_JSON` only after routing commits to the todo-derived request. Any AskUserQuestion confirmation gate must also complete successfully first. If routing falls back to a phase-number path, stops on a guard, or the user declines confirmation, leave the todo untouched. Manual text and manual `(ref:HASH)` inputs never trigger pickup.
 
@@ -349,7 +349,10 @@ Create `R{RR}-PLAN.md` in `{round_dir}`.
     fi
     ```
     If the canonical `{round_dir}/R{RR}-PLAN.md` exists after normalization, run the validator command from the validation step below on that exact artifact. If validation fails, display the validator error and STOP without advancing `.qa-remediation-stage`. If validation passes, do not spawn Lead again. Reuse the persisted plan and continue at the final post-validation state-advance step below. This preserves a valid plan written before an interrupted `stage=plan` resume instead of overwriting it.
-  - The main session coordinates the remediation loop and spawns exactly one generated `lead` to write `{round_dir}/R{RR}-PLAN.md`.
+
+**Generate a missing plan**
+
+- The main session coordinates the remediation loop and spawns exactly one generated `lead` to write `{round_dir}/R{RR}-PLAN.md`.
   - Follow `references/agent-spawn-protocol.md`. Issue a solo read-only `lead` command contract for job `R{RR} remediation planning` with no write allowance. Run the generic `scripts/agent-generator.sh` and advance the contract to `dispatched`. Then use the printed Agent-call parameters and `SPAWN_READY` name without re-resolving model, effort, or turns.
   - Use the generated name for both `subagent_type` and `name`. Omit team and worktree fields for this solo spawn. The Lead returns complete plan content. The main session writes the canonical plan before normalization and validation.
   - Lead prompt MUST include the authoritative `round_dir`, `source_verification_path`, `known_issues_path`, and output path `{round_dir}/R{RR}-PLAN.md`. The failed-check and known-issue inputs above. The deviation-classification and known-issue-resolution requirements above. And `Read the remediation plan template at /tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/templates/REMEDIATION-PLAN.md and follow its structure exactly.`
@@ -431,9 +434,11 @@ Re-run QA.
 **UAT remediation default**: When `next_phase_state=needs_uat_remediation`, plain `/meridian:transit` must read that phase's UAT report and continue remediation directly. Do NOT require the user to manually specify `--discuss` or `--plan`.
 
 **Milestone UAT recovery**: When `milestone_uat_issues=true` and active phases are empty, the latest shipped milestone contains unresolved UAT issues. Present the user with three options:
-- (a) Create remediation phases to fix the UAT issues.
-- (b) Start fresh with new work (ignoring the stale UAT).
-- (c) Skip for now (issues re-trigger next session).
+| Choice | Outcome |
+| --- | --- |
+| (a) Fix the UAT issues | Create remediation phases. |
+| (b) Start fresh | Begin new work and ignore the stale UAT. |
+| (c) Skip for now | Keep the issues so they re-trigger next session. |
 
 Use `milestone_uat_count` to determine how many phases the issues affect. When `milestone_uat_count` > 1, parse `milestone_uat_phase_dirs` (pipe-separated) to read all UAT reports and display a consolidated issue summary. Use `milestone_uat_major_or_higher` to determine severity context.
 

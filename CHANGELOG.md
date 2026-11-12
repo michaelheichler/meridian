@@ -1,5 +1,15 @@
 # Changelog
-This file records user-visible LBWC releases. Keep the newest entry first.
+This file records user-visible Meridian releases. Keep the newest entry first.
+
+## [Unreleased]
+
+### Meridian rename
+
+- The product now uses the Meridian name, the `/meridian:` command prefix, and `/meridian:transit` as its driver command.
+- Planning state now lives in `.meridian/`. Session startup moves `.lbwc-planning/` there when no destination exists and keeps both directories unchanged if they conflict.
+- Runtime settings now use `MERIDIAN_*` names. Legacy `LBWC_*` values fill only current names that the environment does not already define.
+- Role gates read legacy agent manifests during migration and deny actions when a manifest contains invalid data. Startup continues after a directory conflict.
+
 ## [1.0.5] - 2026-08-21
 
 ### A second way to get work done, and a fixed lookup

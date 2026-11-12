@@ -6,7 +6,7 @@
 
 web
 
-The product itself is a Claude Code plugin that runs in a terminal. Its designed surfaces are the GitHub README (rendered markdown) and the markdown that Claude Code renders in chat. The chat surfaces are the per-step feedback card, the status card, and the statusline.
+The product itself is a Claude Code plugin that runs in a terminal. Its designed surfaces are the GitHub README (rendered markdown) and the markdown that Claude Code renders in chat. The chat surfaces include both per-step feedback and status cards, plus the statusline.
 
 ## Users
 
@@ -28,7 +28,7 @@ Shell guards enforce every contract before a write or spawn reaches the workspac
 
 ## Operating Context
 
-The user works in a terminal with Claude Code. The daily loop is `/meridian:init` once, then `/meridian:transit` for every next step. Durable state lives in markdown and JSON under the planning directory. The plugin uses local files, small bash scripts, hooks, and local locks. It needs no server, queue, database, or remote telemetry.
+The user works in a terminal with Claude Code, running `/meridian:init` once and then `/meridian:transit` for every next step. Durable state lives in markdown and JSON under the planning directory. Everything runs locally. Small bash scripts and hooks use local files and locks, with no server, queue, database, or remote telemetry.
 
 ## Capabilities and Constraints
 
@@ -43,7 +43,7 @@ The user works in a terminal with Claude Code. The daily loop is `/meridian:init
 ## Brand Commitments
 
 - The name is Meridian. Commands use the `/meridian:` prefix after the rename, and the driver command is `/meridian:transit`.
-- The word "bearing" never appears anywhere.
+- Keep banned nautical terms from the old naming out of all names, commands, docs, UI text, and replies.
 - Meridian is its own product, so docs do not discuss its origins. One closing README line thanks the VBW team, and no other text names VBW.
 - The voice is calm, precise, plain English, with no walls of text, no jokes, and no filler.
 - The license gets one line at the bottom of the README.

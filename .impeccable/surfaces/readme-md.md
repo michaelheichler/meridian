@@ -27,7 +27,7 @@ FIRST VIEWPORT. The hero art with mark and wordmark, the tagline graphic, the ex
 
 FORM. Each loop step and each feature carries one small board icon beside full sentences. Both sections use markdown tables with a real header row. The commands table follows the same pattern. Paragraphs stay short, with no walls of text.
 
-FINISH. One-line license and one-line thanks at the bottom, every image with alt text, and no word "bearing" or other origin talk.
+FINISH. One-line license and one-line thanks at the bottom, every image with alt text, and no banned nautical terms or origin talk.
 
 ## Unresolved
 

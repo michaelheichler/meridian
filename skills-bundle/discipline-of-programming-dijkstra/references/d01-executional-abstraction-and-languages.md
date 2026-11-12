@@ -17,73 +17,75 @@ How a single compact argument can certify millions of possible computations, and
 ## TLDR
 
 - An algorithm is not one computation. It is the design of a whole class of computations, and its value is that one short argument covers every member of the class.
-- Executional abstraction means gripping a specific computation by treating it as an instance of a well-chosen class, then reasoning about the class as a whole.
-- Generalization carries two obligations: define the class explicitly (the argument must apply to all of it), and choose a generalization that actually helps (a "GCD computer" beats a "111-and-259 processor").
-- The correctness argument for Euclid's game has exactly three parts: a relation kept invariant by every step, an interpretation of the final state as the answer, and a proof that a final state is reached in finitely many steps. Each argument has length independent of the number of possible computations.
-- State spaces are built as Cartesian products of small variable spaces. Components add, states multiply. This exponential growth is only legitimate while the justifying argument stays compact.
-- A program text admits two complementary readings: as a code for a predicate transformer (for the human, connecting initial and final states without mentioning execution) and as executable code (for the machine). Correctness concerns and efficiency concerns separate along this line.
-- A programming language is first a vehicle for describing abstract mechanisms, and only accidentally something a computer can execute. Judge a language feature by whether it belongs to the solution set or the problem set.
+- Executional abstraction means understanding a specific computation as an instance of a well-chosen class, then reasoning about the class as a whole.
+- Generalization carries two obligations. Define the class explicitly so the argument covers all of it, and choose a generalization that helps (a "GCD computer" beats a "111-and-259 processor").
+- Euclid's game needs a correctness argument that identifies the relation each step preserves, interprets the final state as the answer, and proves the game reaches that state in finitely many steps. Each argument has length independent of the number of possible computations.
+- A Cartesian product combines small variable spaces into the full state space. Components add, states multiply. This exponential growth remains useful only while the justifying argument stays compact.
+- A human can read a program as a predicate transformer connecting initial and final states without describing execution. A machine reads the same text as executable code. Correctness and efficiency concerns separate along this line.
+- A programming language first describes abstract mechanisms, and only incidentally gives a computer something to execute. Judge a language feature by whether it belongs to the solution set or the problem set.
 - Nondeterminacy is the normal situation. Determinacy is a special case, and much past trouble came from attaching undue significance to it.
 
 ## When to reach for this
 
-- You are about to solve a specific instance (one input, one configuration, one customer) and must decide what class of inputs the code should be written and argued for.
-- You need to convince a reviewer a routine is correct without exhaustive testing, and want the invariant, answer, termination proof shape.
-- You are evaluating a framework, language feature, or DSL and want a principled criterion beyond familiarity or benchmark speed.
-- A design's state space is exploding (feature flags, config combinations) and you must judge whether the justifying argument still scales.
-- You are tempted to contort clear structure for performance on one platform, and need the argument for blaming the implementation instead.
+- You have a specific instance to solve and must decide which class of inputs to support and justify.
+- You need to convince a reviewer a routine is correct without exhaustive testing, using an invariant, an interpretation of the answer, and a termination argument.
+- You are evaluating a framework, language feature, or DSL and want a criterion beyond familiarity or benchmark speed.
+- A design's state space is growing through feature flags or configuration combinations, and you must judge whether the correctness argument still scales.
+- You want to contort clear structure for performance on one platform, and need the argument for fixing the implementation instead.
 
 ## Key concepts
 
 ### From answers to rules of a game
 
-Dijkstra builds a ladder of GCD "machines". A card printed with "GCD(111, 259) = 37" answers one question, and you can only trust the manufacturer. A lookup table of 250,000 entries answers 250,000 questions, but multiplies the required faith by 250,000: verification effort grows with the number of answers. The breakthrough machine stores no answers at all. It is a board plus a pebble plus rules for moving the pebble (each move replaces (x, y) by (x, y-x) or by (x-y, y), stopping on the line x = y). Now a single short argument about the rules certifies every one of the 250,000 possible games. The price is that each answer must be computed by playing the game rather than looked up. That trade, compact justification bought at the cost of execution time, is the essence of what an algorithm is. It also explains, in one stroke, why short programs can run long and why we want fast machines.
+Dijkstra compares several GCD "machines". A card printed with "GCD(111, 259) = 37" answers one question, and you can only trust the manufacturer. A lookup table of 250,000 entries answers 250,000 questions but multiplies the required faith by 250,000, because verification effort grows with the number of answers. The alternative machine stores no answers. It uses a board, a pebble, and rules that replace (x, y) by (x, y-x) or by (x-y, y), stopping on the line x = y. One short argument about those rules certifies all 250,000 possible games. The user must compute each answer by playing the game rather than looking it up. That trade, compact justification at the cost of execution time, explains both why short programs can run long and why we want fast machines.
 
 ### The three-part correctness argument
 
-Trust in the pebble machine rests on three theorems, each proved once for all cases:
+Three theorems establish correctness for every case.
 
 1. Invariance. Every legal move preserves GCD(x, y) = GCD(X, Y), where (X, Y) is the starting position. One argument covers all 249,500 movable positions.
-2. Interpretation of the final state. On the stopping line x = y, GCD(x, y) = x, so the coordinate read off is the answer. One argument covers all 500 stopping points.
+2. Interpretation of the final state. On the stopping line x = y, GCD(x, y) = x, so the coordinate gives the answer. One argument covers all 500 stopping points.
 3. Termination. From any start, finitely many moves reach the stopping line. One argument covers all 250,000 starts.
 
-This is the invariant, postcondition, variant pattern of the whole book in embryo, exhibited before any formal machinery exists. The repetition itself is captured by a device worth naming: the rules do not enumerate "do this, do that" but give a single step plus the condition for repeating it (repeat until the step is undefined). One sub-rule, applied repeatedly, generates every game.
+This introduces the book's invariant, postcondition, and variant pattern before its formal notation. The rules describe one step and a condition for repeating it, rather than enumerating every move. Repeating that sub-rule until no step applies generates every game.
 
 ### State spaces as Cartesian products
 
-The single pebble with 250,000 positions can be split into two half-pebbles with 500 positions each: the total state space is the Cartesian product of the state spaces of the variables x and y. This is why registers work. Components with modest state counts multiply into astronomical total state counts (the decimal number system is the ten-century-old proof: digits grow with the logarithm of the largest number represented). Dijkstra's warning is the load-bearing part: you may keep multiplying the state space only while the argument justifying the whole contraption stays compact. The moment the argument grows exponentially too, the machine is not worth designing. Systematic structure is also a precondition, since a "shapeless, chaotic cloud of points" with no nomenclature supports no compact rules.
+Replace the single pebble with 250,000 positions by two half-pebbles with 500 positions each. The total state space is the Cartesian product of the spaces for x and y, which explains how registers combine. Modest component state counts can produce huge totals. Decimal notation gives a familiar example, since the digit count grows with the logarithm of the largest number represented. Dijkstra permits this growth only while the correctness argument stays compact. If that argument also grows exponentially, the machine loses its value. Systematic structure is a precondition because a "shapeless, chaotic cloud of points" with no nomenclature supports no compact rules.
 
 ### Helpful generalization
 
-Saying "everything is an instance of something more general" is empty. A useful generalization is chosen, almost invented, against two obligations: be explicit about what the wider class is, and pick a class the argument can actually exploit. The GCD computer (one function, any input pair) verifies easily. The 111-and-259 processor (any function, one input pair) gets harder to verify with every function added. When you generalize code, generalize along the axis that keeps verification cheap.
+Saying "everything is an instance of something more general" is empty. Choose a useful generalization by defining the wider class explicitly and selecting a class whose properties help the argument. The GCD computer handles one function for any input pair and admits a compact proof. The 111-and-259 processor handles any function for one input pair, so verification gets harder with every function added. Generalize along the dimension that keeps verification cheap.
 
 ### Two readings of one program text
 
-The preface records the discovery that drives the rest of the book. Predicate transformers let one define the relation between initial and final state with no reference to intermediate states, so the same text can be read two ways: as a code for a predicate transformer (the reading suited to humans, carrying the mathematical correctness concerns) and as executable code (a reading best left to machines, where efficiency lives, and efficiency is only defined relative to an implementation). This separation of concerns is the book's central message. Two consequences follow. First, the natural systematic codes for predicate transformers call for nondeterministic execution, so nondeterminacy becomes the normal case and determinacy an unremarkable special case. Second, explicit concern for termination has heuristic value, against the common bias toward partial correctness.
+The preface describes predicate transformers as a way to define the relation between initial and final states without referring to intermediate states. A human can read the program text as a predicate transformer and reason about correctness, while a machine executes it with an efficiency that depends on the implementation. This separation of concerns is the book's central message. Two consequences follow. Natural systematic codes for predicate transformers call for nondeterministic execution, making nondeterminacy the normal case and determinacy a special case. Explicit concern for termination also guides program construction, correcting the common bias toward partial correctness.
 
 ### What a programming language is for
 
-Chapter 1 gives three payoffs of formal notation: it presents each algorithm as a member of a huge describable class, it makes algorithms mathematical objects about which theorems can be proved (for instance from shared structural properties), and it removes all ambiguity about what output belongs to what input, which is what makes automatic execution conceivable at all. Historically the last payoff dominated: execution efficiency on existing machines became the major quality criterion, and machine anomalies were "truthfully reflected" into languages at the expense of intellectual manageability. Dijkstra inverts the priority. A language is primarily a vehicle for describing abstract mechanisms. Executability is a lucky accident. His example: advising PL/I programmers to avoid procedure calls because they are inefficient attacks the language's main structuring vehicle. Blame the inadequate implementation, do not raise it to a standard. The same logic explains the book's deliberately small mini-language, chosen by asking of every facility whether it belongs to the solution set or the problem set, and his preference for repetition over general recursion: repetition needs only a recurrence relation between predicates, general recursion needs one between predicate transformers, an order of magnitude more complicated, a sledgehammer for an egg.
+Chapter 1 identifies three benefits of formal notation. It presents each algorithm as a member of a large describable class, makes algorithms mathematical objects whose shared properties support theorems, and removes ambiguity about the output for each input so automatic execution becomes possible. Historically, execution efficiency on existing machines dominated, and language designers "truthfully reflected" machine anomalies at the expense of intellectual manageability.
+
+Dijkstra reverses that priority by treating a language as a way to describe abstract mechanisms, with executability a lucky accident. Advising PL/I programmers to avoid procedure calls for speed attacks the language's main structuring mechanism. Fix the inadequate implementation instead of making it the standard. The book's small mini-language follows the same test for each facility, whether it helps solve the problem or creates one. Repetition needs a recurrence relation between predicates, while general recursion needs one between predicate transformers. That additional complexity explains his preference for repetition when it suffices.
 
 ## Applying it in modern code
 
-- Before coding a specific case, name the class you are solving and write it down (types, docstring, property test domain). Then make sure your reasoning covers the whole class, not the example that prompted the ticket.
-- Structure every nontrivial loop so the three-part argument is visible: a stated invariant (comment or assertion), a clear reading of why the exit state is the answer, and a measure that strictly decreases (the variant). If you cannot state all three, the loop is a conjecture.
-- Treat configuration flags, optional fields, and mode enums as state space multipliers. Add one only if the justifying argument (tests, invariants, docs) stays roughly the same size.
-- When choosing a generalization, prefer the "GCD computer" axis: one behavior over a wide input class, not many behaviors over a narrow one. God objects and kitchen-sink services are 111-and-259 processors.
-- Read your code twice: once as a specification of the input-output relation (would this survive as a property-based test oracle?), once as an execution plan (is it efficient on the real runtime?). Keep the concerns in separate discussions and separate commits where possible.
+- Before coding a specific case, name the class you are solving and write it down in types, a docstring, or a property-test domain. Ensure the argument covers the whole class rather than the example that prompted the ticket.
+- Make each nontrivial loop's invariant explicit through a comment or assertion, explain why its exit state gives the answer, and identify a measure that strictly decreases (the variant). Without all three, the loop remains a conjecture.
+- Treat configuration flags, optional fields, and mode enums as state space multipliers. Add one only if the justifying argument, including tests and invariants, stays roughly the same size.
+- Prefer the "GCD computer" generalization, one behavior over a wide input class rather than many behaviors over a narrow one. God objects and kitchen-sink services resemble the 111-and-259 processor.
+- Read the code as both an input-output specification and an execution plan. Ask whether the former could serve as a property-test oracle and whether the latter runs efficiently on the target runtime. Keep these concerns in separate discussions and commits where possible.
 - When a clean construct is slow on your platform, fix or replace the implementation before deforming the code. Do not encode a runtime's anomaly into your architecture.
-- Where several execution orders are all correct, say so (iteration over sets, concurrent tasks, retry order) instead of letting callers depend on one accidental order. Overcommitting to determinacy manufactures future coupling.
-- Never trust an artifact you can only verify answer by answer (a lookup table, a generated blob, a trained model's outputs). Prefer artifacts with compact rules you can argue about once, and where you cannot, invest in verification machinery instead of faith in the manufacturer.
+- Where several execution orders are correct, say so instead of letting callers depend on an accidental order. Examples include set iteration, concurrent tasks, and retries. Promising determinacy that the algorithm does not need creates future coupling.
+- Avoid trusting artifacts that demand answer-by-answer verification, such as lookup tables, generated blobs, or trained-model outputs. Prefer compact rules you can justify once. Where that is impossible, invest in verification machinery rather than faith in the manufacturer.
 
 ## Pitfalls
 
-- Testing instances and calling it correctness. A test suite is a finite table of checked answers, the argument-per-answer trap. Only an invariant-style argument covers the class. (Dijkstra: none of the programs in the book was ever tested on a machine.)
-- Generalizing along the wrong axis, adding features to one component until its verification cost explodes, instead of widening the input class of one behavior.
-- Growing the state space without growing the argument. Every unconstrained flag combination is a position on the board that no theorem covers.
-- Judging languages and abstractions purely by execution efficiency, then avoiding their structuring constructs (procedures, iterators, higher-order functions) because one implementation is slow.
-- Equating "harder to write down" with "the method made it hard". Making the difficulty visible is the point. The alternative is smearing code: texts with the status of hardly supported conjectures waiting to be killed by the first counterexample.
-- Reaching for the most powerful construct available (general recursion, full metaprogramming) when a weaker one (plain repetition) admits a simpler semantic argument.
+- Testing instances and calling it correctness. A finite table of checked answers repeats the argument-per-answer trap, while an invariant-style argument covers the class. Dijkstra states that he never tested the book's programs on a machine.
+- Generalizing along the wrong dimension by adding behaviors to one component until verification cost grows, instead of widening the input class of one behavior.
+- Growing the state space without growing the argument. Every unconstrained flag combination adds a board position that no theorem covers.
+- Judging languages and abstractions only by execution efficiency, then avoiding their structuring constructs because one implementation is slow.
+- Equating difficulty in writing an argument with difficulty that the method created. The method makes existing difficulty visible. Without it, code can remain a weak conjecture until a counterexample refutes it.
+- Reaching for general recursion or full metaprogramming when a weaker construct, such as plain repetition, admits a simpler semantic argument.
 
 ## Cross-refs
 
