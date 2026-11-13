@@ -13,12 +13,12 @@ if __package__:
     from .brace_expansion import ExpansionTooComplex, expand_braces
     from .decision_common import INVALID_STATE, DecisionStateError, require
     from .path_identity import ProtectedIdentity, TooManyMatches, expand_glob
-    from .read_only_command import is_plain_read_command
+    from .read_only_command import is_source_inspection
 else:
     from brace_expansion import ExpansionTooComplex, expand_braces
     from decision_common import INVALID_STATE, DecisionStateError, require
     from path_identity import ProtectedIdentity, TooManyMatches, expand_glob
-    from read_only_command import is_plain_read_command
+    from read_only_command import is_source_inspection
 
 OptionalPath = Optional[Path]
 GUARD_MODULES = (
@@ -48,7 +48,7 @@ GUARD_MODULES = (
 SCRIPT_MARKERS = ("pending-decision.sh", "hook-batch.sh", *GUARD_MODULES)
 RUNTIME_MARKERS = (".meridian/.runtime", ".runtime/decisions", ".hook-transitions")
 PROTECTED_MARKERS = (*SCRIPT_MARKERS, *RUNTIME_MARKERS)
-EXPANSION_CHARS = "$`*?[{"
+EXPANSION_CHARS = "$`{"
 UNRESOLVED_CHARS = "$`"
 GLOB_CHARS = "*?["
 SUFFIX_SPAN = 8
@@ -208,11 +208,20 @@ def _search_hit(data: dict, cwd: OptionalPath, identity: ProtectedIdentity) -> b
     return any(_value_hit(item, Path(root), scoped) for item in expand_braces(pattern))
 
 
+def _plain_source_glob(word: str, cwd: Path) -> bool:
+    matches = expand_glob(os.path.join(str(cwd), word))
+    return bool(matches) and all(
+        Path(match).is_file() and not Path(match).is_symlink() for match in matches
+    )
+
+
 def _read_exempt(command: str, cwd: OptionalPath) -> bool:
     words = _words(command)
     if cwd is None or words is None or any(_has_expansion(word) for word in words):
         return False
-    return is_plain_read_command(command, str(cwd))
+    if any(_has_glob(word) and not _plain_source_glob(word, cwd) for word in words):
+        return False
+    return is_source_inspection(command, str(cwd))
 
 
 def _evaluate(data: dict, cwd: OptionalPath, full: Scope) -> bool:
