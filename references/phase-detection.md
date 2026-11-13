@@ -10,7 +10,7 @@ If the user omits the phase number from a command, this protocol is the single s
 
 ## Overview
 
-When `$ARGUMENTS` contains no explicit phase number, commands use this protocol to infer the correct phase from the current planning state. Detection logic varies by command type because each command targets a different stage of the phase lifecycle.
+When the user input above contains no explicit phase number, commands use this protocol to infer the correct phase from the current planning state. Detection logic varies by command type because each command targets a different stage of the phase lifecycle.
 
 Note that `/meridian:transit` has additional state detection that precedes phase scanning (see its State Detection section). Commands use the algorithms below once they determine that they need phase-level detection.
 

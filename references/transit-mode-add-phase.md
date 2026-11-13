@@ -17,7 +17,9 @@ the sole authority for name, model, effort, and turn limit. Do not select them
 from a static model profile. Every spawn below uses the generic contract-issuing
 generator protocol.
 
-**Guard:** Initialized. Requires phase name in $ARGUMENTS.
+Use the working input from transit input parsing, which starts with the user input above and applies todo resolution plus ref cleanup.
+
+**Guard:** Initialized. Requires phase name in the working input.
 - If the name is missing, STOP "Usage: `/meridian:transit --add <phase-name>`"
 
 **Steps:**
@@ -27,7 +29,7 @@ generator protocol.
 **Step 2, parse arguments:** Phase name (first non-flag arg), --goal (optional), slug (lowercase hyphenated).
 **Step 3, next number:** Highest in ROADMAP.md + 1, zero-padded.
 **Step 4, create directory:** `mkdir -p .meridian/phases/{NN}-{slug}/`
-5. **Problem research (conditional)**: If $ARGUMENTS contain a problem description (bug report, feature request, multi-sentence intent) rather than a bare phase name:
+5. **Problem research (conditional)**: If the working input contains a problem description (bug report, feature request, multi-sentence intent) rather than a bare phase name:
   **Scout contract and spawn:** Follow `references/agent-spawn-protocol.md`. Issue a solo `scout` command contract for job `research added phase {NN}` with `{phase-dir}/{NN}-RESEARCH.md` as the exact write allowance. Run the generic `scripts/agent-generator.sh scout` call, advance the contract to `dispatched`, and use the printed Agent-call parameters and `SPAWN_READY` name exactly. Omit team and worktree fields. Do not re-resolve the model, effort, and turns. Stop and report a contract or generator failure instead of silently running an uncontracted fallback.
   Pass `<output_path>{phase-dir}/{NN}-RESEARCH.md</output_path>` in the Scout prompt so the contracted Scout writes its findings directly.
   **Skill selection**: Before composing the Scout task description, evaluate installed skills visible in your system context. Read each skill's description. Select all materially helpful installed skills for this task, including adjacent/supporting domain skills that the prompt, logs, error text, related files, or stack context surface. Do not select only the single most direct skill. The Scout prompt MUST begin with exactly one explicit skill outcome block. When orchestration preselects one or more installed skills, use `<skill_activation>{For each selected skill: "Call Skill({skill-name})"}</skill_activation>`. When orchestration preselects none, use 
@@ -42,7 +44,7 @@ generator protocol.
   **MCP context:** Also evaluate available MCP tools. If any MCP servers provide documentation, search, or data retrieval capabilities relevant to this research, note them in the Scout's task context.
   - After Scout completes, check the file exists (read first line).
   - Use Scout findings to write an informed phase goal and success criteria in ROADMAP.md.
-  - On failure, log a warning and write the phase goal from $ARGUMENTS alone. Do not block.
+  - On failure, log a warning and write the phase goal from the working input alone. Do not block.
   - **This eliminates duplicate research.** Plan mode step 3 checks for an existing RESEARCH.md. If it finds one, it skips Scout.
 6. Update ROADMAP.md. Append the phase list entry. Append the Phase Details section. If Scout findings are available, use them there. Add the progress row.
 7. If `.meridian/CONTEXT.md` exists, rewrite it to reflect the updated milestone decomposition (phase count/grouping, ordering, scope coverage, and requirement mapping). Preserve project-level key decisions and deferred ideas where still valid.
