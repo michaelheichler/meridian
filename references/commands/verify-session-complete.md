@@ -1,3 +1,5 @@
+Use `{plugin-root}` as the literal plugin root resolved by the parent command. Replace it before running helpers or reading files.
+
 - **Finalize UAT status (script-based, NON-NEGOTIABLE):** Run the finalize script to deterministically compute and update frontmatter status, counts, and completed date:
   ```bash
   bash "{plugin-root}/scripts/finalize-uat-status.sh" "{phase-dir}/{uat_path}"
@@ -108,7 +110,7 @@ _uat_state_exists=false
 
 **Planning artifact boundary commit (conditional):**
 ```bash
-PG_SCRIPT="/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/planning-git.sh"
+PG_SCRIPT="{plugin-root}/scripts/planning-git.sh"
 if [ -f "$PG_SCRIPT" ]; then
   bash "$PG_SCRIPT" commit-boundary "verify phase {NN}" .meridian/config.json
 else

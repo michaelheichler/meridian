@@ -1,3 +1,5 @@
+Use `{LINK}` as the literal plugin root resolved by the parent command. Replace it before running helpers or reading files.
+
 ## Main-session Decision Handoffs
 
 Only the main session can call `AskUserQuestion`. Before each `AskUserQuestion`
@@ -16,8 +18,9 @@ This mode handles a milestone that went to the archive with unresolved UAT issue
 1. After routing selects milestone recovery, extract milestone UAT issues with this route-local block:
    ```bash
    MILESTONE_UAT_CONTEXT=$(
-     SESSION_KEY="${CLAUDE_SESSION_ID:-default}"
-     L="/tmp/.meridian-plugin-root-link-${SESSION_KEY}"
+     SESSION_KEY="${CLAUDE_SESSION_ID:-root-$(printf "%s\n%s\n" "${CLAUDE_PLUGIN_ROOT:-}" "$(git rev-parse --show-toplevel 2>/dev/null || pwd -P)" | shasum -a 256 | cut -c1-64)}"
+     [ "$SESSION_KEY" != root- ] || { echo "MERIDIAN: plugin root hash unavailable" >&2; exit 1; }
+     L="{LINK}"
      P="/tmp/.meridian-phase-detect-${SESSION_KEY}.txt"
      PD=""
      _PD_START_TS=$(date +%s 2>/dev/null || echo 0)
@@ -116,13 +119,13 @@ This mode handles a milestone that went to the archive with unresolved UAT issue
    ```bash
    IFS='|' read -ra UAT_DIRS <<< "$milestone_uat_phase_dirs"
    for dir in "${UAT_DIRS[@]}"; do
-     bash /tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/create-remediation-phase.sh .meridian "$dir"
+     bash "{LINK}/scripts/create-remediation-phase.sh" .meridian "$dir"
    done
    ```
    The script also writes a `.remediated` marker in each source milestone phase dir to prevent re-triggering on future sessions. After creating all phases, write a ROADMAP.md and update STATE.md reflecting the remediation phases.
    **Remediation commit boundary (conditional):**
    ```bash
-  PG_SCRIPT="/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/planning-git.sh"
+  PG_SCRIPT="{LINK}/scripts/planning-git.sh"
    if [ -f "$PG_SCRIPT" ]; then
      bash "$PG_SCRIPT" commit-boundary "create milestone remediation phases" .meridian/config.json
    else
@@ -136,11 +139,11 @@ This mode handles a milestone that went to the archive with unresolved UAT issue
    if [ -z "$TARGET_PHASE_DIRS" ] && [ "$milestone_uat_phase_dir" != "none" ]; then
      TARGET_PHASE_DIRS="$milestone_uat_phase_dir"
    fi
-   bash /tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/mark-milestone-remediated.sh .meridian "$TARGET_PHASE_DIRS"
+   bash "{LINK}/scripts/mark-milestone-remediated.sh" .meridian "$TARGET_PHASE_DIRS"
    ```
    **Re-route after marking (NON-NEGOTIABLE):** The pre-computed routing state is now stale because `.remediated` markers changed on-disk state. Re-run phase-detect to discover existing phases or new-work eligibility:
    ```bash
-   FRESH_PD=$(bash /tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/phase-detect.sh 2>/dev/null)
+   FRESH_PD=$(bash "{LINK}/scripts/phase-detect.sh" 2>/dev/null)
    ```
    **Error guard:** For an empty `FRESH_PD`, or one that contains `phase_detect_error=true`, display "⚠ Phase detection failed after marking milestones. Run `/meridian:transit` again." and STOP.
    **Re-trigger guard:** Apply this guard only while `FRESH_PD` still shows `milestone_uat_issues=true`. Compare `milestone_uat_slug` from `FRESH_PD` with the slug that this step processed (the original `milestone_uat_slug` from the pre-computed state). If the slugs match, the marking failed for this milestone. Display "⚠ MERIDIAN failed to write some milestone UAT markers. Manually create `.remediated` files in the affected phase dirs, then run `/meridian:transit`." and STOP (this prevents an infinite loop). If the slugs do NOT match, a different older milestone still carries unresolved UAT. Let routing continue. The priority table handles that milestone, and it can route to Milestone UAT Recovery for it.

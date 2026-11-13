@@ -1,3 +1,5 @@
+Use `{LINK}` as the literal plugin root resolved by the parent command. Replace it before running helpers or reading files.
+
 ## Main-session Decision Handoffs
 
 Only the main session can call `AskUserQuestion`. Before each `AskUserQuestion`
@@ -16,14 +18,14 @@ documented Next Up command.
 - If `snapshot.resolved_backend` is `in_process`, follow `execute-protocol.md` native Agent spawn. Do not run the tmux spawn driver.
 - If `snapshot.resolved_backend` is `workflow`, do not follow `execute-protocol.md` native Agent spawn and do not run the tmux spawn driver. After generation and `state ... dispatched`, render and register the grouping's workflow script and call `Workflow` as documented below.
 
-Read `/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/references/execute-protocol.md` for plan loading, contracts, verification, and commits. Use its Agent spawn steps only on the `in_process` branch.
+Read `{LINK}/references/execute-protocol.md` for plan loading, contracts, verification, and commits. Use its Agent spawn steps only on the `in_process` branch.
 
 **Orchestrator read-scope:** Do NOT read product source files. Your job is orchestration. Read plans, check summaries, and spawn Dev for remaining work. If you need product-code understanding to route or sequence, delegate that to Dev.
 
 Before reading:
 **Step 0, pre-normalize filenames:**
     ```bash
-    NORM_SCRIPT="/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/normalize-plan-filenames.sh"
+    NORM_SCRIPT="{LINK}/scripts/normalize-plan-filenames.sh"
     if [ -f "$NORM_SCRIPT" ]; then
       bash "$NORM_SCRIPT" "{phase_dir}"
     fi
@@ -35,16 +37,16 @@ Before reading:
    - If all plans have SUMMARY.md, cautious/standard -> WARN + check with the user. Confident/pure-vibe -> warn + auto-continue.
    - **Milestone path guard**: If `{phase_dir}` contains `.meridian/milestones/`, STOP "Cannot execute inside archived milestones." This prevents writing artifacts into shipped milestone directories.
 3. **Compile context**: If `config_context_compiler=true`, run:
-   - `bash /tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/compile-context.sh {phase} dev {phases_dir} {plan_path}`
-   - `bash /tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/compile-context.sh {phase} qa {phases_dir}`
+   - `bash "{LINK}/scripts/compile-context.sh" {phase} dev {phases_dir} {plan_path}`
+   - `bash "{LINK}/scripts/compile-context.sh" {phase} qa {phases_dir}`
    Include compiled context paths in Dev and QA task descriptions. When referencing `.context-dev.md`, describe it as: "compiled context. It includes milestone scope decisions (decomposition rationale, scope boundaries, cross-phase key decisions). It also includes phase operational context (goal, conventions, active plan, research findings, changed files, code slices)". When referencing `.context-qa.md`, describe it as: "compiled context. It includes milestone scope decisions and phase verification context (success criteria, requirements, conventions to check)".
   If `TODO_SELECTED_JSON` already exists from the numbered-todo path and `DETAIL_STATUS=ok`, reuse the already-loaded detail in the Dev task description. Use `Extended context (from todo detail): {detail.context value}. Related files: {detail.files, comma-separated, or omit if empty}.` as its text, with placeholders filled in.
 
   Otherwise, for a ref hash that Input Parsing extracted, load extended detail now:
    ```bash
-  bash /tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/todo-details.sh get {hash}
+  bash "{LINK}/scripts/todo-details.sh" get {hash}
    ```
-  Parse the JSON output. If `status` is `"ok"`, include the detail in the Dev task description as `Extended context (from todo detail): {detail.context value}. Related files: {detail.files, comma-separated, or omit if empty}.`, with the placeholders filled in. If `status` is `"not_found"` or `"error"`, run `bash /tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/todo-lifecycle.sh detail-warning {hash}` and continue without detail. Do not block. This provides the executing agent with the rich context that motivated the work item.
+  Parse the JSON output. If `status` is `"ok"`, include the detail in the Dev task description as `Extended context (from todo detail): {detail.context value}. Related files: {detail.files, comma-separated, or omit if empty}.`, with the placeholders filled in. If `status` is `"not_found"` or `"error"`, run `bash "{LINK}/scripts/todo-lifecycle.sh" detail-warning {hash}` and continue without detail. Do not block. This provides the executing agent with the rich context that motivated the work item.
 
 Then freeze or check the runtime snapshot as in Frozen snapshot spawn dispatch. In Execute mode, the `cancel` subcommand of `scripts/runtime-snapshot.sh` still writes only `{PHASE_DIR}/.runtime-cancelled.json`. After the snapshot exists, take the hard spawn branch above and, on `in_process`, read the protocol file and execute Steps 2-5 including Agent spawn. On `tmux`, use the protocol for non-spawn steps only and dispatch through the spawn driver.
 

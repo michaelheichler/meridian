@@ -1,3 +1,5 @@
+Use `{plugin-root}` as the literal plugin root resolved by the parent command. Replace it before running helpers or reading files.
+
 <debug_session_persistence>
 After the report-only investigation and any contract-scoped implementation complete, the main session runs verification and, only if it passes, creates the product fix commit. Capture the post-investigation HEAD before classifying the outcome:
 
@@ -53,7 +55,7 @@ For `already_fixed`, mark the investigation complete using the existing complete
 
 ```bash
 bash "{plugin-root}/scripts/debug-session-state.sh" set-status .meridian complete
-PG_SCRIPT="/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/planning-git.sh"
+PG_SCRIPT="{plugin-root}/scripts/planning-git.sh"
 if [ -f "$PG_SCRIPT" ]; then
   bash "$PG_SCRIPT" commit-boundary "complete debug session" .meridian/config.json
 else
