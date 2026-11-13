@@ -108,7 +108,7 @@ Explicit `--import [path]` and clear natural-language requests to import, migrat
 
 When initialization has not run and the detector finds an external plan source, offer a bounded choice. `Import external plan` routes to `/meridian:import`, while `Start fresh initialization` routes to Init Redirect. `Cancel` leaves project state unchanged.
 
-Read `commands/import.md` and execute that workflow inline in the main session. Preserve any active remediation state because import is an explicit user-selected interruption, not a replacement for the persisted remediation backlog. After promotion, re-run phase detection before selecting the next lifecycle mode.
+Read `commands/import.md` and execute that workflow inline in the main session. Preserve any active remediation state because import is an explicit user-selected interruption, not a replacement for the persisted remediation backlog. After promotion, re-run phase detection and the Index freshness gate for the initialized project before selecting the next lifecycle mode.
 
 ### Mode Init Redirect
 
