@@ -4,16 +4,24 @@ load test_helper
 load gate_case_helper
 
 setup() {
+  bats_require_minimum_version 1.5.0
   setup_temp_dir
   SID_PREFIX="covw2-rps-$$-$BATS_TEST_NUMBER"
   mkdir -p "$TEST_TEMP_DIR/project/.meridian"
+  git -C "$TEST_TEMP_DIR/project" init -q
   cd "$TEST_TEMP_DIR/project"
+  : > "$TEST_TEMP_DIR/fallback-links"
   reset_case_failures
 }
 
 teardown() {
   cd "$PROJECT_ROOT"
   rm -rf /tmp/.meridian-plugin-root-link-"$SID_PREFIX"-* /tmp/.meridian-phase-detect-"$SID_PREFIX"-* /tmp/.meridian-phase-detect-live-"$SID_PREFIX"-*
+  local link key
+  while IFS= read -r link; do
+    key=${link##*/.meridian-plugin-root-link-}
+    rm -rf "$link" "/tmp/.meridian-phase-detect-$key.txt" "/tmp/.meridian-phase-detect-live-$key.lock"
+  done < "$TEST_TEMP_DIR/fallback-links"
   teardown_temp_dir
 }
 
@@ -32,6 +40,52 @@ resolve_state() {
 
 lock_dir() {
   printf '/tmp/.meridian-phase-detect-live-%s-%s.lock\n' "$SID_PREFIX" "$1"
+}
+
+fallback_state_row() {
+  local label="$1" project="$2" plugin="$3" previous_link="$4" previous_root="$5" link key previous_key
+  cd "$project"
+  run env -u CLAUDE_SESSION_ID CLAUDE_PLUGIN_ROOT="$plugin" bash "$SCRIPTS_DIR/resolve-phase-state.sh"
+  expect_case "$label" 0 "phase_detect_complete=true"
+  link=${output%%$'\n'*}
+  printf '%s\n' "$link" >> "$TEST_TEMP_DIR/fallback-links"
+  [ "$link" != "$previous_link" ] || record_case_failure "$label" "fallback link reused across roots"
+  [ "$(readlink "$previous_link")" = "$previous_root" ] \
+    || record_case_failure "$label" "previous plugin link changed"
+  [ "$(readlink "$link")" = "$plugin" ] || record_case_failure "$label" "new link resolves to another plugin"
+  key=${link##*/.meridian-plugin-root-link-}
+  previous_key=${previous_link##*/.meridian-plugin-root-link-}
+  cmp -s "/tmp/.meridian-phase-detect-$previous_key.txt" "$TEST_TEMP_DIR/first-phase-state" \
+    || record_case_failure "$label" "previous phase state changed"
+  [ -s "/tmp/.meridian-phase-detect-$key.txt" ] || record_case_failure "$label" "isolated phase state missing"
+}
+
+fallback_roots_keep_independent_state() {
+  local plugin="$TEST_TEMP_DIR/real-plugin" other_plugin="$TEST_TEMP_DIR/other-plugin" first_link first_key
+  mkdir -p "$plugin" "$other_plugin" "$TEST_TEMP_DIR/other-project"
+  cp -R "$SCRIPTS_DIR" "$plugin/scripts"
+  cp -R "$SCRIPTS_DIR" "$other_plugin/scripts"
+  git -C "$TEST_TEMP_DIR/other-project" init -q
+  plugin=$(cd "$plugin" && pwd -P)
+  other_plugin=$(cd "$other_plugin" && pwd -P)
+  cd "$TEST_TEMP_DIR/project"
+  run env -u CLAUDE_SESSION_ID CLAUDE_PLUGIN_ROOT="$plugin" bash "$SCRIPTS_DIR/resolve-phase-state.sh"
+  expect_case fallback-baseline 0 "phase_detect_complete=true"
+  first_link=${output%%$'\n'*}
+  printf '%s\n' "$first_link" >> "$TEST_TEMP_DIR/fallback-links"
+  first_key=${first_link##*/.meridian-plugin-root-link-}
+  cp "/tmp/.meridian-phase-detect-$first_key.txt" "$TEST_TEMP_DIR/first-phase-state"
+  fallback_state_row different-project "$TEST_TEMP_DIR/other-project" "$plugin" "$first_link" "$plugin"
+  fallback_state_row different-plugin "$TEST_TEMP_DIR/project" "$other_plugin" "$first_link" "$plugin"
+  cd "$TEST_TEMP_DIR/project"
+}
+
+empty_digest_stops_phase_resolution() {
+  mkdir -p "$TEST_TEMP_DIR/bin"
+  printf '#!/bin/sh\ncat >/dev/null\n' > "$TEST_TEMP_DIR/bin/shasum"
+  chmod +x "$TEST_TEMP_DIR/bin/shasum"
+  run --separate-stderr env -u CLAUDE_SESSION_ID PATH="$TEST_TEMP_DIR/bin:$PATH" CLAUDE_PLUGIN_ROOT="$PROJECT_ROOT" bash "$SCRIPTS_DIR/resolve-phase-state.sh"
+  expect_case_silent empty-digest 1
 }
 
 @test "phase state resolution prints the session link and fresh detector output or an error marker" {
@@ -74,6 +128,9 @@ lock_dir() {
   touch -t 200001010000 "$lock"
   run resolve_state old-lock "$healthy"
   expect_case old-ownerless-lock 0 "next_phase_state=needs_plan"
+
+  fallback_roots_keep_independent_state
+  empty_digest_stops_phase_resolution
 
   assert_no_case_failures
 }

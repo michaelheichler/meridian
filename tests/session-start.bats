@@ -107,6 +107,7 @@ prepare_malformed_manifest() {
 }
 
 prepare_unavailable_manifest() {
+  mkdir -p "$PLANNING_DIR"
   SHIM_DIR="$TEST_ROOT/scripts-shim"
   copy_scripts_to "$SHIM_DIR"
   replace_script_in_copy "$SHIM_DIR" agent-lifecycle.sh \
@@ -178,6 +179,7 @@ report_planning_and_subsystem_context() {
 
   context_row cold-start-reports-init-needed prepare_cold_start
   expect_fragment cold-start-reports-init-needed "no ${PLANNING_DIR}/ directory found"
+  expect_lacks cold-start-reports-init-needed "agent manifest"
   context_row warm-start-reports-phase-brief prepare_warm_start
   expect_fragment warm-start-reports-phase-brief "meridian phase"
   context_row phase-needing-plan-routes-to-plan prepare_phase_needing_plan

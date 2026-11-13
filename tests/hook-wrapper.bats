@@ -6,8 +6,11 @@ load gate_case_files
 
 setup() {
   WRAPPER_ROOT="$(mktemp -d)"
-  SESSION_LINK="/tmp/.meridian-plugin-root-link-hook-wrapper-$$"
-  mkdir -p "$WRAPPER_ROOT/scripts"
+  export CLAUDE_SESSION_ID="hook-wrapper-$$"
+  SESSION_LINK="/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID}"
+  mkdir -p "$WRAPPER_ROOT/scripts" "$WRAPPER_ROOT/project"
+  git -C "$WRAPPER_ROOT/project" init -q
+  cd "$WRAPPER_ROOT/project"
   printf 'exit 0\n' > "$WRAPPER_ROOT/scripts/stub-0.sh"
   printf 'exit 1\n' > "$WRAPPER_ROOT/scripts/stub-1.sh"
   printf 'exit 3\n' > "$WRAPPER_ROOT/scripts/stub-3.sh"
@@ -17,6 +20,7 @@ setup() {
 }
 
 teardown() {
+  cd "$PROJECT_ROOT"
   rm -rf "$WRAPPER_ROOT" "$SESSION_LINK"
 }
 

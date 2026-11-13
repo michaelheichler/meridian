@@ -5,6 +5,7 @@ load gate_case_helper
 load gate_case_files
 
 setup() {
+  bats_require_minimum_version 1.5.0
   setup_temp_dir
   export CLAUDE_SESSION_ID="plugin-root-$$"
   export CLAUDE_CONFIG_DIR="$TEST_TEMP_DIR/.claude"
@@ -12,10 +13,14 @@ setup() {
   export ROOT_LINK="/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID}"
   rm -rf "$ROOT_LINK"
   PLUGIN_ROOT="$TEST_TEMP_DIR/plugin"
+  mkdir -p "$TEST_TEMP_DIR/project"
+  git -C "$TEST_TEMP_DIR/project" init -q
+  cd "$TEST_TEMP_DIR/project"
   reset_case_failures
 }
 
 teardown() {
+  cd "$PROJECT_ROOT"
   rm -rf "$ROOT_LINK"
   teardown_temp_dir
 }
@@ -100,6 +105,14 @@ expect_link_target() {
   run env CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" bash "$SCRIPTS_DIR/resolve-plugin-root.sh" --require-script other.sh
   expect_case require-script-present 0 ""
   expect_output_is require-script-present "$CANONICAL_ROOT"
+
+  rm -f "$TEST_TEMP_DIR/bin/ln"
+  printf '#!/bin/sh\ncat >/dev/null\n' > "$TEST_TEMP_DIR/bin/shasum"
+  chmod +x "$TEST_TEMP_DIR/bin/shasum"
+  run --separate-stderr env -u CLAUDE_SESSION_ID PATH="$TEST_TEMP_DIR/bin:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" bash "$SCRIPTS_DIR/resolve-plugin-root.sh"
+  expect_case_silent empty-digest-stops-resolution 1
+  run --separate-stderr env -u CLAUDE_SESSION_ID PATH="$TEST_TEMP_DIR/bin:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" bash "$SCRIPTS_DIR/resolve-plugin-root.sh" --nonfatal
+  expect_case_silent empty-digest-nonfatal-stops-resolution 0
 
   assert_no_case_failures
 }
