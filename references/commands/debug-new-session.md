@@ -5,7 +5,9 @@ For manual/freeform starts only, create a fresh session from the user input abov
 Before invoking the shell template below, replace `{DEBUG_INPUT}` with the complete user input above as one safely shell-quoted argument to `printf`. Keep spaces, quotes, dollar signs, backticks, and newlines as data. Never evaluate the input or paste it unescaped into shell source.
 
 ```bash
-eval "$(printf '%s' {DEBUG_INPUT} | REF_HASH="${REF_HASH:-none}" DETAIL_STATUS="${DETAIL_STATUS:-none}" DETAIL_RESULT_JSON="${DETAIL_RESULT_JSON:-}" bash "{plugin-root}/scripts/debug-start-manual.sh" .meridian)"
+printf '%s' {DEBUG_INPUT} | REF_HASH="${REF_HASH:-none}" DETAIL_STATUS="${DETAIL_STATUS:-none}" DETAIL_RESULT_JSON="${DETAIL_RESULT_JSON:-}" bash "{plugin-root}/scripts/debug-start-manual.sh" .meridian
 ```
+
+Read the helper's assignment output as data and retain its named values in the main-session context. Decode shell quoting without executing the output. Stop on helper failure before using any returned session fields.
 
 Keep manual/freeform debug starts on the existing `start-with-source-todo` path. The selected helper owns deterministic selected-todo state mutation and returns pickup presentation fields under `.pickup`.
