@@ -32,7 +32,7 @@ generator protocol.
 **Brownfield detection:** `git ls-files` or Glob check for existing code.
 
 **Steps:**
-- **B1 (PROJECT.md)**: If $ARGUMENTS provided (excluding flags), use as description. Otherwise ask name + core purpose. Then call:
+- **B1 (PROJECT.md)**: If the user input above provides a description (excluding flags), use it. Otherwise ask name + core purpose. Then call:
   ```
   bash "{LINK}/scripts/bootstrap/bootstrap-project.sh" .meridian/PROJECT.md "$NAME" "$DESCRIPTION"
   ```
@@ -52,7 +52,7 @@ generator protocol.
 
     **Research setup (steps 1-4):**
     **Step 1:** Extract domain from user's project description (the $NAME or $DESCRIPTION from B1)
-    **Step 2:** Follow `references/agent-spawn-protocol.md`. Do not resolve the model, effort, and turns separately. The generic generator prints the checked Agent-call parameters.
+    **Step 2:** Follow `references/agent-spawn-protocol.md`. Use every checked Agent-call parameter the generic generator prints rather than resolving parameters separately.
     **Step 3**: Before composing the Scout task description, evaluate installed skills visible in your system context. Read each skill's description. Select all materially helpful installed skills for this task, including adjacent/supporting domain skills that the prompt, logs, error text, related files, or stack context surface. Do not select only the single most direct skill. The Scout prompt MUST begin with exactly one explicit skill outcome block. When orchestration preselects one or more installed skills, use `<skill_activation>{For each selected skill: "Call Skill({skill-name})"}</skill_activation>`. When orchestration preselects none, use 
 
 ```text
@@ -67,7 +67,7 @@ generator protocol.
     **Research execution (steps 5-8):**
     **Step 5:** Issue a solo `scout` command contract for job `bootstrap domain research` with `.meridian/domain-research.md` as the exact write allowance. Run the generic `scripts/agent-generator.sh scout` call from `references/agent-spawn-protocol.md`, advance the contract to `dispatched`, and capture its `SPAWN_READY` name. Stop and report any contract or generator failure verbatim.
     **Step 6:** Spawn the generated Scout with the exact Agent-call parameters printed by the generator. Prompt: "Research the {domain} domain. Write findings to <output_path>.meridian/domain-research.md</output_path> with ## Table Stakes, ## Common Pitfalls, ## Architecture Patterns, and ## Competitor Landscape. Use relevant MCP tools or WebSearch. Keep each section to 2-3 bullets."
-    **Step 7:** Use the generated name for both `subagent_type` and `name`. Omit team and worktree fields. Do not re-resolve or override the model, effort, and turns.
+    **Step 7:** Use the generated name for both `subagent_type` and `name`. Omit team and worktree fields. Keep every generated Agent-call parameter unchanged.
     **Step 8:** On success, read `.meridian/domain-research.md` (Scout wrote it directly). Extract brief summary (3-5 lines max). Display to user: "◆ Domain Research: {brief summary}\n\n✓ Research complete. Now let's explore your specific needs..."
     **Step 9:** On failure, log warning "⚠ Domain research timed out, proceeding with general questions". Set RESEARCH_AVAILABLE=false, continue.
   - **B2.2 (Discussion Engine)**: Read `{LINK}/references/discussion-engine.md` and follow its protocol.
