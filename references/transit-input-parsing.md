@@ -31,7 +31,9 @@ Loaded via `@${CLAUDE_PLUGIN_ROOT}/references/transit-input-parsing.md` from `co
 
 ## Pre-Parsing and Todo Resolution (TRANSIT-IP-01)
 
-**Pre-parse (todo number resolution)**: If $ARGUMENTS is a bare integer (matches `^[0-9]+$` with no other text or flags), inspect the persisted session snapshot from the latest `/meridian:list-todos` invocation. Do this before you decide whether this integer is a todo or a phase target:
+Initialize the working input from the user input above in the invoking command. Apply todo resolution and ref cleanup to that working copy, not to the original user input block.
+
+**Pre-parse (todo number resolution)**: If the working input is a bare integer (matches `^[0-9]+$` with no other text or flags), inspect the persisted session snapshot from the latest `/meridian:list-todos` invocation. Do this before you decide whether this integer is a todo or a phase target:
 ```bash
 bash "/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/todo-lifecycle.sh" snapshot-show
 ```
@@ -39,7 +41,7 @@ bash "/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/todo
   ```bash
   bash "/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/resolve-todo-item.sh" <N> --session-snapshot --require-unfiltered --validate-live
   ```
-  If `status` is `"ok"`, preserve `TODO_SELECTED=true` and store the full payload as `TODO_SELECTED_JSON`. Then replace $ARGUMENTS with the item's `command_text` and keep the resolved `ref`/`state_path` metadata for later pickup. If the resolved `state_path` points under `.meridian/milestones/`, STOP with the message `This todo came from archived milestone state. Restore the writable root STATE.md first by restarting so session-start.sh can run migration, or run 'bash /tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/migrate-orphaned-state.sh .meridian'.`. Do not continue using the archived description as live work input.
+  If `status` is `"ok"`, preserve `TODO_SELECTED=true` and store the full payload as `TODO_SELECTED_JSON`. Then replace the working input with the item's `command_text` and keep the resolved `ref`/`state_path` metadata for later pickup. If the resolved `state_path` points under `.meridian/milestones/`, STOP with the message `This todo came from archived milestone state. Restore the writable root STATE.md first by restarting so session-start.sh can run migration, or run 'bash /tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/migrate-orphaned-state.sh .meridian'.`. Do not continue using the archived description as live work input.
 - If the snapshot is present and `filter` is non-null, do **not** treat the integer as a claimable backlog todo. Preserve the existing bare phase-number path instead. If the integer later fails to resolve as a valid phase target, fail closed with: 
 
 ```text
@@ -59,7 +61,7 @@ bash "/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/todo
 ```
 Continue without detail.
 
-**Pre-parse (ref tag extraction)**: Before you evaluate the paths below, look for a `(ref:HASH)` suffix (8 hex characters) at the end of $ARGUMENTS. If you find one, extract the hash and strip the ref tag (including any leading space) from $ARGUMENTS. All later parsing uses the cleaned arguments. The ref must not interfere with flag detection or keyword routing. It must not interfere with mode selection either. Store the extracted hash for later use. If `TODO_SELECTED_JSON` already exists from the numbered-todo path above, reuse its resolved ref/detail metadata and do not reload detail here. For non-todo manual `(ref:HASH)` inputs, defer detail loading until a mode that acts on the todo needs it. If you find no ref tag, there is no hash to store.
+**Pre-parse (ref tag extraction)**: Before you evaluate the paths below, look for a `(ref:HASH)` suffix (8 hex characters) at the end of the working input. If you find one, extract the hash and strip the ref tag (including any leading space) from the working input. All later parsing uses the cleaned arguments. The ref must not interfere with flag detection or keyword routing. It must not interfere with mode selection either. Store the extracted hash for later use. If `TODO_SELECTED_JSON` already exists from the numbered-todo path above, reuse its resolved ref/detail metadata and do not reload detail here. For non-todo manual `(ref:HASH)` inputs, defer detail loading until a mode that acts on the todo needs it. If you find no ref tag, there is no hash to store.
 
 **Todo pickup boundary (non-negotiable)**: Claim a numbered todo selected through `TODO_SELECTED_JSON` only after routing commits to the todo-derived request. Any AskUserQuestion confirmation gate must also complete successfully first. If routing falls back to a phase-number path, stops on a guard, or the user declines confirmation, leave the todo untouched. Manual text and manual `(ref:HASH)` inputs never trigger pickup.
 
@@ -73,7 +75,7 @@ Three input paths, evaluated in order:
 
 ## Path 1. Flag Detection (TRANSIT-IP-02)
 
-Look for flags in $ARGUMENTS. If any mode flag is present, go directly to that mode.
+Look for flags in the working input. If any mode flag is present, go directly to that mode.
 
 Lifecycle modes:
 - `--plan [N]` -> Plan mode
@@ -101,7 +103,7 @@ If flags are present, skip the confirmation gate (flags express explicit intent)
 
 ## Path 2. Natural Language Intent (TRANSIT-IP-03)
 
-If $ARGUMENTS present but no flags detected, interpret user intent:
+If the working input is present but no flags detected, interpret user intent:
 - Explicit external plan import or migration keywords (import this plan, migrate .planning, bring in external plans) -> Import mode
 - Discussion keywords (talk, discuss, explore, think about, what about) -> Discuss mode
 - Assumption keywords (assume, assuming, what if, what are you assuming) -> Assumptions mode
@@ -119,7 +121,7 @@ Explicit `--import [path]` routes to Import mode before state detection. Clear n
 
 ## Path 3. State Detection (TRANSIT-IP-04)
 
-If no $ARGUMENTS, evaluate phase-detect.sh output. First match determines mode:
+If the working input is empty, evaluate phase-detect.sh output. First match determines mode:
 
 **Phase-detect error guard (NON-NEGOTIABLE)**: If the output contains `phase_detect_error=true`, display:
 "⚠ Phase detection failed. Run `bash /tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/phase-detect.sh` manually to debug."
@@ -435,7 +437,7 @@ Re-run QA.
 
 **QA Remediation + UAT blocking**: QA remediation is a pre-UAT route only. Before any UAT state or artifact exists for a phase, active QA remediation blocks UAT and `needs_qa_remediation` takes priority over `needs_verification`. Once any UAT state or artifact exists for that phase, stay in the UAT lane. Stale QA remediation metadata remains on disk for traceability but is dormant and must not resume automatically.
 
-**all_done + natural language**: If $ARGUMENTS describe new work (bug, feature, task) and state is `all_done`, route to Add Phase mode instead of Archive. Add Phase handles codebase context loading and research internally. Do NOT spawn an Explore agent or do ad-hoc research before entering the mode.
+**all_done + natural language**: If the working input describes new work (bug, feature, task) and state is `all_done`, route to Add Phase mode instead of Archive. Add Phase handles codebase context loading and research internally. Do NOT spawn an Explore agent or do ad-hoc research before entering the mode.
 
 **UAT remediation default**: When `next_phase_state=needs_uat_remediation`, plain `/meridian:transit` must read that phase's UAT report and continue remediation directly. Do NOT require the user to manually specify `--discuss` or `--plan`.
 

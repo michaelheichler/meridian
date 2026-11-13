@@ -1,4 +1,4 @@
-Strip any known flags (`--competing`, `--parallel`, `--serial`) from $ARGUMENTS and store them separately for Step 2 routing. If `SELECTED_TODO_START_JSON` exists from the selected helper, reuse `.bug_desc` as the bug description, `.ref` as the selected ref, `.detail_status`, `.detail.context`, `.detail.files`, `.detail_has_signal`, `.accepted_exception_markers`, and `.routing_flags`, do not call `todo-details.sh` a second time and do not inspect raw selected-todo JSON to rediscover these fields. Otherwise, if the remaining $ARGUMENTS contains a `(ref:HASH)` suffix (8 hex characters), extract the hash as `REF_HASH` and strip the ref tag. Store remaining text (minus flags and ref) as the bug description. If you found a ref, load extended detail:
+Strip any known flags (`--competing`, `--parallel`, `--serial`) from the user input above and store them separately for Step 2 routing. If `SELECTED_TODO_START_JSON` exists from the selected helper, reuse `.bug_desc` as the bug description, `.ref` as the selected ref, `.detail_status`, `.detail.context`, `.detail.files`, `.detail_has_signal`, `.accepted_exception_markers`, and `.routing_flags`, do not call `todo-details.sh` a second time and do not inspect raw selected-todo JSON to rediscover these fields. Otherwise, if the remaining text from the user input above contains a `(ref:HASH)` suffix (8 hex characters), extract the hash as `REF_HASH` and strip the ref tag. Store remaining text (minus flags and ref) as the bug description. If you found a ref, load extended detail:
 
 ```bash
 bash "{plugin-root}/scripts/todo-details.sh" get {hash}
@@ -11,7 +11,7 @@ bash "{plugin-root}/scripts/todo-lifecycle.sh" detail-warning {hash}
 ```
 
 In all cases, continue without detail.
-If no ref suffix, $ARGUMENTS minus flags = bug description, `DETAIL_STATUS=none`, and `DETAIL_RESULT_JSON=""`.
+If no ref suffix, the user input above minus flags = bug description, `DETAIL_STATUS=none`, and `DETAIL_RESULT_JSON=""`.
 **Post-parse validation:** If the bug description is empty or whitespace-only after stripping flags and ref, check whether you found a ref AND its detail loaded successfully (status `"ok"`). If yes, proceed, the detail provides the investigation context. If you found no ref, or the ref detail failed to load, STOP: "Usage: `/meridian:debug \"description of the bug or error message\" [--competing|--parallel|--serial]` | `/meridian:debug <todo-number> [--competing|--parallel|--serial]` | `/meridian:debug --resume` | `/meridian:debug --session <id>`".
 Map effort with thorough=high, balanced/fast=medium, turbo=low.
 Keep effort profile as `EFFORT_PROFILE` (thorough|balanced|fast|turbo).
