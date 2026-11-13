@@ -43,7 +43,7 @@ If the user supplied `--check`, display a version banner with the installed vers
 ### Step 3. Check for an update
 
 ```bash
-curl -sf --max-time 5 "https://raw.githubusercontent.com/michaelheichler/vibe-better-with-claude-code-lbwc/main/VERSION"
+curl -sf --max-time 5 "https://raw.githubusercontent.com/michaelheichler/meridian/main/VERSION"
 ```
 Store the result as `remote_version`. If curl fails, stop and display "⚠ Could not reach GitHub to check for updates."
 If the remote and installed versions match, display "✓ Already at latest (v{old_version}). Refreshing cache..." and continue to Step 4.
