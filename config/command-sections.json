@@ -128,7 +128,7 @@
       "required_headings": ["Context", "Guard", "Debug Session Routing", "Steps"]
     },
     "transit.md": {
-      "required_headings": ["Shared interaction contract", "Context", "Input Parsing", "Modes", "Output Format"]
+      "required_headings": ["Shared interaction contract", "Context", "Initialization routing", "Index freshness gate", "Workflow capability gate", "Input Parsing", "Modes", "Output Format"]
     },
     "whats-new.md": {
       "required_headings": ["Context", "Guard", "Steps", "Output Format"]

@@ -1,5 +1,11 @@
 # Meridian Transit Input Parsing
 
+## Initialization routing before gates
+
+When `planning_dir_exists=false`, validate detector output, then resolve import intent before any index or workflow gate. Explicit `--import [path]` enters Import mode. Confirm clear natural-language import intent first. If the detector finds an external plan source without explicit intent, offer `Import external plan`, `Start fresh initialization`, and `Cancel` as Mode Import documents. Without an import selection, enter Init Redirect and stop. Other flags do not override the missing planning directory. Do not run full parsing, state repair, or either gate on this path.
+
+For initialized projects, run the index freshness gate before full parsing and other lifecycle routes. After an import promotes a planning directory, re-run detection and apply that gate before choosing the next lifecycle mode.
+
 ## Main-session Decision Handoffs
 
 Only the main session can call `AskUserQuestion`.

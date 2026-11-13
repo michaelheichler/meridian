@@ -36,15 +36,23 @@ Config:
 !`bash "/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/suggest-compact.sh" execute 2>/dev/null || true`
 ```
 
+## Initialization routing
+
+Validate the pre-computed detector output before any gate. Require `phase_detect_complete=true`, a canonical plugin root, and no `phase_detect_error=true`.
+
+When `planning_dir_exists=false`, resolve only the import exception before stopping. Explicit `--import [path]` routes to Mode Import. Confirm clear natural-language import intent before Mode Import. When the detector finds an external plan source without explicit intent, offer the bounded choice in Mode Import. Otherwise enter Mode Init Redirect and stop, even when another lifecycle flag appears. Follow `references/transit-input-parsing.md` for these early routes. Do not run either gate, repair state, or create a planning directory on this path.
+
+Continue to the gates and full input parsing only when `planning_dir_exists=true`.
+
 ## Index freshness gate
 
-Before reading the input parser or selecting a lifecycle mode, run exactly:
+For initialized projects, before full input parsing or selecting another lifecycle mode, run exactly:
 
 ```bash
 bash "{LINK}/scripts/indexer-sync.sh" --project-root "{PROJECT_ROOT}"
 ```
 
-This is mandatory. Stop before mode selection when the helper exits non-zero.
+This is mandatory only for initialized projects. Stop before full input parsing and mode selection when the helper exits non-zero.
 
 ## Workflow capability gate
 
