@@ -53,7 +53,7 @@ valid_root() {
     [ -f "$candidate/scripts/$required_script" ]
 }
 
-session_link="/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}"
+session_link="/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-root-$(printf %s "$(git rev-parse --show-toplevel 2>/dev/null || pwd -P)" | shasum -a 256 | cut -c1-64)}"
 
 fail_resolution() {
   if [ "$nonfatal" = true ]; then

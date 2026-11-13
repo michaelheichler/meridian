@@ -25,7 +25,7 @@ Working directory:
 ```
 Plugin root:
 ```
-!`SESSION_KEY="${CLAUDE_SESSION_ID:-default}"; L="/tmp/.meridian-plugin-root-link-${SESSION_KEY}"; R="$L/scripts/resolve-plugin-root.sh"; [ -f "$R" ] || R="${CLAUDE_PLUGIN_ROOT:-}/scripts/resolve-plugin-root.sh"; [ -f "$R" ] || { echo "MERIDIAN: plugin root unavailable. Restart this session to recreate $L." >&2; exit 1; }; bash "$R" >/dev/null || exit 1; bash "$L/scripts/phase-detect.sh" > "/tmp/.meridian-phase-detect-${SESSION_KEY}.txt" 2>/dev/null || echo "phase_detect_error=true" > "/tmp/.meridian-phase-detect-${SESSION_KEY}.txt"; echo "$L"`
+!`SESSION_KEY="${CLAUDE_SESSION_ID:-root-$(printf %s "$(git rev-parse --show-toplevel 2>/dev/null || pwd -P)" | shasum -a 256 | cut -c1-64)}"; L="/tmp/.meridian-plugin-root-link-${SESSION_KEY}"; R="$L/scripts/resolve-plugin-root.sh"; [ -f "$R" ] || R="${CLAUDE_PLUGIN_ROOT:-}/scripts/resolve-plugin-root.sh"; [ -f "$R" ] || { echo "MERIDIAN: plugin root unavailable. Restart this session to recreate $L." >&2; exit 1; }; bash "$R" >/dev/null || exit 1; bash "$L/scripts/phase-detect.sh" > "/tmp/.meridian-phase-detect-${SESSION_KEY}.txt" 2>/dev/null || echo "phase_detect_error=true" > "/tmp/.meridian-phase-detect-${SESSION_KEY}.txt"; echo "$L"`
 ```
 
 Current state:
@@ -47,7 +47,7 @@ Phase directories:
 
 Phase state:
 ```
-!`SESSION_KEY="${CLAUDE_SESSION_ID:-default}"
+!`SESSION_KEY="${CLAUDE_SESSION_ID:-root-$(printf %s "$(git rev-parse --show-toplevel 2>/dev/null || pwd -P)" | shasum -a 256 | cut -c1-64)}"
 L="/tmp/.meridian-plugin-root-link-${SESSION_KEY}"
 P="/tmp/.meridian-phase-detect-${SESSION_KEY}.txt"
 PD=""
@@ -92,7 +92,7 @@ Shipped milestones:
 - Not initialized (no .meridian/ dir): STOP "Run /meridian:init first."
 - **Brownfield normalization:** If Phase state (from Context above) contains `misnamed_plans=true`, normalize all phase directories before proceeding:
   ```bash
-  NORM_SCRIPT="/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/normalize-plan-filenames.sh"
+  NORM_SCRIPT="/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-root-$(printf %s "$(git rev-parse --show-toplevel 2>/dev/null || pwd -P)" | shasum -a 256 | cut -c1-64)}/scripts/normalize-plan-filenames.sh"
   if [ -f "$NORM_SCRIPT" ]; then
     for pdir in .meridian/phases/*/; do
       [ -d "$pdir" ] && bash "$NORM_SCRIPT" "$pdir"
@@ -102,7 +102,7 @@ Shipped milestones:
   Display: "⚠ Renamed misnamed plan files to `{NN}-PLAN.md` convention."
   Then re-run phase-detect.sh to refresh state (filenames changed):
   ```bash
-  bash "/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/phase-detect.sh" > "/tmp/.meridian-phase-detect-${CLAUDE_SESSION_ID:-default}.txt"
+  bash "/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-root-$(printf %s "$(git rev-parse --show-toplevel 2>/dev/null || pwd -P)" | shasum -a 256 | cut -c1-64)}/scripts/phase-detect.sh" > "/tmp/.meridian-phase-detect-${CLAUDE_SESSION_ID:-root-$(printf %s "$(git rev-parse --show-toplevel 2>/dev/null || pwd -P)" | shasum -a 256 | cut -c1-64)}.txt"
   ```
   Use the refreshed phase-detect output for all subsequent steps.
 - If ROADMAP.md is missing or has template placeholders, STOP "No roadmap found. Run /meridian:transit to set up your project."
@@ -170,9 +170,9 @@ Per @${CLAUDE_PLUGIN_ROOT}/references/meridian-brand-essentials.md:
     Cache hit rate: {percent}%
 ```
 
-  **RTK external metrics** (only when `--metrics` is explicit): run `bash /tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/rtk-manager.sh status --json --stats`. If RTK is absent, show nothing. If RTK is present, show one compact line labeled external, for example `RTK external: verified by runtime smoke proof, 47% avg savings`, `RTK external: active, 47% avg savings`, or `RTK external: hook active, compatibility unverified`. Use compatibility-unverified wording only for `risk` or `hook_active_unverified` states without proof. RTK savings are external RTK savings, not MERIDIAN savings. Default `/meridian:status` avoids RTK history, stats, network, and smoke work to prevent recurring overhead, it must not advertise RTK when absent.
+  **RTK external metrics** (only when `--metrics` is explicit): run `bash /tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-root-$(printf %s "$(git rev-parse --show-toplevel 2>/dev/null || pwd -P)" | shasum -a 256 | cut -c1-64)}/scripts/rtk-manager.sh status --json --stats`. If RTK is absent, show nothing. If RTK is present, show one compact line labeled external, for example `RTK external: verified by runtime smoke proof, 47% avg savings`, `RTK external: active, 47% avg savings`, or `RTK external: hook active, compatibility unverified`. Use compatibility-unverified wording only for `risk` or `hook_active_unverified` states without proof. RTK savings are external RTK savings, not MERIDIAN savings. Default `/meridian:status` avoids RTK history, stats, network, and smoke work to prevent recurring overhead, it must not advertise RTK when absent.
 
-**Next Up:** Run `bash /tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/suggest-next.sh status` and display.
+**Next Up:** Run `bash /tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-root-$(printf %s "$(git rev-parse --show-toplevel 2>/dev/null || pwd -P)" | shasum -a 256 | cut -c1-64)}/scripts/suggest-next.sh status` and display.
 
 ## Failure and recovery
 

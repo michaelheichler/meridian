@@ -218,7 +218,7 @@ generate_root_state() {
 
 generate_root_state > "$OUTPUT_PATH"
 DETAIL_SCRIPT=""
-SESSION_KEY="${CLAUDE_SESSION_ID:-default}"
+SESSION_KEY="${CLAUDE_SESSION_ID:-root-$(printf %s "$(git rev-parse --show-toplevel 2>/dev/null || pwd -P)" | shasum -a 256 | cut -c1-64)}"
 LINK="/tmp/.meridian-plugin-root-link-${SESSION_KEY}"
 TODO_DETAILS_REGISTRY="$(dirname "$OUTPUT_PATH")/todo-details.json"
 if [ -f "${LINK}/scripts/todo-details.sh" ]; then

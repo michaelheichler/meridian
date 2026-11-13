@@ -31,6 +31,10 @@ Project artifacts
 
 The control plane uses local files, small scripts, hooks, JSON, Markdown artifacts, and local locks. It does not require a server, queue, database, or remote telemetry service.
 
+SessionStart and command helpers share a temporary plugin link keyed by `CLAUDE_SESSION_ID`. When the session identifier is empty, they use `root-` plus the SHA-256 hash of the Git worktree root, or the physical working directory outside Git. Different projects therefore keep separate fallback links, while sessions in the same project share one fallback link.
+
+SessionStart sweeps the agent manifest only when the planning directory exists. Before initialization it reports the missing planning directory without a manifest warning. Once the planning directory exists, manifest failures remain visible.
+
 ## Ownership model
 
 | Owner | Owns | Does not own |
