@@ -13,7 +13,7 @@ unset MERIDIAN_MIGRATION_SOURCE
 set -euo pipefail
 
 SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd)"
-SESSION_KEY="${CLAUDE_SESSION_ID:-default}"
+SESSION_KEY="${CLAUDE_SESSION_ID:-root-$(printf %s "$(git rev-parse --show-toplevel 2>/dev/null || pwd -P)" | shasum -a 256 | cut -c1-64)}"
 L="/tmp/.meridian-plugin-root-link-${SESSION_KEY}"
 P="/tmp/.meridian-phase-detect-${SESSION_KEY}.txt"
 PTMP="${P}.tmp.$$"

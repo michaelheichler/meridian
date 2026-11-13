@@ -56,7 +56,7 @@ bind_tmux_bootstrap() {
 if [ -f "$CANONICAL_ROOT/scripts/hook-wrapper.sh" ] && \
   [ -f "$CANONICAL_ROOT/scripts/ensure-plugin-root-link.sh" ] && \
   ! bash "$CANONICAL_ROOT/scripts/ensure-plugin-root-link.sh" \
-    "/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}" "$CANONICAL_ROOT" >/dev/null 2>&1; then
+    "/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-root-$(printf %s "$(git rev-parse --show-toplevel 2>/dev/null || pwd -P)" | shasum -a 256 | cut -c1-64)}" "$CANONICAL_ROOT" >/dev/null 2>&1; then
   echo "MERIDIAN: SessionStart plugin root link bootstrap failed" >&2
   exit 1
 fi
@@ -116,8 +116,12 @@ count_expired() {
   jq -r '[.agents[]? | select(.state == "expired")] | length' "$MANIFEST_FILE" 2>/dev/null || echo 0
 }
 BEFORE_EXPIRED=$(count_expired)
-LIFECYCLE_OUT=$(bash "$SCRIPT_DIR/agent-lifecycle.sh" sweep 2>&1)
-LIFECYCLE_STATUS=$?
+LIFECYCLE_OUT=""
+LIFECYCLE_STATUS=0
+if [ -d "$PLANNING_DIR" ]; then
+  LIFECYCLE_OUT=$(bash "$SCRIPT_DIR/agent-lifecycle.sh" sweep 2>&1)
+  LIFECYCLE_STATUS=$?
+fi
 AGENT_MANIFEST_STATUS=$(printf '%s\n' "$LIFECYCLE_OUT" | grep -m1 '^agent_manifest_status=' | sed 's/^[^=]*=//')
 AFTER_EXPIRED=$(count_expired)
 [ "${BEFORE_EXPIRED:-0}" -ge 0 ] 2>/dev/null || BEFORE_EXPIRED=0

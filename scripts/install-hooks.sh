@@ -24,7 +24,7 @@ HOOK_PATH="$ROOT/.git/hooks/pre-push"
 
 HOOK_CONTENT='#!/usr/bin/env bash
 set -euo pipefail
-SCRIPT="/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/pre-push-hook.sh"
+SCRIPT="/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-root-$(printf %s "$(git rev-parse --show-toplevel 2>/dev/null || pwd -P)" | shasum -a 256 | cut -c1-64)}/scripts/pre-push-hook.sh"
 if [ -f "$SCRIPT" ]; then
   exec bash "$SCRIPT" "$@"
 fi
