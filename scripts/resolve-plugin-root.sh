@@ -12,12 +12,9 @@ fi
 unset MERIDIAN_MIGRATION_SOURCE
 set -euo pipefail
 
-# R: success prints the canonical first valid root and repairs its exact session link. Failure follows the selected fatal or nonfatal contract.
-
 required_script="hook-wrapper.sh"
 nonfatal=false
 
-# Invariant: parsed options are valid and remaining arguments are untouched. Variant: $# decreases.
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --require-script)
@@ -53,7 +50,13 @@ valid_root() {
     [ -f "$candidate/scripts/$required_script" ]
 }
 
-session_link="/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-root-$(printf %s "$(git rev-parse --show-toplevel 2>/dev/null || pwd -P)" | shasum -a 256 | cut -c1-64)}"
+SESSION_KEY="${CLAUDE_SESSION_ID:-root-$(printf "%s\n%s\n" "${CLAUDE_PLUGIN_ROOT:-}" "$(git rev-parse --show-toplevel 2>/dev/null || pwd -P)" | shasum -a 256 | cut -c1-64)}"
+if [ "$SESSION_KEY" = root- ]; then
+  [ "$nonfatal" = true ] && exit 0
+  echo "MERIDIAN: plugin root hash unavailable" >&2
+  exit 1
+fi
+session_link="/tmp/.meridian-plugin-root-link-${SESSION_KEY}"
 
 fail_resolution() {
   if [ "$nonfatal" = true ]; then

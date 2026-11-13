@@ -1,3 +1,5 @@
+Use `{LINK}` as the literal plugin root resolved by the parent command. Replace it before running helpers or reading files.
+
 ## Main-session Decision Handoffs
 
 Only the main session can call `AskUserQuestion`. Before each `AskUserQuestion`
@@ -37,8 +39,8 @@ generator protocol.
 ```
 
 . Never omit both blocks silently. After evaluating, state the skill outcome in your response (for example, "Skills: activating {skill-name}" or "Skills: none preselected. {reason}") so the user can see it before you spawn the agent. For example, a prompt or error that mentions SwiftData needs `swiftdata` alongside relevant test/build/debug skills. After calling `Skill(...)`, read the specific files that its instructions reference for the active task. This covers additional files, sibling docs, and follow-up read steps. Do this before reasoning or acting. Do not scan entire skill folders or read unrelated references.
-  **Skill follow-up files**: If orchestration preselected one or more skills, run `bash "/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/extract-skill-follow-up-files.sh" "{all preselected skill names from the activation block}" 2>/dev/null || true` before spawning the add-phase Scout. If the helper prints a `<skill_follow_up_files>` block, paste it immediately after the follow-up-read sentence in the spawned payload. Otherwise omit that block.
-  Render the prompt prefix from `/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/references/skill-activation-payload.md` with the local `skill_calls`, task-specific `no_skill_reason`, and optional helper-emitted `follow_up_files_block`. Prepend the rendered bytes to the child prompt so the rendered skill outcome tag is its first line. Do not paste the template path, variables, or an unresolved `@` include into the child prompt.
+  **Skill follow-up files**: If orchestration preselected one or more skills, run `bash "{LINK}/scripts/extract-skill-follow-up-files.sh" "{all preselected skill names from the activation block}" 2>/dev/null || true` before spawning the add-phase Scout. If the helper prints a `<skill_follow_up_files>` block, paste it immediately after the follow-up-read sentence in the spawned payload. Otherwise omit that block.
+  Render the prompt prefix from `{LINK}/references/skill-activation-payload.md` with the local `skill_calls`, task-specific `no_skill_reason`, and optional helper-emitted `follow_up_files_block`. Prepend the rendered bytes to the child prompt so the rendered skill outcome tag is its first line. Do not paste the template path, variables, or an unresolved `@` include into the child prompt.
   **MCP context:** Also evaluate available MCP tools. If any MCP servers provide documentation, search, or data retrieval capabilities relevant to this research, note them in the Scout's task context.
   - After Scout completes, check the file exists (read first line).
   - Use Scout findings to write an informed phase goal and success criteria in ROADMAP.md.
@@ -46,10 +48,10 @@ generator protocol.
   - **This eliminates duplicate research.** Plan mode step 3 checks for an existing RESEARCH.md. If it finds one, it skips Scout.
 6. Update ROADMAP.md. Append the phase list entry. Append the Phase Details section. If Scout findings are available, use them there. Add the progress row.
 7. If `.meridian/CONTEXT.md` exists, rewrite it to reflect the updated milestone decomposition (phase count/grouping, ordering, scope coverage, and requirement mapping). Preserve project-level key decisions and deferred ideas where still valid.
-8. Update STATE.md phase total: `bash /tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/update-phase-total.sh .meridian`
+8. Update STATE.md phase total: `bash "{LINK}/scripts/update-phase-total.sh" .meridian`
 9. **Phase mutation commit boundary (conditional):**
    ```bash
-  PG_SCRIPT="/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/planning-git.sh"
+  PG_SCRIPT="{LINK}/scripts/planning-git.sh"
    if [ -f "$PG_SCRIPT" ]; then
      bash "$PG_SCRIPT" commit-boundary "add phase {NN}-{slug}" .meridian/config.json
    else

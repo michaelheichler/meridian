@@ -10,4 +10,4 @@ SessionStart additionalContext includes `meridian tmux bind:` JSON with `agent_i
 4. Publish `result` (`{"result":"..."}`) or `error` (`{"message":"..."}`) to the job envelope `from.agent_id` as the bound agent, with `--correlation-id` from the job envelope.
 5. Stop.
 
-Resolve plugin-root from `CLAUDE_PLUGIN_ROOT` or `/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID}/scripts/tmux-bus.sh`.
+Use the literal `{plugin-root}` path from the generated prompt for every bus call. Do not construct a temporary link path from a session identifier.

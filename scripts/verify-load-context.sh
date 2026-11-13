@@ -12,6 +12,9 @@ fi
 unset MERIDIAN_MIGRATION_SOURCE
 set -u
 
+SESSION_KEY="${CLAUDE_SESSION_ID:-root-$(printf "%s\n%s\n" "${CLAUDE_PLUGIN_ROOT:-}" "$(git rev-parse --show-toplevel 2>/dev/null || pwd -P)" | shasum -a 256 | cut -c1-64)}"
+[ "$SESSION_KEY" != root- ] || { echo "MERIDIAN: plugin root hash unavailable" >&2; exit 1; }
+
 case "${1:-}" in
 state)
 head -40 .meridian/STATE.md 2>/dev/null || echo "No state found"
@@ -20,7 +23,6 @@ phases)
 ls .meridian/phases/ 2>/dev/null || echo "No phases directory"
 ;;
 phase-state)
-SESSION_KEY="${CLAUDE_SESSION_ID:-root-$(printf %s "$(git rev-parse --show-toplevel 2>/dev/null || pwd -P)" | shasum -a 256 | cut -c1-64)}"
 L="/tmp/.meridian-plugin-root-link-${SESSION_KEY}"
 P="/tmp/.meridian-phase-detect-${SESSION_KEY}.txt"
 PD=""
@@ -54,10 +56,9 @@ else
 fi
 ;;
 compact)
-bash "/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-root-$(printf %s "$(git rev-parse --show-toplevel 2>/dev/null || pwd -P)" | shasum -a 256 | cut -c1-64)}/scripts/suggest-compact.sh" verify 2>/dev/null || true
+bash "/tmp/.meridian-plugin-root-link-${SESSION_KEY}/scripts/suggest-compact.sh" verify 2>/dev/null || true
 ;;
 verify-context)
-SESSION_KEY="${CLAUDE_SESSION_ID:-root-$(printf %s "$(git rev-parse --show-toplevel 2>/dev/null || pwd -P)" | shasum -a 256 | cut -c1-64)}"
 P="/tmp/.meridian-phase-detect-${SESSION_KEY}.txt"
 PD=""
 [ -f "$P" ] && PD=$(cat "$P")
@@ -79,7 +80,6 @@ fi
 echo "verify_context=deferred_until_target_resolution"
 ;;
 uat-resume)
-SESSION_KEY="${CLAUDE_SESSION_ID:-root-$(printf %s "$(git rev-parse --show-toplevel 2>/dev/null || pwd -P)" | shasum -a 256 | cut -c1-64)}"
 L="/tmp/.meridian-plugin-root-link-${SESSION_KEY}"
 P="/tmp/.meridian-phase-detect-${SESSION_KEY}.txt"
 PD=""
@@ -123,7 +123,7 @@ else
 fi
 ;;
 qa-summary)
-bash "/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-root-$(printf %s "$(git rev-parse --show-toplevel 2>/dev/null || pwd -P)" | shasum -a 256 | cut -c1-64)}/scripts/extract-verified-items.sh" .meridian/phases/*/ 2>/dev/null || true
+bash "/tmp/.meridian-plugin-root-link-${SESSION_KEY}/scripts/extract-verified-items.sh" .meridian/phases/*/ 2>/dev/null || true
 ;;
 *)
   printf "Usage: %s <state|phases|phase-state|compact|verify-context|uat-resume|qa-summary>\n" "$0" >&2

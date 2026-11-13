@@ -23,7 +23,7 @@ Working directory (store as `{PROJECT_ROOT}`):
 Plugin root and pre-computed state (first line is `LINK`, remaining lines are `PD`):
 
 ```bash
-!`SESSION_KEY="${CLAUDE_SESSION_ID:-root-$(printf %s "$(git rev-parse --show-toplevel 2>/dev/null || pwd -P)" | shasum -a 256 | cut -c1-64)}"; L="/tmp/.meridian-plugin-root-link-${SESSION_KEY}"; R="$L/scripts/resolve-phase-state.sh"; [ -f "$R" ] || R="${CLAUDE_PLUGIN_ROOT:-}/scripts/resolve-phase-state.sh"; [ -f "$R" ] || { echo "MERIDIAN: plugin root unavailable. Restart this session to recreate $L." >&2; exit 1; }; bash "$R"`
+!`SESSION_KEY="${CLAUDE_SESSION_ID:-root-$(printf "%s\n%s\n" "${CLAUDE_PLUGIN_ROOT:-}" "$(git rev-parse --show-toplevel 2>/dev/null || pwd -P)" | shasum -a 256 | cut -c1-64)}"; [ "$SESSION_KEY" != root- ] || { echo "MERIDIAN: plugin root hash unavailable" >&2; exit 1; }; L="/tmp/.meridian-plugin-root-link-${SESSION_KEY}"; R="$L/scripts/resolve-phase-state.sh"; [ -f "$R" ] || R="${CLAUDE_PLUGIN_ROOT:-}/scripts/resolve-phase-state.sh"; [ -f "$R" ] || { echo "MERIDIAN: plugin root unavailable. Restart this session to recreate $L." >&2; exit 1; }; bash "$R"`
 ```
 
 Config:
@@ -33,7 +33,7 @@ Config:
 ```
 
 ```bash
-!`bash "/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-root-$(printf %s "$(git rev-parse --show-toplevel 2>/dev/null || pwd -P)" | shasum -a 256 | cut -c1-64)}/scripts/suggest-compact.sh" execute 2>/dev/null || true`
+!`SESSION_KEY="${CLAUDE_SESSION_ID:-root-$(printf "%s\n%s\n" "${CLAUDE_PLUGIN_ROOT:-}" "$(git rev-parse --show-toplevel 2>/dev/null || pwd -P)" | shasum -a 256 | cut -c1-64)}"; [ "$SESSION_KEY" != root- ] || { echo "MERIDIAN: plugin root hash unavailable" >&2; exit 1; }; bash "/tmp/.meridian-plugin-root-link-${SESSION_KEY}/scripts/suggest-compact.sh" execute 2>/dev/null || true`
 ```
 
 ## Index freshness gate
@@ -119,11 +119,11 @@ Read `{LINK}/references/transit-mode-bootstrap.md` and follow it. `{LINK}` is th
 5. Update STATE.md by calling bootstrap-state.sh. Extract `PROJECT_NAME` from PROJECT.md, derive `MILESTONE_NAME` from the scope description (step 2), and use the phase count from step 3. The script preserves existing project-level sections (Todos, Decisions, Blockers, Codebase Profile) while restoring the `## Current Phase` section:
 
    ```bash
-   bash /tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-root-$(printf %s "$(git rev-parse --show-toplevel 2>/dev/null || pwd -P)" | shasum -a 256 | cut -c1-64)}/scripts/bootstrap/bootstrap-state.sh .meridian/STATE.md "$PROJECT_NAME" "$MILESTONE_NAME" "$PHASE_COUNT"
+   bash "{LINK}/scripts/bootstrap/bootstrap-state.sh" .meridian/STATE.md "$PROJECT_NAME" "$MILESTONE_NAME" "$PHASE_COUNT"
    ```
 
    Do NOT write next-action suggestions (e.g. "Run /meridian:transit --plan 1") into the Todos section. Those are ephemeral display output from suggest-next.sh, not persistent state.
-6. Write milestone context to `.meridian/CONTEXT.md` using the template from `/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-root-$(printf %s "$(git rev-parse --show-toplevel 2>/dev/null || pwd -P)" | shasum -a 256 | cut -c1-64)}/templates/MILESTONE-CONTEXT.md`. Capture:
+6. Write milestone context to `.meridian/CONTEXT.md` using the template from `{LINK}/templates/MILESTONE-CONTEXT.md`. Capture:
    - **Gathered date** and **Calibration** (builder or architect, inferred from conversation signals, using the same calibration as the Discussion Engine)
    - **Scope Boundary:** the user's scope description from step 2
    - **Decomposition Decisions:** rationale for phase count, grouping, and ordering from step 3. Includes **Scope Coverage** (what the milestone covers vs what is explicitly excluded or deferred) as a subsection under Decomposition Decisions per the template structure.
@@ -133,7 +133,7 @@ Read `{LINK}/references/transit-mode-bootstrap.md` and follow it. `{LINK}` is th
 7. **Scope commit boundary (conditional):**
 
    ```bash
-   bash /tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-root-$(printf %s "$(git rev-parse --show-toplevel 2>/dev/null || pwd -P)" | shasum -a 256 | cut -c1-64)}/scripts/planning-git.sh commit-boundary "scope milestone" .meridian/config.json
+   bash "{LINK}/scripts/planning-git.sh" commit-boundary "scope milestone" .meridian/config.json
    ```
 
    With `planning_tracking=commit`, the helper commits `.meridian/` if changed (ROADMAP.md, STATE.md, CONTEXT.md, phase dirs). Other modes no-op.
@@ -150,15 +150,15 @@ Read `{LINK}/references/transit-mode-bootstrap.md` and follow it. `{LINK}` is th
 **Steps:**
 
 1. Determine target phase from $ARGUMENTS or auto-detection.
-2. Read `/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-root-$(printf %s "$(git rev-parse --show-toplevel 2>/dev/null || pwd -P)" | shasum -a 256 | cut -c1-64)}/references/discussion-engine.md` and follow its protocol for the target phase.
+2. Read `{LINK}/references/discussion-engine.md` and follow its protocol for the target phase.
 3. **Discussion commit boundary (conditional):**
 
    ```bash
-   bash /tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-root-$(printf %s "$(git rev-parse --show-toplevel 2>/dev/null || pwd -P)" | shasum -a 256 | cut -c1-64)}/scripts/planning-git.sh commit-boundary "discuss phase {NN}" .meridian/config.json
+   bash "{LINK}/scripts/planning-git.sh" commit-boundary "discuss phase {NN}" .meridian/config.json
    ```
 
    With `planning_tracking=commit`, the helper commits `{NN}-CONTEXT.md` and `discovery.json` if changed. Other modes no-op.
-4. Run `bash /tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-root-$(printf %s "$(git rev-parse --show-toplevel 2>/dev/null || pwd -P)" | shasum -a 256 | cut -c1-64)}/scripts/suggest-next.sh transit`.
+4. Run `bash "{LINK}/scripts/suggest-next.sh" transit`.
 
 ### Mode Assumptions
 
@@ -170,15 +170,15 @@ Read `{LINK}/references/transit-mode-bootstrap.md` and follow it. `{LINK}` is th
 **Steps:**
 
 1. Determine target phase from $ARGUMENTS or auto-detection.
-2. Read `/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-root-$(printf %s "$(git rev-parse --show-toplevel 2>/dev/null || pwd -P)" | shasum -a 256 | cut -c1-64)}/references/discussion-engine.md` and follow its protocol for the target phase. Pass "Discussion mode: assumptions" to the engine. Step 1.7 handles the assumptions workflow (codebase analysis, assumption formation, user correction, capture).
+2. Read `{LINK}/references/discussion-engine.md` and follow its protocol for the target phase. Pass "Discussion mode: assumptions" to the engine. Step 1.7 handles the assumptions workflow (codebase analysis, assumption formation, user correction, capture).
 3. **Discussion commit boundary (conditional):**
 
    ```bash
-   bash /tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-root-$(printf %s "$(git rev-parse --show-toplevel 2>/dev/null || pwd -P)" | shasum -a 256 | cut -c1-64)}/scripts/planning-git.sh commit-boundary "assumptions phase {NN}" .meridian/config.json
+   bash "{LINK}/scripts/planning-git.sh" commit-boundary "assumptions phase {NN}" .meridian/config.json
    ```
 
    With `planning_tracking=commit`, the helper commits `{NN}-CONTEXT.md` and `discovery.json` if changed. Other modes no-op.
-4. Run `bash /tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-root-$(printf %s "$(git rev-parse --show-toplevel 2>/dev/null || pwd -P)" | shasum -a 256 | cut -c1-64)}/scripts/suggest-next.sh transit`.
+4. Run `bash "{LINK}/scripts/suggest-next.sh" transit`.
 
 ### Mode UAT Remediation
 

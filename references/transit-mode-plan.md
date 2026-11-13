@@ -1,3 +1,5 @@
+Use `{LINK}` as the literal plugin root resolved by the parent command. Replace it before running helpers or reading files.
+
 ## Main-session Decision Handoffs
 
 
@@ -26,20 +28,20 @@ generator protocol.
 1. **Parse args:** Phase number (optional, auto-detected), --effort (optional, falls back to the configured value). Before planning, the main session derives `MILESTONE_SLUG` with `bash "{LINK}/scripts/derive-milestone-slug.sh" .meridian`, then runs `bash "{LINK}/scripts/milestone-branch.sh" start .meridian "$MILESTONE_SLUG"` to cover milestones that bootstrap created. Stop on failure and never delegate Git actions.
 2. **Phase context:** Resolve CONTEXT path:
    ```bash
-   CONTEXT_NAME=$(bash /tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/resolve-artifact-path.sh context "{phase-dir}")
+   CONTEXT_NAME=$(bash "{LINK}/scripts/resolve-artifact-path.sh" context "{phase-dir}")
    ```
    If `{phase-dir}/${CONTEXT_NAME}` exists, include it in Lead agent context. If not, proceed without it. Users who want context run `/meridian:discuss {NN}` first.
 3. **Research routing:** Run `bash "{LINK}/scripts/pipeline-research.sh" .meridian "{phase-dir}" "{effort}"` before planning, including turbo. Stop on helper failure. When `research_required=true`, run the Scout research step below before planning. Every non-turbo workflow effort retains its existing research step when no research artifact exists. `research_forced=true` also requires the emitted artifact before planning, including turbo. Otherwise turbo research stays optional, and existing research remains available to Lead.
    - The detected catalog route resolves only at Scout generation time. If that route is unavailable, generation fails clearly. Never skip required research silently.
    - Determine the next plan number `{MM}` and resolve artifact paths:
      ```bash
-     RESOLVE_SCRIPT="/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/resolve-artifact-path.sh"
+     RESOLVE_SCRIPT="{LINK}/scripts/resolve-artifact-path.sh"
      NEXT_PLAN_NAME=$(bash "$RESOLVE_SCRIPT" plan "{phase-dir}")
      MM=$(echo "$NEXT_PLAN_NAME" | sed 's/^[0-9]*-\([0-9]*\)-.*/\1/')
      RESEARCH_NAME=$(bash "$RESOLVE_SCRIPT" phase-research "{phase-dir}")
      ```
     - Check for phase-wide research `{phase-dir}/${RESEARCH_NAME}` (preferred). If phase-wide does not exist, treat historical `{phase-dir}/{NN}-01-RESEARCH.md` as brownfield phase research only in the absence of higher-numbered per-plan research. Compute it with: `OTHER_PLAN_RESEARCH=$(find "{phase-dir}" -maxdepth 1 -name "{NN}-[0-9][0-9]*-RESEARCH.md" ! -name "{NN}-01-RESEARCH.md" -print -quit 2>/dev/null); if [ -f "{phase-dir}/{NN}-01-RESEARCH.md" ] && [ -z "$OTHER_PLAN_RESEARCH" ]; then BROWNFIELD_RESEARCH="{phase-dir}/{NN}-01-RESEARCH.md"; fi`. If `$OTHER_PLAN_RESEARCH` is non-empty, leave `$BROWNFIELD_RESEARCH` empty because multiple per-plan research files remain distinct and do not count as phase-wide research.
-   - **If neither exists:** With `config_context_compiler=true`, compile Scout context first: `bash /tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/compile-context.sh {phase} scout {phases_dir}`. If the compiler produced `.context-scout.md`, include it in the Scout prompt and describe it as: "compiled context. It includes milestone scope decisions (decomposition rationale, scope boundaries, cross-phase key decisions) and phase operational context (goal, success criteria, matched requirements, conventions, changed files)."
+   - **If neither exists:** With `config_context_compiler=true`, compile Scout context first: `bash "{LINK}/scripts/compile-context.sh" {phase} scout {phases_dir}`. If the compiler produced `.context-scout.md`, include it in the Scout prompt and describe it as: "compiled context. It includes milestone scope decisions (decomposition rationale, scope boundaries, cross-phase key decisions) and phase operational context (goal, success criteria, matched requirements, conventions, changed files)."
      Read `prefer_teams` through `scripts/meridian-config.sh get .meridian prefer_teams`.
      - **Multi-stream research:** Use this path only for a phase with 2 to 4 facets that have no real dependency between them. It also requires a `prefer_teams` value other than `never`. For each facet, follow `references/agent-spawn-protocol.md`. Issue a separate solo `scout` command contract with that facet's exact `{phase-dir}/{NN}-RESEARCH-{facet-slug}.md` write allowance. Run the generic `scripts/agent-generator.sh scout` call and advance the contract to `dispatched`. Spawn all generated Scouts in one turn with their printed Agent-call parameters and no team or worktree fields. Each prompt covers one facet. The main session waits for all results, checks each file, and synthesizes canonical `{phase-dir}/${RESEARCH_NAME}` while retaining facet files as provenance.
      - **Single-Scout fallback:** Issue one solo `scout` contract with `{phase-dir}/${RESEARCH_NAME}` as its exact write allowance. Generate and spawn it through the same protocol. Use `Agent`, not the removed `Task` tool.
@@ -51,7 +53,7 @@ generator protocol.
    - For turbo, skip optional research only. Required research still runs before the turbo planning shortcut.
 4. **Research commit boundary (conditional):** Run this step only after a step 3 Scout spawn (new RESEARCH.md written):
    ```bash
-  PG_SCRIPT="/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/planning-git.sh"
+  PG_SCRIPT="{LINK}/scripts/planning-git.sh"
    if [ -f "$PG_SCRIPT" ]; then
      bash "$PG_SCRIPT" commit-boundary "research phase {NN}" .meridian/config.json
    else
@@ -59,10 +61,10 @@ generator protocol.
    fi
    ```
    With `planning_tracking=commit`, the helper commits a changed RESEARCH.md. This step does not run for pre-existing research or when no Scout ran.
-5. **Context compilation:** With `config_context_compiler=true`, run `bash /tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/compile-context.sh {phase} lead {phases_dir}`. If the compiler produced `.context-lead.md`, include it in Lead agent context. When including it in the Lead prompt, describe its contents: "Read `.context-lead.md` for compiled context. It includes milestone scope decisions (decomposition rationale, scope boundaries, cross-phase key decisions) and operational context (phase goal, success criteria, matched requirements, active decisions, research findings)."
+5. **Context compilation:** With `config_context_compiler=true`, run `bash "{LINK}/scripts/compile-context.sh" {phase} lead {phases_dir}`. If the compiler produced `.context-lead.md`, include it in Lead agent context. When including it in the Lead prompt, describe its contents: "Read `.context-lead.md` for compiled context. It includes milestone scope decisions (decomposition rationale, scope boundaries, cross-phase key decisions) and operational context (phase goal, success criteria, matched requirements, active decisions, research findings)."
 6. **Turbo shortcut:** For effort=turbo, skip Lead. Resolve the plan filename:
    ```bash
-   TURBO_PLAN=$(bash /tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/resolve-artifact-path.sh plan "{phase-dir}")
+   TURBO_PLAN=$(bash "{LINK}/scripts/resolve-artifact-path.sh" plan "{phase-dir}")
    ```
    Read phase reqs from ROADMAP.md, create single lightweight plan as `${TURBO_PLAN}` in the phase directory.
 7. **Other efforts:**
@@ -80,7 +82,7 @@ generator protocol.
    - Display `◆ Spawning Lead agent...` -> `✓ Lead agent complete`.
 8. **Normalize plan filenames:**
     ```bash
-    NORM_SCRIPT="/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/normalize-plan-filenames.sh"
+    NORM_SCRIPT="{LINK}/scripts/normalize-plan-filenames.sh"
     if [ -f "$NORM_SCRIPT" ]; then
       bash "$NORM_SCRIPT" "{phase_dir}"
     fi
@@ -98,7 +100,7 @@ generator protocol.
    ```
 11. **Planning commit boundary (conditional):**
    ```bash
-  PG_SCRIPT="/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/planning-git.sh"
+  PG_SCRIPT="{LINK}/scripts/planning-git.sh"
    if [ -f "$PG_SCRIPT" ]; then
      bash "$PG_SCRIPT" commit-boundary "plan phase {NN}" .meridian/config.json
    else

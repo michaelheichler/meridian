@@ -1,3 +1,5 @@
+Use `{LINK}` as the literal plugin root resolved by the parent command. Replace it before running helpers or reading files.
+
 # Meridian Transit Input Parsing
 
 ## Main-session Decision Handoffs
@@ -27,13 +29,13 @@ Loaded via `@${CLAUDE_PLUGIN_ROOT}/references/transit-input-parsing.md` from `co
 
 **Pre-parse (todo number resolution)**: If $ARGUMENTS is a bare integer (matches `^[0-9]+$` with no other text or flags), inspect the persisted session snapshot from the latest `/meridian:list-todos` invocation. Do this before you decide whether this integer is a todo or a phase target:
 ```bash
-bash "/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/todo-lifecycle.sh" snapshot-show
+bash "{LINK}/scripts/todo-lifecycle.sh" snapshot-show
 ```
 - If the snapshot is present and `filter=null`, resolve the integer as a todo selection via:
   ```bash
-  bash "/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/resolve-todo-item.sh" <N> --session-snapshot --require-unfiltered --validate-live
+  bash "{LINK}/scripts/resolve-todo-item.sh" <N> --session-snapshot --require-unfiltered --validate-live
   ```
-  If `status` is `"ok"`, preserve `TODO_SELECTED=true` and store the full payload as `TODO_SELECTED_JSON`. Then replace $ARGUMENTS with the item's `command_text` and keep the resolved `ref`/`state_path` metadata for later pickup. If the resolved `state_path` points under `.meridian/milestones/`, STOP with the message `This todo came from archived milestone state. Restore the writable root STATE.md first by restarting so session-start.sh can run migration, or run 'bash /tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/migrate-orphaned-state.sh .meridian'.`. Do not continue using the archived description as live work input.
+  If `status` is `"ok"`, preserve `TODO_SELECTED=true` and store the full payload as `TODO_SELECTED_JSON`. Then replace $ARGUMENTS with the item's `command_text` and keep the resolved `ref`/`state_path` metadata for later pickup. If the resolved `state_path` points under `.meridian/milestones/`, STOP with the message `This todo came from archived milestone state. Restore the writable root STATE.md first by restarting so session-start.sh can run migration, or run 'bash "{LINK}/scripts/migrate-orphaned-state.sh" .meridian'.`. Do not continue using the archived description as live work input.
 - If the snapshot is present and `filter` is non-null, do **not** treat the integer as a claimable backlog todo. Preserve the existing bare phase-number path instead. If the integer later fails to resolve as a valid phase target, fail closed with: 
 
 ```text
@@ -45,11 +47,11 @@ Current list view is filtered, rerun unfiltered /meridian:list-todos before usin
 
 If `TODO_SELECTED_JSON` exists and its `ref` is non-null, eagerly load detail during Input Parsing, before routing commits to the todo-derived request:
 ```bash
-bash "/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/todo-details.sh" get {hash}
+bash "{LINK}/scripts/todo-details.sh" get {hash}
 ```
 If `status` is `"ok"`, store `DETAIL_STATUS=ok`, `detail.context`, and `detail.files` for later use. If `status` is `"not_found"` or `"error"`, record the matching `DETAIL_STATUS` value and run:
 ```bash
-bash "/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/todo-lifecycle.sh" detail-warning {hash}
+bash "{LINK}/scripts/todo-lifecycle.sh" detail-warning {hash}
 ```
 Continue without detail.
 
@@ -59,7 +61,7 @@ Continue without detail.
 
 When the chosen route does commit to the todo-derived request, claim it exactly once before entering the chosen mode body by piping `TODO_SELECTED_JSON` into:
 ```bash
-bash "/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/todo-lifecycle.sh" pickup /meridian:transit {DETAIL_STATUS} {cleanup_policy}
+bash "{LINK}/scripts/todo-lifecycle.sh" pickup /meridian:transit {DETAIL_STATUS} {cleanup_policy}
 ```
 When `DETAIL_STATUS=ok`, set `{cleanup_policy}` to `safe`. Otherwise set it to `keep`. If the helper returns `status="error"`, STOP with its `message` value. If it returns `status="partial"`, continue but surface the helper's `warning` value so cleanup state stays explicit.
 
@@ -116,12 +118,12 @@ Explicit `--import [path]` routes to Import mode before state detection. Clear n
 If no $ARGUMENTS, evaluate phase-detect.sh output. First match determines mode:
 
 **Phase-detect error guard (NON-NEGOTIABLE)**: If the output contains `phase_detect_error=true`, display:
-"⚠ Phase detection failed. Run `bash /tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/phase-detect.sh` manually to debug."
+"⚠ Phase detection failed. Run `bash "{LINK}/scripts/phase-detect.sh"` manually to debug."
 STOP. Do NOT manually scan for project state or improvise routing, because incorrect routing can corrupt archived milestones.
 
 **Misnamed plan auto-repair**: If the output contains `misnamed_plans=true`, normalize all phase directories before routing:
 ```bash
-NORM_SCRIPT="/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/normalize-plan-filenames.sh"
+NORM_SCRIPT="{LINK}/scripts/normalize-plan-filenames.sh"
 if [ -f "$NORM_SCRIPT" ]; then
   for pdir in .meridian/phases/*/; do
     [ -d "$pdir" ] && bash "$NORM_SCRIPT" "$pdir"
@@ -167,7 +169,7 @@ Persisted QA remediation / known-issues backlog is the authoritative plain `/mer
 
 **Re-verify after remediation (needs_reverification), IMMEDIATE EXECUTION (NON-NEGOTIABLE)**:
 When `next_phase_state=needs_reverification`, execute these steps inline in the same turn. Do NOT create tasks, read protocol files, or perform any intermediate planning:
-1. Run: `bash /tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/prepare-reverification.sh {phase-dir}`
+1. Run: `bash "{LINK}/scripts/prepare-reverification.sh" {phase-dir}`
 2. **Error guard**: If the script fails (non-zero exit), display the error message and **STOP**. Do not attempt to enter Verify mode with stale/missing context.
 3. Parse output: `archived=kept|in-round-dir|<original-uat-basename>`, `skipped=already_archived|ready_for_verify|cap_reached`, `round_file=...`, `phase=NN`, `layout=...`
   If `skipped=cap_reached`, display the UAT remediation cap banner and STOP. Use `max_rounds={N}` from the script output:
@@ -186,13 +188,13 @@ When `next_phase_state=needs_reverification`, execute these steps inline in the 
    If no earlier case matches and `archived=` is the original phase-root UAT basename (flat/legacy layout), display "Archived previous UAT → {round_file}. Starting fresh re-verification."
 5. Refresh verify context and UAT resume metadata for that phase:
   ```bash
-  bash /tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/compile-verify-context-for-uat.sh "{phase-dir}"
-  bash /tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/extract-uat-resume.sh "{phase-dir}"
+  bash "{LINK}/scripts/compile-verify-context-for-uat.sh" "{phase-dir}"
+  bash "{LINK}/scripts/extract-uat-resume.sh" "{phase-dir}"
   ```
   Use this refreshed output in place of the pre-computed verify blocks from Context.
   **uat_path validation (defense-in-depth)**: The current remediation round has a round-scoped UAT path. It is `remediation/uat/round-{RR}/R{RR}-UAT.md` for round-dir layout and `remediation/round-{RR}/R{RR}-UAT.md` for legacy layout. If the refreshed `uat_path` does not already point at that path, run:
   ```bash
-  bash /tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/uat-remediation-state.sh get-or-init "{phase-dir}" major
+  bash "{LINK}/scripts/uat-remediation-state.sh" get-or-init "{phase-dir}" major
   ```
   Parse `round=RR` and `layout=...`, then override `uat_path` with the matching round-scoped path for that layout before entering Verify mode.
 6. **Continue directly into Verify mode below** for that phase, do NOT stop, do NOT tell the user to run a separate command.
@@ -247,23 +249,23 @@ QA freshness could not be proven
   Then continue with QA:
   - If the phase-level verification artifact does not yet exist, backfill tracked known issues from completed summaries before QA starts:
     ```bash
-    bash "/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/track-known-issues.sh" sync-summaries "{phase-dir}" 2>/dev/null || true
+    bash "{LINK}/scripts/track-known-issues.sh" sync-summaries "{phase-dir}" 2>/dev/null || true
     ```
     This backfill is only for the first phase-level QA run after execution. Do not reuse it for round-scoped remediation verification or generic stale-verification reruns.
   ```bash
-  bash "/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/track-known-issues.sh" sync-verification "{phase-dir}" "{QA-output-path}" 2>/dev/null || true
+  bash "{LINK}/scripts/track-known-issues.sh" sync-verification "{phase-dir}" "{QA-output-path}" 2>/dev/null || true
   ```
   After sync-verification, auto-promote surviving known issues to `STATE.md ## Todos`:
   ```bash
-  bash "/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/track-known-issues.sh" promote-todos "{phase-dir}" 2>/dev/null || true
+  bash "{LINK}/scripts/track-known-issues.sh" promote-todos "{phase-dir}" 2>/dev/null || true
   ```
   Then run the deterministic gate:
   ```bash
-  bash "/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/qa-result-gate.sh" "{phase-dir}"
+  bash "{LINK}/scripts/qa-result-gate.sh" "{phase-dir}"
   ```
   **Follow `qa_gate_routing` output exactly, with no exceptions, no judgment, no rationalization. Do NOT evaluate whether a failure looks justified or acceptable. Do NOT treat a failure as minor. The gate script already made the decision:**
   - `qa_gate_routing=PROCEED_TO_UAT` → proceed to Verify mode (UAT)
-  - `qa_gate_routing=REMEDIATION_REQUIRED` → init QA remediation: `bash /tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/qa-remediation-state.sh init {phase-dir}`, then enter QA Remediation mode below. If `qa_gate_known_issues_override=true`, the contract verification passed but `{qa_gate_known_issue_count}` unresolved tracked known issues remain in `{phase-dir}/known-issues.json`.
+  - `qa_gate_routing=REMEDIATION_REQUIRED` → init QA remediation: `bash "{LINK}/scripts/qa-remediation-state.sh" init {phase-dir}`, then enter QA Remediation mode below. If `qa_gate_known_issues_override=true`, the contract verification passed but `{qa_gate_known_issue_count}` unresolved tracked known issues remain in `{phase-dir}/known-issues.json`.
   - `qa_gate_routing=QA_RERUN_REQUIRED` → re-spawn QA agent immediately (max 2 retries).
     - If `qa_gate_deviation_override=true`, tell QA: "Previous QA run found PASS but SUMMARY.md files contain {qa_gate_deviation_count} deviations that were not reflected as FAIL checks. Each deviation MUST become a FAIL check, do not rationalize deviations as acceptable."
     - If `qa_gate_plan_coverage` is present, tell QA: "Previous QA run only verified {qa_gate_plans_verified_count}/{qa_gate_plan_count} plans. Every plan in the phase must be verified, include all plan IDs in plans_verified."
@@ -277,7 +279,7 @@ When `next_phase_state=needs_qa_remediation`, resume QA remediation at the persi
 
 **Execution model:** This mode runs inline, the orchestrator manages stage transitions and spawns agents for the actual work within each stage. Do not decompose the stages into TaskCreate items, they are sequential steps of this conversation, not delegated tasks.
 
-1. Read current state: `bash /tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/qa-remediation-state.sh get-or-init {phase-dir}`
+1. Read current state: `bash "{LINK}/scripts/qa-remediation-state.sh" get-or-init {phase-dir}`
   Parse output: `stage`, `round`, `round_dir`, `source_verification_path`, `source_fail_count`, `known_issues_path`, `known_issues_count`, `input_mode`, `verification_path`.
    If remediation state was absent, `get-or-init` initializes round 01 before stage-specific routing. This is the deterministic stage-less resume path for a persisted known-issues backlog.
   <qa_remediation_artifact_contract>
@@ -343,7 +345,7 @@ Create `R{RR}-PLAN.md` in `{round_dir}`.
 - Scope the plan to those failures (what to fix, which files, acceptance criteria)
 - Before probing for an existing plan, run the normalizer on `{round_dir}`:
     ```bash
-    NORM_SCRIPT="/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/normalize-plan-filenames.sh"
+    NORM_SCRIPT="{LINK}/scripts/normalize-plan-filenames.sh"
     if [ -f "$NORM_SCRIPT" ]; then
       bash "$NORM_SCRIPT" "{round_dir}"
     fi
@@ -355,21 +357,21 @@ Create `R{RR}-PLAN.md` in `{round_dir}`.
 - The main session coordinates the remediation loop and spawns exactly one generated `lead` to write `{round_dir}/R{RR}-PLAN.md`.
   - Follow `references/agent-spawn-protocol.md`. Issue a solo read-only `lead` command contract for job `R{RR} remediation planning` with no write allowance. Run the generic `scripts/agent-generator.sh` and advance the contract to `dispatched`. Then use the printed Agent-call parameters and `SPAWN_READY` name without re-resolving model, effort, or turns.
   - Use the generated name for both `subagent_type` and `name`. Omit team and worktree fields for this solo spawn. The Lead returns complete plan content. The main session writes the canonical plan before normalization and validation.
-  - Lead prompt MUST include the authoritative `round_dir`, `source_verification_path`, `known_issues_path`, and output path `{round_dir}/R{RR}-PLAN.md`. The failed-check and known-issue inputs above. The deviation-classification and known-issue-resolution requirements above. And `Read the remediation plan template at /tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/templates/REMEDIATION-PLAN.md and follow its structure exactly.`
+  - Lead prompt MUST include the authoritative `round_dir`, `source_verification_path`, `known_issues_path`, and output path `{round_dir}/R{RR}-PLAN.md`. The failed-check and known-issue inputs above. The deviation-classification and known-issue-resolution requirements above. And `Read the remediation plan template at {LINK}/templates/REMEDIATION-PLAN.md and follow its structure exactly.`
   - After Lead returns, apply the no-tool circuit breaker in `references/subagent-contracts.md` before normalization, plan validation, or state advancement. If it triggers (unavailable tools are a provisioning failure), STOP without advancing `.qa-remediation-stage` or retrying the same prompt.
   - Normalize plan filenames before validation:
     ```bash
-    NORM_SCRIPT="/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/normalize-plan-filenames.sh"
+    NORM_SCRIPT="{LINK}/scripts/normalize-plan-filenames.sh"
     if [ -f "$NORM_SCRIPT" ]; then
       bash "$NORM_SCRIPT" "{round_dir}"
     fi
     ```
   - Run the validator on the exact QA remediation plan artifact before advancing:
     ```bash
-    bash /tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/validate-uat-remediation-artifact.sh plan "{round_dir}/R{RR}-PLAN.md"
+    bash "{LINK}/scripts/validate-uat-remediation-artifact.sh" plan "{round_dir}/R{RR}-PLAN.md"
     ```
     If validation fails, display the validator error and STOP without advancing `.qa-remediation-stage`. Do not search for an alternate PLAN.md.
-  - After plan validation passes, advance state: `bash /tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/qa-remediation-state.sh advance {phase-dir}`
+  - After plan validation passes, advance state: `bash "{LINK}/scripts/qa-remediation-state.sh" advance {phase-dir}`
 
 #### stage=execute
 
@@ -380,7 +382,7 @@ Execute each `R{RR}-PLAN.md` task sequentially through `references/agent-spawn-p
 - Generated agents modify only contracted files and return structured evidence. They do not commit or persist remediation summaries.
 - The main session applies the no-tool circuit breaker. If it triggers (unavailable tools are a provisioning failure), do not commit, advance state, or retry the same prompt. Otherwise the main session reviews the critic or `test-dev` verdict. It then commits accepted output and appends the task evidence to `R{RR}-SUMMARY.md` with `templates/REMEDIATION-SUMMARY.md`.
 - The summary frontmatter must aggregate `commit_hashes`, `files_modified`, and `deviations`. For known-issue input, include one `known_issue_outcomes` entry per carried issue.
-  - After Dev completes without a no-tool provisioning failure, advance state: `bash /tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/qa-remediation-state.sh advance {phase-dir}`
+  - After Dev completes without a no-tool provisioning failure, advance state: `bash "{LINK}/scripts/qa-remediation-state.sh" advance {phase-dir}`
 
 #### stage=verify
 
@@ -401,15 +403,15 @@ Re-run QA.
 **Deterministic gate**:
   - Run the deterministic gate:
     ```bash
-    bash "/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/qa-result-gate.sh" "{phase-dir}"
+    bash "{LINK}/scripts/qa-result-gate.sh" "{phase-dir}"
     ```
     **Follow `qa_gate_routing` output exactly, with no exceptions, no judgment, no rationalization. Do NOT evaluate whether a failure looks justified or acceptable. Do NOT treat a failure as minor. The gate script already made the decision:**
-    - `qa_gate_routing=PROCEED_TO_UAT` → advance to done: `bash /tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/qa-remediation-state.sh advance {phase-dir}`, then **refresh verify context before entering Verify mode**:
+    - `qa_gate_routing=PROCEED_TO_UAT` → advance to done: `bash "{LINK}/scripts/qa-remediation-state.sh" advance {phase-dir}`, then **refresh verify context before entering Verify mode**:
       ```bash
-      bash /tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/compile-verify-context-for-uat.sh "{phase-dir}"
+      bash "{LINK}/scripts/compile-verify-context-for-uat.sh" "{phase-dir}"
       ```
       Use this fresh verify context and **continue directly into Verify mode** for the phase
-    - `qa_gate_routing=REMEDIATION_REQUIRED` → start new round: `bash /tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/qa-remediation-state.sh needs-round {phase-dir}`, loop back to stage=plan. If `qa_gate_known_issues_override=true`, unresolved tracked known issues remain in `{phase-dir}/known-issues.json`.
+    - `qa_gate_routing=REMEDIATION_REQUIRED` → start new round: `bash "{LINK}/scripts/qa-remediation-state.sh" needs-round {phase-dir}`, loop back to stage=plan. If `qa_gate_known_issues_override=true`, unresolved tracked known issues remain in `{phase-dir}/known-issues.json`.
     - `qa_gate_routing=QA_RERUN_REQUIRED` → re-spawn QA immediately (max 2 retries per round).
       - If `qa_gate_deviation_override=true`, tell QA: "Previous QA run found PASS but SUMMARY.md files contain {qa_gate_deviation_count} deviations that were not reflected as FAIL checks. Each deviation MUST become a FAIL check, do not rationalize deviations as acceptable."
       - If `qa_gate_plan_coverage` is present, tell QA: "Previous QA run only verified {qa_gate_plans_verified_count}/{qa_gate_plan_count} plans. Every plan in the phase must be verified, include all plan IDs in plans_verified."
@@ -423,7 +425,7 @@ Re-run QA.
 
 - **stage=done:** Re-compute verify context, then proceed to Verify mode (UAT) for the phase:
   ```bash
-  bash /tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/compile-verify-context-for-uat.sh "{phase-dir}"
+  bash "{LINK}/scripts/compile-verify-context-for-uat.sh" "{phase-dir}"
   ```
   Use this fresh verify context for the Verify mode CHECKPOINT loop.
 

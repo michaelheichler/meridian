@@ -10,16 +10,21 @@ if [ -f "$SCRIPT_DIR/lib/rename-migration.sh" ]; then
   MIGRATION_PROJECT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
   meridian_migrate_planning "$MIGRATION_PROJECT_ROOT" || exit 1
 fi
-PLANNING_DIR="${MERIDIAN_PLANNING_DIR:-.meridian}"
+PROJECT_ROOT="${MIGRATION_PROJECT_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd -P)}"
+PLANNING_DIR="${MERIDIAN_PLANNING_DIR:-$PROJECT_ROOT/.meridian}"
+export MERIDIAN_PLANNING_DIR="$PLANNING_DIR"
 
+export CLAUDE_PLUGIN_ROOT="$CANONICAL_ROOT"
 TMUX_BIND_JSON=""
 
-# Bash tool commands skip hook-wrapper, so this file is their only CDPATH reset.
-persist_cdpath_unset() {
-  local env_file="${CLAUDE_ENV_FILE:-}"
+# Because hook-only variables do not reach later Bash tools.
+persist_shell_environment() {
+  local env_file="${CLAUDE_ENV_FILE:-}" plugin_export
   [ -n "$env_file" ] && [ -w "$env_file" ] || return 0
-  # Unset because a CDPATH cd prints the path and breaks $(cd && pwd) captures.
+  # Unset because CDPATH makes cd print paths into command substitutions.
   grep -qxF 'unset CDPATH' "$env_file" 2>/dev/null || echo 'unset CDPATH' >> "$env_file" 2>/dev/null
+  printf -v plugin_export 'export CLAUDE_PLUGIN_ROOT=%q' "$CANONICAL_ROOT"
+  grep -qxF "$plugin_export" "$env_file" 2>/dev/null || printf '%s\n' "$plugin_export" >> "$env_file" 2>/dev/null
   return 0
 }
 
@@ -53,10 +58,12 @@ bind_tmux_bootstrap() {
   capability=''
 }
 
+SESSION_KEY="${CLAUDE_SESSION_ID:-root-$(printf "%s\n%s\n" "${CLAUDE_PLUGIN_ROOT:-}" "$(git rev-parse --show-toplevel 2>/dev/null || pwd -P)" | shasum -a 256 | cut -c1-64)}"
+[ "$SESSION_KEY" != root- ] || { echo "MERIDIAN: plugin root hash unavailable" >&2; exit 1; }
 if [ -f "$CANONICAL_ROOT/scripts/hook-wrapper.sh" ] && \
   [ -f "$CANONICAL_ROOT/scripts/ensure-plugin-root-link.sh" ] && \
   ! bash "$CANONICAL_ROOT/scripts/ensure-plugin-root-link.sh" \
-    "/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-root-$(printf %s "$(git rev-parse --show-toplevel 2>/dev/null || pwd -P)" | shasum -a 256 | cut -c1-64)}" "$CANONICAL_ROOT" >/dev/null 2>&1; then
+    "/tmp/.meridian-plugin-root-link-${SESSION_KEY}" "$CANONICAL_ROOT" >/dev/null 2>&1; then
   echo "MERIDIAN: SessionStart plugin root link bootstrap failed" >&2
   exit 1
 fi
@@ -67,7 +74,7 @@ if ! command -v jq >/dev/null 2>&1; then
 fi
 
 bind_tmux_bootstrap || exit 1
-persist_cdpath_unset
+persist_shell_environment
 
 HOOK_INPUT=""
 [ -t 0 ] || HOOK_INPUT=$(cat 2>/dev/null) || HOOK_INPUT=""
