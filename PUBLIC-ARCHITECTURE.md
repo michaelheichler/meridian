@@ -31,6 +31,12 @@ Project artifacts
 
 The control plane uses local files, small scripts, hooks, JSON, Markdown artifacts, and local locks. It does not require a server, queue, database, or remote telemetry service.
 
+SessionStart and command helpers share a temporary plugin link keyed by `CLAUDE_SESSION_ID`. When the session identifier is empty, they use `root-` plus the SHA-256 hash of the plugin root and project root on separate lines. The plugin component comes from `CLAUDE_PLUGIN_ROOT`, or stays empty when unavailable. The project component comes from the Git worktree root, or the physical working directory outside Git. Different plugin installations and projects therefore keep separate fallback links and phase-detection transport files. A missing hash stops link resolution instead of selecting a shared empty-key link.
+
+SessionStart exports its canonical plugin root through `CLAUDE_ENV_FILE` when the host provides a writable environment file. Later Bash tools then derive the same link key as hooks.
+
+SessionStart resolves the default planning directory from the project root and sweeps the agent manifest only when that directory exists. Before initialization it reports the missing planning directory without a manifest warning. Once the planning directory exists, manifest failures remain visible.
+
 ## Ownership model
 
 | Owner | Owns | Does not own |

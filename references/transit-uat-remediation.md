@@ -1,3 +1,5 @@
+Use `{LINK}` as the literal plugin root resolved by the parent command. Replace it before running helpers or reading files.
+
 # Meridian Transit UAT Remediation
 
 ## Main-session Decision Handoffs
@@ -29,7 +31,7 @@ Loaded via `@${CLAUDE_PLUGIN_ROOT}/references/transit-uat-remediation.md` from `
 
 **Execution model:** This mode runs inline. The orchestrator manages stage transitions (steps 1-5) and spawns agents for the work within each stage (step 6). The three stages (research, plan, execute) are sequential steps of this conversation, not delegated tasks. Do not decompose them into TaskCreate items.
 
-**Chain state tracking:** This mode uses `/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/uat-remediation-state.sh` to persist the current stage of the remediation chain on disk. This state file lets the chain resume correctly after compaction or session restart. The chain does NOT rely on prompt memory alone.
+**Chain state tracking:** This mode uses `{LINK}/scripts/uat-remediation-state.sh` to persist the current stage of the remediation chain on disk. This state file lets the chain resume correctly after compaction or session restart. The chain does NOT rely on prompt memory alone.
 
 **Steps:**
 1. For `next_phase_state=needs_uat_remediation`, resolve the target phase from pre-computed state (`next_phase`, `next_phase_slug`). Set `PHASE_DIR` to the resolved phase directory path.
@@ -40,7 +42,7 @@ Loaded via `@${CLAUDE_PLUGIN_ROOT}/references/transit-uat-remediation.md` from `
 3. Normalize the current issue list from the UAT read. For each failing test or discovered issue, capture `ID`, `SEVERITY`, and `DESCRIPTION`. Treat this normalized issue list as source-of-truth scope. Do NOT ask the user to restate issues already recorded in UAT.
 4. **Resolve remediation stage (single call):**
    ```bash
-   bash /tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/uat-remediation-state.sh get-or-init "$PHASE_DIR" "major"
+   bash "{LINK}/scripts/uat-remediation-state.sh" get-or-init "$PHASE_DIR" "major"
    ```
    For `uat_issues_major_or_higher=true`, use `major`. Otherwise use `minor` for the initial entry call.
    **Run directly (do NOT capture with `$()`).**
@@ -117,7 +119,7 @@ Under the no-tool invariant, treat unavailable tools as a provisioning failure, 
 
 If `research_path` from step 4 is non-empty, research already exists. Verify it before advancing:
 ```bash
-bash /tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/validate-uat-remediation-artifact.sh research "{research_path}"
+bash "{LINK}/scripts/validate-uat-remediation-artifact.sh" research "{research_path}"
 ```
 If validation fails, display the validator error and STOP without advancing state. Otherwise, skip to advancing the stage.
 
@@ -152,20 +154,20 @@ Skill activation:
 Tools:
 - Evaluate available MCP tools in your system context. If an MCP server provides documentation, search, or data retrieval capabilities relevant to the issues, note it in the Scout task context. Scout then prioritizes it over generic WebSearch or WebFetch.
 
-If you preselected one or more skills, run `bash "/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/extract-skill-follow-up-files.sh" "{all preselected skill names from the activation block}" 2>/dev/null || true` before spawning the UAT remediation research Scout. If the helper prints a `<skill_follow_up_files>` block, paste it immediately after the follow-up-read sentence in the spawned payload. Otherwise omit that block.
+If you preselected one or more skills, run `bash "{LINK}/scripts/extract-skill-follow-up-files.sh" "{all preselected skill names from the activation block}" 2>/dev/null || true` before spawning the UAT remediation research Scout. If the helper prints a `<skill_follow_up_files>` block, paste it immediately after the follow-up-read sentence in the spawned payload. Otherwise omit that block.
 
-Render the prompt prefix from `/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/references/skill-activation-payload.md` with the local `skill_calls`, task-specific `no_skill_reason`, and optional helper-emitted `follow_up_files_block`. Prepend the rendered bytes to the child prompt so the rendered skill outcome tag is its first line. Do not paste the template path, variables, or an unresolved `@` include into the child prompt.
+Render the prompt prefix from `{LINK}/references/skill-activation-payload.md` with the local `skill_calls`, task-specific `no_skill_reason`, and optional helper-emitted `follow_up_files_block`. Prepend the rendered bytes to the child prompt so the rendered skill outcome tag is its first line. Do not paste the template path, variables, or an unresolved `@` include into the child prompt.
 
 - **Live data validation:** For any issue that involves external data sources (APIs, databases, services), include this text in the Scout prompt: *"Public/anonymous HTTP validation uses WebFetch. Authenticated/private read-only probes use verified-safe Bash helper scripts or curl wrappers after preflight. Do not run unsafe or mutating probes. Defer those to Dev/Debugger. When live validation runs or is deferred, include `## Live Validation Evidence` with `command_shape`, `exit_status`, `redacted_evidence`, `expected_shape`, `confidence`, and `limitations_or_deferred_reason`."*
 - After Scout completes, verify the exact research artifact before advancing:
   - If Scout returns a no-tool/tool-provisioning failure, apply the circuit breaker above before running validation.
   ```bash
-  bash /tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/validate-uat-remediation-artifact.sh research "{round_dir}/R{RR}-RESEARCH.md"
+  bash "{LINK}/scripts/validate-uat-remediation-artifact.sh" research "{round_dir}/R{RR}-RESEARCH.md"
   ```
   If validation fails, display the validator error and STOP without advancing state. Do not search for an alternate RESEARCH.md.
 - Then advance:
   ```bash
-  bash /tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/uat-remediation-state.sh advance "$PHASE_DIR"
+  bash "{LINK}/scripts/uat-remediation-state.sh" advance "$PHASE_DIR"
   ```
 - Then continue to the next stage (`plan`).
 
@@ -173,7 +175,7 @@ Render the prompt prefix from `/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_
 
 If `plan_path` from step 4 is non-empty, the plan was already written in a previous session, do NOT re-plan. Verify it, read the existing plan, and advance directly to `execute`:
 ```bash
-bash /tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/validate-uat-remediation-artifact.sh plan "{plan_path}"
+bash "{LINK}/scripts/validate-uat-remediation-artifact.sh" plan "{plan_path}"
 ```
 If validation fails, display the validator error and STOP without advancing state. If validation succeeds, read the existing plan and advance directly to `execute`.
 
@@ -195,7 +197,7 @@ This is NOT "Plan mode steps 1-12", remediation has its own sequential flow that
 Include:
   - If `research_path` from step 4 is non-empty: `Read {research_path} for full research findings before planning.` (Lead must read the file, do NOT inline a summary.)
   - The priority-ranked issue list from step 5 with recurring-issue annotations.
-  - `"Read the remediation plan template at /tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/templates/REMEDIATION-PLAN.md and follow its structure exactly. This template is different from the regular PLAN.md, it has no wave or depends_on fields because remediation tasks are always sequential. Produce a flat ordered task list where each task can see the results of previous tasks."` (Lead must read the template file.)
+  - `"Read the remediation plan template at {LINK}/templates/REMEDIATION-PLAN.md and follow its structure exactly. This template is different from the regular PLAN.md, it has no wave or depends_on fields because remediation tasks are always sequential. Produce a flat ordered task list where each task can see the results of previous tasks."` (Lead must read the template file.)
   - Canonical target filename for the returned plan: `{round_dir}/R{RR}-PLAN.md` (using `round` from step 4 as `{RR}` and the absolute `round_dir` from step 4). The Lead returns content, and the main session writes it.
 - Display `◆ Spawning Lead agent...` → `✓ Lead agent complete`.
 - If Lead returns a no-tool/tool-provisioning failure, apply the circuit breaker above before normalizing or validating the plan.
@@ -203,19 +205,19 @@ Include:
 
 - Normalize plan filenames:
   ```bash
-  NORM_SCRIPT="/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/normalize-plan-filenames.sh"
+  NORM_SCRIPT="{LINK}/scripts/normalize-plan-filenames.sh"
   if [ -f "$NORM_SCRIPT" ]; then
     bash "$NORM_SCRIPT" "{round_dir}"
   fi
   ```
 - Verify the exact plan artifact before advancing:
   ```bash
-  bash /tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/validate-uat-remediation-artifact.sh plan "{round_dir}/R{RR}-PLAN.md"
+  bash "{LINK}/scripts/validate-uat-remediation-artifact.sh" plan "{round_dir}/R{RR}-PLAN.md"
   ```
   If validation fails, display the validator error and STOP without advancing state. Do not search for an alternate PLAN.md.
 - After planning completes, advance:
   ```bash
-  bash /tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/uat-remediation-state.sh advance "$PHASE_DIR"
+  bash "{LINK}/scripts/uat-remediation-state.sh" advance "$PHASE_DIR"
   ```
 
 Then continue to the next stage (`execute`). Follow the autonomy rules for user approval prompts.
@@ -246,8 +248,8 @@ Each group is the pair or trio required by `references/agent-spawn-protocol.md`.
 #### Follow-up context
 
 - After calling `Skill(...)`, read the specific additional files, sibling docs, or follow-up read steps that the loaded skill's instructions reference for the active task. Read them before reasoning or acting. Do not scan entire skill folders or read unrelated references.
-- If you preselected one or more skills, run `bash "/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/extract-skill-follow-up-files.sh" "{all preselected skill names from the activation block}" 2>/dev/null || true` before spawning the UAT remediation Dev. If the helper prints a `<skill_follow_up_files>` block, paste it immediately after the follow-up-read sentence in the spawned payload. Otherwise omit that block.
-- Render the prompt prefix from `/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/references/skill-activation-payload.md` with the local `skill_calls`, task-specific `no_skill_reason`, and optional helper-emitted `follow_up_files_block`. Prepend the rendered bytes to the child prompt so the rendered skill outcome tag is its first line. Do not paste the template path, variables, or an unresolved `@` include into the child prompt.
+- If you preselected one or more skills, run `bash "{LINK}/scripts/extract-skill-follow-up-files.sh" "{all preselected skill names from the activation block}" 2>/dev/null || true` before spawning the UAT remediation Dev. If the helper prints a `<skill_follow_up_files>` block, paste it immediately after the follow-up-read sentence in the spawned payload. Otherwise omit that block.
+- Render the prompt prefix from `{LINK}/references/skill-activation-payload.md` with the local `skill_calls`, task-specific `no_skill_reason`, and optional helper-emitted `follow_up_files_block`. Prepend the rendered bytes to the child prompt so the rendered skill outcome tag is its first line. Do not paste the template path, variables, or an unresolved `@` include into the child prompt.
 ### Execute tasks
 
 - For each task in the plan, sequentially:
@@ -259,7 +261,7 @@ Each group is the pair or trio required by `references/agent-spawn-protocol.md`.
 - **Frontmatter finalization:** After all implementation groups complete, the main session updates the YAML frontmatter in `{summary_path}`. It sets `status` to `complete` (or `partial`/`failed`) and `completed` to today's date. It sets `tasks_completed` to the actual count. It populates `commit_hashes`, `files_modified`, and `deviations` with aggregate data from all task sections. Strip any trailing blank lines from the file.
 - **Summary validation:** Verify the exact summary artifact before advancing:
   ```bash
-  bash /tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/validate-uat-remediation-artifact.sh summary "{summary_path}"
+  bash "{LINK}/scripts/validate-uat-remediation-artifact.sh" summary "{summary_path}"
   ```
   If validation fails, display the validator error and STOP without advancing state. Do not search for an alternate SUMMARY.md.
 - **Worktree cleanup scan:** After execution, look for orphan CC worktrees:
@@ -271,10 +273,10 @@ Each group is the pair or trio required by `references/agent-spawn-protocol.md`.
   If the scan finds worktrees, display this warning to the user. Do NOT auto-delete them.
 - Advance:
   ```bash
-  bash /tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/uat-remediation-state.sh advance "$PHASE_DIR"
+  bash "{LINK}/scripts/uat-remediation-state.sh" advance "$PHASE_DIR"
   ```
 - **Chain into re-verification (NON-NEGOTIABLE):** After the execute stage advances to `done`, the remediation round is complete but NOT verified. Immediately prepare for re-verification and chain into Verify mode in the same turn:
-  - Run: `bash /tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/prepare-reverification.sh "$PHASE_DIR"`
+  - Run: `bash "{LINK}/scripts/prepare-reverification.sh" "$PHASE_DIR"`
   - **Error guard:** On a script failure (non-zero exit), display the error message and **STOP**. Do not attempt to enter Verify mode with stale/missing context.
   - Parse output: `archived=kept|in-round-dir|<original-uat-basename>`, `skipped=already_archived|ready_for_verify|cap_reached`, `round_file=...`, `phase=NN`, `layout=...`
   - If `skipped=cap_reached`, display the same UAT remediation cap banner as the top-level re-verification flow and STOP. Use `max_rounds={N}` from the script output.
@@ -284,7 +286,7 @@ Each group is the pair or trio required by `references/agent-spawn-protocol.md`.
     Otherwise, display "Archived previous UAT → {round_file}. Starting re-verification."
   - Planning artifact boundary commit (conditional):
     ```bash
-    PG_SCRIPT="/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/planning-git.sh"
+    PG_SCRIPT="{LINK}/scripts/planning-git.sh"
     if [ -f "$PG_SCRIPT" ]; then
       bash "$PG_SCRIPT" commit-boundary "execute phase {NN} remediation round {RR}" .meridian/config.json
     else
@@ -293,7 +295,7 @@ Each group is the pair or trio required by `references/agent-spawn-protocol.md`.
     ```
   - **Continue directly into Verify mode** for this phase, do NOT stop, do NOT tell the user to run `/meridian:transit`. Enter Verify mode (below) inline in the same turn. The pre-computed verify context can be stale (the command's pre-computed context block built it at command load, before remediation). Re-compute it:
     ```bash
-    bash /tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/compile-verify-context-for-uat.sh "$PHASE_DIR"
+    bash "{LINK}/scripts/compile-verify-context-for-uat.sh" "$PHASE_DIR"
     ```
     **uat_path validation (defense-in-depth):** After parsing the fresh verify context, verify that `uat_path` already points at the current remediation round's round-scoped UAT path. That path is `remediation/uat/round-{RR}/R{RR}-UAT.md` for round-dir layout and `remediation/round-{RR}/R{RR}-UAT.md` for legacy layout. If it does not (for example, it points to the phase-root UAT like `03-UAT.md`), override it. Use the round-scoped path for the current round from `uat-remediation-state.sh`. This override keeps re-verification from overwriting the original phase-root UAT.
     Use this fresh verify context for the Verify mode UAT prompt loop.
@@ -308,7 +310,7 @@ Apply the no-tool circuit breaker in `references/subagent-contracts.md` to the q
 Under the no-tool invariant, treat unavailable tools as a provisioning failure, do not advance state, and do not retry the same prompt.
 
 ```bash
-bash /tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/uat-remediation-state.sh advance "$PHASE_DIR"
+bash "{LINK}/scripts/uat-remediation-state.sh" advance "$PHASE_DIR"
 ```
 
 Then chain into re-verification using the same steps as the execute stage above (prepare-reverification → commit boundary → Verify mode inline). Do NOT suggest `/meridian:transit`, enter Verify mode in the same turn.

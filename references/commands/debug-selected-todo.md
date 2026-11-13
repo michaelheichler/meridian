@@ -1,5 +1,5 @@
 <selected_todo_start_helper>
-Selected-todo mode applies when `$ARGUMENTS`, after removing only supported routing flags (`--competing`, `--parallel`, `--serial`), contains exactly one numeric token and no other freeform text. Preserve those supported routing flags and pass them through to the helper. Any other text stays on the manual/freeform debug path.
+Selected-todo mode applies when the user input above, after removing only supported routing flags (`--competing`, `--parallel`, `--serial`), contains exactly one numeric token and no other freeform text. Preserve those supported routing flags and pass them through to the helper. Any other text stays on the manual/freeform debug path.
 
 When selected-todo mode applies, call the deterministic helper exactly once:
 
@@ -18,7 +18,7 @@ Helper output schema is status-variant. Always parse `.status` before reading br
 
 Parse `.status` first and branch explicitly:
 
-- If `.status == "ok"`, store `SELECTED_TODO_MODE=true`, store `SELECTED_TODO_START_JSON=helper_output`, replace `$ARGUMENTS` with `.bug_desc`, set `session_id=.session.id`, `session_file=.session.file`, and `session_status=.session.status`, then continue the workflow using helper-provided fields.
+- If `.status == "ok"`, store `SELECTED_TODO_MODE=true`, store `SELECTED_TODO_START_JSON=helper_output`, use `.bug_desc` as the working bug description, set `session_id=.session.id`, `session_file=.session.file`, and `session_status=.session.status`, then continue the workflow using helper-provided fields.
 - If `.status == "already_complete"`, show the completed session id/file/status, the helper message, and any pickup warning. STOP. Do not create, resume, or investigate another session.
 - If `.status == "error"` and `.session` exists, show that the debug session already exists or that the helper created it before the pickup/session error, include `.session.id`, `.session.file`, `.session.status`, surface `.message`, and tell the user to inspect or resume that session instead of implying no session exists. STOP.
 - For any other error, STOP with `.message // "Selected todo startup failed. Rerun /meridian:list-todos and try again."`.

@@ -1,3 +1,5 @@
+Use `{LINK}` as the literal plugin root resolved by the parent command. Replace it before running helpers or reading files.
+
 ## Main-session Decision Handoffs
 
 Only the main session can call `AskUserQuestion`. Before each `AskUserQuestion`
@@ -21,10 +23,10 @@ documented Next Up command.
 4. Renumber FORWARD. For each phase > removed, rename dir {NN} -> {NN-1}, rename internal files, update frontmatter, and update depends_on.
 5. Update ROADMAP.md. Remove the phase entry + details, renumber subsequent entries, update deps, and update the progress table.
 6. If `.meridian/CONTEXT.md` exists, rewrite it to reflect the updated milestone decomposition (phase count/grouping, ordering, scope coverage, and requirement mapping). Preserve project-level key decisions and deferred ideas where still valid.
-7. Update STATE.md phase total: `bash /tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/update-phase-total.sh .meridian --removed {NN}` (where {NN} is the removed phase number from step 1).
+7. Update STATE.md phase total: `bash "{LINK}/scripts/update-phase-total.sh" .meridian --removed {NN}` (where {NN} is the removed phase number from step 1).
 8. **Phase mutation commit boundary (conditional):**
    ```bash
-  PG_SCRIPT="/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/planning-git.sh"
+  PG_SCRIPT="{LINK}/scripts/planning-git.sh"
    if [ -f "$PG_SCRIPT" ]; then
      bash "$PG_SCRIPT" commit-boundary "remove phase {NN}" .meridian/config.json
    else

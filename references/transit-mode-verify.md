@@ -1,3 +1,5 @@
+Use `{LINK}` as the literal plugin root resolved by the parent command. Replace it before running helpers or reading files.
+
 ## Main-session Decision Handoffs
 
 Only the main session can call `AskUserQuestion`. Before each `AskUserQuestion`
@@ -17,8 +19,9 @@ If no SUMMARY.md exists, STOP "Phase {NN} has no completed plans. Run /meridian:
 **Steps:**
 1. Resolve the final target phase from the selected Verify route before compiling context. An explicit `--verify N` target wins. Otherwise, use the phase chosen by state-driven Verify or auto-UAT routing. Set `PHASE_DIR` to that exact active phase directory. Check whether an upstream re-verification or QA-remediation transition in this turn already produced fresh verify context and UAT resume metadata for the same `PHASE_DIR`. If so, reuse that output. Otherwise run:
    ```bash
-   SESSION_KEY="${CLAUDE_SESSION_ID:-default}"
-   L="/tmp/.meridian-plugin-root-link-${SESSION_KEY}"
+   SESSION_KEY="${CLAUDE_SESSION_ID:-root-$(printf "%s\n%s\n" "${CLAUDE_PLUGIN_ROOT:-}" "$(git rev-parse --show-toplevel 2>/dev/null || pwd -P)" | shasum -a 256 | cut -c1-64)}"
+   [ "$SESSION_KEY" != root- ] || { echo "MERIDIAN: plugin root hash unavailable" >&2; exit 1; }
+   L="{LINK}"
    P="/tmp/.meridian-phase-detect-${SESSION_KEY}.txt"
    PDIR="$PHASE_DIR"
    PD=""
@@ -100,7 +103,7 @@ If no SUMMARY.md exists, STOP "Phase {NN} has no completed plans. Run /meridian:
      fi
    )
    ```
-   This runtime call is route-local. Do not compile verify context while parsing inputs or routing to Plan, Discuss, Scope, Archive, or any other non-Verify mode. Read `/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/commands/verify.md` and use `VERIFY_CONTEXT` plus `UAT_RESUME` as the active protocol context. **Error guard:** Check `VERIFY_CONTEXT` for `verify_context_error=true` or `verify_context=unavailable`. On either value, display: "⚠ Verify context compilation failed. Run `bash /tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/compile-verify-context-for-uat.sh .meridian/phases/{NN}-{slug}` manually to debug." STOP. Do NOT improvise by scanning PLAN/SUMMARY files manually in this routed path.
+   This runtime call is route-local. Do not compile verify context while parsing inputs or routing to Plan, Discuss, Scope, Archive, or any other non-Verify mode. Read `{LINK}/commands/verify.md` and use `VERIFY_CONTEXT` plus `UAT_RESUME` as the active protocol context. **Error guard:** Check `VERIFY_CONTEXT` for `verify_context_error=true` or `verify_context=unavailable`. On either value, display: "⚠ Verify context compilation failed. Run `bash "{LINK}/scripts/compile-verify-context-for-uat.sh" .meridian/phases/{NN}-{slug}` manually to debug." STOP. Do NOT improvise by scanning PLAN/SUMMARY files manually in this routed path.
 2. Execute the verify.md steps inline in this conversation. Specifically, generate test scenarios (verify.md Step 4). Then run the CHECKPOINT loop (verify.md Step 5), presenting one test at a time via AskUserQuestion. Wait for the user's response before proceeding to the next test. Use the active `VERIFY_CONTEXT` aggregation and `UAT_RESUME` metadata for the target phase. Pass the full UAT resume metadata through to the verify protocol. Include `uat_resume_scenario`, `uat_resume_expected`, and any present summary-deviation source fields. This metadata lets verify.md ask the first resumed checkpoint without re-reading the UAT file. After each persisted answer, verify.md re-runs `extract-uat-resume.sh` and uses the refreshed deterministic fields for the next checkpoint. Do NOT read individual PLAN/SUMMARY files or scan-parse UAT.md for resume state.
 3. Display results per verify.md output format.
 4. **UAT Remediation Auto-Continuation:** This step applies only to a verify.md result that emitted `remediation_continue=true`. That signal appears only with `verify_scope=remediation` AND `status=issues_found` AND a run in orchestrated mode from transit.md. If `remediation_continue` was not set (first-time UAT, complete result, or standalone verify), skip this step. The command ends after step 3.
@@ -108,7 +111,7 @@ If no SUMMARY.md exists, STOP "Phase {NN} has no completed plans. Run /meridian:
    **Prepare the next remediation round through the safe transition helper:** Run `prepare-reverification.sh` exactly once for this transition. This helper finalizes and checks the active UAT before state mutation and applies the UAT remediation round cap. If nothing blocks the transition, the helper then performs the next-round transition. A direct `needs-round` call is not the transition path here because it can mutate `.uat-remediation-stage` before the current UAT is terminal.
 
    ```bash
-   _prepare_output=$(bash /tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/prepare-reverification.sh "{phase-dir}" 2>&1)
+   _prepare_output=$(bash "{LINK}/scripts/prepare-reverification.sh" "{phase-dir}" 2>&1)
    _prepare_status=$?
    ```
 
@@ -137,7 +140,7 @@ If no SUMMARY.md exists, STOP "Phase {NN} has no completed plans. Run /meridian:
    **Resolve the new round:** Prefer the `round=` value that `prepare-reverification.sh` emits. If `round=` is absent after a successful prepare, read the current round as a read-only fallback:
    ```bash
    if [ -z "$_round" ]; then
-     _round=$(bash /tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/uat-remediation-state.sh current-round "{phase-dir}" 2>/dev/null)
+     _round=$(bash "{LINK}/scripts/uat-remediation-state.sh" current-round "{phase-dir}" 2>/dev/null)
    fi
    ```
    If `_round` is empty after both attempts, treat the prepare output as malformed and STOP.

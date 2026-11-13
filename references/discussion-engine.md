@@ -28,7 +28,7 @@ As an alternative to the question-driven flow, read the codebase first, form evi
 
 Activation, first match wins.
 
-1. `--assumptions` in `$ARGUMENTS` → assumptions path
+1. `--assumptions` in the user input above → assumptions path
 2. `discussion_mode` is `"assumptions"` in `.meridian/config.json` → assumptions path
 3. `discussion_mode` is `"auto"` and `.meridian/codebase/META.md` exists → assumptions path
 4. Otherwise → questions path (Step 2)
