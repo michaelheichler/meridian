@@ -47,6 +47,36 @@ SPECS = {
     "uniq": Spec("cdu", {}, frozenset(), False, False),
     "cut": Spec("", {"d": ONE_CHAR, "f": FIELD_LIST, "c": FIELD_LIST}, frozenset(), False, True),
 }
+INSPECTION_SPECS = {
+    "grep": Spec(
+        "nivclLwxEFohHsqrR",
+        {"e": ANY_TEXT, "m": COUNT, "A": COUNT, "B": COUNT, "C": COUNT},
+        frozenset({"--color=never", "--recursive", "--line-number", "--ignore-case"}),
+        False,
+        True,
+    ),
+    "rg": Spec(
+        "nivclLwxFohHsquUS",
+        {
+            "e": ANY_TEXT, "m": COUNT, "A": COUNT, "B": COUNT, "C": COUNT,
+            "g": ANY_TEXT, "t": ANY_TEXT, "T": ANY_TEXT,
+        },
+        frozenset({
+            "--files", "--hidden", "--no-ignore", "--line-number", "--ignore-case",
+            "--fixed-strings", "--count", "--files-with-matches", "--color=never",
+        }),
+        False,
+        True,
+    ),
+}
+FIND_FLAGS = frozenset({
+    "-H", "-L", "-P", "-print", "-print0", "-empty", "-readable", "-writable",
+    "-executable", "-prune", "-not", "!", "-a", "-and", "-o", "-or",
+})
+FIND_VALUES = {
+    "-name": ANY_TEXT, "-iname": ANY_TEXT, "-path": ANY_TEXT, "-ipath": ANY_TEXT,
+    "-type": re.compile(r"[bcdflps]"), "-maxdepth": COUNT, "-mindepth": COUNT,
+}
 FIRST_STAGE = frozenset({"cat", "grep", "head", "tail", "wc", "ls", "stat"})
 PIPE_STAGE = frozenset({"grep", "head", "tail", "wc", "sort", "uniq", "cut"})
 
@@ -94,8 +124,8 @@ def _step(args: list[str], index: int, spec: Spec) -> Optional[int]:
     return _consume(arg, following, spec)
 
 
-def _flags_allowed(stage: list[str]) -> bool:
-    spec = SPECS.get(stage[0])
+def _flags_allowed(stage: list[str], specs: dict = SPECS) -> bool:
+    spec = specs.get(stage[0])
     if spec is None:
         return False
     args = stage[1:]
@@ -148,6 +178,36 @@ def _split_stages(tokens: list[str]) -> list[list[str]]:
         else:
             stages[-1].append(token)
     return stages
+
+
+def _find_read_only(args: list[str]) -> bool:
+    index = 0
+    while index < len(args):
+        arg = args[index]
+        if arg in FIND_FLAGS or not arg.startswith("-"):
+            index += 1
+            continue
+        pattern = FIND_VALUES.get(arg)
+        if pattern is None or index + 1 == len(args):
+            return False
+        if not pattern.fullmatch(args[index + 1]):
+            return False
+        index += 2
+    return True
+
+
+def is_source_inspection(command: str, cwd: str) -> bool:
+    """Wider than is_plain_read_command, because agents must search hook sources while pending-work reads stay narrow."""
+    if is_plain_read_command(command, cwd):
+        return True
+    if RAW_FORBIDDEN.search(command):
+        return False
+    tokens = _tokenize(command)
+    if not tokens or any(token == "|" or _is_operator(token) for token in tokens):
+        return False
+    if tokens[0] == "find":
+        return _find_read_only(tokens[1:])
+    return _flags_allowed(tokens, INSPECTION_SPECS)
 
 
 def is_plain_read_command(command: str, cwd: str) -> bool:
