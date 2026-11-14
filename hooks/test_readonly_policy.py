@@ -1,3 +1,4 @@
+import os
 import unittest
 
 from hooks.guard_fixtures import GUARD_PATHS_STEM, bash_reason, build_workspace, module_path
@@ -15,6 +16,13 @@ ALLOWED_READS = (
     f"stat -L {SOURCE}",
     f"grep -n -i -e foo {SOURCE}",
     f"grep -A2 -m 3 --color=never foo {SOURCE}",
+    f"grep -rn foo {SOURCE}",
+    f"grep -R foo {SOURCE}",
+    "grep -rn x hooks/*.py",
+    f"rg -n x {SOURCE}",
+    "rg -n x hooks/*.py",
+    f"find {SOURCE} -name {GUARD_PATHS_STEM}.py",
+    f"find hooks -name {GUARD_PATHS_STEM}.py",
     f"sed -n 1,5p {SOURCE}",
     f"cat {SOURCE} | sort -nr -k2 | uniq -c | cut -d, -f1",
     f"cat {SOURCE} | grep -v foo | wc -l",
@@ -27,8 +35,22 @@ DENIED_SOURCE_ACCESS = (
     f"head -z {SOURCE}",
     f"cat --show-all {SOURCE}",
     f"ls -R {SOURCE}",
-    f"grep -rn foo {SOURCE}",
-    f"grep -R foo {SOURCE}",
+    f"find {SOURCE} -exec cat {SOURCE} +",
+    f"find {SOURCE} -delete",
+    f"find {SOURCE} -fprint out",
+    f"rg --pre cat x {SOURCE}",
+    "grep -rn x hooks/*.py",
+    "rg x hooks/*.py",
+    "grep -rn x .meridian/.runtime",
+    "grep -rn x .meridian/.runtime/decisions/secret.txt",
+    "grep x .meridian/.runtime/decisions/*.txt",
+    "rg x .meridian/.runtime/decisions/*.txt",
+    f"grep x {SOURCE} .meridian/.runtime/decisions/*.txt",
+    f"grep -rn x {SOURCE}; true",
+    f"grep -rn x {SOURCE} && true",
+    f"grep -rn x {SOURCE} | wc -l",
+    f"grep -rn x {SOURCE} $(true)",
+    f"grep -rn x {SOURCE} > out",
     f"grep -f patterns {SOURCE}",
     f"grep -d recurse foo {SOURCE}",
     f"grep --include=x foo {SOURCE}",
@@ -66,12 +88,18 @@ FILES0_LOOKALIKES = ("rm --force plain.txt", "rg --files", "cat --number plain.t
 class SourceReadAllowlistTest(unittest.TestCase):
     def test_plain_read_forms_of_a_guard_source_file_are_allowed(self) -> None:
         space = build_workspace(self)
+        sources = space.root / "hooks"
+        sources.mkdir()
+        os.link(SOURCE, sources / f"{GUARD_PATHS_STEM}.py")
         for command in (*ALLOWED_READS, "cat -n plain.txt"):
             with self.subTest(command=command):
                 self.assertIsNone(bash_reason(command, space.root))
 
     def test_flags_and_shapes_outside_the_allowlist_are_denied(self) -> None:
         space = build_workspace(self)
+        sources = space.root / "hooks"
+        sources.mkdir()
+        (sources / f"{GUARD_PATHS_STEM}.py").symlink_to(SOURCE)
         for command in (*DENIED_SOURCE_ACCESS, f"cat -n {SOURCE} link.txt"):
             with self.subTest(command=command):
                 self.assertIsNotNone(bash_reason(command, space.root))
