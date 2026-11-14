@@ -1,6 +1,6 @@
 {
   "name": "meridian",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "Meridian combines a plan, build, QA, and UAT pipeline with dynamically generated role agents, plan-tracked milestones, and hook-enforced skill and scope gates.",
   "author": {
     "name": "Michael Heichler"

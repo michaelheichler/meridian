@@ -1,7 +1,16 @@
 # Changelog
 This file records user-visible Meridian releases. Keep the newest entry first.
 
-## [Unreleased]
+## [1.0.6] - 2026-11-14
+
+### Guard and startup fixes from running Meridian on itself
+
+- Transit sends a project without `.meridian/` to init before the index gate runs.
+- The fallback plugin link uses the project root alone, so hooks and command shells find the same link.
+- Commands take user input once, inside a delimited block.
+- The guard protects only the running installed copy. A source checkout of Meridian stays editable, and the owner can open a time-limited unlock with `meridian-guard allow --for 8h`.
+- Read-only searches over hook sources pass, quoted globs in known inspection commands stay literal, and the embedded interpreter check judges each command segment on its own.
+- Update checks use the renamed `michaelheichler/meridian` repository.
 
 ### Meridian rename
 
