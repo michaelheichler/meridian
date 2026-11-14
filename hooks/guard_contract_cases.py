@@ -8,7 +8,9 @@ from pathlib import Path
 from unittest.mock import patch
 
 from hooks import guard_unlock
-from hooks.guard_fixtures import HOOKS_DIR, build_workspace, tool_reason
+from hooks.guard_fixtures import (
+    HOOKS_DIR, build_workspace, installed_command_result, installed_source_workspace, tool_reason,
+)
 
 DURATION_SECONDS = {"30m": 1800, "2h": 7200, "12h": 43200}
 CLI_ROWS = (("30m", "allow", (0, True)), ("2h", "allow", (0, True)),
@@ -89,6 +91,37 @@ COMMAND_ROWS = (
     ("quoted-git-pager-env", "GIT_PAGER=rm git -C {installed} log 'hooks/*.py'", True),
     ("escaped-git-glob", "git -C {installed} ls-files hooks/\\*.py", True),
     ("escaped-grep-glob", "grep -rn x hooks/\\*.py", True),
+)
+SEGMENT_COMMAND_ROWS = (
+    ("compound-read", "git diff --check && git diff -- hooks/guard_paths.py README.md && python3 -m unittest discover -s hooks -t . -p 'test_*.py'", False),
+    ("compound-read-with-environment", "git diff --check && git diff -- hooks/guard_paths.py README.md && TMPDIR={root}/tmp python3 -m unittest discover -s hooks -t . -p 'test_*.py' > {root}/unittest.log 2>&1", False),
+    ("and-read-chain", "git diff -- hooks/guard_paths.py && python3 -m unittest discover -s hooks -t . -p 'test_*.py'", False),
+    ("semicolon-read-chain", "git diff -- hooks/guard_paths.py; python3 -m unittest discover", False),
+    ("newline-read-chain", "git diff -- hooks/guard_paths.py\npython3 -m unittest discover", False),
+    ("pipeline-interpreter", "echo {installed}/hooks/guard_paths.py | python3 -c 'print(1)'", True),
+    ("newline-pipeline-interpreter", "echo {installed}/hooks/guard_paths.py |\n python3 -c 'print(1)'", True),
+    ("heredoc-interpreter", "cat <<EOF | python3\n{installed}/hooks/guard_paths.py\nEOF", True),
+    ("bash-unlock-cli", "bash -c 'bash {installed}/scripts/meridian-guard.sh allow --for 1h'", True),
+    ("bash-unlock-python", "bash -c 'python3 {installed}/hooks/guard_unlock.py allow --for 1h'", True),
+    ("bash-unlock-cd", "bash -c 'cd {installed}/scripts && bash meridian-guard.sh allow --for 1h'", True),
+    ("eval-unlock-cli", "eval 'bash {installed}/scripts/meridian-guard.sh allow --for 1h'", True),
+    ("xargs-unlock-cli", "echo x | xargs bash -c 'bash {installed}/scripts/meridian-guard.sh allow --for 1h'", True),
+    ("exec-unlock-python", 'python3 -c "exec(open(\'{installed}/hooks/guard_unlock.py\').read())" allow --for 1h', True),
+    ("perl-unlock-cli", "perl -e 'system(q(bash {installed}/scripts/meridian-guard.sh allow --for 1h))'", True),
+    ("node-unlock-cli", 'node -e "require(\'child_process\').execSync(\'bash {installed}/scripts/meridian-guard.sh allow --for 1h\')"', True),
+    ("python-append-module", 'python3 -c "open(\'{installed}/hooks/guard_paths.py\',\'a\').write(\'x\')"', True),
+    ("python-append-hooks", 'python3 -c "open(\'{installed}/hooks/hooks.json\',\'a\').write(\'x\')"', True),
+    ("shell-append-hooks", "sh -c 'echo x >> {installed}/hooks/hooks.json'", True),
+    ("python-chdir-append", 'python3 -c "import os; os.chdir(\'{installed}/hooks\'); open(\'hooks.json\',\'a\').write(\'x\')"', True),
+    ("cd-installed-write", "cd {installed} && echo x > hooks/guard_paths.py", True),
+    ("pushd-installed-delete", "pushd {installed} && rm hooks/guard_paths.py", True),
+    ("checkout-installed-glob", "git -C {installed} checkout -- 'hooks/*.py'", True),
+    ("git-grep-open-installed", "git -C {installed} grep -nOrm x 'hooks/*'", True),
+    ("runtime-read-chain", "cat .meridian/.runtime/decisions/a.json && python3 -m unittest", True),
+    ("grant-read-chain", "cat ~/.local/state/meridian-guard/grant.json && python3 -m unittest", True),
+    ("attached-code-chdir", 'python3 -c"import os; os.chdir(\'{installed}/hooks\'); open(\'x.py\',\'w\')"', True),
+    ("quoted-separator-argument", "python3 -c 'import sys;open(sys.argv[-1])' '&&' {installed}/hooks/x.py", True),
+    ("comment-apostrophe-interpreter", "echo ok # it's\npython3 -c 'open(\"{installed}/hooks/x.py\")'", True),
 )
 WRAPPERS = ("source {script}", ". {script}", "env bash {script}", "sudo bash {script}",
             "nohup bash {script}", "time bash {script}", "xargs bash {script}",
@@ -225,6 +258,10 @@ def policy_results(case) -> object:
     with patch.dict(os.environ, {"CLAUDE_PLUGIN_ROOT": str(space.root / "missing")}):
         reason = tool_reason("Write", {"file_path": "${CLAUDE_PLUGIN_ROOT}/hooks/hooks.json"}, space.root)
         yield "unresolved-root-hooks-json", reason is not None, True
+    installed_space = installed_source_workspace(case)
+    for label, command, denied in SEGMENT_COMMAND_ROWS:
+        command = command.format(root=installed_space.root, installed=installed_space.root / "installed")
+        yield label, installed_command_result(installed_space, command), (0, "", "deny" if denied else None)
 
 
 def grant_results(case) -> object:

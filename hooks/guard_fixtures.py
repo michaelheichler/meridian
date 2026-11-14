@@ -115,3 +115,35 @@ def run_entry(args: list[str], stdin_text: str = "") -> subprocess.CompletedProc
 
 def run_mode(mode: str, event: dict) -> subprocess.CompletedProcess:
     return run_entry([mode], json.dumps(event))
+
+
+def installed_source_workspace(case: unittest.TestCase) -> Workspace:
+    space = build_workspace(case)
+    modules = tuple(module for module in HOOKS_DIR.glob("*.py")
+                    if not module.name.startswith("test_")
+                    and module.stem not in ("guard_fixtures", "guard_contract_cases"))
+    for name in ("installed", "source"):
+        hooks = space.root / name / "hooks"
+        hooks.mkdir(parents=True)
+        for module in modules:
+            shutil.copyfile(module, hooks / module.name)
+        scripts = hooks.parent / "scripts"
+        scripts.mkdir()
+        shutil.copyfile(HOOKS_DIR.parent / "scripts/meridian-guard.sh", scripts / "meridian-guard.sh")
+    source = space.root / "source"
+    shutil.copyfile(HOOKS_DIR.parent / "README.md", source / "README.md")
+    subprocess.run(["git", "init", "-q", str(source)], check=True, capture_output=True)
+    return space
+
+
+def installed_command_result(space: Workspace, command: str) -> tuple:
+    installed = space.root / "installed"
+    source = space.root / "source"
+    environment = {**os.environ, "CLAUDE_PLUGIN_ROOT": str(installed), "PYTHONDONTWRITEBYTECODE": "1"}
+    result = subprocess.run(
+        [sys.executable, str(installed / "hooks" / ENTRY_POINT.name), "pretool"],
+        input=json.dumps(tool_event("Bash", {"command": command}, source)),
+        cwd=source, env=environment, capture_output=True, text=True, timeout=30, check=False,
+    )
+    decision = json.loads(result.stdout or "{}").get("hookSpecificOutput", {}).get("permissionDecision")
+    return result.returncode, result.stderr, decision
