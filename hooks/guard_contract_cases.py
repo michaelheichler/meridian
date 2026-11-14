@@ -56,6 +56,39 @@ COMMAND_ROWS = (
     ("grant-glob", "cat ~/.local/state/meridian-guard/*.json", True),
     ("grant-bracket", "cat ~/.local/state/meridian-guar[d]/grant.json", True),
     ("grant-variable", "cat ${{HOME}}/.local/state/meridian-guard/grant.json", True),
+    ("quoted-overflow-inspection", "git -C {root} ls-files 'tmp/**'", False),
+    ("double-quoted-overflow-inspection", 'git -C {root} ls-files "tmp/**"', False),
+    ("quoted-python-inspection", "git ls-files '*.py'", False),
+    ("double-quoted-python-inspection", 'git ls-files "*.py"', False),
+    ("quoted-grep-inspection", "grep -rn x 'hooks/*.py'", False),
+    ("double-quoted-grep-inspection", 'grep -rn x "hooks/*.py"', False),
+    ("quoted-installed-inspection", "git -C {installed} ls-files 'hooks/**'", False),
+    ("double-quoted-installed-inspection", 'git -C {installed} ls-files "hooks/**"', False),
+    ("quoted-repeated-C-inspection", "git -C {root} -C {installed} ls-files 'hooks/**'", False),
+    ("double-quoted-repeated-C-inspection", 'git -C {root} -C {installed} ls-files "hooks/**"', False),
+    ("comment-apostrophe-mutation", "echo hi # it's\nrm {installed}/hooks/*.py", True),
+    ("quoted-checkout", "git -C {installed} checkout -- 'hooks/*.py'", True),
+    ("quoted-restore", "git -C {installed} restore -- 'hooks/*.py'", True),
+    ("quoted-clean", "git -C {installed} clean -fdx 'hooks/*.py'", True),
+    ("quoted-find-delete", "find {root} -path '*/.runtime/*' -delete", True),
+    ("quoted-find-or-delete", "find {root} -path '*/.runtime/*' -o -delete", True),
+    ("quoted-find-ok", "find {root} -path '*/.runtime/*' -ok rm {{}} +", True),
+    ("quoted-find-fls", "find {root} -path '*/.runtime/*' -fls out", True),
+    ("quoted-find-fprintf", "find {root} -path '*/.runtime/*' -fprintf out '%p'", True),
+    ("quoted-git-grep-open", "git -C {installed} grep --open-files=rm x 'hooks/*.py'", True),
+    ("quoted-git-grep-open-abbreviation", "git -C {installed} grep --open-files-in-pa=rm x 'hooks/*.py'", True),
+    ("quoted-git-grep-nO", "git -C {installed} grep -nOrm x 'hooks/*.py'", True),
+    ("quoted-git-grep-iO", "git -C {installed} grep -iOrm x 'hooks/*.py'", True),
+    ("quoted-git-grep-cO", 'git -C {installed} grep -cO"rm" x \'hooks/*.py\'', True),
+    ("quoted-git-diff-ext", "git -C {installed} diff --ext 'hooks/*.py'", True),
+    ("quoted-git-diff-tex", "git -C {installed} diff --tex 'hooks/*.py'", True),
+    ("quoted-git-diff-text", "git -C {installed} diff --text 'hooks/*.py'", True),
+    ("quoted-git-global-config", "git -c diff.external=rm -C {installed} diff 'hooks/*.py'", True),
+    ("quoted-git-global-pager", "git --paginate -C {installed} log 'hooks/*.py'", True),
+    ("quoted-git-external-diff-env", "GIT_EXTERNAL_DIFF=rm git -C {installed} diff 'hooks/*.py'", True),
+    ("quoted-git-pager-env", "GIT_PAGER=rm git -C {installed} log 'hooks/*.py'", True),
+    ("escaped-git-glob", "git -C {installed} ls-files hooks/\\*.py", True),
+    ("escaped-grep-glob", "grep -rn x hooks/\\*.py", True),
 )
 WRAPPERS = ("source {script}", ". {script}", "env bash {script}", "sudo bash {script}",
             "nohup bash {script}", "time bash {script}", "xargs bash {script}",
@@ -77,6 +110,11 @@ def contract_workspace(case) -> object:
     (space.root / "installed-alias").symlink_to(installed, target_is_directory=True)
     (space.root / "source-alias.py").symlink_to(installed / "hooks/guard_paths.py")
     os.link(installed / "hooks/guard_paths.py", space.root / "hard-alias.py")
+    (space.root / "hooks/installed-alias.py").symlink_to(installed / "hooks/guard_paths.py")
+    bulk = space.root / "tmp"
+    bulk.mkdir()
+    for number in range(1100):
+        (bulk / f"entry-{number}").touch()
     environment = patch.dict(os.environ, {"CLAUDE_PLUGIN_ROOT": str(space.root / "installed-alias" / ".")})
     environment.start()
     case.addCleanup(environment.stop)
