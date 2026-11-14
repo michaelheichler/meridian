@@ -11,7 +11,7 @@ from hook_batch import BashBatch
 from hook_output import decode_output, merge_output
 
 
-QUESTION_TOOLS = "AskUserQuestion Agent TaskCreate TaskUpdate Write Edit NotebookEdit Bash Skill SendMessage Grep Glob"
+QUESTION_TOOLS = "AskUserQuestion Agent TaskCreate TaskUpdate Read Write Edit NotebookEdit Bash Skill SendMessage Grep Glob"
 PRETOOL = (
     (QUESTION_TOOLS, "user_question_guard", 5),
     ("Agent Task TaskCreate", "agent-spawn-guard.sh", 15),

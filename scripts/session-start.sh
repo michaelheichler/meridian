@@ -169,6 +169,13 @@ else
   fi
 fi
 
+printf -v GUARD_OWNER_COMMAND 'bash %q' "$CANONICAL_ROOT/scripts/meridian-guard.sh"
+CTX="$CTX
+Meridian guard owner CLI command is \`$GUARD_OWNER_COMMAND\`."
+GUARD_UNLOCK_CONTEXT=$(python3 "$CANONICAL_ROOT/hooks/guard_unlock.py" session-status 2>/dev/null) || GUARD_UNLOCK_CONTEXT=""
+[ -n "$GUARD_UNLOCK_CONTEXT" ] && CTX="$CTX
+$GUARD_UNLOCK_CONTEXT"
+
 [ -n "${TMUX_BIND_JSON:-}" ] && CTX="$CTX meridian tmux bind: ${TMUX_BIND_JSON}."
 [ -n "$MAP_TOOLS_ROUTE" ] && CTX="$CTX Map tools route: ${MAP_TOOLS_ROUTE}."
 [ -n "$MAP_STALE_CTX" ] && CTX="$CTX ${MAP_STALE_CTX}"

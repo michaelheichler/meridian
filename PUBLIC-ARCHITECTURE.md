@@ -37,6 +37,16 @@ SessionStart exports its canonical plugin root through `CLAUDE_ENV_FILE` when th
 
 SessionStart resolves the default planning directory from the project root and sweeps the agent manifest only when that directory exists. Before initialization it reports the missing planning directory without a manifest warning. Once the planning directory exists, manifest failures remain visible.
 
+## Guard source boundary
+
+The PreToolUse decision guard protects the full `hooks/` and `scripts/` trees in both the running installation and the canonical `CLAUDE_PLUGIN_ROOT`. It follows symlinks and protects directory replacement as well as existing and new files. If resolution fails, the guard protects module and script names everywhere. Agents may edit, write, or stage same-named source in another checkout. They may not execute decision runtime scripts or hook modules from any checkout, because those entry points can mutate trusted state.
+
+The owner CLI lives at `scripts/meridian-guard.sh` in the installation. SessionStart prints the full command with its absolute path so the owner does not need a plugin environment variable. Owner `!` commands bypass PreToolUse. The owner can append `allow --for 8h`, `status`, or `revoke` to that command. Grants accept whole minutes or hours and last at most twelve hours.
+
+The CLI writes an absolute expiry to `~/.local/state/meridian-guard/grant.json`, outside project state. Both the directory and the regular grant file must belong to the current user and deny access to other users. The guard rejects expired grants, malformed JSON, invalid expiry types, symlinks, and expiries more than twelve hours away. It reads this path directly and accepts no grant-path override. Tests can patch the state resolver or launch subprocesses with a temporary home directory.
+
+An active grant permits edits, writes, and staging of installed guard source. SessionStart emits one line with the grant expiry. Agents cannot modify the installed unlock CLI, run any copy of it, import `guard_unlock`, or access grant state, even during a grant. Plain reads and development edits of CLI source in another checkout remain available. These text-level checks provide guardrails rather than a security boundary against hostile same-user code, which can forge grants through indirect names or execute renamed copies and string-built names. Runtime protection never changes. The guard reserves `.meridian/.runtime`, `.runtime/decisions`, `.hook-transitions`, and pending decision records in every project for trusted hook transitions.
+
 ## Ownership model
 
 | Owner | Owns | Does not own |

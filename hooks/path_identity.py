@@ -127,7 +127,12 @@ class ProtectedIdentity:
 
     def _module_hit(self, real: str) -> bool:
         leaf = _stat_id(real)
-        return real.casefold() in self.module_reals or (leaf is not None and leaf in self.module_ids)
+        if real.casefold() in self.module_reals or (leaf is not None and leaf in self.module_ids):
+            return True
+        return any(
+            _within(real.casefold(), os.path.realpath(module).casefold())
+            for module in self.modules if module.is_dir()
+        )
 
     def hits(self, path: str) -> bool:
         real = os.path.realpath(path)

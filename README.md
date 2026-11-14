@@ -36,6 +36,18 @@ You type one command, and Meridian takes the project one correct step forward.
 
 Meridian runs on local files and small scripts written for the bash that ships with macOS, so it needs no server or account.
 
+## Guard source development
+
+Guard source protection covers the installed `hooks/` and `scripts/` trees, including new files and directory replacement. Meridian protects the canonical `CLAUDE_PLUGIN_ROOT` and the installation that runs the hook, so changing the environment does not unprotect the running copy. It follows symlinks. If root resolution fails, protection falls back to guard names everywhere. Agents may edit, write, and stage same-named files in another checkout, but they may not execute decision runtime scripts or hook modules from any location.
+
+SessionStart prints the owner CLI command with the absolute installed path. To patch the installed copy, copy that command into an owner `!` shell and append `allow --for 8h`. A terminal works too, and neither shell needs `CLAUDE_PLUGIN_ROOT`. Durations use whole minutes or hours, such as `30m` or `8h`, and cannot exceed `12h`. Use `status` to inspect the grant or `revoke` to remove it.
+
+The CLI stores an absolute expiry in `~/.local/state/meridian-guard/grant.json`, outside project state. The state directory and grant must belong to the current user and allow no access for other users. Expired or malformed grants allow nothing. An active grant lets agents edit, write, and stage installed guard source. SessionStart adds one line with the grant expiry. Agents cannot modify the installed unlock CLI, run any copy of it, import its Python module, or access grant state. Plain reads and development edits of CLI source in another checkout remain available. Owner `!` commands bypass PreToolUse and can manage the grant.
+
+The unlock never permits access to decision runtime state. Meridian continues to protect `.meridian/.runtime`, `.runtime/decisions`, `.hook-transitions`, and pending decision records in every project.
+
+These checks provide agent guardrails, not a security boundary against a hostile process. Same-user code can forge grants through indirect names, and renamed copies or string-built names can escape text-level checks. The unlock records owner intent but cannot authenticate every action by a process that already shares the owner account.
+
 ## Quick start
 
 After you add the marketplace and install the plugin, restart Claude Code.
