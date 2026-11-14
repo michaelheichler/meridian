@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import glob
 import os
 import re
 import shlex
@@ -13,13 +14,13 @@ if __package__:
     from .brace_expansion import ExpansionTooComplex, expand_braces
     from .decision_common import INVALID_STATE, DecisionStateError, require
     from .path_identity import ProtectedIdentity, TooManyMatches, expand_glob
-    from .read_only_command import is_source_inspection
+    from .read_only_command import is_git_inspection, is_source_inspection
     from .guard_unlock import active_expiry, state_directory
 else:
     from brace_expansion import ExpansionTooComplex, expand_braces
     from decision_common import INVALID_STATE, DecisionStateError, require
     from path_identity import ProtectedIdentity, TooManyMatches, expand_glob
-    from read_only_command import is_source_inspection
+    from read_only_command import is_git_inspection, is_source_inspection
     from guard_unlock import active_expiry, state_directory
 
 OptionalPath = Optional[Path]
@@ -117,6 +118,24 @@ def _has_glob(value: str) -> bool:
     return any(char in value for char in GLOB_CHARS)
 
 
+def _inspection_words(command: str, cwd: OptionalPath) -> Optional[list[str]]:
+    words = _words(command)
+    if not words or cwd is None or re.search(r"[#\n\r;&|<>()$`{]", command):
+        return words
+    inspection = is_git_inspection(words) if words[0] == "git" else is_source_inspection(command, str(cwd))
+    if not inspection:
+        return words
+    lexer = shlex.shlex(command, posix=False)
+    lexer.whitespace_split = True
+    try:
+        quoted = list(lexer)
+    except ValueError:
+        return words
+    if len(quoted) != len(words) or any(_words(raw) != [word] for raw, word in zip(quoted, words)):
+        return words
+    return [glob.escape(word) if raw[0] in "'\"" else word for raw, word in zip(quoted, words)]
+
+
 def _candidates(word: str) -> set[str]:
     values = {word, *word.split("="), *OPERATOR_SPLIT.split(word)}
     if word.startswith("-"):
@@ -206,7 +225,7 @@ def _parent_mutation(words: list[str], cwd: Path, identity: ProtectedIdentity) -
 
 
 def _command_hit(command: str, cwd: OptionalPath, scope: Scope) -> bool:
-    parsed = _words(command)
+    parsed = _inspection_words(command, cwd)
     words = _fallback_words(command) if parsed is None else parsed
     if _files0_hit(words):
         return True
@@ -248,7 +267,7 @@ def _plain_source_glob(word: str, cwd: Path) -> bool:
 
 
 def _read_exempt(command: str, cwd: OptionalPath) -> bool:
-    words = _words(command)
+    words = _inspection_words(command, cwd)
     if cwd is None or words is None or any(_has_expansion(word) for word in words):
         return False
     if any(_has_glob(word) and not _plain_source_glob(word, cwd) for word in words):

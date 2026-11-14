@@ -69,6 +69,26 @@ INSPECTION_SPECS = {
         True,
     ),
 }
+GIT_INSPECTION_SPECS = {
+    "ls-files": Spec("ztv", {}, frozenset({"--cached", "--stage", "--others", "--exclude-standard"}), False, True),
+    "log": Spec("p", {}, frozenset({"--oneline", "--stat", "--name-only", "--name-status", "--no-patch"}), False, True),
+    "show": Spec("p", {}, frozenset({"--oneline", "--stat", "--name-only", "--name-status", "--no-patch"}), False, True),
+    "status": Spec("sbz", {}, frozenset({"--short", "--branch", "--porcelain", "--ignored"}), False, True),
+    "diff": Spec("p", {}, frozenset({
+        "--name-only", "--name-status", "--stat", "--numstat", "--shortstat", "--summary",
+        "--cached", "--staged", "--check", "--no-ext-diff", "--no-textconv",
+    }), False, True),
+    "grep": Spec("nilrzclwFEGP", {}, frozenset({
+        "--cached", "--line-number", "--ignore-case", "--fixed-strings", "--count",
+        "--files-with-matches", "--full-name", "--recurse-submodules",
+    }), False, True),
+    "rev-parse": Spec("", {}, frozenset({
+        "--show-toplevel", "--show-prefix", "--show-cdup", "--git-dir", "--absolute-git-dir",
+        "--is-inside-work-tree", "--is-inside-git-dir", "--verify", "--short",
+        "--abbrev-ref", "--symbolic-full-name",
+    }), False, True),
+    "blame": Spec("nlpw", {}, frozenset({"--line-porcelain", "--porcelain", "--show-email"}), False, True),
+}
 FIND_FLAGS = frozenset({
     "-H", "-L", "-P", "-print", "-print0", "-empty", "-readable", "-writable",
     "-executable", "-prune", "-not", "!", "-a", "-and", "-o", "-or",
@@ -194,6 +214,17 @@ def _find_read_only(args: list[str]) -> bool:
             return False
         index += 2
     return True
+
+
+def is_git_inspection(words: list[str]) -> bool:
+    index = 1
+    while index + 1 < len(words) and words[index] == "-C":
+        index += 2
+    args = words[index:]
+    if not args:
+        return False
+    boundary = args.index("--") if "--" in args else len(args)
+    return _flags_allowed(args[:boundary], GIT_INSPECTION_SPECS)
 
 
 def is_source_inspection(command: str, cwd: str) -> bool:
