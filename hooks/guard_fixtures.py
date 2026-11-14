@@ -10,6 +10,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from typing import Any, NamedTuple, Optional
+from unittest.mock import patch
 
 HOOKS_DIR = Path(__file__).resolve().parent
 ENTRY_STEM = "user_" + "question_guard"
@@ -48,6 +49,11 @@ def module_path(stem: str) -> str:
 def build_project(case: unittest.TestCase) -> Workspace:
     root = Path(tempfile.mkdtemp()).resolve()
     case.addCleanup(shutil.rmtree, root, True)
+    home = root / "home"
+    home.mkdir()
+    environment = patch.dict(os.environ, {"HOME": str(home)})
+    environment.start()
+    case.addCleanup(environment.stop)
     planning = root / ".meridian"
     planning.mkdir()
     return Workspace(root, planning, planning / ".runtime" / "decisions")

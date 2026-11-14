@@ -1,5 +1,7 @@
 import unittest
 
+from hooks.guard_contract_cases import grant_results, policy_results
+
 from hooks.brace_expansion import ExpansionTooComplex, expand_braces
 from hooks.guard_fixtures import (
     HOOKS_DIR,
@@ -100,12 +102,19 @@ class ModuleWriteProtectionTest(unittest.TestCase):
             with self.subTest(tool=tool):
                 tool_input = {"file_path": f"{DIR}/{PROTECTED_STEMS[-1]}.py", "content": "x"}
                 self.assertIsNotNone(tool_reason(tool, tool_input, space.root))
+        for label, actual, expected in policy_results(self):
+            with self.subTest(contract=label):
+                self.assertEqual(actual, expected)
+        for label, actual, expected in grant_results(self):
+            with self.subTest(owner=label):
+                self.assertEqual(actual, expected)
 
     def test_brace_and_glob_forms_that_miss_the_guard_modules_are_allowed(self) -> None:
         space = build_workspace(self)
-        for command in (f"rm {DIR}/guard_{{other,tmp}}.py", f"rm {DIR}/zz_*.py"):
+        for command, denied in ((f"rm {DIR}/guard_{{other,tmp}}.py", True), (f"rm {DIR}/zz_*.py", False),
+                                ("rm docs/{other,tmp}.py", False)):
             with self.subTest(command=command):
-                self.assertIsNone(bash_reason(command, space.root))
+                self.assertEqual(bash_reason(command, space.root) is not None, denied)
 
 
 if __name__ == "__main__":

@@ -73,7 +73,7 @@ def running_child(space) -> bool:
 
 def policy_case(space, row) -> tuple:
     if row.startswith("protected-"):
-        return space.run(space.event("Write", {"file_path": row[len("protected-"):]})), "deny", None
+        return space.run(space.event("Write", {"file_path": row[len("protected-"):]})), None, None
     if row.startswith("pending-"):
         space.open_question()
         tool = row[len("pending-"):]

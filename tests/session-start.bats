@@ -200,6 +200,22 @@ report_planning_and_subsystem_context() {
   assert_no_case_failures
 }
 
+report_guard_owner_context() {
+  local owner_home="$TEST_ROOT/owner-home" expiry_line owner_command
+  mkdir -p "$owner_home"
+  printf -v owner_command 'bash %q' "$REPO_ROOT/scripts/meridian-guard.sh"
+  reset_case_failures
+  run env -u CLAUDE_PLUGIN_ROOT HOME="$owner_home" bash "$REPO_ROOT/scripts/meridian-guard.sh" allow --for 30m
+  expect_case owner-grant-without-plugin-environment 0
+  expiry_line="$output"
+  run env -u CLAUDE_PLUGIN_ROOT HOME="$owner_home" MERIDIAN_PLANNING_DIR="$PLANNING_DIR" bash "$SCRIPT" </dev/null
+  expect_case owner-context-without-plugin-environment 0
+  expect_fragment owner-context-expiry "$expiry_line"
+  expect_fragment owner-context-absolute-command "$owner_command"
+  expect_lacks owner-context-no-plugin-variable 'CLAUDE_PLUGIN_ROOT'
+  assert_no_case_failures
+}
+
 apply_source_specific_compaction_policy() {
   reset_case_failures
 
@@ -401,7 +417,7 @@ expect_cleanup_skipped() {
 
 @test "session start initializes context and enforces session lifecycle policies" {
   run_scenario_cases link_session_plugin_root_and_persist_environment \
-    report_planning_and_subsystem_context apply_source_specific_compaction_policy \
+    report_planning_and_subsystem_context report_guard_owner_context apply_source_specific_compaction_policy \
     bind_tmux_session_with_one_shot_credentials cleanup_project_runfiles_and_report_retained_state
 }
 
