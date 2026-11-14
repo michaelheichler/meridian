@@ -58,7 +58,7 @@ bind_tmux_bootstrap() {
   capability=''
 }
 
-SESSION_KEY="${CLAUDE_SESSION_ID:-root-$(printf "%s\n%s\n" "${CLAUDE_PLUGIN_ROOT:-}" "$(git rev-parse --show-toplevel 2>/dev/null || pwd -P)" | shasum -a 256 | cut -c1-64)}"
+SESSION_KEY="${CLAUDE_SESSION_ID:-root-$(printf "%s\n" "$(git rev-parse --show-toplevel 2>/dev/null || pwd -P)" | shasum -a 256 | cut -c1-64)}"
 [ "$SESSION_KEY" != root- ] || { echo "MERIDIAN: plugin root hash unavailable" >&2; exit 1; }
 if [ -f "$CANONICAL_ROOT/scripts/hook-wrapper.sh" ] && \
   [ -f "$CANONICAL_ROOT/scripts/ensure-plugin-root-link.sh" ] && \
@@ -67,6 +67,12 @@ if [ -f "$CANONICAL_ROOT/scripts/hook-wrapper.sh" ] && \
   echo "MERIDIAN: SessionStart plugin root link bootstrap failed" >&2
   exit 1
 fi
+
+for stale_link in /tmp/.meridian-plugin-root-link-root-*; do
+  [ "$stale_link" != "/tmp/.meridian-plugin-root-link-${SESSION_KEY}" ] || continue
+  [ -L "$stale_link" ] && [ "$stale_link" -ef "$CANONICAL_ROOT" ] || continue
+  rm -f -- "$stale_link" || { echo "MERIDIAN: stale plugin root link cleanup failed" >&2; exit 1; }
+done
 
 if ! command -v jq >/dev/null 2>&1; then
   echo '{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"meridian: jq not found. Install jq (brew install jq / apt install jq) -- quality gates are degraded until then."}}'

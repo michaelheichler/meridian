@@ -23,7 +23,7 @@ After all existing final output, follow the Feedback card input section in `$PLU
 Resolve the plugin root once per Execute run through the session link contract:
 
 ```bash
-SESSION_KEY="${CLAUDE_SESSION_ID:-root-$(printf "%s\n%s\n" "${CLAUDE_PLUGIN_ROOT:-}" "$(git rev-parse --show-toplevel 2>/dev/null || pwd -P)" | shasum -a 256 | cut -c1-64)}"
+SESSION_KEY="${CLAUDE_SESSION_ID:-root-$(printf "%s\n" "$(git rev-parse --show-toplevel 2>/dev/null || pwd -P)" | shasum -a 256 | cut -c1-64)}"
 [ "$SESSION_KEY" != root- ] || { echo "MERIDIAN: plugin root hash unavailable" >&2; exit 1; }
 SESSION_LINK="/tmp/.meridian-plugin-root-link-${SESSION_KEY}"
 ROOT_RESOLVER="$SESSION_LINK/scripts/resolve-plugin-root.sh"

@@ -50,7 +50,7 @@ valid_root() {
     [ -f "$candidate/scripts/$required_script" ]
 }
 
-SESSION_KEY="${CLAUDE_SESSION_ID:-root-$(printf "%s\n%s\n" "${CLAUDE_PLUGIN_ROOT:-}" "$(git rev-parse --show-toplevel 2>/dev/null || pwd -P)" | shasum -a 256 | cut -c1-64)}"
+SESSION_KEY="${CLAUDE_SESSION_ID:-root-$(printf "%s\n" "$(git rev-parse --show-toplevel 2>/dev/null || pwd -P)" | shasum -a 256 | cut -c1-64)}"
 if [ "$SESSION_KEY" = root- ]; then
   [ "$nonfatal" = true ] && exit 0
   echo "MERIDIAN: plugin root hash unavailable" >&2

@@ -31,9 +31,11 @@ Project artifacts
 
 The control plane uses local files, small scripts, hooks, JSON, Markdown artifacts, and local locks. It does not require a server, queue, database, or remote telemetry service.
 
-SessionStart and command helpers share a temporary plugin link keyed by `CLAUDE_SESSION_ID`. When the session identifier is empty, they use `root-` plus the SHA-256 hash of the plugin root and project root on separate lines. The plugin component comes from `CLAUDE_PLUGIN_ROOT`, or stays empty when unavailable. The project component comes from the Git worktree root, or the physical working directory outside Git. Different plugin installations and projects therefore keep separate fallback links and phase-detection transport files. A missing hash stops link resolution instead of selecting a shared empty-key link.
+SessionStart and command helpers share a temporary plugin link keyed by `CLAUDE_SESSION_ID`. When the session identifier is empty, they use `root-` plus the SHA-256 hash of the canonical project root followed by one newline. The project root comes from `git rev-parse --show-toplevel`, or `pwd -P` outside Git. Hooks, command context shells, and phase-detection transport use the identical expression, regardless of `CLAUDE_PLUGIN_ROOT` or `CLAUDE_ENV_FILE`. Different projects keep separate fallback links and transport files. A missing hash stops link resolution instead of selecting a shared empty-key link. SessionStart removes obsolete fallback symlinks only when they point to its canonical plugin root and do not match the current key.
 
-SessionStart exports its canonical plugin root through `CLAUDE_ENV_FILE` when the host provides a writable environment file. Later Bash tools then derive the same link key as hooks.
+The cleanup also removes other projects' fallback links when they share the same plugin installation. It leaves explicit-session links and links to other plugin installations alone.
+
+SessionStart exports its canonical plugin root through `CLAUDE_ENV_FILE` when the host provides a writable environment file. Later Bash tools can use that root to repair a missing plugin link. Command context shells do not need the export to derive the fallback key.
 
 SessionStart resolves the default planning directory from the project root and sweeps the agent manifest only when that directory exists. Before initialization it reports the missing planning directory without a manifest warning. Once the planning directory exists, manifest failures remain visible.
 

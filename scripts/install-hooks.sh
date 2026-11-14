@@ -24,7 +24,7 @@ HOOK_PATH="$ROOT/.git/hooks/pre-push"
 
 HOOK_CONTENT='#!/usr/bin/env bash
 set -euo pipefail
-SESSION_KEY="${CLAUDE_SESSION_ID:-root-$(printf "%s\n%s\n" "${CLAUDE_PLUGIN_ROOT:-}" "$(git rev-parse --show-toplevel 2>/dev/null || pwd -P)" | shasum -a 256 | cut -c1-64)}"
+SESSION_KEY="${CLAUDE_SESSION_ID:-root-$(printf "%s\n" "$(git rev-parse --show-toplevel 2>/dev/null || pwd -P)" | shasum -a 256 | cut -c1-64)}"
 [ "$SESSION_KEY" != root- ] || { echo "MERIDIAN: plugin root hash unavailable" >&2; exit 1; }
 SCRIPT="/tmp/.meridian-plugin-root-link-${SESSION_KEY}/scripts/pre-push-hook.sh"
 if [ -f "$SCRIPT" ]; then

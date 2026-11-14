@@ -22,7 +22,7 @@ fi
 TARGET="${CLAUDE_PLUGIN_ROOT:+$CLAUDE_PLUGIN_ROOT/scripts/$SCRIPT}"
 
 if [ -z "$TARGET" ] || [ ! -f "$TARGET" ]; then
-  SESSION_KEY="${CLAUDE_SESSION_ID:-root-$(printf "%s\n%s\n" "${CLAUDE_PLUGIN_ROOT:-}" "$(git rev-parse --show-toplevel 2>/dev/null || pwd -P)" | shasum -a 256 | cut -c1-64)}"
+  SESSION_KEY="${CLAUDE_SESSION_ID:-root-$(printf "%s\n" "$(git rev-parse --show-toplevel 2>/dev/null || pwd -P)" | shasum -a 256 | cut -c1-64)}"
   [ "$SESSION_KEY" != root- ] || { echo "MERIDIAN: plugin root hash unavailable" >&2; exit 1; }
   SESSION_TARGET="/tmp/.meridian-plugin-root-link-${SESSION_KEY}/scripts/$SCRIPT"
   [ -f "$SESSION_TARGET" ] && TARGET="$SESSION_TARGET"
