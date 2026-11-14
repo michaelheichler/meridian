@@ -49,7 +49,10 @@ GUARD_MODULES = (
 )
 SCRIPT_MARKERS = ("pending-decision.sh", "hook-batch.sh", *GUARD_MODULES)
 RUNTIME_MARKERS = (".meridian/.runtime", ".runtime/decisions", ".hook-transitions")
-PROTECTED_MARKERS = (*SCRIPT_MARKERS, *RUNTIME_MARKERS)
+PROTECTED_MARKERS = (
+    *SCRIPT_MARKERS, *RUNTIME_MARKERS, "hooks.json", "__init__.py",
+    "guard_unlock.py", "meridian-guard.sh", "session-start.sh",
+)
 EXPANSION_CHARS = "$`{"
 UNRESOLVED_CHARS = "$`"
 GLOB_CHARS = "*?["
