@@ -216,6 +216,29 @@ def _find_read_only(args: list[str]) -> bool:
     return True
 
 
+def command_segments(command: str) -> list[str]:
+    if "<<" in command or "#" in command:
+        return [command]
+    lexer = shlex.shlex(command, posix=False, punctuation_chars=";&|<>\n")
+    lexer.whitespace = " \t\r"
+    lexer.whitespace_split = True
+    try:
+        tokens = list(lexer)
+        if any(len(shlex.split(token)) != 1 for token in tokens if token.strip("\n")):
+            return [command]
+    except ValueError:
+        return [command]
+    segments = [""]
+    for token in tokens:
+        punctuation = all(char in ";&|\n" for char in token)
+        boundary = "|" not in token or ";" in token or "&&" in token or "||" in token
+        if punctuation and boundary:
+            segments.append("")
+        else:
+            segments[-1] += " " + token
+    return segments
+
+
 def is_git_inspection(words: list[str]) -> bool:
     index = 1
     while index + 1 < len(words) and words[index] == "-C":

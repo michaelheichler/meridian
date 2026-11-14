@@ -42,6 +42,8 @@ Guard source protection covers the installed `hooks/` and `scripts/` trees, incl
 
 For a single read-only inspection command, path checks keep fully quoted glob tokens literal. A Git pathspec such as `git -C /path/to/project ls-files 'tmp/**'` does not trigger a recursive filesystem scan. Mutations, compound commands, comments, and ambiguous quoting keep the existing glob expansion and limit.
 
+Embedded interpreter checks keep pipelines together but inspect separate shell commands independently. Comments, heredocs, and ambiguous tokenization keep the conservative whole-command check.
+
 SessionStart prints the owner CLI command with the absolute installed path. To patch the installed copy, copy that command into an owner `!` shell and append `allow --for 8h`. A terminal works too, and neither shell needs `CLAUDE_PLUGIN_ROOT`. Durations use whole minutes or hours, such as `30m` or `8h`, and cannot exceed `12h`. Use `status` to inspect the grant or `revoke` to remove it.
 
 The CLI stores an absolute expiry in `~/.local/state/meridian-guard/grant.json`, outside project state. The state directory and grant must belong to the current user and allow no access for other users. Expired or malformed grants allow nothing. An active grant lets agents edit, write, and stage installed guard source. SessionStart adds one line with the grant expiry. Agents cannot modify the installed unlock CLI, run any copy of it, import its Python module, or access grant state. Plain reads and development edits of CLI source in another checkout remain available. Owner `!` commands bypass PreToolUse and can manage the grant.

@@ -14,13 +14,13 @@ if __package__:
     from .brace_expansion import ExpansionTooComplex, expand_braces
     from .decision_common import INVALID_STATE, DecisionStateError, require
     from .path_identity import ProtectedIdentity, TooManyMatches, expand_glob
-    from .read_only_command import is_git_inspection, is_source_inspection
+    from .read_only_command import command_segments, is_git_inspection, is_source_inspection
     from .guard_unlock import active_expiry, state_directory
 else:
     from brace_expansion import ExpansionTooComplex, expand_braces
     from decision_common import INVALID_STATE, DecisionStateError, require
     from path_identity import ProtectedIdentity, TooManyMatches, expand_glob
-    from read_only_command import is_git_inspection, is_source_inspection
+    from read_only_command import command_segments, is_git_inspection, is_source_inspection
     from guard_unlock import active_expiry, state_directory
 
 OptionalPath = Optional[Path]
@@ -371,6 +371,10 @@ def _unlock_access(data: dict, cwd: OptionalPath, roots: set[Path]) -> bool:
 
 
 def _embedded_access(command: str, roots: set[Path], unlocked: bool) -> bool:
+    return any(_embedded_segment(segment, roots, unlocked) for segment in command_segments(command))
+
+
+def _embedded_segment(command: str, roots: set[Path], unlocked: bool) -> bool:
     words = _command_words(command)
     interpreters = {"bash", "sh", "zsh", "python", "python3", "perl", "node", "eval", "xargs"}
     if not any(os.path.basename(word) in interpreters for word in words):
