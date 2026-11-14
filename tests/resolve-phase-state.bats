@@ -43,13 +43,13 @@ lock_dir() {
 }
 
 fallback_state_row() {
-  local label="$1" project="$2" plugin="$3" previous_link="$4" previous_root="$5" link key previous_key
+  local label="$1" project="$2" plugin="$3" previous_link="$4" previous_root="$5" link_relation="$6" link key previous_key
   cd "$project"
   run env -u CLAUDE_SESSION_ID CLAUDE_PLUGIN_ROOT="$plugin" bash "$SCRIPTS_DIR/resolve-phase-state.sh"
   expect_case "$label" 0 "phase_detect_complete=true"
   link=${output%%$'\n'*}
   printf '%s\n' "$link" >> "$TEST_TEMP_DIR/fallback-links"
-  [ "$link" != "$previous_link" ] || record_case_failure "$label" "fallback link reused across roots"
+  [ "$link" "$link_relation" "$previous_link" ] || record_case_failure "$label" "fallback link identity does not match project identity"
   [ "$(readlink "$previous_link")" = "$previous_root" ] \
     || record_case_failure "$label" "previous plugin link changed"
   [ "$(readlink "$link")" = "$plugin" ] || record_case_failure "$label" "new link resolves to another plugin"
@@ -75,8 +75,8 @@ fallback_roots_keep_independent_state() {
   printf '%s\n' "$first_link" >> "$TEST_TEMP_DIR/fallback-links"
   first_key=${first_link##*/.meridian-plugin-root-link-}
   cp "/tmp/.meridian-phase-detect-$first_key.txt" "$TEST_TEMP_DIR/first-phase-state"
-  fallback_state_row different-project "$TEST_TEMP_DIR/other-project" "$plugin" "$first_link" "$plugin"
-  fallback_state_row different-plugin "$TEST_TEMP_DIR/project" "$other_plugin" "$first_link" "$plugin"
+  fallback_state_row different-project "$TEST_TEMP_DIR/other-project" "$plugin" "$first_link" "$plugin" '!='
+  fallback_state_row different-plugin "$TEST_TEMP_DIR/project" "$other_plugin" "$first_link" "$other_plugin" '='
   cd "$TEST_TEMP_DIR/project"
 }
 
