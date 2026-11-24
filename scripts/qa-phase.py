@@ -16,6 +16,7 @@ from qa_command import CLAUDE_QA_AGENT, valid_arguments
 
 
 OPEN_STATES = frozenset({"dispatched", "running"})
+SKIPPABLE_PROMOTE_STATUSES = frozenset({"no_state_file", "no_todos_section"})
 CAPABILITY_CATALOG = "claude-capabilities.json"
 
 
@@ -201,8 +202,8 @@ def publish(phase: Phase, contract_id: str, verdict: dict) -> dict:
     elif state != "awaiting_review":
         raise QaError(f"The QA contract is already {state}.")
     source = json.dumps({**verdict, "phase": phase.number, "payload": {**payload, "phase": phase.number}})
-    helper(phase.root, "write-verification.sh", phase.verification, source=source)
     try:
+        helper(phase.root, "write-verification.sh", phase.verification, source=source)
         helper(phase.root, "track-known-issues.sh", "sync-verification", phase.directory, phase.verification)
         promote_known_issues(phase)
         result = helper(phase.root, "qa-result-gate.sh", phase.directory)
@@ -223,8 +224,13 @@ def promote_known_issues(phase: Phase) -> None:
     try:
         helper(phase.root, "track-known-issues.sh", "promote-todos", phase.directory)
     except QaError as exc:
-        if str(exc) not in {"promote_status=no_todos_section", "promote_status=no_state"}:
+        if promote_status(str(exc)) not in SKIPPABLE_PROMOTE_STATUSES:
             raise
+
+
+def promote_status(output: str) -> str | None:
+    statuses = re.findall(r"^promote_status=(\w+)$", output, re.MULTILINE)
+    return statuses[-1] if statuses else None
 
 
 def main(args: list[str]) -> int:
