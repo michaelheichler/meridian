@@ -14,16 +14,15 @@ set -u
 . "$(CDPATH='' cd -- "${BASH_SOURCE[0]%/*}" 2>/dev/null && pwd)/lib/debug-logging.sh" 2>/dev/null || true
 debug_logging_gate validate-commit.sh PostToolUse 2>/dev/null || true
 
-if ! command -v jq &>/dev/null; then
+if ! command -v jq &>/dev/null || ! command -v python3 &>/dev/null; then
   exit 0
 fi
 
 INPUT=$(cat)
 COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // ""')
 
-if ! echo "$COMMAND" | grep -q "git commit"; then
-  exit 0
-fi
+HOOKS_DIR="$(CDPATH='' cd -- "${BASH_SOURCE[0]%/*}/../hooks" 2>/dev/null && pwd)" || exit 0
+COMMIT_SEGMENT=$(printf '%s' "$COMMAND" | python3 "$HOOKS_DIR/commit_command.py" 2>/dev/null) || exit 0
 
 VALID_TYPES="feat|fix|test|refactor|perf|docs|style|chore"
 
@@ -91,10 +90,10 @@ if echo "$COMMAND" | grep -q 'cat <<'; then
   fi
 fi
 if [ -z "$MSG" ]; then
-  MSG=$(message_file_subject "$COMMAND" "$(echo "$INPUT" | jq -r '.cwd // ""')")
+  MSG=$(message_file_subject "$COMMIT_SEGMENT" "$(echo "$INPUT" | jq -r '.cwd // ""')")
 fi
 if [ -z "$MSG" ]; then
-  MSG=$(first_message_subject "$COMMAND")
+  MSG=$(first_message_subject "$COMMIT_SEGMENT")
 fi
 
 if [ -z "$MSG" ]; then
