@@ -43,7 +43,7 @@ version_value() {
 }
 
 changelog_version() {
-  awk '/^## \[/{ value=$2; gsub(/^\[/, "", value); gsub(/\]$/, "", value); print value; exit }' "$CHANGELOG_FILE"
+  awk '/^## \[[0-9]/{ value=$2; gsub(/^\[/, "", value); gsub(/\]$/, "", value); print value; exit }' "$CHANGELOG_FILE"
 }
 
 require_changelog_entry() {

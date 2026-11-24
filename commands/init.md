@@ -59,15 +59,16 @@ That change can come from `/meridian:config` or a non-default settings source be
 <!-- rename-migration:start -->
 ## State migration
 
-Before the Guard and any scaffold write, source the migration helper in the project root and run both functions in the same Bash call.
+Before the Guard and any scaffold write, run the migration script from the project root.
 
 ```bash
-source "{LINK}/scripts/lib/rename-migration.sh"
-meridian_migrate_environment
-meridian_migrate_planning "{PROJECT_ROOT}"
+bash "{LINK}/scripts/migrate-state.sh" "{PROJECT_ROOT}"
 ```
 
-Stop if the helper exits non-zero.
+The script runs under bash, so the zsh shell of the Bash tool never parses the helper.
+Exit code 2 means the move failed. Stop and show the script output.
+Exit code 3 means both directories exist. Stop and show the warning.
+Stop on any other non-zero exit code.
 If both `.lbwc-planning/` and `.meridian/` exist, the helper prints one warning and leaves both unchanged.
 Stop after that warning, do not scaffold or choose either directory.
 If only the old directory exists, the helper moves it to `.meridian/` with one `mv` and prints one line.

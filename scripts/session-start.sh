@@ -68,13 +68,15 @@ if [ -f "$CANONICAL_ROOT/scripts/hook-wrapper.sh" ] && \
   exit 1
 fi
 
+persist_shell_environment
+[ -d "$PLANNING_DIR" ] || exit 0
+
 if ! command -v jq >/dev/null 2>&1; then
   echo '{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"meridian: jq not found. Install jq (brew install jq / apt install jq) -- quality gates are degraded until then."}}'
   exit 0
 fi
 
 bind_tmux_bootstrap || exit 1
-persist_shell_environment
 
 HOOK_INPUT=""
 [ -t 0 ] || HOOK_INPUT=$(cat 2>/dev/null) || HOOK_INPUT=""

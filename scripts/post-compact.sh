@@ -15,6 +15,8 @@ set -u
 PLANNING_DIR="${MERIDIAN_PLANNING_DIR:-.meridian}"
 SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd)"
 
+[ -d "$PLANNING_DIR" ] || exit 0
+
 rm -f "$PLANNING_DIR/.compaction-marker" "$PLANNING_DIR/.context-usage" 2>/dev/null || true
 
 INPUT=$(cat)
