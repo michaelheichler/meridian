@@ -164,14 +164,33 @@ expect_no_file() {
 }
 
 expect_replaced_contract() {
-  local label="$1" old="$2" fresh
+  local label="$1" old="$2" reason="$3" fresh
   expect_stdout_json "$label-fresh-id" \
     '(.contract_id | test("^cmd-qa-qa-01-[0-9a-f]{12}-phase$")) and .contract_id != $old' --arg old "$old"
   fresh=$(jq -r '.contract_id // empty' <<< "$output" 2> /dev/null)
   expect_state "$label-fresh-dispatched" "$fresh" dispatched
   expect_state "$label-old-blocked" "$old" blocked
   expect_stderr_has "$label-names-old" "$old"
+  expect_stderr_has "$label-gives-reason" "$reason"
   expect_contract_count "$label-two-contracts" 2
+}
+
+mark_running() {
+  bash "$PLUGIN/scripts/task-contract.sh" state "$REPO" "$1" running > /dev/null
+}
+
+age_contract_file() {
+  touch -t 200001010000 "$REPO/.meridian/.contracts/tasks/$1.json"
+}
+
+block_contract_on_first_read() {
+  local script="$PLUGIN/scripts/task-contract.sh"
+  mv "$script" "$script-real"
+  printf '%s\n' '#!/bin/bash' \
+    'real="$(dirname "$0")/task-contract.sh-real"' \
+    'marker="$2/.meridian/parallel-start-done"' \
+    '[ "$1" = read ] && [ ! -e "$marker" ] && : > "$marker" && /bin/bash "$real" "$@" && exec /bin/bash "$real" state "$2" "$3" blocked > /dev/null' \
+    'exec /bin/bash "$real" "$@"' > "$script"
 }
 
 expect_verification_frontmatter() {
@@ -207,7 +226,7 @@ expect_verification_frontmatter() {
   assert_no_case_failures
 }
 
-@test "start reuses only a matching dispatched contract and moves every other open contract to blocked before it issues a fresh one" {
+@test "start reuses a matching dispatched contract, refuses while a live worker runs and retires a stale or mismatched contract to blocked" {
   local first
   new_project start
   run qa_in_repo start 1 standard codex
@@ -228,19 +247,47 @@ expect_verification_frontmatter() {
   new_project other-tier
   first=$(start_contract 1 standard)
   run qa_in_repo start 1 deep codex
-  expect_replaced_contract other-tier "$first"
+  expect_replaced_contract other-tier "$first" "because a new run started"
 
   new_project other-commit
   first=$(start_contract 1 standard)
   next_commit second
   run qa_in_repo start 1 standard codex
-  expect_replaced_contract other-commit "$first"
+  expect_replaced_contract other-commit "$first" "because a new run started"
 
-  new_project running
+  new_project live-running
   first=$(start_contract 1 standard)
-  bash "$PLUGIN/scripts/task-contract.sh" state "$REPO" "$first" running > /dev/null
+  mark_running "$first"
   run qa_in_repo start 1 standard codex
-  expect_replaced_contract running-contract "$first"
+  expect_case_silent live-running-refused 1
+  expect_stderr_has live-running-names-contract "$first"
+  expect_stderr_has live-running-gives-age "running for 0 minutes"
+  expect_stderr_has live-running-gives-retry "after 60 minutes"
+  expect_state live-running-stays-running "$first" running
+  expect_contract_count live-running-writes-no-contract 1
+
+  new_project stale-running
+  first=$(start_contract 1 standard)
+  mark_running "$first"
+  age_contract_file "$first"
+  run qa_in_repo start 1 standard codex
+  expect_replaced_contract stale-running "$first" "stale for"
+
+  new_project stale-limit-zero
+  first=$(start_contract 1 standard)
+  mark_running "$first"
+  MERIDIAN_QA_STALE_MINUTES=0 run qa_in_repo start 1 standard codex
+  expect_replaced_contract stale-limit-zero "$first" "stale for 0 minutes"
+
+  copy_plugin parallel-start
+  block_contract_on_first_read
+  new_project already-blocked
+  first=$(start_contract 1 standard)
+  run qa_in_repo start 1 deep codex
+  expect_stdout_json already-blocked-issues-fresh-contract \
+    '(.contract_id | test("^cmd-qa-qa-01-[0-9a-f]{12}-phase$")) and .contract_id != $old' --arg old "$first"
+  expect_state already-blocked-old-stays-blocked "$first" blocked
+  expect_contract_count already-blocked-two-contracts 2
 
   assert_no_case_failures
 }
@@ -391,6 +438,7 @@ expect_verification_frontmatter() {
   expect_refused chained-error
   expect_stderr_has chained-error-keeps-publish-error verdict-writer-token
   expect_stderr_has chained-error-adds-transition-error blocked-transition-token
+  expect_stderr_has chained-error-says-block-failed "also failed to move to blocked"
 
   assert_no_case_failures
 }
