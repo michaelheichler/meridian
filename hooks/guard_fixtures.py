@@ -34,6 +34,7 @@ PROTECTED_STEMS = (
     "shell_invocation",
     "command_view",
     "command_policy",
+    "git_policy",
 )
 
 

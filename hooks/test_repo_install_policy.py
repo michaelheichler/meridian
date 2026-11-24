@@ -7,6 +7,8 @@ from hooks.guard_fixtures import (
 )
 
 ROOT = "<root>"
+ROOT_NAME = "<rootname>"
+PARENT = ".."
 HOME = "<home>"
 HOME_DIR = "<homedir>"
 SCRATCH = "<tmp>"
@@ -17,7 +19,7 @@ INLINE = guard.INLINE_GUARD_CODE
 RUNTIME = guard.RESERVED_RUNTIME
 GRANT = guard.OWNER_GRANT
 COMMIT_WITH_HEREDOC = """git commit -m "$(cat <<'EOF'
-Tighten the guard_paths.py checks
+fix(hooks): tighten guard_paths.py
 EOF
 )\""""
 
@@ -55,11 +57,38 @@ CONTROL_BASH = (
     "echo $PATH",
     COMMIT_WITH_HEREDOC,
     "python3 -c 'import json; print(1)'",
+    "git clean -n",
+    "git clean --dry-run",
+    "git apply --check p.diff",
+    "git apply --stat p.diff",
+    "git reset --soft HEAD~1",
+    "git reset HEAD README.md",
+    "git reset -- README.md",
+    "git checkout -b new main",
+    "git switch -c new main",
+    "git commit -m 'fix(hooks): x'",
+    "git commit -am 'fix(hooks): x'",
+    "git commit -m 'touch scripts and hooks/guard_paths.py'",
+    "git commit -F msg.txt",
+    "gh pr create --body 'touches hooks/guard_paths.py'",
+    "curl -d 'guard_paths.py' x",
+    f"cp src/dispatch.py {SCRATCH}/x",
+    "black dispatch.py",
+    "ruff check src/dispatch.py",
+    "vim dispatch.py",
+    "rm build/hook_output.py",
+    "npm test -- guard_paths.py",
+    "cp a $X",
+    "python3 /dev/stdin",
+    "cat x | python3 /dev/stdin",
+    "while read l; do echo $l; done < x",
+    "{ cat x; }",
 )
 CONTROL_ROWS = (
     *ALLOWED_ROWS,
     *(("Bash", {"command": command}, "") for command in CONTROL_BASH),
     ("Grep", {"pattern": "x", "path": ROOT}, ""),
+    ("Bash", {"command": "git reset --hard"}, PARENT),
 )
 REFUSED_BASH = (
     ("bash scripts/x.sh > hooks/guard_paths.py", SOURCE),
@@ -118,6 +147,59 @@ REFUSED_BASH = (
     ("python3 -c 'import user_question_guard'", INLINE),
     (f"cat {HOME}/.local/sta?e/meridian-g?ard/gra?t.json", GRANT),
     ("cat $HOME/.local/*/meridian-*/g*", GRANT),
+    (f"cd {ROOT}/hooks; X=g; Y=uard_paths.py; echo x > $X$Y", SOURCE),
+    ("D=hoo; echo x > ${D}ks/new.py", SOURCE),
+    ("git -c merge.tool=x mergetool", SOURCE),
+    ("git -c difftool.x.cmd=y difftool", SOURCE),
+    ("git -c diff.x.command=y diff", SOURCE),
+    ("git -c core.gitProxy=x fetch", SOURCE),
+    ("git -c uploadpack.packObjectsHook=x fetch", SOURCE),
+    ("git -c core.worktree=/x status", SOURCE),
+    ("git -c core.attributesFile=x diff", SOURCE),
+    ("git -c protocol.ext.allow=always fetch", SOURCE),
+    ("git config merge.tool x", SOURCE),
+    ("git bisect run make", SOURCE),
+    ("git filter-branch --tree-filter 'rm x' HEAD", SOURCE),
+    ("git fetch --upload-pack=x origin", SOURCE),
+    ("git clone -u x repo", SOURCE),
+    ("git ls-remote --upload-pack x origin", SOURCE),
+    ("git grep -O x", SOURCE),
+    ("git grep --open-files-in-pager=vim x", SOURCE),
+    ("GIT_PAGER=x; git log", SOURCE),
+    ("export GIT_PAGER=x; git log", SOURCE),
+    ("bash -c 'git -c core.pager=x log'", SOURCE),
+    ("(git reset --hard)", SOURCE),
+    ("{ git reset --hard; }", SOURCE),
+    ("if true; then git reset --hard; fi", SOURCE),
+    ("! git reset --hard", SOURCE),
+    ("echo $(git reset --hard)", SOURCE),
+    ("bash -c 'git reset --hard'", SOURCE),
+    ("awk 'BEGIN{system(\"git reset --hard\")}'", SOURCE),
+    ("git read-tree -u HEAD", SOURCE),
+    ("git checkout-index -f -a", SOURCE),
+    ("git sparse-checkout set x", SOURCE),
+    ("git bisect start", SOURCE),
+    ("git submodule update", SOURCE),
+    ("git submodule foreach rm x", SOURCE),
+    ("python3 -m runpy hooks.dispatch", HELPER),
+    ("python3 -m pdb -m hooks.dispatch", HELPER),
+    ("python3 -m trace --trace hooks/dispatch.py", HELPER),
+    ("python3 -m cProfile hooks/hook_batch.py", HELPER),
+    ("python3 -m profile scripts/qa-phase.py", HELPER),
+    ("{ bash scripts/pending-decision.sh; }", HELPER),
+    ("if true; then bash scripts/hook-batch.sh; fi", HELPER),
+    ("bash -c 'rm -rf $CLAUDE_PLUGIN_ROOT/hooks'", INLINE),
+    ("eval 'rm -rf $CLAUDE_PLUGIN_ROOT/scripts'", INLINE),
+    ("python3 -c \"import os; os.remove(os.environ['CLAUDE_PLUGIN_ROOT']+'/hooks/x')\"", INLINE),
+    ("perl -e 'unlink \"$ENV{CLAUDE_PLUGIN_ROOT}/hooks/x\"'", INLINE),
+    ("node -e \"require('fs').rmSync(process.env.CLAUDE_PLUGIN_ROOT+'/hooks',{recursive:true})\"", INLINE),
+    (f"echo {ROOT}/hooks/x | python3 /dev/stdin", INLINE),
+    (f"cat <<EOF | bash /dev/stdin\nrm {ROOT}/hooks/x\nEOF", INLINE),
+)
+REFUSED_ELSEWHERE = (
+    ("echo x > guard_$X.py", "hooks", SOURCE),
+    ('echo x > "$X"', "hooks", SOURCE),
+    (f"git checkout -- {ROOT_NAME}/hooks/x", PARENT, SOURCE),
 )
 STATE_ROWS = (
     ("Bash", {"command": "grep -rn x ."}, "", RUNTIME),
@@ -131,12 +213,16 @@ STATE_ROWS = (
     ("Bash", {"command": f"diff -r {HOME}/.local {SCRATCH}"}, "", GRANT),
     ("Bash", {"command": f"find {HOME}/.local -name grant.json"}, "", GRANT),
     ("Grep", {"pattern": "x", "path": f"{HOME_DIR}/.local/state"}, "", GRANT),
+    ("Bash", {"command": "rm -rf .meridian"}, "", RUNTIME),
+    ("Bash", {"command": f"mv .meridian {SCRATCH}/m"}, "", RUNTIME),
+    ("Bash", {"command": "rm -rf ."}, "", GRANT),
+    ("Bash", {"command": f"mv . {SCRATCH}/x"}, "", GRANT),
 )
 
 
 def placed(text: str, space: Workspace) -> str:
     places = {
-        ROOT: str(space.root), HOME_DIR: os.environ["HOME"],
+        ROOT_NAME: space.root.name, ROOT: str(space.root), HOME_DIR: os.environ["HOME"],
         HOME: TILDE, SCRATCH: str(space.root.parent / "scratch"),
     }
     for placeholder, value in places.items():
@@ -169,9 +255,16 @@ class RepoInstalledAsPluginTest(unittest.TestCase):
                 result = repo_install_reason(space, "Bash", {"command": placed(command, space)})
                 self.assertEqual(result, (0, "", reason))
 
+    def test_writes_from_the_hooks_folder_or_the_parent_folder_are_refused(self) -> None:
+        space = repo_install_workspace(self)
+        for command, folder, reason in REFUSED_ELSEWHERE:
+            with self.subTest(command=command, folder=folder):
+                tool_input = {"command": placed(command, space)}
+                self.assertEqual(repo_install_reason(space, "Bash", tool_input, folder), (0, "", reason))
+
 
 class GuardStateTraversalTest(unittest.TestCase):
-    def test_recursive_reads_that_reach_runtime_or_grant_state_are_refused(self) -> None:
+    def test_reads_and_moves_that_reach_runtime_or_grant_state_are_refused(self) -> None:
         space = stateful_workspace(self)
         for tool, tool_input, folder, reason in STATE_ROWS:
             with self.subTest(tool=tool, tool_input=tool_input, folder=folder):
