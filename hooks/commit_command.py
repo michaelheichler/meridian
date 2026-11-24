@@ -95,11 +95,15 @@ def without_heredoc_bodies(command: str) -> str:
             while terminators:
                 index = heredoc_body_end(command, index, terminators.pop(0))
             continue
+        if not quote and command.startswith("<<<", index):
+            kept.append("<<<")
+            index += 3
+            continue
         if character == "\\" and quote != "'":
             kept.append(command[index:index + 2])
             index += 2
             continue
-        if operator is not None and not command.startswith("<<<", index):
+        if operator is not None:
             terminators.append(operator.group(1))
             kept.append(operator.group(0))
             index = operator.end()
