@@ -56,6 +56,7 @@ GUARD_MODULES = (
     "command_view.py",
     "command_policy.py",
     "git_policy.py",
+    "commit_command.py",
     "brace_expansion.py",
     "path_identity.py",
 )
