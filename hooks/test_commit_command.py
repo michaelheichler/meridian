@@ -77,6 +77,7 @@ class NonconformingSubjectTest(unittest.TestCase):
             "cat > f <<'EOF'\ngit commit -m bad\nEOF": None,
             "cat > f <<'EOF'\ngit commit -m bad\nEOF\ngit commit -m worse": "worse",
             'git commit -m x <<< "y"': "x",
+            'git commit -m "feat(a): x" <<< EOF\ngit commit -m bad': "bad",
         }
 
         found = {command: nonconforming_subject(command, "") for command in expected}

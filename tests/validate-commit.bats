@@ -124,6 +124,7 @@ flag_row() {
 
   flag_row commit-after-heredoc $'cat > f <<\'EOF\'\ngit commit -m bad\nEOF\ngit commit -m worse' 'worse'
   flag_row here-string-input 'git commit -m x <<< "y"' 'x'
+  flag_row commit-after-here-string-word $'git commit -m "feat(a): x" <<< EOF\ngit commit -m bad' 'bad'
   flag_row second-commit-bad 'git commit -m "feat(a): x" && git commit -m "bad"' 'bad'
 
   assert_no_case_failures
