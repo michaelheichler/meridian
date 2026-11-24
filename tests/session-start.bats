@@ -11,9 +11,14 @@ setup() {
   TEST_ROOT="$(mktemp -d)"
   PLANNING_DIR="$TEST_ROOT/.meridian"
   export CLAUDE_SESSION_ID="session-start-${BATS_TEST_NUMBER}-$$"
-  ROOT_LINK="/tmp/.meridian-plugin-root-link-${CLAUDE_SESSION_ID}"
+  ACTUAL_CHILD_SESSION_ID="actual-child-session-$$"
+  SECOND_CHILD_SESSION_ID="second-child-session-$$"
+  CONCURRENT_CHILD_SESSION_ID="concurrent-child-session-$$"
+  PLUGIN_ROOT_LINK_DIR=/tmp
+  PLUGIN_ROOT_LINK_PREFIX="$PLUGIN_ROOT_LINK_DIR/.meridian-plugin-root-link-"
+  ROOT_LINK="$PLUGIN_ROOT_LINK_PREFIX$CLAUDE_SESSION_ID"
   rm -rf "$ROOT_LINK"
-  CONCURRENT_LINK="/tmp/.meridian-plugin-root-link-concurrent-child-session"
+  CONCURRENT_LINK="$PLUGIN_ROOT_LINK_PREFIX$CONCURRENT_CHILD_SESSION_ID"
   WORKDIR="$TEST_ROOT/project"
   mkdir -p "$WORKDIR"
   git -C "$WORKDIR" init -q
@@ -21,8 +26,12 @@ setup() {
 }
 
 teardown() {
+  local session_id
   cd "$BATS_TEST_DIRNAME"
-  rm -rf "$TEST_ROOT" "$ROOT_LINK" "$CONCURRENT_LINK"
+  rm -rf "$TEST_ROOT"
+  for session_id in "$CLAUDE_SESSION_ID" "$ACTUAL_CHILD_SESSION_ID" "$SECOND_CHILD_SESSION_ID" "$CONCURRENT_CHILD_SESSION_ID"; do
+    [ -z "$session_id" ] || rm -rf "$PLUGIN_ROOT_LINK_PREFIX$session_id"
+  done
   unset CLAUDE_SESSION_ID
   [ ! -L "$REPO_ROOT/meridian" ] || { rm -f "$REPO_ROOT/meridian"; return 1; }
 }
@@ -327,16 +336,16 @@ expect_bound_registry() {
 
 bind_rejected_row() {
   local label="$1"
-  run_bound_session_start actual-child-session
+  run_bound_session_start "$ACTUAL_CHILD_SESSION_ID"
   expect_rejected "$label" "tmux bind failed"
   expect_bound_registry "$label" '.claude_session_id == null'
 }
 
 run_concurrent_session_starts() {
-  run env SESSION_START="$SCRIPT" CONTROL_ROOT="$BOUND_CONTROL_ROOT" PLANNING_DIR="$PLANNING_DIR" bash -c '
-    MERIDIAN_TMUX_AGENT=1 MERIDIAN_TMUX_AGENT_ID=agent-a MERIDIAN_TMUX_CONTRACT_ID=contract-a MERIDIAN_TMUX_CONTROL_ROOT="$CONTROL_ROOT" MERIDIAN_PLANNING_DIR="$PLANNING_DIR" CLAUDE_SESSION_ID=concurrent-child-session bash "$SESSION_START" > "$CONTROL_ROOT/first-session-start.log" 2>&1 &
+  run env SESSION_START="$SCRIPT" CONTROL_ROOT="$BOUND_CONTROL_ROOT" PLANNING_DIR="$PLANNING_DIR" CHILD_SESSION_ID="$CONCURRENT_CHILD_SESSION_ID" bash -c '
+    MERIDIAN_TMUX_AGENT=1 MERIDIAN_TMUX_AGENT_ID=agent-a MERIDIAN_TMUX_CONTRACT_ID=contract-a MERIDIAN_TMUX_CONTROL_ROOT="$CONTROL_ROOT" MERIDIAN_PLANNING_DIR="$PLANNING_DIR" CLAUDE_SESSION_ID="$CHILD_SESSION_ID" bash "$SESSION_START" > "$CONTROL_ROOT/first-session-start.log" 2>&1 &
     first=$!
-    MERIDIAN_TMUX_AGENT=1 MERIDIAN_TMUX_AGENT_ID=agent-a MERIDIAN_TMUX_CONTRACT_ID=contract-a MERIDIAN_TMUX_CONTROL_ROOT="$CONTROL_ROOT" MERIDIAN_PLANNING_DIR="$PLANNING_DIR" CLAUDE_SESSION_ID=concurrent-child-session bash "$SESSION_START" > "$CONTROL_ROOT/second-session-start.log" 2>&1 &
+    MERIDIAN_TMUX_AGENT=1 MERIDIAN_TMUX_AGENT_ID=agent-a MERIDIAN_TMUX_CONTRACT_ID=contract-a MERIDIAN_TMUX_CONTROL_ROOT="$CONTROL_ROOT" MERIDIAN_PLANNING_DIR="$PLANNING_DIR" CLAUDE_SESSION_ID="$CHILD_SESSION_ID" bash "$SESSION_START" > "$CONTROL_ROOT/second-session-start.log" 2>&1 &
     second=$!
     wait "$first"; first_status=$?
     wait "$second"; second_status=$?
@@ -356,15 +365,15 @@ bind_tmux_session_with_one_shot_credentials() {
 
   prepare_bound_agent
   write_credential agent-a "$BOUND_CAPABILITY"
-  run_bound_session_start actual-child-session
+  run_bound_session_start "$ACTUAL_CHILD_SESSION_ID"
   expect_case one-shot-credential 0 "meridian tmux bind:"
   expect_fragment one-shot-credential "$BOUND_CAPABILITY"
   [ ! -e "$BOUND_CONTROL_ROOT/.runtime/tmux-bus/credentials/agent-a.json" ] \
     || record_case_failure one-shot-credential "credential was not consumed"
-  expect_bound_registry one-shot-credential '.claude_session_id == "actual-child-session" and .state == "running" and (.heartbeat_at_ms | type == "number")'
+  expect_bound_registry one-shot-credential ".claude_session_id == \"$ACTUAL_CHILD_SESSION_ID\" and .state == \"running\" and (.heartbeat_at_ms | type == \"number\")"
 
   write_credential agent-a "$BOUND_CAPABILITY"
-  run_bound_session_start second-child-session
+  run_bound_session_start "$SECOND_CHILD_SESSION_ID"
   expect_rejected rebind-after-consumption "tmux bind failed"
 
   prepare_bound_agent
@@ -374,7 +383,7 @@ bind_tmux_session_with_one_shot_credentials() {
   expect_case concurrent-binds-once 0
   [ ! -e "$BOUND_CONTROL_ROOT/.runtime/tmux-bus/credentials/agent-a.json" ] \
     || record_case_failure concurrent-binds-once "credential was not consumed"
-  expect_bound_registry concurrent-binds-once '.claude_session_id == "concurrent-child-session"'
+  expect_bound_registry concurrent-binds-once ".claude_session_id == \"$CONCURRENT_CHILD_SESSION_ID\""
 
   assert_no_case_failures
 }

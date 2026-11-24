@@ -11,6 +11,10 @@ load tmux_agent_fixture
 load tmux_external_isolation_cases
 load tmux_worktree_failure_cases
 
+FAST_CHILD_SESSION_ID="fast-child-session-$$"
+PLUGIN_ROOT_LINK_DIR=/tmp
+FAST_CHILD_LINK="$PLUGIN_ROOT_LINK_DIR/.meridian-plugin-root-link-$FAST_CHILD_SESSION_ID"
+
 setup() {
   unset TMUX TMUX_PANE
   REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/.." && pwd -P)"
@@ -41,7 +45,7 @@ if [ -n "${MERIDIAN_TEST_FAST_CHILD_ENV:-}" ]; then
   if [ -d "$MERIDIAN_TMUX_CONTROL_ROOT/.runtime/tmux-bus/inboxes/$MERIDIAN_TMUX_AGENT_ID/acked" ] && jq -e --arg agent_id "$MERIDIAN_TMUX_AGENT_ID" --arg contract_id "$MERIDIAN_TMUX_CONTRACT_ID" 'any(.agents[]; .agent_id == $agent_id and .contract_id == $contract_id and .claude_session_id == null) and .routes[$agent_id].inbox == $agent_id' "$registry" >/dev/null 2>&1; then
     child_status=0
   fi
-  export CLAUDE_SESSION_ID=fast-child-session
+  export CLAUDE_SESSION_ID="$MERIDIAN_TEST_FAST_CHILD_SESSION"
   printf '%s\n' "$TMUX_PANE" > "$MERIDIAN_TEST_FAST_CHILD_PANE"
   bash "$MERIDIAN_TEST_SESSION_START" > "$MERIDIAN_TEST_FAST_CHILD_OUTPUT" 2>&1 || child_status=1
   printf '%s\n' "$child_status" > "$MERIDIAN_TEST_FAST_CHILD_STATUS"
@@ -99,7 +103,7 @@ SCRIPT
 
 teardown() {
   TMUX_TMPDIR="$TMUX_TMPDIR" tmux -L "$TMUX_SERVER" kill-server >/dev/null 2>&1 || true
-  rm -rf "$TEST_ROOT"
+  rm -rf "$TEST_ROOT" "$FAST_CHILD_LINK"
 }
 
 run_orchestrator() {
@@ -131,7 +135,7 @@ wait_for_result() {
 
 wait_for_binding() {
   local agent_id="$1" attempts=0 registry="$CONTROL_ROOT/.runtime/tmux-bus/registry.json"
-  until jq -e --arg agent_id "$agent_id" '.agents[] | select(.agent_id == $agent_id) | .claude_session_id == "fast-child-session"' "$registry" >/dev/null 2>&1; do
+  until jq -e --arg agent_id "$agent_id" --arg session_id "$FAST_CHILD_SESSION_ID" '.agents[] | select(.agent_id == $agent_id) | .claude_session_id == $session_id' "$registry" >/dev/null 2>&1; do
     attempts=$((attempts + 1))
     [ "$attempts" -lt 100 ] || return 1
     sleep 0.05
@@ -416,7 +420,7 @@ CASES
   export MERIDIAN_TEST_FAST_CHILD_PANE="$TEST_ROOT/fast-child.pane"
   export MERIDIAN_TEST_FAST_CHILD_STARTED="$TEST_ROOT/fast-child.started"
   export MERIDIAN_TEST_FAST_CHILD_EXIT="$TEST_ROOT/fast-child.exit"
-  export MERIDIAN_TEST_SESSION_START="$REPO_ROOT/scripts/session-start.sh"
+  export MERIDIAN_TEST_SESSION_START="$REPO_ROOT/scripts/session-start.sh" MERIDIAN_TEST_FAST_CHILD_SESSION="$FAST_CHILD_SESSION_ID"
   printf '%s\n' '{"tmux_execution":{"heartbeat_interval_seconds":1}}' > "$CONTROL_ROOT/config.json"
   provision_main
   local session definitions
@@ -435,7 +439,7 @@ CASES
   config_wait_periodic_heartbeat
   : > "$MERIDIAN_TEST_FAST_CHILD_RELEASE"
   wait_for_result "$MERIDIAN_TEST_FAST_CHILD_EXIT"
-  unset MERIDIAN_TEST_FAST_CHILD_ENV MERIDIAN_TEST_FAST_CHILD_STATUS MERIDIAN_TEST_FAST_CHILD_OUTPUT MERIDIAN_TEST_FAST_CHILD_READY MERIDIAN_TEST_FAST_CHILD_RELEASE MERIDIAN_TEST_FAST_CHILD_PANE MERIDIAN_TEST_FAST_CHILD_STARTED MERIDIAN_TEST_FAST_CHILD_EXIT MERIDIAN_TEST_SESSION_START
+  unset MERIDIAN_TEST_FAST_CHILD_ENV MERIDIAN_TEST_FAST_CHILD_STATUS MERIDIAN_TEST_FAST_CHILD_OUTPUT MERIDIAN_TEST_FAST_CHILD_READY MERIDIAN_TEST_FAST_CHILD_RELEASE MERIDIAN_TEST_FAST_CHILD_PANE MERIDIAN_TEST_FAST_CHILD_STARTED MERIDIAN_TEST_FAST_CHILD_EXIT MERIDIAN_TEST_SESSION_START MERIDIAN_TEST_FAST_CHILD_SESSION
 }
 
 @test "orchestration commands reject a child without the main capability" {
