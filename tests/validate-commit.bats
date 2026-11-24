@@ -5,8 +5,8 @@ load gate_case_helper
 load rejection_case_helper
 
 setup() {
-  git init -q "$BATS_TEST_TMPDIR"
-  cd "$BATS_TEST_TMPDIR" || return 1
+  git init -q "$BATS_TEST_TMPDIR/repo"
+  cd "$BATS_TEST_TMPDIR/repo" || return 1
   printf 'feat(core): add thing\n\nbody that matches no format\n' > "$BATS_TEST_TMPDIR/good.txt"
   printf 'not a conventional subject\n\nfeat(core): a body line that looks valid\n' > "$BATS_TEST_TMPDIR/bad.txt"
 }
@@ -112,6 +112,19 @@ flag_row() {
   flag_row sh-c-body "sh -c 'git commit -m bad'" 'bad'
   flag_row backtick-substitution 'echo `git commit -m bad`' 'bad'
   flag_row line-continuation $'git commit \\\n  -m bad' 'bad'
+
+  assert_no_case_failures
+}
+
+@test "validate-commit ignores commit text inside a heredoc body and checks every commit call" {
+  reset_case_failures
+
+  allow_row heredoc-body-mentions-commit $'cat <<EOF\ngit commit -m bad\nEOF'
+  allow_row quoted-heredoc-body-to-file $'cat > f <<\'EOF\'\ngit commit -m bad\nEOF'
+
+  flag_row commit-after-heredoc $'cat > f <<\'EOF\'\ngit commit -m bad\nEOF\ngit commit -m worse' 'worse'
+  flag_row here-string-input 'git commit -m x <<< "y"' 'x'
+  flag_row second-commit-bad 'git commit -m "feat(a): x" && git commit -m "bad"' 'bad'
 
   assert_no_case_failures
 }

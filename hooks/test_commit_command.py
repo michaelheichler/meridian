@@ -1,17 +1,12 @@
-import shlex
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
-from hooks.commit_command import commit_segment, nonconforming_subject
+from hooks.commit_command import nonconforming_subject
 
 SCRIPT = Path(__file__).resolve().parent / "commit_command.py"
-
-
-def segment_words(command: str) -> list[str] | None:
-    segment = commit_segment(command)
-    return None if segment is None else shlex.split(segment)
 
 
 def run_cli(command: str) -> tuple[int, str, str]:
@@ -22,36 +17,12 @@ def run_cli(command: str) -> tuple[int, str, str]:
     return completed.returncode, completed.stdout, completed.stderr
 
 
-class CommitSegmentTest(unittest.TestCase):
-    def test_text_that_only_mentions_git_commit_has_no_commit_segment(self) -> None:
-        commands = [
-            "echo git commit -m bad",
-            "python3 probe.py 'f() { shift; \"$@\"; }; f x git commit -m x'",
-            "python3 runner.py 'git commit -m bad'",
-            "printf %s \"sh -c 'git commit -m bad'\"",
-            "git status",
-        ]
-
-        found = {command: segment_words(command) for command in commands}
-
-        self.assertEqual(found, dict.fromkeys(commands))
-
-    def test_commit_segment_is_found_behind_wrappers_git_options_and_separators(self) -> None:
-        expected = {
-            "env FOO=1 git commit -m x": ["env", "FOO=1", "git", "commit", "-m", "x"],
-            "git -C /path commit -m x": ["git", "-C", "/path", "commit", "-m", "x"],
-            "git -c k=v commit -m x": ["git", "-c", "k=v", "commit", "-m", "x"],
-            "git status && git commit -m x": ["git", "commit", "-m", "x"],
-            "true; git commit -m x": ["git", "commit", "-m", "x"],
-            "timeout 5 git commit -m x": ["timeout", "5", "git", "commit", "-m", "x"],
-            "sudo -u me git commit -m x": ["sudo", "-u", "me", "git", "commit", "-m", "x"],
-            'echo -m bad && git commit -m "feat(a): s"': ["git", "commit", "-m", "feat(a): s"],
-            'git commit -m "fix(a): don\'t drop x"': ["git", "commit", "-m", "fix(a): don't drop x"],
-        }
-
-        found = {command: segment_words(command) for command in expected}
-
-        self.assertEqual(found, expected)
+def message_file_directory(test: unittest.TestCase, first_line: str) -> Path:
+    directory = tempfile.TemporaryDirectory()
+    test.addCleanup(directory.cleanup)
+    root = Path(directory.name)
+    (root / "message.txt").write_text(first_line + "\nfeat(a): body line\n")
+    return root
 
 
 class NonconformingSubjectTest(unittest.TestCase):
@@ -70,7 +41,12 @@ class NonconformingSubjectTest(unittest.TestCase):
             "echo `git commit -m bad`": "bad",
             "git commit \\\n  -m bad": "bad",
             "env FOO=1 git commit -m x": "x",
+            "git -C /path commit -m x": "x",
+            "git -c k=v commit -m x": "x",
             "git status && git commit -m x": "x",
+            "true; git commit -m x": "x",
+            "timeout 5 git commit -m x": "x",
+            "sudo -u me git commit -m x": "x",
         }
 
         found = {command: nonconforming_subject(command, "") for command in expected}
@@ -84,12 +60,52 @@ class NonconformingSubjectTest(unittest.TestCase):
             'git commit -m "fix(a): don\'t drop x"',
             'echo -m bad && git commit -m "feat(a): s"',
             "echo git commit -m bad",
+            "python3 probe.py 'f() { shift; \"$@\"; }; f x git commit -m x'",
+            "python3 runner.py 'git commit -m bad'",
+            "printf %s \"sh -c 'git commit -m bad'\"",
+            "git status",
             "git commit --amend --no-edit",
         ]
 
         found = {command: nonconforming_subject(command, "") for command in commands}
 
         self.assertEqual(found, dict.fromkeys(commands))
+
+    def test_heredoc_bodies_hide_commit_text_but_not_the_commit_after_them(self) -> None:
+        expected = {
+            "cat <<EOF\ngit commit -m bad\nEOF": None,
+            "cat > f <<'EOF'\ngit commit -m bad\nEOF": None,
+            "cat > f <<'EOF'\ngit commit -m bad\nEOF\ngit commit -m worse": "worse",
+            'git commit -m x <<< "y"': "x",
+        }
+
+        found = {command: nonconforming_subject(command, "") for command in expected}
+
+        self.assertEqual(found, expected)
+
+    def test_every_commit_call_is_checked_and_option_values_are_skipped(self) -> None:
+        expected = {
+            'git commit -m "feat(a): x" && git commit -m "bad"': "bad",
+            'git commit --trailer "-m x" -m "feat(a): x"': None,
+            'git commit -unormal -m "feat(a): x"': None,
+            "git commit -C HEAD -m bad": "bad",
+        }
+
+        found = {command: nonconforming_subject(command, "") for command in expected}
+
+        self.assertEqual(found, expected)
+
+    def test_runtime_placeholders_are_not_reported_as_subjects(self) -> None:
+        commands = ['git commit -m "$MSG"', "xargs -I{} git commit -m {}"]
+
+        found = {command: nonconforming_subject(command, "") for command in commands}
+
+        self.assertEqual(found, dict.fromkeys(commands))
+
+    def test_message_file_subject_is_read_relative_to_the_cwd(self) -> None:
+        root = message_file_directory(self, "bad")
+
+        self.assertEqual(nonconforming_subject("git commit -F message.txt", str(root)), "bad")
 
 
 class CommitCommandCliTest(unittest.TestCase):
