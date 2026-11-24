@@ -29,6 +29,7 @@ PROTECTED_STEMS = (
     "read_only_command",
     "brace_expansion",
     "path_identity",
+    "qa_command",
 )
 
 
