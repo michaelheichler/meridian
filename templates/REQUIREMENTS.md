@@ -1,5 +1,5 @@
-<!-- This template is populated by scripts/bootstrap/bootstrap-requirements.sh -->
-<!-- Domain Context section appears only when domain research was conducted -->
+<!-- scripts/bootstrap/bootstrap-requirements.sh fills this template -->
+<!-- The Domain Context section appears only after a domain research run -->
 
 # {Project Name} Requirements
 
@@ -12,14 +12,14 @@ Defined: {date} | Core value: {one-liner}
 **Research Date:** {date}
 **Domain:** {domain-name}
 
-{2-3 sentence summary of key findings relevant to this project, synthesized from the 4 research areas. This section is omitted if no research was conducted.}
+{2-3 sentence summary of key findings for this project, drawn from the 4 research areas. Omit this section when no research ran.}
 
 ## v1 Requirements
 
-<!-- Requirements are classified by tier:
-     - Table stakes: Features users expect in this domain (from research) → Must-have + (domain standard)
-     - Differentiators: Competitive advantages (user-identified) → Must-have + (competitive advantage)
-     - Anti-features: Deliberately excluded to prevent scope creep → Out of Scope
+<!-- Sort each requirement into one tier.
+     - Table stakes (features users expect in this domain, from research) → Must-have + (domain standard)
+     - Differentiators (competitive advantages the user names) → Must-have + (competitive advantage)
+     - Anti-features (omitted on purpose to stop scope creep) → Out of Scope
 -->
 
 ### {Category}
@@ -34,5 +34,5 @@ Defined: {date} | Core value: {one-liner}
 
 ## Out of Scope
 
-- Social sharing features (deliberately excluded : adds privacy complexity)
-- Third-party integrations (deliberately excluded : increases maintenance burden)
+- Social sharing features (omitted on purpose, adds privacy complexity)
+- Third-party integrations (omitted on purpose, adds maintenance work)
