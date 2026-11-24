@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from typing import Any, NamedTuple, Optional
@@ -32,6 +33,7 @@ PROTECTED_STEMS = (
     "qa_command",
     "shell_invocation",
     "command_view",
+    "command_policy",
 )
 
 
@@ -158,14 +160,34 @@ def installed_command_result(space: Workspace, command: str) -> tuple:
 
 
 def repo_install_workspace(case: unittest.TestCase) -> Workspace:
-    space = build_project(case)
+    base = Path(tempfile.mkdtemp()).resolve()
+    case.addCleanup(shutil.rmtree, base, True)
+    for folder in ("home", "scratch"):
+        (base / folder).mkdir()
+    environment = patch.dict(os.environ, {"HOME": str(base / "home")})
+    environment.start()
+    case.addCleanup(environment.stop)
+    root = base / "repo"
     skipped = shutil.ignore_patterns("test_*.py", "__pycache__")
-    shutil.copytree(HOOKS_DIR, space.root / "hooks", ignore=skipped)
-    shutil.copytree(HOOKS_DIR.parent / "scripts", space.root / "scripts", symlinks=True, ignore=skipped)
-    subprocess.run(["git", "init", "-q", str(space.root)], check=True, capture_output=True)
-    return space
+    shutil.copytree(HOOKS_DIR, root / "hooks", ignore=skipped)
+    shutil.copytree(HOOKS_DIR.parent / "scripts", root / "scripts", symlinks=True, ignore=skipped)
+    planning = root / ".meridian"
+    planning.mkdir()
+    subprocess.run(["git", "init", "-q", str(root)], check=True, capture_output=True)
+    return Workspace(root, planning, planning / ".runtime" / "decisions")
 
 
-def repo_install_reason(space: Workspace, tool: str, tool_input: dict) -> tuple:
-    returncode, stderr, output = plugin_pretool(space.root, space.root, tool, tool_input)
+def seed_guard_state(space: Workspace) -> None:
+    space.decisions.mkdir(parents=True)
+    (space.decisions / "secret.txt").write_text("S", encoding="utf-8")
+    state = Path.home() / ".local" / "state" / "meridian-guard"
+    state.mkdir(mode=0o700, parents=True)
+    grant = state / "grant.json"
+    grant.write_text(json.dumps({"expires_at": int(time.time()) - 60}), encoding="utf-8")
+    grant.chmod(0o600)
+
+
+def repo_install_reason(space: Workspace, tool: str, tool_input: dict, folder: str = "") -> tuple:
+    cwd = space.root / folder
+    returncode, stderr, output = plugin_pretool(space.root, cwd, tool, tool_input)
     return returncode, stderr, output.get("permissionDecisionReason")
