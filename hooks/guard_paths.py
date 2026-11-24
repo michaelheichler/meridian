@@ -1,27 +1,34 @@
 from __future__ import annotations
 
-import glob
 import os
 import re
-import shlex
 import signal
 import time
 from contextlib import contextmanager
+from enum import Enum
 from pathlib import Path
 from typing import Iterable, Iterator, NamedTuple, Optional
 
 if __package__:
     from .brace_expansion import ExpansionTooComplex, expand_braces
     from .decision_common import INVALID_STATE, DecisionStateError, require
-    from .path_identity import ProtectedIdentity, TooManyMatches, expand_glob
-    from .read_only_command import command_segments, is_git_inspection, is_source_inspection
+    from .path_identity import ProtectedIdentity, TooManyMatches, expand_glob, iter_matches
+    from .command_view import CommandView, command_view
+    from .read_only_command import command_segments
+    from .shell_invocation import (
+        command_words, fallback_words, invocation, runs_inline_code, segment_stages,
+    )
     from .guard_unlock import active_expiry, state_directory
     from .qa_command import permits_qa_command
 else:
     from brace_expansion import ExpansionTooComplex, expand_braces
     from decision_common import INVALID_STATE, DecisionStateError, require
-    from path_identity import ProtectedIdentity, TooManyMatches, expand_glob
-    from read_only_command import command_segments, is_git_inspection, is_source_inspection
+    from path_identity import ProtectedIdentity, TooManyMatches, expand_glob, iter_matches
+    from command_view import CommandView, command_view
+    from read_only_command import command_segments
+    from shell_invocation import (
+        command_words, fallback_words, invocation, runs_inline_code, segment_stages,
+    )
     from guard_unlock import active_expiry, state_directory
     from qa_command import permits_qa_command
 
@@ -48,23 +55,28 @@ GUARD_MODULES = (
     "guard_paths.py",
     "qa_command.py",
     "read_only_command.py",
+    "shell_invocation.py",
+    "command_view.py",
     "brace_expansion.py",
     "path_identity.py",
 )
-SCRIPT_MARKERS = ("pending-decision.sh", "hook-batch.sh", *GUARD_MODULES)
+SCRIPT_MARKERS = ("pending-decision.sh", "hook-batch.sh", "qa-phase.py", *GUARD_MODULES)
+DENY_SET = frozenset({*SCRIPT_MARKERS, "meridian-guard.sh", "guard_unlock.py"})
 RUNTIME_MARKERS = (".meridian/.runtime", ".runtime/decisions", ".hook-transitions")
 PROTECTED_MARKERS = (
     *SCRIPT_MARKERS, *RUNTIME_MARKERS, "hooks.json", "__init__.py",
     "guard_unlock.py", "meridian-guard.sh", "session-start.sh",
 )
+GRANT_NAMES = ("meridian-guard", ".local/state", "grant.json")
+PASSIVE_PROGRAMS = frozenset({"git", "printf", "echo", "tee", "sed"})
 EXPANSION_CHARS = "$`{"
 UNRESOLVED_CHARS = "$`"
 GLOB_CHARS = "*?["
+HOME_VARIABLE = re.compile(r"\$(?:\{HOME\}|HOME(?![A-Za-z0-9_]))")
 SUFFIX_SPAN = 8
 ANALYSIS_SECONDS = 3.5
 TIMEOUT_REASON = "guard analysis timeout"
 SEARCH_TOOLS = frozenset({"Grep", "Glob"})
-SHELL_SPLIT = re.compile(r"[\s;&|<>()]+")
 QUOTE_CHARS = "$'\""
 FILES0_OPTION = "--files0-from"
 FILES0_PREFIX = "--files0"
@@ -77,9 +89,24 @@ class AnalysisTimeout(Exception):
     pass
 
 
+class Access(Enum):
+    SOURCE = "source"
+    EXECUTION = "execution"
+    INLINE_CODE = "inline-code"
+    RUNTIME = "runtime"
+    GRANT = "grant"
+    UNRESOLVED = "unresolved"
+
+
 class Scope(NamedTuple):
     identity: ProtectedIdentity
     markers: tuple[str, ...]
+
+
+class Probe(NamedTuple):
+    command: str
+    words: list[str]
+    text: str
 
 
 def _planning_candidate(directory: Path) -> OptionalPath:
@@ -106,37 +133,12 @@ def current_directory(cwd: object) -> OptionalPath:
     return Path(cwd).resolve() if isinstance(cwd, str) and cwd else None
 
 
-def _words(command: str) -> Optional[list[str]]:
-    try:
-        return shlex.split(command, comments=True)
-    except ValueError:
-        return None
-
-
 def _has_expansion(word: str) -> bool:
     return any(char in word for char in EXPANSION_CHARS) or word.startswith("~")
 
 
 def _has_glob(value: str) -> bool:
     return any(char in value for char in GLOB_CHARS)
-
-
-def _inspection_words(command: str, cwd: OptionalPath) -> Optional[list[str]]:
-    words = _words(command)
-    if not words or cwd is None or re.search(r"[#\n\r;&|<>()$`{]", command):
-        return words
-    inspection = is_git_inspection(words) if words[0] == "git" else is_source_inspection(command, str(cwd))
-    if not inspection:
-        return words
-    lexer = shlex.shlex(command, posix=False)
-    lexer.whitespace_split = True
-    try:
-        quoted = list(lexer)
-    except ValueError:
-        return words
-    if len(quoted) != len(words) or any(_words(raw) != [word] for raw, word in zip(quoted, words)):
-        return words
-    return [glob.escape(word) if raw[0] in "'\"" else word for raw, word in zip(quoted, words)]
 
 
 def _candidates(word: str) -> set[str]:
@@ -152,6 +154,7 @@ def _operand_values(words: list[str]) -> list[str]:
 
 
 def _target(value: str, cwd: Path) -> Optional[str]:
+    value = HOME_VARIABLE.sub(lambda _match: os.path.expanduser("~"), value)
     if any(char in value for char in UNRESOLVED_CHARS):
         return None
     return os.path.join(str(cwd), os.path.expanduser(value))
@@ -183,11 +186,6 @@ def _direct_hit(tool_input: dict, cwd: OptionalPath, scope: Scope) -> bool:
     return any(scope.identity.hits(path) for path in paths)
 
 
-def _fallback_words(command: str) -> list[str]:
-    tokens = (token.strip(QUOTE_CHARS) for token in SHELL_SPLIT.split(command))
-    return [token for token in tokens if token]
-
-
 def _is_files0_option(word: str, floor: int) -> bool:
     name = word.split("=", 1)[0]
     return len(name) >= floor and FILES0_OPTION.startswith(name)
@@ -202,7 +200,7 @@ def _files0_hit(words: list[str]) -> bool:
 def _command_locations(command: str, cwd: Path) -> tuple[list[Path], bool]:
     locations = [cwd]
     unresolved = False
-    tokens = _command_words(command)
+    tokens = command_words(command)
     for index, token in enumerate(tokens[:-1]):
         if token not in {"cd", "pushd", "-C"}:
             continue
@@ -227,22 +225,30 @@ def _parent_mutation(words: list[str], cwd: Path, identity: ProtectedIdentity) -
     return False
 
 
-def _command_hit(command: str, cwd: OptionalPath, scope: Scope) -> bool:
-    parsed = _inspection_words(command, cwd)
-    words = _fallback_words(command) if parsed is None else parsed
-    if _files0_hit(words):
+def _probe_hit(probe: Probe, cwd: OptionalPath, scope: Scope) -> bool:
+    if _files0_hit(probe.words):
         return True
-    if _marker_hit((command, " ".join(words)), scope.markers):
+    if _marker_hit((probe.text, " ".join(probe.words)), scope.markers):
         return True
     if cwd is None:
         return False
-    values = _operand_values(words)
-    locations, unresolved = _command_locations(command, cwd)
-    if any(_parent_mutation(words, location, scope.identity) for location in locations):
+    locations, unresolved = _command_locations(probe.command, cwd)
+    if any(_parent_mutation(probe.words, location, scope.identity) for location in locations):
         return True
-    if unresolved and _marker_hit((command,), SCRIPT_MARKERS):
+    if unresolved and _marker_hit((probe.text,), SCRIPT_MARKERS):
         return True
-    return any(_value_hit(value, location, scope.identity) for location in locations for value in values)
+    values = _operand_values(probe.words)
+    pairs = ((value, location) for location in locations for value in values)
+    return any(_value_hit(value, location, scope.identity) for value, location in pairs)
+
+
+def _pattern_hit(pattern: str, root: Path, identity: ProtectedIdentity) -> bool:
+    target = _target(pattern, root)
+    if target is None:
+        return False
+    if not _has_glob(pattern):
+        return identity.hits(target)
+    return identity.glob_hits(target) or any(identity.hits(match) for match in iter_matches(target))
 
 
 def _search_hit(data: dict, cwd: OptionalPath, identity: ProtectedIdentity) -> bool:
@@ -259,42 +265,36 @@ def _search_hit(data: dict, cwd: OptionalPath, identity: ProtectedIdentity) -> b
         return True
     if not isinstance(pattern, str):
         return False
-    return any(_value_hit(item, Path(root), scoped) for item in expand_braces(pattern))
+    return any(_pattern_hit(item, Path(root), scoped) for item in expand_braces(pattern))
 
 
-def _plain_source_glob(word: str, cwd: Path) -> bool:
-    matches = expand_glob(os.path.join(str(cwd), word))
-    return bool(matches) and all(
-        Path(match).is_file() and not Path(match).is_symlink() for match in matches
-    )
+def _every_word_probe(view: CommandView) -> Probe:
+    return Probe(view.command, view.loose + view.strict, view.command)
 
 
-def _read_exempt(command: str, cwd: OptionalPath) -> bool:
-    words = _inspection_words(command, cwd)
-    if cwd is None or words is None or any(_has_expansion(word) for word in words):
-        return False
-    if any(_has_glob(word) and not _plain_source_glob(word, cwd) for word in words):
-        return False
-    simple = not OPERATOR_SPLIT.search(command)
-    if simple and words and os.path.basename(words[0]) == "pwd":
+def _whole_probe(view: Optional[CommandView]) -> Optional[Probe]:
+    return None if view is None else _every_word_probe(view)
+
+
+def _strict_probe(view: Optional[CommandView]) -> Optional[Probe]:
+    return None if view is None else Probe(view.command, view.strict, view.strict_text)
+
+
+def _tool_hit(data: dict, cwd: OptionalPath, scope: Scope, probe: Optional[Probe]) -> bool:
+    if _direct_hit(data["tool_input"], cwd, scope) or _search_hit(data, cwd, scope.identity):
         return True
-    if simple and words and os.path.basename(words[0]) == "ls" and "-R" not in words:
-        return True
-    if simple and len(words) > 1 and words[:2] == ["git", "status"]:
-        return True
-    return is_source_inspection(command, str(cwd))
+    return probe is not None and _probe_hit(probe, cwd, scope)
 
 
-def _evaluate(data: dict, cwd: OptionalPath, full: Scope) -> bool:
-    tool_input = data["tool_input"]
-    if _direct_hit(tool_input, cwd, full) or _search_hit(data, cwd, full.identity):
-        return True
-    command = tool_input.get("command")
-    if not isinstance(command, str):
-        return False
-    if data.get("tool_name") == "Bash" and _read_exempt(command, cwd):
-        return _command_hit(command, cwd, Scope(full.identity.runtime_only(), RUNTIME_MARKERS))
-    return _command_hit(command, cwd, full)
+def _evaluate(
+    data: dict, cwd: OptionalPath, full: Scope, view: Optional[CommandView],
+) -> Optional[Access]:
+    runtime = Scope(full.identity.runtime_only(), RUNTIME_MARKERS)
+    if _tool_hit(data, cwd, runtime, _whole_probe(view)):
+        return Access.RUNTIME
+    if _tool_hit(data, cwd, full, _strict_probe(view)):
+        return Access.SOURCE
+    return None
 
 
 def _plugin_root() -> OptionalPath:
@@ -322,45 +322,59 @@ def _owner_scope() -> Scope:
     return Scope(identity, (str(state_directory()), "meridian-guard/"))
 
 
-def _command_words(command: str) -> list[str]:
-    words = _words(command)
-    return _fallback_words(command) if words is None else words
+def _mentions_deny_set(segment: str) -> bool:
+    words = command_words(segment)
+    if not words or os.path.basename(words[0]) in PASSIVE_PROGRAMS:
+        return False
+    tokens = words + fallback_words(" ".join(words))
+    return any(os.path.basename(word.strip(QUOTE_CHARS)) in DENY_SET for word in tokens)
 
 
-def _runtime_script_execution(command: str, cwd: OptionalPath) -> bool:
-    for segment in re.split(r"&&|\|\||;", command):
-        if _read_exempt(segment, cwd):
-            continue
-        words = _command_words(segment)
-        if not words:
-            continue
-        if os.path.basename(words[0]) in {"git", "printf", "echo", "tee", "sed"}:
-            continue
-        tokens = words + _fallback_words(" ".join(words))
-        if any(os.path.basename(word.strip(QUOTE_CHARS)) in SCRIPT_MARKERS for word in tokens):
+def _deny_target(target: str, cwd: OptionalPath) -> bool:
+    for name in expand_braces(target):
+        names = {os.path.basename(name)}
+        if cwd is not None:
+            resolved = os.path.realpath(os.path.join(str(cwd), os.path.expanduser(name)))
+            names.add(os.path.basename(resolved))
+        if names & DENY_SET:
             return True
     return False
 
 
-def _unlock_command(command: str, cwd: OptionalPath, cli: Scope) -> bool:
-    if _command_hit(command, cwd, cli):
+def _segment_runs_deny_set(segment: str, cwd: OptionalPath) -> bool:
+    stages = segment_stages(segment)
+    if stages is None:
+        return _mentions_deny_set(segment)
+    calls = (invocation([token.text for token in stage.words]) for stage in stages)
+    targets = (call.target for call in calls if call is not None and call.target is not None)
+    return any(_deny_target(target, cwd) for target in targets)
+
+
+def _runs_deny_set(command: str, cwd: OptionalPath) -> bool:
+    return any(_segment_runs_deny_set(segment, cwd) for segment in command_segments(command))
+
+
+def _unlock_command(view: CommandView, cwd: OptionalPath, cli: Scope) -> bool:
+    if _probe_hit(_every_word_probe(view), cwd, cli):
         return True
-    words = _command_words(command)
+    words = command_words(view.command)
     if any("guard_unlock" in word for word in words if "import" in word):
         return True
-    if words and os.path.basename(words[0]) in {"git", "printf", "echo", "tee", "sed"}:
+    if words and os.path.basename(words[0]) in PASSIVE_PROGRAMS:
         return False
-    return _marker_hit((command,), ("meridian-guard.sh", "guard_unlock"))
+    return _marker_hit((view.command,), ("meridian-guard.sh", "guard_unlock"))
 
 
-def _unlock_access(data: dict, cwd: OptionalPath, roots: set[Path]) -> bool:
+def _unlock_access(
+    data: dict, cwd: OptionalPath, roots: set[Path], view: Optional[CommandView],
+) -> bool:
     tool_input = data["tool_input"]
     owner = _owner_scope()
     paths = {"file_path": tool_input.get("path")}
     if _direct_hit(tool_input, cwd, owner) or _direct_hit(paths, cwd, owner):
         return True
-    command = tool_input.get("command")
-    if isinstance(command, str) and _command_hit(command, cwd, owner):
+    whole = _whole_probe(view)
+    if whole is not None and _probe_hit(whole, cwd, owner):
         return True
     if data.get("tool_name") in {"Read", "Grep", "Glob"}:
         return False
@@ -369,9 +383,9 @@ def _unlock_access(data: dict, cwd: OptionalPath, roots: set[Path]) -> bool:
     cli = Scope(ProtectedIdentity.build(None, cli_files), ())
     if _direct_hit(tool_input, cwd, cli):
         return True
-    if not isinstance(command, str) or _read_exempt(command, cwd):
+    if view is None or view.reads_only:
         return False
-    return _unlock_command(command, cwd, cli)
+    return _unlock_command(view, cwd, cli)
 
 
 def _embedded_access(command: str, roots: set[Path], unlocked: bool) -> bool:
@@ -379,9 +393,7 @@ def _embedded_access(command: str, roots: set[Path], unlocked: bool) -> bool:
 
 
 def _embedded_segment(command: str, roots: set[Path], unlocked: bool) -> bool:
-    words = _command_words(command)
-    interpreters = {"bash", "sh", "zsh", "python", "python3", "perl", "node", "eval", "xargs"}
-    if not any(os.path.basename(word) in interpreters for word in words):
+    if not runs_inline_code(command):
         return False
     markers = (*SCRIPT_MARKERS, "meridian-guard.sh", "guard_unlock", str(state_directory()))
     if not unlocked:
@@ -390,11 +402,10 @@ def _embedded_segment(command: str, roots: set[Path], unlocked: bool) -> bool:
 
 
 def _grant_expansion(command: str) -> bool:
-    words = _command_words(command)
     return any(
-        any(marker in word for marker in ("-guard", "meridian", ".local/state", "grant.json"))
+        any(name in word for name in GRANT_NAMES)
         and (any(char in word for char in EXPANSION_CHARS) or _has_glob(word))
-        for word in words
+        for word in command_words(command)
     )
 
 
@@ -404,12 +415,14 @@ class Installation(NamedTuple):
     unlocked: bool
 
 
-def _shell_access(command: str, cwd: OptionalPath, installation: Installation) -> bool:
-    return (
-        _grant_expansion(command)
-        or _embedded_access(command, installation.roots, installation.unlocked)
-        or _runtime_script_execution(command, cwd)
-    )
+def _shell_access(command: str, cwd: OptionalPath, installation: Installation) -> Optional[Access]:
+    if _grant_expansion(command):
+        return Access.GRANT
+    if _embedded_access(command, installation.roots, installation.unlocked):
+        return Access.INLINE_CODE
+    if _runs_deny_set(command, cwd):
+        return Access.EXECUTION
+    return None
 
 
 def _source_scope(data: dict, planning_dir: OptionalPath, installation: Installation) -> Scope:
@@ -423,22 +436,23 @@ def _source_scope(data: dict, planning_dir: OptionalPath, installation: Installa
     return Scope(ProtectedIdentity.build(planning_dir, files), markers)
 
 
-def _analyse(data: dict, planning_dir: OptionalPath) -> bool:
+def _analyse(data: dict, planning_dir: OptionalPath) -> Optional[Access]:
     cwd = current_directory(data.get("cwd"))
     root = _plugin_root()
     roots = {Path(__file__).resolve().parent.parent}
     if root is not None:
         roots.add(root)
     if permits_qa_command(data, cwd, planning_dir, roots):
-        return False
-    if _unlock_access(data, cwd, roots):
-        return True
-    installation = Installation(roots, root is None, active_expiry() is not None)
+        return None
     command = data["tool_input"].get("command")
-    if isinstance(command, str) and _shell_access(command, cwd, installation):
-        return True
-    scope = _source_scope(data, planning_dir, installation)
-    return _evaluate(data, cwd, scope)
+    view = command_view(command, cwd) if isinstance(command, str) else None
+    if _unlock_access(data, cwd, roots, view):
+        return Access.GRANT
+    installation = Installation(roots, root is None, active_expiry() is not None)
+    shell = None if view is None else _shell_access(view.command, cwd, installation)
+    if shell is not None:
+        return shell
+    return _evaluate(data, cwd, _source_scope(data, planning_dir, installation), view)
 
 
 @contextmanager
@@ -463,13 +477,13 @@ def _deadline(seconds: float) -> Iterator[None]:
             signal.setitimer(signal.ITIMER_REAL, remaining, outer_timer[1])
 
 
-def has_protected_decision_path(data: dict, planning_dir: OptionalPath) -> bool:
+def protected_access(data: dict, planning_dir: OptionalPath) -> Optional[Access]:
     if not isinstance(data.get("tool_input"), dict):
-        return False
+        return None
     try:
         with _deadline(ANALYSIS_SECONDS):
             return _analyse(data, planning_dir)
     except AnalysisTimeout:
         raise DecisionStateError(TIMEOUT_REASON) from None
     except (ExpansionTooComplex, TooManyMatches, ValueError):
-        return True
+        return Access.UNRESOLVED

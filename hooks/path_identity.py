@@ -4,12 +4,13 @@ import fnmatch
 import glob
 import os
 from dataclasses import dataclass, replace
-from itertools import islice
+from itertools import islice, takewhile
 from pathlib import Path
 from typing import Iterable, Iterator, Optional
 
 FILE_CAP = 2048
 GLOB_CAP = 1024
+GLOB_CHARS = "*?["
 FileId = tuple[int, int]
 
 
@@ -53,20 +54,25 @@ def _segment_matches(actual: str, pattern: str) -> bool:
     return hidden_ok and fnmatch.fnmatchcase(actual.casefold(), pattern.casefold())
 
 
-def _match(actual: tuple, pattern: tuple, exact: bool) -> bool:
+def _match(actual: tuple, pattern: tuple) -> bool:
     if not actual:
-        return not exact or all(part == "**" for part in pattern)
+        return all(part == "**" for part in pattern)
     if not pattern:
         return False
     head, rest = pattern[0], pattern[1:]
     if head == "**":
-        return _match(actual, rest, exact) or _match(actual[1:], pattern, exact)
-    return _segment_matches(actual[0], head) and _match(actual[1:], rest, exact)
+        return _match(actual, rest) or _match(actual[1:], pattern)
+    return _segment_matches(actual[0], head) and _match(actual[1:], rest)
 
 
-def _glob_reaches(pattern: str, target: Path, exact: bool) -> bool:
+def _glob_matches(pattern: str, target: Path) -> bool:
+    return _match(target.parts, Path(os.path.normpath(pattern)).parts)
+
+
+def _literal_prefix(pattern: str) -> str:
     parts = Path(os.path.normpath(pattern)).parts
-    return _match(target.parts, parts, exact)
+    literal = takewhile(lambda part: not any(char in part for char in GLOB_CHARS), parts)
+    return str(Path(*literal))
 
 
 def _iter_glob(pattern: str, recursive: bool) -> Iterator[str]:
@@ -81,6 +87,10 @@ def expand_glob(pattern: str) -> list[str]:
     if len(matches) > GLOB_CAP:
         raise TooManyMatches(pattern)
     return matches
+
+
+def iter_matches(pattern: str) -> Iterator[str]:
+    return _iter_glob(pattern, "**" in pattern)
 
 
 @dataclass(frozen=True)
@@ -139,6 +149,6 @@ class ProtectedIdentity:
         return self._runtime_hit(real) or self._module_hit(real)
 
     def glob_hits(self, pattern: str) -> bool:
-        if self.runtime is not None and _glob_reaches(pattern, self.runtime, False):
+        if self._runtime_hit(os.path.realpath(_literal_prefix(pattern))):
             return True
-        return any(_glob_reaches(pattern, module, True) for module in self.modules)
+        return any(_glob_matches(pattern, module) for module in self.modules)

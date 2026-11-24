@@ -4,10 +4,8 @@ import os
 import re
 import shlex
 from itertools import takewhile
-from typing import NamedTuple, Optional
+from typing import Callable, NamedTuple, Optional
 
-OPERATOR_CHARS = frozenset("();<>|&")
-RAW_FORBIDDEN = re.compile(r"\$\(|`|[\n\r<{\u0080-\U0010ffff]|(?:^|[\s|=])\$['\"]")
 SED_ADDRESS = r"(?:\d+|\$|/[^/\\]*/)"
 SED_SCRIPT = re.compile(rf"(?:{SED_ADDRESS}(?:,{SED_ADDRESS})?)?p")
 SED_FLAGS = frozenset({"-n", "-E", "-r", "--quiet", "--silent", "--regexp-extended"})
@@ -19,6 +17,8 @@ ONE_CHAR = re.compile(r".")
 FIELD_LIST = re.compile(r"[\d,\-]+")
 SORT_KEY = re.compile(r"\d+(?:,\d+)?")
 DIGIT_FLAG = re.compile(r"-\d+")
+AWK_UNSAFE = re.compile(r"system|getline|[|>]")
+AWK_VALUED = ("-F", "-v")
 
 
 class Spec(NamedTuple):
@@ -34,7 +34,6 @@ SPECS = {
     "head": Spec("q", {"n": NUMBER, "c": NUMBER}, frozenset(), True, True),
     "tail": Spec("q", {"n": NUMBER, "c": NUMBER}, frozenset(), True, True),
     "wc": Spec("lwcm", {}, frozenset(), False, True),
-    "ls": Spec("lahA1dtrS", {}, frozenset(), False, True),
     "stat": Spec("L", {}, frozenset(), False, True),
     "grep": Spec(
         "nivclLwxEFohHsq",
@@ -46,6 +45,26 @@ SPECS = {
     "sort": Spec("nru", {"k": SORT_KEY, "t": ONE_CHAR}, frozenset(), False, True),
     "uniq": Spec("cdu", {}, frozenset(), False, False),
     "cut": Spec("", {"d": ONE_CHAR, "f": FIELD_LIST, "c": FIELD_LIST}, frozenset(), False, True),
+    "pwd": Spec("LP", {}, frozenset(), False, False),
+    "cd": Spec("LP", {}, frozenset(), False, True),
+    "pushd": Spec("", {}, frozenset(), False, True),
+    "jq": Spec(
+        "rcesnSjaMCR",
+        {},
+        frozenset({
+            "--raw-output", "--compact-output", "--slurp", "--null-input", "--sort-keys",
+            "--exit-status", "--tab", "--join-output", "--raw-input",
+        }),
+        False,
+        True,
+    ),
+    "diff": Spec(
+        "uqrNbwBiE",
+        {"U": COUNT},
+        frozenset({"--brief", "--recursive", "--new-file", "--ignore-all-space", "--color=never"}),
+        False,
+        True,
+    ),
 }
 INSPECTION_SPECS = {
     "grep": Spec(
@@ -97,23 +116,6 @@ FIND_VALUES = {
     "-name": ANY_TEXT, "-iname": ANY_TEXT, "-path": ANY_TEXT, "-ipath": ANY_TEXT,
     "-type": re.compile(r"[bcdflps]"), "-maxdepth": COUNT, "-mindepth": COUNT,
 }
-FIRST_STAGE = frozenset({"cat", "grep", "head", "tail", "wc", "ls", "stat"})
-PIPE_STAGE = frozenset({"grep", "head", "tail", "wc", "sort", "uniq", "cut"})
-
-
-def _tokenize(command: str) -> Optional[list[str]]:
-    lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
-    lexer.whitespace_split = True
-    try:
-        return list(lexer)
-    except ValueError:
-        return None
-
-
-def _is_operator(token: str) -> bool:
-    return all(char in OPERATOR_CHARS for char in token) and token != "|"
-
-
 def _short_cluster(letters: str, following: Optional[str], spec: Spec) -> Optional[int]:
     for index, char in enumerate(letters):
         if char in spec.noarg:
@@ -180,26 +182,6 @@ def _sed_ok(stage: list[str]) -> bool:
     return not any(arg.startswith("-") for arg in body[1:])
 
 
-def _first_stage_ok(stage: list[str], cwd: str) -> bool:
-    if stage[0] == "sed":
-        return _sed_ok(stage)
-    return stage[0] in FIRST_STAGE and _command_safe(stage, cwd)
-
-
-def _pipe_stage_ok(stage: list[str], cwd: str) -> bool:
-    return stage[0] in PIPE_STAGE and _command_safe(stage, cwd)
-
-
-def _split_stages(tokens: list[str]) -> list[list[str]]:
-    stages: list[list[str]] = [[]]
-    for token in tokens:
-        if token == "|":
-            stages.append([])
-        else:
-            stages[-1].append(token)
-    return stages
-
-
 def _find_read_only(args: list[str]) -> bool:
     index = 0
     while index < len(args):
@@ -250,30 +232,49 @@ def is_git_inspection(words: list[str]) -> bool:
     return _flags_allowed(args[:boundary], GIT_INSPECTION_SPECS)
 
 
-def is_source_inspection(command: str, cwd: str) -> bool:
-    """Wider than is_plain_read_command, because agents must search hook sources while pending-work reads stay narrow."""
-    if is_plain_read_command(command, cwd):
-        return True
-    if RAW_FORBIDDEN.search(command):
-        return False
-    tokens = _tokenize(command)
-    if not tokens or any(token == "|" or _is_operator(token) for token in tokens):
-        return False
-    if tokens[0] == "find":
-        return _find_read_only(tokens[1:])
-    return _flags_allowed(tokens, INSPECTION_SPECS)
+def _ls_ok(stage: list[str]) -> bool:
+    flags = [arg for arg in stage[1:] if arg.startswith("-")]
+    short_flags = (flag for flag in flags if not flag.startswith("--"))
+    return "--recursive" not in flags and not any("R" in flag for flag in short_flags)
 
 
-def is_plain_read_command(command: str, cwd: str) -> bool:
-    if not isinstance(command, str) or RAW_FORBIDDEN.search(command):
+def _awk_ok(stage: list[str]) -> bool:
+    args = stage[1:]
+    index = 0
+    while index < len(args) and args[index].startswith("-") and args[index] != "-":
+        flag = args[index]
+        if flag == "--":
+            index += 1
+            break
+        if flag not in AWK_VALUED and flag[:2] not in AWK_VALUED:
+            return False
+        index += 2 if flag in AWK_VALUED else 1
+    return index < len(args) and not AWK_UNSAFE.search(args[index])
+
+
+def _find_ok(stage: list[str]) -> bool:
+    return _find_read_only(stage[1:])
+
+
+def _prints_arguments(_stage: list[str]) -> bool:
+    return True
+
+
+STAGE_CHECKS: dict[str, Callable[[list[str]], bool]] = {
+    "sed": _sed_ok,
+    "awk": _awk_ok,
+    "ls": _ls_ok,
+    "find": _find_ok,
+    "git": is_git_inspection,
+    "echo": _prints_arguments,
+    "printf": _prints_arguments,
+}
+
+
+def is_read_stage(stage: list[str], cwd: str) -> bool:
+    if not stage:
         return False
-    tokens = _tokenize(command)
-    if not tokens or any(_is_operator(token) for token in tokens):
-        return False
-    stages = _split_stages(tokens)
-    if not all(stages):
-        return False
-    later = stages[1:]
-    return _first_stage_ok(stages[0], cwd) and all(
-        _pipe_stage_ok(item, cwd) for item in later
-    )
+    check = STAGE_CHECKS.get(stage[0])
+    if check is not None:
+        return check(stage)
+    return _command_safe(stage, cwd) or _flags_allowed(stage, INSPECTION_SPECS)

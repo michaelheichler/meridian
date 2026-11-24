@@ -20,7 +20,7 @@ if __package__:
         require,
     )
     from .decision_store import DecisionStore
-    from .guard_paths import has_protected_decision_path, planning_directory
+    from .guard_paths import Access, planning_directory, protected_access
     from .qa_command import claim_qa_worker
     from .question_validation import fingerprint, validate_question
 else:
@@ -38,7 +38,7 @@ else:
         require,
     )
     from decision_store import DecisionStore
-    from guard_paths import has_protected_decision_path, planning_directory
+    from guard_paths import Access, planning_directory, protected_access
     from qa_command import claim_qa_worker
     from question_validation import fingerprint, validate_question
 
@@ -60,6 +60,24 @@ AGENT_KEYS = (
 )
 MALFORMED_INPUT = "Hook error: malformed hook JSON input."
 RESERVED_RUNTIME = "Decision runtime access is reserved for trusted hook transitions."
+SOURCE_READ_ONLY = (
+    "Installed Meridian source and guard files are read-only. "
+    "Only the owner can unlock edits with meridian-guard allow."
+)
+GUARD_HELPER_EXECUTION = "Meridian guard helpers run only inside trusted hook transitions."
+INLINE_GUARD_CODE = (
+    "Inline interpreter code must not name Meridian guard source, scripts, "
+    "runtime state, or the owner grant."
+)
+OWNER_GRANT = "The Meridian guard grant and its unlock command belong to the owner."
+ACCESS_REASONS = {
+    Access.SOURCE: SOURCE_READ_ONLY,
+    Access.EXECUTION: GUARD_HELPER_EXECUTION,
+    Access.INLINE_CODE: INLINE_GUARD_CODE,
+    Access.RUNTIME: RESERVED_RUNTIME,
+    Access.GRANT: OWNER_GRANT,
+    Access.UNRESOLVED: RESERVED_RUNTIME,
+}
 Verdict = Optional[str]
 
 
@@ -160,8 +178,9 @@ def _pretool_context(data: Record) -> Any:
         planning_dir = planning_directory(data.get("cwd"))
     except DecisionStateError as error:
         return str(error)
-    if has_protected_decision_path(data, planning_dir):
-        return RESERVED_RUNTIME
+    access = protected_access(data, planning_dir)
+    if access is not None:
+        return ACCESS_REASONS[access]
     store = DecisionStore(planning_dir) if planning_dir else None
     return tool_name, store, _session_id(data)
 
@@ -237,25 +256,26 @@ def _submitted_answer(
     return None
 
 
-def _required_store(data: Record) -> tuple[DecisionStore, str]:
-    planning_dir = planning_directory(data.get("cwd"))
-    session_id = _session_id(data)
-    require(planning_dir is not None and session_id is not None, INVALID_RECORD)
-    return DecisionStore(cast(Path, planning_dir)), cast(str, session_id)
+def _record_answer(store: DecisionStore, session_id: str, data: Record) -> None:
+    if store.state(session_id) not in ACTIVE_STATUSES:
+        return
+    submitted = _submitted_answer(store, session_id, data)
+    if submitted is None:
+        store.cancel(session_id)
+    else:
+        store.answer(session_id, submitted)
 
 
 def _posttool(data: Record) -> Verdict:
     if data.get("tool_name") != ASK_TOOL:
         return None
     try:
-        store, session_id = _required_store(data)
-        if store.state(session_id) not in ACTIVE_STATUSES:
+        planning_dir = planning_directory(data.get("cwd"))
+        if planning_dir is None:
             return None
-        submitted = _submitted_answer(store, session_id, data)
-        if submitted is None:
-            store.cancel(session_id)
-        else:
-            store.answer(session_id, submitted)
+        session_id = _session_id(data)
+        require(session_id is not None, INVALID_RECORD)
+        _record_answer(DecisionStore(planning_dir), cast(str, session_id), data)
     except DecisionStateError as error:
         return str(error)
     return None
