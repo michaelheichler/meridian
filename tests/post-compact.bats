@@ -22,12 +22,12 @@ install_python_recorder() {
   chmod +x "$RECORDER_BIN/python3"
 }
 
-run_post_compact() {
-  (cd "$PROJECT" && printf '%s' '{"session_id":"s1"}' | PATH="$RECORDER_BIN:$PATH" bash "$POST_COMPACT")
+run_post_compact_in() {
+  (cd "$1" && printf '%s' '{"session_id":"s1"}' | PATH="$RECORDER_BIN:$PATH" bash "$POST_COMPACT" 2>"$BATS_TEST_TMPDIR/stderr")
 }
 
 @test "post compact stays silent and skips the usage reset in a project without a planning dir" {
-  run run_post_compact
+  run run_post_compact_in "$PROJECT"
 
   expect_case_silent no-planning-dir 0
   [ ! -e "$PYTHON_LOG" ] || record_case_failure no-planning-dir "python3 ran with [$(cat "$PYTHON_LOG")]"
@@ -38,10 +38,24 @@ run_post_compact() {
 @test "post compact records a usage reset baseline in a project with a planning dir" {
   mkdir "$PROJECT/.meridian"
 
-  run run_post_compact
+  run run_post_compact_in "$PROJECT"
 
   expect_case with-planning-dir 0
   [ -s "$PYTHON_LOG" ] || record_case_failure with-planning-dir "python3 recorder saw no call"
   [ -e "$PROJECT/.meridian/.context-usage-reset" ] || record_case_failure with-planning-dir "no reset baseline"
+  assert_no_case_failures
+}
+
+@test "post compact from a subdirectory uses the planning dir at the git top level" {
+  mkdir -p "$PROJECT/.meridian" "$PROJECT/sub/dir"
+  : > "$PROJECT/.meridian/.compaction-marker"
+
+  run run_post_compact_in "$PROJECT/sub/dir"
+
+  expect_case from-subdirectory 0
+  jq -e '.hookSpecificOutput.hookEventName == "SessionStart" and (.hookSpecificOutput.additionalContext | length > 0)' <<<"$output" >/dev/null \
+    || record_case_failure from-subdirectory "stdout is not a compaction context document: $output"
+  [ ! -e "$PROJECT/.meridian/.compaction-marker" ] || record_case_failure from-subdirectory "compaction marker survived"
+  [ ! -e "$PROJECT/sub/dir/.meridian" ] || record_case_failure from-subdirectory "planning dir created in the subdirectory"
   assert_no_case_failures
 }

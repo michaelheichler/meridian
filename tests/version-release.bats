@@ -116,6 +116,38 @@ write_changelog_with_unreleased() {
   assert_no_case_failures
 }
 
+set_sandbox_version() {
+  printf '%s\n' "$1" > "$SANDBOX/VERSION"
+  jq --arg version "$1" '.version = $version' "$SANDBOX/.claude-plugin/plugin.json" > "$SANDBOX/plugin.tmp"
+  mv "$SANDBOX/plugin.tmp" "$SANDBOX/.claude-plugin/plugin.json"
+  jq --arg version "$1" '.version = $version | .plugins[0].version = $version' "$SANDBOX/.claude-plugin/marketplace.json" > "$SANDBOX/marketplace.tmp"
+  mv "$SANDBOX/marketplace.tmp" "$SANDBOX/.claude-plugin/marketplace.json"
+}
+
+verify_heading_row() {
+  local label="$1" version="$2" want_status="$3" before
+  shift 3
+  build_sandbox
+  set_sandbox_version "$version"
+  write_changelog_with_unreleased "$@"
+  before=$(sandbox_digest)
+  run version_bump --verify
+  expect_status "$label" "$want_status"
+  expect_digest "$label" "$before" "$(sandbox_digest)"
+}
+
+@test "only a full numbered release heading counts as the newest changelog release" {
+  reset_case_failures
+
+  verify_heading_row v-prefixed-heading-is-no-release 1.0.6 2 '## [v1.0.6] - 2026-11-20'
+  verify_heading_row v-prefixed-heading-falls-through-to-older-release 1.0.5 0 '## [v1.0.6] - 2026-11-20' '' '## [1.0.5] - 2026-11-01'
+  verify_heading_row unclosed-heading-falls-through-to-older-release 1.0.5 0 '## [1.0.6 - x' '' '## [1.0.5] - 2026-11-01'
+  verify_heading_row unclosed-heading-is-no-release 1.0.6 2 '## [1.0.6 - x' '' '## [1.0.5] - 2026-11-01'
+  verify_heading_row unreleased-above-numbered-release 1.0.6 0 '## [1.0.6] - 2026-11-20'
+
+  assert_no_case_failures
+}
+
 @test "release-verify validates local release metadata without publishing" {
   run bash "$SANDBOX/scripts/release-verify.sh"
 

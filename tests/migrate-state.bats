@@ -37,6 +37,19 @@ migrate_project_with_failing_mv() {
   (cd "$PROJECT" && PATH="$bin:$PATH" bash "$MIGRATE" "$PROJECT")
 }
 
+migrate_project_with_legacy_override() {
+  (cd "$PROJECT" && env -u MERIDIAN_PLANNING_DIR LBWC_PLANNING_DIR="$PROJECT/custom-planning" bash "$MIGRATE" "$PROJECT")
+}
+
+migrate_project_recording_mv_environment() {
+  local bin="$BATS_TEST_TMPDIR/recording-mv-bin" real_mv
+  real_mv=$(command -v mv)
+  mkdir -p "$bin"
+  printf '%s\n' '#!/bin/sh' "printf '%s\\n' \"\${MERIDIAN_PLANNING_DIR-unset}\" > '$BATS_TEST_TMPDIR/mv.environment'" "exec '$real_mv' \"\$@\"" > "$bin/mv"
+  chmod +x "$bin/mv"
+  (cd "$PROJECT" && env -u MERIDIAN_PLANNING_DIR LBWC_PLANNING_DIR="$PROJECT/custom-planning" PATH="$bin:$PATH" bash "$MIGRATE" "$PROJECT")
+}
+
 migrate_from_subdirectory_without_argument() {
   mkdir -p "$PROJECT/src/nested"
   (cd "$PROJECT/src/nested" && bash "$MIGRATE")
@@ -96,6 +109,28 @@ default_root_row() {
   [ ! -e "$PROJECT/src/nested/.meridian" ] \
     || record_case_failure default-root-is-git-toplevel "migrated into the working directory"
   expect_tree_unchanged default-root-is-git-toplevel "$PROJECT/.meridian" "$BATS_TEST_TMPDIR/default-root.before"
+}
+
+legacy_override_nothing_to_move_row() {
+  new_project legacy-override
+  run migrate_project_with_legacy_override
+  expect_case_silent legacy-override-nothing-to-move 0
+}
+
+legacy_override_not_exported_row() {
+  new_project legacy-override-move
+  seed_legacy_state
+  run migrate_project_recording_mv_environment
+  expect_case legacy-override-not-exported 0
+  [ "$(cat "$BATS_TEST_TMPDIR/mv.environment" 2>&1)" = unset ] \
+    || record_case_failure legacy-override-not-exported "mv saw MERIDIAN_PLANNING_DIR=[$(cat "$BATS_TEST_TMPDIR/mv.environment" 2>&1)]"
+  [ -d "$PROJECT/.meridian" ] || record_case_failure legacy-override-not-exported "old folder was not moved"
+}
+
+@test "migrate-state ignores a legacy planning dir override" {
+  legacy_override_nothing_to_move_row
+  legacy_override_not_exported_row
+  assert_no_case_failures
 }
 
 @test "migrate-state moves the legacy planning dir and reports conflicts and move failures by exit code" {

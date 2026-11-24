@@ -364,6 +364,26 @@ run_concurrent_session_starts() {
   '
 }
 
+bound_session_start_stdout() {
+  env MERIDIAN_TMUX_AGENT=1 MERIDIAN_TMUX_AGENT_ID=agent-a MERIDIAN_TMUX_CONTRACT_ID=contract-a MERIDIAN_TMUX_CONTROL_ROOT="$BOUND_CONTROL_ROOT" MERIDIAN_PLANNING_DIR="$PLANNING_DIR" CLAUDE_SESSION_ID="$1" bash "$SCRIPT" </dev/null 2>"$TEST_ROOT/bound-stderr"
+}
+
+plain_session_start_with_recorded_bus() {
+  local plugin="$TEST_ROOT/plain-plugin/scripts" recorder
+  recorder="printf '%s\n' \"\$0 \$*\" >> '$TEST_ROOT/tmux-bus.calls'"
+  copy_scripts_to "$plugin"
+  replace_script_in_copy "$plugin" tmux-bus.sh "$recorder"
+  replace_script_in_copy "$plugin" tmux-agent-heartbeat.sh "$recorder"
+  (cd "$WORKDIR" && env -u MERIDIAN_TMUX_AGENT -u MERIDIAN_TMUX_AGENT_ID -u MERIDIAN_TMUX_CONTRACT_ID -u MERIDIAN_TMUX_CONTROL_ROOT \
+    MERIDIAN_PLANNING_DIR="$PLANNING_DIR" bash "$plugin/session-start.sh" </dev/null 2>"$TEST_ROOT/plain-stderr")
+}
+
+expect_bind_only_context() {
+  local label="$1" session="$2"
+  jq -e --arg session "$session" '.hookSpecificOutput.additionalContext | capture("^meridian tmux bind: (?<bind>.*)[.]$").bind | fromjson | .agent_id == "agent-a" and .session_id == $session' <<<"$output" >/dev/null 2>&1 \
+    || record_case_failure "$label" "stdout is not the bind context alone: $output"
+}
+
 bind_tmux_session_with_one_shot_credentials() {
   reset_case_failures
 
@@ -395,6 +415,23 @@ bind_tmux_session_with_one_shot_credentials() {
   [ ! -e "$BOUND_CONTROL_ROOT/.runtime/tmux-bus/credentials/agent-a.json" ] \
     || record_case_failure concurrent-binds-once "credential was not consumed"
   expect_bound_registry concurrent-binds-once ".claude_session_id == \"$CONCURRENT_CHILD_SESSION_ID\""
+
+  prepare_bound_agent
+  rm -rf "$PLANNING_DIR"
+  write_credential agent-a "$BOUND_CAPABILITY"
+  run bound_session_start_stdout planless-child-session
+  expect_case tmux-agent-without-planning-dir 0
+  [ ! -e "$BOUND_CONTROL_ROOT/.runtime/tmux-bus/credentials/agent-a.json" ] \
+    || record_case_failure tmux-agent-without-planning-dir "credential was not consumed"
+  expect_bound_registry tmux-agent-without-planning-dir '.claude_session_id == "planless-child-session" and .state == "running" and (.heartbeat_at_ms | type == "number")'
+  expect_bind_only_context tmux-agent-without-planning-dir planless-child-session
+  [ ! -e "$PLANNING_DIR" ] || record_case_failure tmux-agent-without-planning-dir "planning dir was created"
+
+  rm -rf "$PLANNING_DIR" "$TEST_ROOT/tmux-bus.calls"
+  run plain_session_start_with_recorded_bus
+  expect_case_silent no-planning-dir-without-tmux-agent 0
+  [ ! -e "$TEST_ROOT/tmux-bus.calls" ] \
+    || record_case_failure no-planning-dir-without-tmux-agent "bind stubs ran: $(cat "$TEST_ROOT/tmux-bus.calls")"
 
   assert_no_case_failures
 }
