@@ -88,8 +88,6 @@ read_compaction_count() {
 
 SHIM_DIR=""
 
-prepare_cold_start() { :; }
-
 prepare_warm_start() { write_project_md; }
 
 prepare_phase_needing_plan() {
@@ -104,6 +102,7 @@ prepare_phase_needing_discussion() {
 }
 
 prepare_phase_detect_setup_failure() {
+  mkdir -p "$PLANNING_DIR"
   SHIM_DIR="$TEST_ROOT/scripts-shim"
   copy_scripts_to "$SHIM_DIR"
   replace_script_in_copy "$SHIM_DIR" phase-detect.sh \
@@ -180,15 +179,27 @@ link_session_plugin_root_and_persist_environment() {
   [ "$(cat "$CLAUDE_ENV_FILE")" = 'export KEEP=1' ] \
     || record_case_failure env-file-not-writable "read-only env file changed"
 
+  local sourced_env
+  rm -rf "$PLANNING_DIR" "$ROOT_LINK"
+  export CLAUDE_ENV_FILE="$TEST_ROOT/fresh-claude-env"
+  : > "$CLAUDE_ENV_FILE"
+  run run_session_start
+  expect_case_silent no-planning-dir-still-bootstraps 0
+  [ "$(readlink "$ROOT_LINK")" = "$canonical_root" ] \
+    || record_case_failure no-planning-dir-still-bootstraps "link points to $(readlink "$ROOT_LINK") want $canonical_root"
+  sourced_env=$(env -u CLAUDE_PLUGIN_ROOT CDPATH=/elsewhere bash -c '. "$1"; printf "%s|%s" "${CDPATH-unset}" "$CLAUDE_PLUGIN_ROOT"' _ "$CLAUDE_ENV_FILE")
+  [ "$sourced_env" = "unset|$canonical_root" ] \
+    || record_case_failure no-planning-dir-still-bootstraps "sourcing the env file gives [$sourced_env]"
+
   assert_no_case_failures
 }
 
 report_planning_and_subsystem_context() {
   reset_case_failures
 
-  context_row cold-start-reports-init-needed prepare_cold_start
-  expect_fragment cold-start-reports-init-needed "no ${PLANNING_DIR}/ directory found"
-  expect_lacks cold-start-reports-init-needed "agent manifest"
+  rm -rf "$PLANNING_DIR"
+  run run_session_start
+  expect_case_silent cold-start-without-planning-dir-is-silent 0
   context_row warm-start-reports-phase-brief prepare_warm_start
   expect_fragment warm-start-reports-phase-brief "meridian phase"
   context_row phase-needing-plan-routes-to-plan prepare_phase_needing_plan
@@ -211,7 +222,7 @@ report_planning_and_subsystem_context() {
 
 report_guard_owner_context() {
   local owner_home="$TEST_ROOT/owner-home" expiry_line owner_command
-  mkdir -p "$owner_home"
+  mkdir -p "$owner_home" "$PLANNING_DIR"
   printf -v owner_command 'bash %q' "$REPO_ROOT/scripts/meridian-guard.sh"
   reset_case_failures
   run env -u CLAUDE_PLUGIN_ROOT HOME="$owner_home" bash "$REPO_ROOT/scripts/meridian-guard.sh" allow --for 30m
@@ -317,7 +328,7 @@ prepare_bound_agent() {
   BOUND_CONTROL_ROOT="$TEST_ROOT/tmux-project/.meridian"
   BOUND_CAPABILITY='0123456789abcdef0123456789abcdef'
   rm -rf "$TEST_ROOT/tmux-project"
-  mkdir -p "$BOUND_CONTROL_ROOT"
+  mkdir -p "$BOUND_CONTROL_ROOT" "$PLANNING_DIR"
   printf '%s\n' '{}' > "$BOUND_CONTROL_ROOT/config.json"
   fixture_session_bus "$BOUND_CONTROL_ROOT"
   plant_unbound_agent agent-a "$BOUND_CAPABILITY"
@@ -394,7 +405,7 @@ build_cleanup_fixture() {
   CLEANUP_ARGV_LOG="$TEST_ROOT/cleanup-stub.argv"
   CLEANUP_WORKDIR="$TEST_ROOT/workdir"
   rm -rf "$plugin" "$CLEANUP_WORKDIR" "$CLEANUP_ARGV_LOG" "$ROOT_LINK"
-  mkdir -p "$CLEANUP_WORKDIR"
+  mkdir -p "$CLEANUP_WORKDIR" "$PLANNING_DIR"
   [ "$workdir_kind" != git ] || git -C "$CLEANUP_WORKDIR" init -q
   CLEANUP_PROJECT_ROOT="$(cd "$CLEANUP_WORKDIR" && pwd -P)"
   copy_scripts_to "$CLEANUP_PLUGIN_SCRIPTS"

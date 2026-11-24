@@ -91,6 +91,31 @@ expect_sandbox_version() {
   assert_no_case_failures
 }
 
+write_changelog_with_unreleased() {
+  printf '%s\n' '# Changelog' '' '## [Unreleased]' '' '### Changed' '' '- Pending work.' '' "$@" > "$SANDBOX/CHANGELOG.md"
+}
+
+@test "an Unreleased section above the newest release heading passes verify, set and release-verify" {
+  local before
+  reset_case_failures
+
+  write_changelog_with_unreleased '## [1.0.0] - 2026-08-09' '' '- Initial release candidate.'
+  before=$(sandbox_digest)
+  run version_bump --verify
+  expect_case unreleased-verify 0
+  expect_digest unreleased-verify "$before" "$(sandbox_digest)"
+
+  run bash "$SANDBOX/scripts/release-verify.sh"
+  expect_case unreleased-release-verify 0
+
+  write_changelog_with_unreleased '## [1.0.1] - 2026-09-01' '' '- Fixes.' '' '## [1.0.0] - 2026-08-09' '' '- Initial release candidate.'
+  run version_bump --set 1.0.1 --yes
+  expect_case unreleased-set 0
+  expect_sandbox_version unreleased-set 1.0.1
+
+  assert_no_case_failures
+}
+
 @test "release-verify validates local release metadata without publishing" {
   run bash "$SANDBOX/scripts/release-verify.sh"
 
