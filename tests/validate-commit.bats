@@ -5,6 +5,8 @@ load gate_case_helper
 load rejection_case_helper
 
 setup() {
+  git init -q "$BATS_TEST_TMPDIR"
+  cd "$BATS_TEST_TMPDIR" || return 1
   printf 'feat(core): add thing\n\nbody that matches no format\n' > "$BATS_TEST_TMPDIR/good.txt"
   printf 'not a conventional subject\n\nfeat(core): a body line that looks valid\n' > "$BATS_TEST_TMPDIR/bad.txt"
 }
@@ -69,6 +71,26 @@ flag_row() {
   flag_row attached-unquoted-value 'git commit -m"bad"' 'bad'
   flag_row single-quoted-value "git commit -m 'bad s'" 'bad s'
   flag_row bad-m-after-fixup 'git commit --fixup=x -m "bad"' 'bad'
+
+  assert_no_case_failures
+}
+
+@test "validate-commit reads the message only from the git commit segment of a compound, wrapped, or quoted command" {
+  reset_case_failures
+
+  allow_row echo-mention 'echo git commit -m bad'
+  allow_row quoted-function-arg $'python3 probe.py \'f() { shift; "$@"; }; f x git commit -m x\''
+  allow_row runner-arg "python3 runner.py 'git commit -m bad'"
+  allow_row sh-c-as-data $'printf %s "sh -c \'git commit -m bad\'"'
+  allow_row bad-m-on-non-commit-segment 'echo -m bad && git commit -m "feat(a): s"'
+  allow_row valid-subject-with-apostrophe $'git commit -m "fix(a): don\'t drop x"'
+
+  flag_row env-wrapped 'env FOO=1 git commit -m x' 'x'
+  flag_row git-C 'git -C /path commit -m x' 'x'
+  flag_row git-c 'git -c k=v commit -m x' 'x'
+  flag_row after-and 'git status && git commit -m x' 'x'
+  flag_row after-semicolon 'true; git commit -m x' 'x'
+  flag_row timeout-wrapped 'timeout 5 git commit -m x' 'x'
 
   assert_no_case_failures
 }
