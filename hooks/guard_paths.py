@@ -16,12 +16,14 @@ if __package__:
     from .path_identity import ProtectedIdentity, TooManyMatches, expand_glob
     from .read_only_command import command_segments, is_git_inspection, is_source_inspection
     from .guard_unlock import active_expiry, state_directory
+    from .qa_command import permits_qa_command
 else:
     from brace_expansion import ExpansionTooComplex, expand_braces
     from decision_common import INVALID_STATE, DecisionStateError, require
     from path_identity import ProtectedIdentity, TooManyMatches, expand_glob
     from read_only_command import command_segments, is_git_inspection, is_source_inspection
     from guard_unlock import active_expiry, state_directory
+    from qa_command import permits_qa_command
 
 OptionalPath = Optional[Path]
 GUARD_MODULES = (
@@ -44,6 +46,7 @@ GUARD_MODULES = (
     "decision_store.py",
     "question_validation.py",
     "guard_paths.py",
+    "qa_command.py",
     "read_only_command.py",
     "brace_expansion.py",
     "path_identity.py",
@@ -307,6 +310,7 @@ def _plugin_root() -> OptionalPath:
 def _installed_files(root: Path) -> set[Path]:
     return {
         root / "hooks", root / "scripts",
+        root / "agents" / "phase-qa.md",
         *(root / "hooks" / name for name in GUARD_MODULES),
         root / "scripts" / "pending-decision.sh", root / "scripts" / "hook-batch.sh",
     }
@@ -425,6 +429,8 @@ def _analyse(data: dict, planning_dir: OptionalPath) -> bool:
     roots = {Path(__file__).resolve().parent.parent}
     if root is not None:
         roots.add(root)
+    if permits_qa_command(data, cwd, planning_dir, roots):
+        return False
     if _unlock_access(data, cwd, roots):
         return True
     installation = Installation(roots, root is None, active_expiry() is not None)

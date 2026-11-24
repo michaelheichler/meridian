@@ -98,7 +98,10 @@ fi
 STRIP_REASON=""
 STRIP_WARN=""
 STRIPPED_INPUT=""
-if [ "$ISOLATED_CODE_WRITER" = true ] || { [ "$ISOLATION_REQUIRED" = true ] && requested_sidechain_cwd; }; then
+if [ "$SUBAGENT_TYPE" = "meridian:phase-qa" ]; then
+  STRIPPED_INPUT=$(echo "$INPUT" | jq '.tool_input | del(.cwd, .working_dir, .workingDirectory, .workdir, .isolation)' 2>/dev/null)
+  STRIP_REASON="Meridian phase QA uses the current workspace"
+elif [ "$ISOLATED_CODE_WRITER" = true ] || { [ "$ISOLATION_REQUIRED" = true ] && requested_sidechain_cwd; }; then
   STRIPPED_INPUT=$(echo "$INPUT" | jq '.tool_input | del(.cwd, .working_dir, .workingDirectory, .workdir)' 2>/dev/null)
   STRIP_REASON="meridian stripped sidechain cwd fields and preserved required isolation"
 elif requested_sidechain_cwd; then
@@ -124,6 +127,8 @@ allow_with_strip() {
   fi
   exit 0
 }
+
+[ "$SUBAGENT_TYPE" != "meridian:phase-qa" ] || allow_with_strip
 
 if [ ! -f "$MANIFEST_PATH" ]; then
   case "$SUBAGENT_TYPE" in

@@ -28,7 +28,7 @@ Working directory:
 Plugin root:
 
 ```
-!`SESSION_KEY="${CLAUDE_SESSION_ID:-root-$(printf "%s\n" "$(git rev-parse --show-toplevel 2>/dev/null || pwd -P)" | shasum -a 256 | cut -c1-64)}"; [ "$SESSION_KEY" != root- ] || { echo "MERIDIAN: plugin root hash unavailable" >&2; exit 1; }; L="/tmp/.meridian-plugin-root-link-${SESSION_KEY}"; R="$L/scripts/resolve-plugin-root.sh"; [ -f "$R" ] || R="${CLAUDE_PLUGIN_ROOT:-}/scripts/resolve-plugin-root.sh"; [ -f "$R" ] || { echo "MERIDIAN: plugin root unavailable. Restart this session to recreate $L." >&2; exit 1; }; bash "$R" >/dev/null || exit 1; bash "$L/scripts/phase-detect.sh" > "/tmp/.meridian-phase-detect-${SESSION_KEY}.txt" 2>/dev/null || echo "phase_detect_error=true" > "/tmp/.meridian-phase-detect-${SESSION_KEY}.txt"; echo "$L"`
+!`SESSION_KEY="${CLAUDE_SESSION_ID:-root-$(printf "%s\n" "$(git rev-parse --show-toplevel 2>/dev/null || pwd -P)" | shasum -a 256 | cut -c1-64)}"; [ "$SESSION_KEY" != root- ] || { echo "MERIDIAN: plugin root hash unavailable" >&2; exit 1; }; L="/tmp/.meridian-plugin-root-link-${SESSION_KEY}"; R="$L/scripts/resolve-plugin-root.sh"; [ -f "$R" ] || R="${CLAUDE_PLUGIN_ROOT:-}/scripts/resolve-plugin-root.sh"; [ -f "$R" ] || { echo "MERIDIAN: plugin root unavailable. Restart this session to recreate $L." >&2; exit 1; }; bash "$R" >/dev/null || exit 1; bash "$L/scripts/phase-detect.sh" > "/tmp/.meridian-phase-detect-${SESSION_KEY}.txt" 2>/dev/null || echo "phase_detect_error=true" > "/tmp/.meridian-phase-detect-${SESSION_KEY}.txt"; cd "$L" && pwd -P`
 ```
 
 Store the plugin root path output above as `{plugin-root}` for use in script invocations below. Replace `{plugin-root}` with the literal `Plugin root` value from Context whenever a step below references a script or reference file.
@@ -92,6 +92,36 @@ fi`
 ```text
 !`SESSION_KEY="${CLAUDE_SESSION_ID:-root-$(printf "%s\n" "$(git rev-parse --show-toplevel 2>/dev/null || pwd -P)" | shasum -a 256 | cut -c1-64)}"; [ "$SESSION_KEY" != root- ] || { echo "MERIDIAN: plugin root hash unavailable" >&2; exit 1; }; bash "/tmp/.meridian-plugin-root-link-${SESSION_KEY}/scripts/suggest-compact.sh" qa 2>/dev/null || true`
 ```
+
+## Native phase QA
+
+Use this route for ordinary phase QA with the native backend and no active remediation round. An explicit phase number takes priority. For an implicit phase, use the phase and debug-session selection rules below. Honor explicit QA skips and turbo effort. Resolve the tier as in Step 1. Apply ownership policy with the runner's `route` operation.
+
+Read `.meridian/config.json` when present. Use this route for `in_process`, `tmux`, or the default `ask` with `workflow_execution.enabled` false or absent. Use the workflow capability gate below when the project offers or requests the Workflow backend.
+
+Once you choose the native route, follow this numbered procedure through the gate. The runner handles the shell helpers. Use the legacy steps below for other modes.
+
+1. From the project root, use each command in its own Bash call. Substitute the physical plugin root from Context, phase, and tier as literal values.
+
+   ```text
+   python3 -I -B {plugin-root}/scripts/qa-phase.py inspect {NN}
+   python3 -I -B {plugin-root}/scripts/qa-phase.py route {NN} '{owners_json}'
+   ```
+
+   Build `owners_json` from accepted task contracts. When inspect reports no task contracts, pass a row such as `[{"task_id":"01","owners":[]}]` for the selected plan. When contracts exist, use the owner role for each accepted task and an empty owners array for unknown ownership. If the runner reports ownership skips, retain their main-session verification and skip evidence under Step 2.
+
+   ```text
+   python3 -I -B {plugin-root}/scripts/qa-phase.py start {NN} {tier} claude
+   ```
+
+2. Dispatch the native Agent in the foreground with the returned `subagent_type` and `model`. Use the current workspace so the worker checks the same files that the parent will verify. Put a line containing `Meridian-Contract: {contract_id}` in the agent prompt so the decision guard can claim the dispatched contract. Begin the prompt with the skill outcome block described in Step 3. Give the worker the phase, tier, plans, summaries, roadmap criteria, known issues, verification protocol, and handoff schema. Ask it to run read-only verification commands and return the `qa_verdict` inline with canonical `plans_verified` IDs and a `plan_ref` for each check.
+3. Publish the worker's verdict as one shell-quoted JSON argument on one line. Use the exact contract ID returned by `start`.
+
+   ```text
+   python3 -I -B {plugin-root}/scripts/qa-phase.py publish {NN} {contract_id} '{verdict_json}'
+   ```
+
+4. Report the artifact and routing. Only `PROCEED_TO_UAT` clears QA. For `REMEDIATION_REQUIRED`, report the blocking evidence and direct the user to `/meridian:transit`. Surface runner errors and end the command here.
 
 ## Workflow capability gate
 

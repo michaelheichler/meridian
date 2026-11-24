@@ -21,6 +21,7 @@ if __package__:
     )
     from .decision_store import DecisionStore
     from .guard_paths import has_protected_decision_path, planning_directory
+    from .qa_command import claim_qa_worker
     from .question_validation import fingerprint, validate_question
 else:
     from debug_logging import trace_decision
@@ -38,6 +39,7 @@ else:
     )
     from decision_store import DecisionStore
     from guard_paths import has_protected_decision_path, planning_directory
+    from qa_command import claim_qa_worker
     from question_validation import fingerprint, validate_question
 
 __all__ = ["DecisionStateError", "DecisionStore", "PendingDecisionError", "main", "verdict"]
@@ -200,11 +202,11 @@ def _pretool(data: Record) -> Verdict:
         return context
     tool_name, store, session_id = context
     if store is None:
-        return None
+        return claim_qa_worker(data, None)
     if session_id is None:
         return _missing_session_reason(tool_name)
     try:
-        return _store_reason(data, store, session_id)
+        return _store_reason(data, store, session_id) or claim_qa_worker(data, store.planning_dir)
     except DecisionStateError as error:
         return str(error)
 

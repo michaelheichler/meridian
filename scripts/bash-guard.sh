@@ -252,9 +252,16 @@ enforce_destructive_guard
 AGENT_IDENTIFIER=$(printf '%s' "$INPUT" | jq -r '
   .agent_id // .agentId // .agent_type // .agentType // .subagent_type // .subagentType // .name // empty
 ' 2>/dev/null) || AGENT_IDENTIFIER=""
-AGENT_ROLE=$(resolve_agent_role "$AGENT_IDENTIFIER")
-
-POLICY_STATE=$(generated_agent_policy_state "$AGENT_IDENTIFIER") || POLICY_STATE=""
+if printf '%s' "$INPUT" | jq -e '
+  [.agent_type, .agentType, .subagent_type, .subagentType, .agent_id, .agentId]
+  | index("meridian:phase-qa") != null
+' >/dev/null 2>&1; then
+  AGENT_ROLE=qa
+  POLICY_STATE=active
+else
+  AGENT_ROLE=$(resolve_agent_role "$AGENT_IDENTIFIER")
+  POLICY_STATE=$(generated_agent_policy_state "$AGENT_IDENTIFIER") || POLICY_STATE=""
+fi
 if [ -n "$POLICY_STATE" ]; then
   if command_targets_protected_control_path "$COMMAND"; then
     echo "Blocked: generated agent cannot target a protected control path" >&2
