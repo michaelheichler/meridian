@@ -12,7 +12,7 @@ fi
 unset MERIDIAN_MIGRATION_SOURCE
 set -u
 
-PLANNING_DIR="${MERIDIAN_PLANNING_DIR:-.meridian}"
+PLANNING_DIR="${MERIDIAN_PLANNING_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd -P)/.meridian}"
 SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "$0")" && pwd)"
 
 [ -d "$PLANNING_DIR" ] || exit 0

@@ -75,7 +75,6 @@ If only the old directory exists, the helper moves it to `.meridian/` with one `
 The move keeps dotfiles and the journal archive.
 If only `.meridian/` exists, or neither directory exists, the helper does nothing.
 If `.meridian/config.json` exists after this check, stop and display "Meridian is already initialized. Use /meridian:config to modify settings or /meridian:transit to start building."
-The environment helper reads old overrides only when the environment lacks the corresponding `MERIDIAN_*` name, and an explicitly empty new value still wins.
 <!-- rename-migration:end -->
 
 ## Guard

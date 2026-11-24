@@ -69,7 +69,7 @@ if [ -f "$CANONICAL_ROOT/scripts/hook-wrapper.sh" ] && \
 fi
 
 persist_shell_environment
-[ -d "$PLANNING_DIR" ] || exit 0
+[ -d "$PLANNING_DIR" ] || [ "${MERIDIAN_TMUX_AGENT:-}" = 1 ] || exit 0
 
 if ! command -v jq >/dev/null 2>&1; then
   echo '{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"meridian: jq not found. Install jq (brew install jq / apt install jq) -- quality gates are degraded until then."}}'
@@ -77,13 +77,17 @@ if ! command -v jq >/dev/null 2>&1; then
 fi
 
 bind_tmux_bootstrap || exit 1
+if [ ! -d "$PLANNING_DIR" ]; then
+  jq -n --arg ctx "meridian tmux bind: ${TMUX_BIND_JSON}." '{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":$ctx}}'
+  exit 0
+fi
 
 HOOK_INPUT=""
 [ -t 0 ] || HOOK_INPUT=$(cat 2>/dev/null) || HOOK_INPUT=""
 SESSION_SOURCE=$(printf '%s' "$HOOK_INPUT" | jq -r '.source // empty' 2>/dev/null || true)
 # Stale counts from old sessions would otherwise trigger the loop stop.
 case "$SESSION_SOURCE" in
-  startup|clear) [ -d "$PLANNING_DIR" ] && echo 0 > "$PLANNING_DIR/.compaction-count" 2>/dev/null ;;
+  startup|clear) echo 0 > "$PLANNING_DIR/.compaction-count" 2>/dev/null ;;
 esac
 
 pd_field() {
@@ -91,7 +95,6 @@ pd_field() {
 }
 
 PHASE_OUT=$(bash "$SCRIPT_DIR/phase-detect.sh" 2>/dev/null)
-PLANNING_EXISTS=$(pd_field planning_dir_exists)
 PROJECT_EXISTS=$(pd_field project_exists)
 NEXT_PHASE=$(pd_field next_phase)
 NEXT_PHASE_STATE=$(pd_field next_phase_state)
@@ -125,12 +128,8 @@ count_expired() {
   jq -r '[.agents[]? | select(.state == "expired")] | length' "$MANIFEST_FILE" 2>/dev/null || echo 0
 }
 BEFORE_EXPIRED=$(count_expired)
-LIFECYCLE_OUT=""
-LIFECYCLE_STATUS=0
-if [ -d "$PLANNING_DIR" ]; then
-  LIFECYCLE_OUT=$(bash "$SCRIPT_DIR/agent-lifecycle.sh" sweep 2>&1)
-  LIFECYCLE_STATUS=$?
-fi
+LIFECYCLE_OUT=$(bash "$SCRIPT_DIR/agent-lifecycle.sh" sweep 2>&1)
+LIFECYCLE_STATUS=$?
 AGENT_MANIFEST_STATUS=$(printf '%s\n' "$LIFECYCLE_OUT" | grep -m1 '^agent_manifest_status=' | sed 's/^[^=]*=//')
 AFTER_EXPIRED=$(count_expired)
 [ "${BEFORE_EXPIRED:-0}" -ge 0 ] 2>/dev/null || BEFORE_EXPIRED=0
@@ -140,8 +139,6 @@ SWEPT_COUNT=$((AFTER_EXPIRED - BEFORE_EXPIRED))
 
 if [ "${PHASE_DETECT_ERROR:-}" = "true" ]; then
   CTX="meridian: phase status unavailable (${PHASE_DETECT_REASON:-unknown})."
-elif [ "${PLANNING_EXISTS:-false}" != "true" ]; then
-  CTX="meridian: no ${PLANNING_DIR}/ directory found. Run project init to set up planning."
 elif [ "${PROJECT_EXISTS:-false}" != "true" ]; then
   CTX="meridian: planning dir exists but PROJECT.md is not filled in yet."
 else
