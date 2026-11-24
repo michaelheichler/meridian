@@ -117,10 +117,11 @@ def transition(phase: Phase, contract_id: str, state: str) -> None:
 def start(phase: Phase, tier: str, host: str) -> dict:
     if not phase.verification.exists():
         helper(phase.root, "track-known-issues.sh", "sync-summaries", phase.directory)
+    catalog_stale = host == "claude" and not refresh_capabilities(phase)
     agent = claude_agent(phase) if host == "claude" else {"agent_type": "meridian-qa"}
     job = f"Verify phase {phase.number} tier {tier} at {git_head(phase)}"
     contract_id = reusable_contract(phase, job) or issue_contract(phase, job)
-    return {**context(phase), "contract_id": contract_id, "agent": agent}
+    return {**context(phase), "contract_id": contract_id, "agent": agent, "catalog_stale": catalog_stale}
 
 
 def issue_contract(phase: Phase, job: str) -> str:
@@ -134,14 +135,21 @@ def issue_contract(phase: Phase, job: str) -> str:
 
 
 def reusable_contract(phase: Phase, job: str) -> str | None:
+    reusable = None
     for contract_id, contract in open_contracts(phase):
-        if contract.get("action") != job:
-            raise QaError(
-                f"QA contract {contract_id} is still {contract.get('state')} for another tier or commit. "
-                "Publish its verdict or close it before you start a new QA run."
-            )
-        return contract_id
-    return None
+        if reusable is None and contract.get("state") == "dispatched" and contract.get("action") == job:
+            reusable = contract_id
+        else:
+            retire_contract(phase, contract_id, contract.get("state"))
+    return reusable
+
+
+def retire_contract(phase: Phase, contract_id: str, state: object) -> None:
+    transition(phase, contract_id, "blocked")
+    sys.stderr.write(
+        f"Meridian QA: moved {state} contract {contract_id} to blocked because no worker can claim it. "
+        "QA continues on a fresh contract.\n"
+    )
 
 
 def open_contracts(phase: Phase) -> list[tuple[str, dict]]:
@@ -158,7 +166,6 @@ def open_contracts(phase: Phase) -> list[tuple[str, dict]]:
 
 def claude_agent(phase: Phase) -> dict:
     planning = phase.root / ".meridian"
-    refresh_capabilities(phase)
     route = json.loads(helper(phase.root, "meridian-routing.sh", "resolve", planning, "qa"))
     catalog = json.loads((planning / CAPABILITY_CATALOG).read_text(encoding="utf-8"))
     model = catalog["agent_model_ids"].get(route["model"])
@@ -167,16 +174,18 @@ def claude_agent(phase: Phase) -> dict:
     return {"subagent_type": CLAUDE_QA_AGENT, "model": model}
 
 
-def refresh_capabilities(phase: Phase) -> None:
+def refresh_capabilities(phase: Phase) -> bool:
     planning = phase.root / ".meridian"
     try:
         helper(phase.root, "meridian-model", "refresh", planning)
+        return True
     except QaError as exc:
         if not (planning / CAPABILITY_CATALOG).is_file():
             raise QaError(
                 f"The Claude capability refresh failed and no saved {CAPABILITY_CATALOG} exists. {exc}"
             ) from exc
         sys.stderr.write(f"Meridian QA: capability refresh failed, so QA uses the saved catalog. {exc}\n")
+        return False
 
 
 def publish(phase: Phase, contract_id: str, verdict: dict) -> dict:
@@ -213,11 +222,20 @@ def publish(phase: Phase, contract_id: str, verdict: dict) -> dict:
         routing = match.group(1)
         if routing == "REMEDIATION_REQUIRED":
             helper(phase.root, "qa-remediation-state.sh", "init", phase.directory)
-    except (QaError, OSError, subprocess.SubprocessError):
-        transition(phase, contract_id, "blocked")
+    except (QaError, OSError, subprocess.SubprocessError) as publish_error:
+        block_after_failure(phase, contract_id, publish_error)
         raise
     transition(phase, contract_id, "verified" if routing == "PROCEED_TO_UAT" else "blocked")
     return {"verification": str(phase.verification), "contract_id": contract_id, "routing": routing}
+
+
+def block_after_failure(phase: Phase, contract_id: str, cause: Exception) -> None:
+    try:
+        transition(phase, contract_id, "blocked")
+    except QaError as transition_error:
+        raise QaError(
+            f"{cause} The contract {contract_id} also failed to move to blocked. {transition_error}"
+        ) from cause
 
 
 def promote_known_issues(phase: Phase) -> None:
