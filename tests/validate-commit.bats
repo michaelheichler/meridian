@@ -94,3 +94,42 @@ flag_row() {
 
   assert_no_case_failures
 }
+
+@test "validate-commit finds the subject in quoted flag values, shell bodies, compound commands, substitutions, and continued lines" {
+  reset_case_failures
+
+  allow_row apostrophe-before-scope-close $'git commit -m "feat(user\'s): add x"'
+  allow_row heredoc-after-valid-commit $'git commit -m "feat(a): x" && cat <<EOF\nrandom text\nEOF'
+
+  flag_row long-message-equals-quoted 'git commit --message="bad msg"' 'bad msg'
+  flag_row short-message-attached-quoted 'git commit -m"bad msg"' 'bad msg'
+  flag_row xargs-wrapped 'echo x | xargs git commit -m bad' 'bad'
+  flag_row absolute-git-path '/usr/bin/git commit -m bad' 'bad'
+  flag_row brace-group '{ git commit -m bad; }' 'bad'
+  flag_row if-then-body 'if true; then git commit -m bad; fi' 'bad'
+  flag_row for-do-body 'for f in a; do git commit -m bad; done' 'bad'
+  flag_row bash-c-body 'bash -c "git commit -m bad"' 'bad'
+  flag_row sh-c-body "sh -c 'git commit -m bad'" 'bad'
+  flag_row backtick-substitution 'echo `git commit -m bad`' 'bad'
+  flag_row line-continuation $'git commit \\\n  -m bad' 'bad'
+
+  assert_no_case_failures
+}
+
+@test "validate-commit stays silent and logs a parser failure when the commit parser crashes" {
+  local fake_bin="$BATS_TEST_TMPDIR/fake-bin" input
+  mkdir -p "$fake_bin" "$BATS_TEST_TMPDIR/.meridian"
+  printf '#!/bin/sh\nprintf bad\nexit 2\n' > "$fake_bin/python3"
+  chmod +x "$fake_bin/python3"
+  printf '{"debug_logging": true}\n' > "$BATS_TEST_TMPDIR/.meridian/config.json"
+  input=$(jq -n --arg cwd "$BATS_TEST_TMPDIR" '{tool_input: {command: "git commit -m bad"}, cwd: $cwd}')
+
+  run env HOME="$BATS_TEST_TMPDIR" MERIDIAN_PLANNING_DIR="$BATS_TEST_TMPDIR/.meridian" PATH="$fake_bin:$PATH" \
+    bash "$SCRIPTS_DIR/validate-commit.sh" <<< "$input"
+
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  run grep -c 'decision=error .*reason=commit_parser_failed' "$BATS_TEST_TMPDIR/.meridian/.debug.log"
+  [ "$status" -eq 0 ]
+  [ "$output" -eq 1 ]
+}
