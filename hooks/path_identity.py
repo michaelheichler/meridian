@@ -40,7 +40,7 @@ def _chain(real: str) -> list[str]:
     return chain
 
 
-def _within(real: str, root: str) -> bool:
+def within(real: str, root: str) -> bool:
     return real == root or real.startswith(root.rstrip(os.sep) + os.sep)
 
 
@@ -67,6 +67,13 @@ def _match(actual: tuple, pattern: tuple) -> bool:
 
 def _glob_matches(pattern: str, target: Path) -> bool:
     return _match(target.parts, Path(os.path.normpath(pattern)).parts)
+
+
+def _glob_enters(pattern: str, directory: Path) -> bool:
+    folders = Path(os.path.normpath(pattern)).parent.parts
+    if not any(char in part for part in folders for char in GLOB_CHARS):
+        return False
+    return any(_match(directory.parts, folders[:depth]) for depth in range(1, len(folders) + 1))
 
 
 def _literal_prefix(pattern: str) -> str:
@@ -124,7 +131,7 @@ class ProtectedIdentity:
     def _runtime_hit(self, real: str) -> bool:
         if self.runtime_real is None:
             return False
-        if _within(real.casefold(), self.runtime_real):
+        if within(real.casefold(), self.runtime_real):
             return True
         ids = [_stat_id(item) for item in _chain(real)]
         known = self.runtime_id is not None and self.runtime_id in ids
@@ -140,7 +147,7 @@ class ProtectedIdentity:
         if real.casefold() in self.module_reals or (leaf is not None and leaf in self.module_ids):
             return True
         return any(
-            _within(real.casefold(), os.path.realpath(module).casefold())
+            within(real.casefold(), os.path.realpath(module).casefold())
             for module in self.modules if module.is_dir()
         )
 
@@ -151,4 +158,10 @@ class ProtectedIdentity:
     def glob_hits(self, pattern: str) -> bool:
         if self._runtime_hit(os.path.realpath(_literal_prefix(pattern))):
             return True
-        return any(_glob_matches(pattern, module) for module in self.modules)
+        if any(_glob_matches(pattern, module) for module in self.modules):
+            return True
+        return any(_glob_enters(pattern, module) for module in self.modules if module.is_dir())
+
+    def holds_module_below(self, path: str) -> bool:
+        real = os.path.realpath(path).casefold()
+        return any(within(reality, real) for reality in self.module_reals)

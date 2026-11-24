@@ -3,8 +3,12 @@ from __future__ import annotations
 import os
 import re
 import shlex
-from pathlib import PurePath
 from typing import NamedTuple, Optional
+
+if __package__:
+    from .path_identity import GLOB_CHARS
+else:
+    from path_identity import GLOB_CHARS
 
 SHELL_OPERATOR = re.compile(r"[();<>|&]+")
 REDIRECTIONS = frozenset({">", ">>", ">|", "&>", "&>>", "<", "<>", ">&", "<&"})
@@ -14,10 +18,12 @@ DESCRIPTOR_NUMBER = re.compile(r"\d+")
 UNSAFE_TEXT = re.compile(r"[\n\r\u0080-\U0010ffff]")
 UNQUOTED_EXPANSION = re.compile(r"[$`{\\]|^~")
 QUOTED_EXPANSION = re.compile(r"[$`\\]")
-GLOB_PATTERN = re.compile(r"[*?[]")
+GLOB_PATTERN = re.compile(f"[{re.escape(GLOB_CHARS)}]")
 QUOTES = ("'", '"')
 SHELL_SPLIT = re.compile(r"[\s;&|<>()]+")
 QUOTE_CHARS = "$'\""
+EXPANSION_CHARS = "$`{"
+UNRESOLVED_CHARS = "$`"
 ASSIGNMENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=.*")
 PYTHON_NAME = re.compile(r"python[0-9.]*")
 WRAPPER_VALUE_FLAGS = {
@@ -50,10 +56,8 @@ INTERPRETER_VALUE_FLAGS = {
     "source": frozenset(),
 }
 STDIN_TARGETS = (None, "-")
-HELPER_SUFFIXES = frozenset({".sh", ".py"})
-HELPER_PROGRAMS = frozenset({"meridian-model"})
-HELPER_DIRECTORY = "scripts"
-TEST_RUNNER_MODULES = frozenset({"unittest", "pytest"})
+TEST_RUNNER_MODULE = "unittest"
+KNOWN_VARIABLES = ("CLAUDE_PLUGIN_ROOT", "HOME")
 
 
 class Token(NamedTuple):
@@ -86,9 +90,33 @@ class Stage(NamedTuple):
 
 class Invocation(NamedTuple):
     program: str
-    target: Optional[str]
-    inline: bool
-    module: Optional[str]
+    family: Optional[str]
+    target: Optional[str] = None
+    inline: bool = False
+    module: Optional[str] = None
+
+    @property
+    def runs_test_runner(self) -> bool:
+        return self.module == TEST_RUNNER_MODULE
+
+    @property
+    def runs_script_file(self) -> bool:
+        return self.family is not None and self.target is not None and not self.inline
+
+
+def _variable_value(name: str) -> Optional[str]:
+    if name == "HOME":
+        return os.path.expanduser("~")
+    return os.environ.get(name) or None
+
+
+def expand_known_variables(text: str) -> str:
+    for name in KNOWN_VARIABLES:
+        value = _variable_value(name)
+        if value is not None:
+            pattern = re.compile(rf"\$(?:\{{{name}\}}|{name}(?![A-Za-z0-9_]))")
+            text = pattern.sub(value.replace("\\", "\\\\"), text)
+    return text
 
 
 def shell_words(command: str) -> Optional[list[str]]:
@@ -110,9 +138,9 @@ def command_words(command: str) -> list[str]:
 
 def _token(raw: str) -> Optional[Token]:
     if SHELL_OPERATOR.fullmatch(raw):
-        return Token(raw, raw, True)
+        return Token(raw, raw, operator=True)
     words = [] if raw.startswith("#") else shlex.split(raw)
-    return Token(words[0], raw, False) if len(words) == 1 else None
+    return Token(words[0], raw, operator=False) if len(words) == 1 else None
 
 
 def shell_tokens(command: str) -> Optional[list[Token]]:
@@ -214,16 +242,16 @@ def _interpreted(name: str, family: str, args: list[str]) -> Invocation:
         flag = args[index]
         if family == "python" and flag.startswith("-m"):
             module = flag[2:] or (args[index + 1] if index + 1 < len(args) else "")
-            return Invocation(name, None, False, module)
+            return Invocation(name, family, module=module)
         if _inline_flag(flag, family):
-            return Invocation(name, None, True, None)
+            return Invocation(name, family, inline=True)
         index += 2 if flag in INTERPRETER_VALUE_FLAGS[family] else 1
     if index < len(args) and args[index] == "--":
         index += 1
     target = args[index] if index < len(args) else None
     if family != "source" and target in STDIN_TARGETS:
-        return Invocation(name, None, True, None)
-    return Invocation(name, target, False, None)
+        return Invocation(name, family, inline=True)
+    return Invocation(name, family, target=target)
 
 
 def invocation(words: list[str]) -> Optional[Invocation]:
@@ -233,10 +261,10 @@ def invocation(words: list[str]) -> Optional[Invocation]:
     program = words[index]
     name = os.path.basename(program)
     if name == "eval":
-        return Invocation(name, None, True, None)
+        return Invocation(name, None, inline=True)
     family = _family(name)
     if family is None:
-        return Invocation(name, program, False, None)
+        return Invocation(name, None, target=program)
     return _interpreted(name, family, words[index + 1 :])
 
 
@@ -249,15 +277,14 @@ def runs_inline_code(segment: str) -> bool:
     stages = segment_stages(segment)
     if stages is None:
         return mentions_interpreter(command_words(segment))
-    calls = (invocation([token.text for token in stage.words]) for stage in stages)
+    calls = (invocation(stage_texts(stage)) for stage in stages)
     return any(call is not None and call.inline for call in calls)
 
 
-def runs_helper(call: Invocation) -> bool:
-    if call.module in TEST_RUNNER_MODULES:
-        return True
-    if call.inline or call.target is None:
-        return False
-    path = PurePath(call.target)
-    helper = path.suffix in HELPER_SUFFIXES or path.name in HELPER_PROGRAMS
-    return helper and path.parent.name == HELPER_DIRECTORY
+def stage_texts(stage: Stage) -> list[str]:
+    return [token.text for token in stage.words]
+
+
+def stage_calls(segment: str) -> Optional[list[Optional[Invocation]]]:
+    stages = segment_stages(segment)
+    return None if stages is None else [invocation(stage_texts(stage)) for stage in stages]

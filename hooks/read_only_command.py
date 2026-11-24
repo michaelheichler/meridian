@@ -4,7 +4,7 @@ import os
 import re
 import shlex
 from itertools import takewhile
-from typing import Callable, NamedTuple, Optional
+from typing import Callable, Mapping, NamedTuple, Optional
 
 SED_ADDRESS = r"(?:\d+|\$|/[^/\\]*/)"
 SED_SCRIPT = re.compile(rf"(?:{SED_ADDRESS}(?:,{SED_ADDRESS})?)?p")
@@ -19,35 +19,35 @@ SORT_KEY = re.compile(r"\d+(?:,\d+)?")
 DIGIT_FLAG = re.compile(r"-\d+")
 AWK_UNSAFE = re.compile(r"system|getline|[|>]")
 AWK_VALUED = ("-F", "-v")
+FIND_PREFIX_OPTIONS = frozenset({"-H", "-L", "-P"})
+FIND_EXPRESSION_START = ("-", "(", "!")
 
 
 class Spec(NamedTuple):
     noarg: str
-    valued: dict
-    long: frozenset
-    numeric: bool
-    operands: bool
+    valued: Mapping[str, re.Pattern[str]]
+    long: frozenset[str]
+    numeric: bool = False
+    operands: bool = True
 
 
 SPECS = {
-    "cat": Spec("nbsvetA", {}, frozenset(), False, True),
-    "head": Spec("q", {"n": NUMBER, "c": NUMBER}, frozenset(), True, True),
-    "tail": Spec("q", {"n": NUMBER, "c": NUMBER}, frozenset(), True, True),
-    "wc": Spec("lwcm", {}, frozenset(), False, True),
-    "stat": Spec("L", {}, frozenset(), False, True),
+    "cat": Spec("nbsvetA", {}, frozenset()),
+    "head": Spec("q", {"n": NUMBER, "c": NUMBER}, frozenset(), numeric=True),
+    "tail": Spec("q", {"n": NUMBER, "c": NUMBER}, frozenset(), numeric=True),
+    "wc": Spec("lwcm", {}, frozenset()),
+    "stat": Spec("L", {}, frozenset()),
     "grep": Spec(
         "nivclLwxEFohHsq",
         {"e": ANY_TEXT, "m": COUNT, "A": COUNT, "B": COUNT, "C": COUNT},
         frozenset({"--color=never"}),
-        False,
-        True,
     ),
-    "sort": Spec("nru", {"k": SORT_KEY, "t": ONE_CHAR}, frozenset(), False, True),
-    "uniq": Spec("cdu", {}, frozenset(), False, False),
-    "cut": Spec("", {"d": ONE_CHAR, "f": FIELD_LIST, "c": FIELD_LIST}, frozenset(), False, True),
-    "pwd": Spec("LP", {}, frozenset(), False, False),
-    "cd": Spec("LP", {}, frozenset(), False, True),
-    "pushd": Spec("", {}, frozenset(), False, True),
+    "sort": Spec("nru", {"k": SORT_KEY, "t": ONE_CHAR}, frozenset()),
+    "uniq": Spec("cdu", {}, frozenset(), operands=False),
+    "cut": Spec("", {"d": ONE_CHAR, "f": FIELD_LIST, "c": FIELD_LIST}, frozenset()),
+    "pwd": Spec("LP", {}, frozenset(), operands=False),
+    "cd": Spec("LP", {}, frozenset()),
+    "pushd": Spec("", {}, frozenset()),
     "jq": Spec(
         "rcesnSjaMCR",
         {},
@@ -55,15 +55,11 @@ SPECS = {
             "--raw-output", "--compact-output", "--slurp", "--null-input", "--sort-keys",
             "--exit-status", "--tab", "--join-output", "--raw-input",
         }),
-        False,
-        True,
     ),
     "diff": Spec(
         "uqrNbwBiE",
         {"U": COUNT},
         frozenset({"--brief", "--recursive", "--new-file", "--ignore-all-space", "--color=never"}),
-        False,
-        True,
     ),
 }
 INSPECTION_SPECS = {
@@ -71,8 +67,6 @@ INSPECTION_SPECS = {
         "nivclLwxEFohHsqrR",
         {"e": ANY_TEXT, "m": COUNT, "A": COUNT, "B": COUNT, "C": COUNT},
         frozenset({"--color=never", "--recursive", "--line-number", "--ignore-case"}),
-        False,
-        True,
     ),
     "rg": Spec(
         "nivclLwxFohHsquUS",
@@ -84,29 +78,27 @@ INSPECTION_SPECS = {
             "--files", "--hidden", "--no-ignore", "--line-number", "--ignore-case",
             "--fixed-strings", "--count", "--files-with-matches", "--color=never",
         }),
-        False,
-        True,
     ),
 }
 GIT_INSPECTION_SPECS = {
-    "ls-files": Spec("ztv", {}, frozenset({"--cached", "--stage", "--others", "--exclude-standard"}), False, True),
-    "log": Spec("p", {}, frozenset({"--oneline", "--stat", "--name-only", "--name-status", "--no-patch"}), False, True),
-    "show": Spec("p", {}, frozenset({"--oneline", "--stat", "--name-only", "--name-status", "--no-patch"}), False, True),
-    "status": Spec("sbz", {}, frozenset({"--short", "--branch", "--porcelain", "--ignored"}), False, True),
+    "ls-files": Spec("ztv", {}, frozenset({"--cached", "--stage", "--others", "--exclude-standard"})),
+    "log": Spec("p", {}, frozenset({"--oneline", "--stat", "--name-only", "--name-status", "--no-patch"})),
+    "show": Spec("p", {}, frozenset({"--oneline", "--stat", "--name-only", "--name-status", "--no-patch"})),
+    "status": Spec("sbz", {}, frozenset({"--short", "--branch", "--porcelain", "--ignored"})),
     "diff": Spec("p", {}, frozenset({
         "--name-only", "--name-status", "--stat", "--numstat", "--shortstat", "--summary",
         "--cached", "--staged", "--check", "--no-ext-diff", "--no-textconv",
-    }), False, True),
+    })),
     "grep": Spec("nilrzclwFEGP", {}, frozenset({
         "--cached", "--line-number", "--ignore-case", "--fixed-strings", "--count",
         "--files-with-matches", "--full-name", "--recurse-submodules",
-    }), False, True),
+    })),
     "rev-parse": Spec("", {}, frozenset({
         "--show-toplevel", "--show-prefix", "--show-cdup", "--git-dir", "--absolute-git-dir",
         "--is-inside-work-tree", "--is-inside-git-dir", "--verify", "--short",
         "--abbrev-ref", "--symbolic-full-name",
-    }), False, True),
-    "blame": Spec("nlpw", {}, frozenset({"--line-porcelain", "--porcelain", "--show-email"}), False, True),
+    })),
+    "blame": Spec("nlpw", {}, frozenset({"--line-porcelain", "--porcelain", "--show-email"})),
 }
 FIND_FLAGS = frozenset({
     "-H", "-L", "-P", "-print", "-print0", "-empty", "-readable", "-writable",
@@ -146,7 +138,7 @@ def _step(args: list[str], index: int, spec: Spec) -> Optional[int]:
     return _consume(arg, following, spec)
 
 
-def _flags_allowed(stage: list[str], specs: dict = SPECS) -> bool:
+def _flags_allowed(stage: list[str], specs: Mapping[str, Spec] = SPECS) -> bool:
     spec = specs.get(stage[0])
     if spec is None:
         return False
@@ -278,3 +270,84 @@ def is_read_stage(stage: list[str], cwd: str) -> bool:
     if check is not None:
         return check(stage)
     return _command_safe(stage, cwd) or _flags_allowed(stage, INSPECTION_SPECS)
+
+
+def _short_flags(args: list[str]) -> list[str]:
+    return [arg for arg in args if arg.startswith("-") and not arg.startswith("--") and arg != "-"]
+
+
+def _has_short(args: list[str], letters: str) -> bool:
+    return any(letter in flag[1:] for flag in _short_flags(args) for letter in letters)
+
+
+def _operands(args: list[str]) -> list[str]:
+    return [arg for arg in args if not arg.startswith("-")]
+
+
+def _searched_paths(args: list[str]) -> list[str]:
+    return _operands(args)[1:] or ["."]
+
+
+def _grep_roots(args: list[str]) -> Optional[list[str]]:
+    recursive = _has_short(args, "rR") or "--recursive" in args or "--directories=recurse" in args
+    return _searched_paths(args) if recursive else None
+
+
+def _rg_roots(args: list[str]) -> Optional[list[str]]:
+    unrestricted = sum(flag.count("u") for flag in _short_flags(args)) >= 2
+    if not (unrestricted or "--hidden" in args or "-." in args):
+        return None
+    return (_operands(args) or ["."]) if "--files" in args else _searched_paths(args)
+
+
+def _find_roots(args: list[str]) -> list[str]:
+    paths = [arg for arg in args if arg not in FIND_PREFIX_OPTIONS]
+    roots = list(takewhile(lambda arg: not arg.startswith(FIND_EXPRESSION_START), paths))
+    return roots or ["."]
+
+
+def _flagged_roots(args: list[str], letters: str, longs: tuple[str, ...]) -> Optional[list[str]]:
+    if not (_has_short(args, letters) or any(name in args for name in longs)):
+        return None
+    return _operands(args)
+
+
+def _diff_roots(args: list[str]) -> Optional[list[str]]:
+    return _flagged_roots(args, "r", ("--recursive",))
+
+
+def _ls_roots(args: list[str]) -> Optional[list[str]]:
+    roots = _flagged_roots(args, "R", ("--recursive",))
+    return None if roots is None else roots or ["."]
+
+
+def _copy_roots(args: list[str]) -> Optional[list[str]]:
+    roots = _flagged_roots(args, "rRa", ("--recursive", "--archive"))
+    return None if roots is None else roots[:-1]
+
+
+def _zip_roots(args: list[str]) -> Optional[list[str]]:
+    roots = _flagged_roots(args, "r", ("--recurse-paths",))
+    return None if roots is None else roots[1:]
+
+
+def _tar_roots(args: list[str]) -> list[str]:
+    return _operands(args)
+
+
+TRAVERSALS: dict[str, Callable[[list[str]], Optional[list[str]]]] = {
+    "grep": _grep_roots,
+    "rg": _rg_roots,
+    "find": _find_roots,
+    "diff": _diff_roots,
+    "ls": _ls_roots,
+    "cp": _copy_roots,
+    "rsync": _copy_roots,
+    "zip": _zip_roots,
+    "tar": _tar_roots,
+}
+
+
+def traversal_roots(stage: list[str]) -> Optional[list[str]]:
+    finder = TRAVERSALS.get(os.path.basename(stage[0])) if stage else None
+    return None if finder is None else finder(stage[1:])

@@ -3,41 +3,80 @@ from __future__ import annotations
 import glob
 import os
 from enum import Enum
-from pathlib import Path
+from pathlib import Path, PurePath
 from typing import NamedTuple, Optional
 
 if __package__:
-    from .path_identity import expand_glob
+    from .path_identity import GLOB_CHARS, expand_glob
     from .read_only_command import command_segments, is_read_stage
     from .shell_invocation import (
-        Stage, Token, command_words, invocation, runs_helper, segment_stages,
+        EXPANSION_CHARS, SHELL_SPLIT, UNRESOLVED_CHARS, Invocation, Stage, Token, command_words,
+        expand_known_variables, invocation, segment_stages, stage_texts,
     )
 else:
-    from path_identity import expand_glob
+    from path_identity import GLOB_CHARS, expand_glob
     from read_only_command import command_segments, is_read_stage
     from shell_invocation import (
-        Stage, Token, command_words, invocation, runs_helper, segment_stages,
+        EXPANSION_CHARS, SHELL_SPLIT, UNRESOLVED_CHARS, Invocation, Stage, Token, command_words,
+        expand_known_variables, invocation, segment_stages, stage_texts,
     )
 
+HELPER_SUFFIXES = frozenset({".sh", ".py"})
+HELPER_PROGRAMS = frozenset({"meridian-model"})
+LOCATION_COMMANDS = frozenset({"cd", "pushd"})
 
-class SegmentKind(Enum):
+
+class StageKind(Enum):
     READ = "read"
-    RUN = "run"
+    HELPER = "helper"
+    TEST_RUNNER = "test-runner"
+    SCRIPT = "script"
+
+
+class ViewContext(NamedTuple):
+    cwd: Path
+    helper_directories: frozenset[str]
 
 
 class SegmentView(NamedTuple):
-    kind: Optional[SegmentKind]
-    loose: list[str]
-    strict: list[str]
-    text: str
+    kinds: tuple[Optional[StageKind], ...]
+    runtime_words: tuple[str, ...]
+    source_words: tuple[str, ...]
+    source_text: str
+
+    @property
+    def classified(self) -> bool:
+        return bool(self.kinds) and None not in self.kinds
+
+    @property
+    def reads_only(self) -> bool:
+        return self.classified and not self.source_words and set(self.kinds) == {StageKind.READ}
 
 
 class CommandView(NamedTuple):
     command: str
-    loose: list[str]
-    strict: list[str]
-    strict_text: str
-    reads_only: bool
+    segments: tuple[SegmentView, ...]
+    unclassified_texts: tuple[str, ...]
+
+    @property
+    def runtime_words(self) -> tuple[str, ...]:
+        return tuple(word for segment in self.segments for word in segment.runtime_words)
+
+    @property
+    def source_words(self) -> tuple[str, ...]:
+        return tuple(word for segment in self.segments for word in segment.source_words)
+
+    @property
+    def every_word(self) -> tuple[str, ...]:
+        return self.runtime_words + self.source_words
+
+    @property
+    def source_text(self) -> str:
+        return "\n".join(segment.source_text for segment in self.segments)
+
+    @property
+    def reads_only(self) -> bool:
+        return all(segment.reads_only for segment in self.segments)
 
 
 def _plain_source_glob(word: str, cwd: Path) -> bool:
@@ -55,38 +94,114 @@ def _static(token: Token, cwd: Path) -> bool:
     return not token.expands and (not token.globs or _plain_source_glob(token.text, cwd))
 
 
-def _stage_kind(stage: Stage, cwd: Path) -> Optional[SegmentKind]:
-    if not all(_static(token, cwd) for token in (*stage.words, *stage.inputs)):
+def _resolved_helper(target: str, context: ViewContext) -> bool:
+    if any(char in target for char in (*UNRESOLVED_CHARS, *GLOB_CHARS)):
+        return False
+    path = PurePath(os.path.realpath(os.path.join(str(context.cwd), os.path.expanduser(target))))
+    helper = path.suffix in HELPER_SUFFIXES or path.name in HELPER_PROGRAMS
+    return helper and str(path.parent).casefold() in context.helper_directories
+
+
+def _call_kind(call: Invocation, context: ViewContext) -> Optional[StageKind]:
+    if call.target is not None and not call.inline and _resolved_helper(call.target, context):
+        return StageKind.HELPER
+    return StageKind.SCRIPT if call.runs_script_file else None
+
+
+def _stage_kind(stage: Stage, context: ViewContext) -> Optional[StageKind]:
+    static = all(_static(token, context.cwd) for token in (*stage.words, *stage.inputs))
+    texts = [token.text for token in stage.words]
+    if static and is_read_stage(texts, str(context.cwd)):
+        return StageKind.READ
+    call = invocation([expand_known_variables(text) for text in texts])
+    if call is None:
         return None
-    words = [token.text for token in stage.words]
-    if is_read_stage(words, str(cwd)):
-        return SegmentKind.READ
-    call = invocation(words)
-    return SegmentKind.RUN if call is not None and runs_helper(call) else None
+    if call.runs_test_runner:
+        return StageKind.TEST_RUNNER if static else None
+    return _call_kind(call, context)
 
 
-def _segment_view(segment: str, cwd: Optional[Path]) -> SegmentView:
+def _helper_words(stage: Stage) -> tuple[list[str], list[str]]:
+    call = invocation([expand_known_variables(token.text) for token in stage.words])
+    target = None if call is None else call.target
+    words = [_literal(token) for token in stage.words]
+    expanded = [expand_known_variables(token.text) for token in stage.words]
+    index = expanded.index(target) if target in expanded else len(words)
+    return words[index : index + 1], words[:index] + words[index + 1 :]
+
+
+def _stage_words(stage: Stage, kind: StageKind) -> tuple[list[str], list[str]]:
+    inputs = [_literal(token) for token in stage.inputs]
+    outputs = [_literal(token) for token in stage.outputs]
+    if kind is StageKind.HELPER:
+        target, arguments = _helper_words(stage)
+        return target + inputs, arguments + outputs
+    words = [_literal(token) for token in stage.words]
+    if kind is StageKind.SCRIPT:
+        return inputs, words + outputs
+    return words + inputs, outputs
+
+
+def _unclassified(segment: str) -> SegmentView:
+    return SegmentView((None,), (), tuple(command_words(segment)), segment)
+
+
+def _segment_view(segment: str, context: Optional[ViewContext]) -> SegmentView:
     stages = segment_stages(segment)
-    if stages is None or cwd is None:
-        return SegmentView(None, [], command_words(segment), segment)
-    kinds = [_stage_kind(stage, cwd) for stage in stages]
+    if stages is None or context is None:
+        return _unclassified(segment)
+    kinds = [_stage_kind(stage, context) for stage in stages]
     if None in kinds:
-        return SegmentView(None, [], command_words(segment), segment)
-    loose = [_literal(token) for stage in stages for token in (*stage.words, *stage.inputs)]
-    outputs = [token for stage in stages for token in stage.outputs]
-    kind = SegmentKind.RUN if SegmentKind.RUN in kinds else SegmentKind.READ
-    targets = [_literal(token) for token in outputs]
-    return SegmentView(kind, loose, targets, " ".join(token.raw for token in outputs))
+        return _unclassified(segment)
+    runtime_words: list[str] = []
+    source_words: list[str] = []
+    for stage, kind in zip(stages, kinds, strict=True):
+        relaxed, checked = _stage_words(stage, kind)
+        runtime_words += relaxed
+        source_words += checked
+    outputs = " ".join(token.raw for stage in stages for token in stage.outputs)
+    return SegmentView(tuple(kinds), tuple(runtime_words), tuple(source_words), outputs)
 
 
-def command_view(command: str, cwd: Optional[Path]) -> CommandView:
-    segments = [_segment_view(segment, cwd) for segment in command_segments(command)]
-    strict = [word for segment in segments for word in segment.strict]
-    reads_only = not strict and all(segment.kind is SegmentKind.READ for segment in segments)
-    return CommandView(
-        command,
-        [word for segment in segments for word in segment.loose],
-        strict,
-        "\n".join(segment.text for segment in segments),
-        reads_only,
+def command_view(command: str, context: Optional[ViewContext]) -> CommandView:
+    pieces = command_segments(command)
+    segments = tuple(_segment_view(piece, context) for piece in pieces)
+    unclassified = tuple(
+        piece for piece, segment in zip(pieces, segments, strict=True) if not segment.classified
     )
+    return CommandView(command, segments, unclassified)
+
+
+def has_expansion(word: str) -> bool:
+    return any(char in word for char in EXPANSION_CHARS) or word.startswith("~")
+
+
+def _moves_location(words: list[str], index: int) -> bool:
+    return words[index] == "-C" or (index == 0 and words[0] in LOCATION_COMMANDS)
+
+
+def _location_targets(segment: str) -> list[str]:
+    stages = segment_stages(segment)
+    if stages is None:
+        raws = [raw.strip("'\"") for raw in SHELL_SPLIT.split(segment) if raw]
+        movers = (*LOCATION_COMMANDS, "-C")
+        return [raws[index + 1] for index in range(len(raws) - 1) if raws[index] in movers]
+    targets: list[str] = []
+    for stage in stages:
+        words = stage_texts(stage)
+        moves = (index for index in range(len(words) - 1) if _moves_location(words, index))
+        targets.extend(words[index + 1] for index in moves)
+    return targets
+
+
+def command_locations(command: str, cwd: Path) -> tuple[list[Path], bool]:
+    locations = [cwd]
+    unresolved = False
+    for segment in command_segments(command):
+        for raw in _location_targets(segment):
+            target = expand_known_variables(raw)
+            if has_expansion(target):
+                unresolved = True
+                continue
+            locations.append(Path(os.path.join(str(locations[-1]), target)).resolve())
+    return locations, unresolved
