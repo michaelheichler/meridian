@@ -103,14 +103,14 @@ class TmuxPrivateFilesystemTests(unittest.TestCase):
         self.create_fixture()
         inbox = os.path.join(self.root, "inbox")
         self.helper.write_json(self.root, "inbox/old.json", json.dumps({"n": 1}))
-        os.utime(os.path.join(inbox, "old.json"), ns=(1, 1))
-        self.helper.write_json(self.root, "inbox/name with spaces.json", json.dumps({"n": 2}))
-        names = []
+        self.helper.write_json(self.root, "inbox/spaced name.json", json.dumps({"n": 2}))
+        os.utime(os.path.join(inbox, "old.json"), ns=(1_000_000_000, 1_000_000_000))
+        os.utime(os.path.join(inbox, "job.json"), ns=(2_000_000_000, 2_000_000_000))
+        os.utime(os.path.join(inbox, "spaced name.json"), ns=(3_000_000_000, 3_000_000_000))
         with mock.patch.object(self.helper, "print") as printer:
             self.helper.list_json(inbox)
-            names = [call.args[0] for call in printer.call_args_list]
-        self.assertEqual(names[0], "name with spaces.json")
-        self.assertIn("old.json", names)
+        names = [call.args[0] for call in printer.call_args_list]
+        self.assertEqual(names, ["spaced name.json", "job.json", "old.json"])
 
     def test_list_json_enumerates_the_opened_directory_fd(self) -> None:
         self.create_fixture()

@@ -149,12 +149,21 @@ contract_mismatch_row() {
   expect_rejected_without_mutation "$label" "$expected"
 }
 
+copy_plugin_tree() {
+  mkdir -p "$1"
+  cp -R "$PROJECT_ROOT/scripts" "$PROJECT_ROOT/templates" "$PROJECT_ROOT/config" "$1/"
+}
+
 stub_resolver_row() {
-  local label="$1" resolver="$TEST_TEMP_DIR/stub-resolver.sh"
+  local label="$1" isolated="$TEST_TEMP_DIR/stub-plugin" saved_generator="$GENERATOR"
   reset_generated_state
+  copy_plugin_tree "$isolated"
   printf '%s\n' '#!/usr/bin/env bash' \
-    "printf \"%s\\n\" \"RESOLVED_AGENT_MODEL='nova-route'\" \"RESOLVED_MAX_TURNS=''\" \"RESOLVED_REASONING_JSON='null'\"" > "$resolver"
-  MERIDIAN_AGENT_SETTINGS_SCRIPT="$resolver" generate docs --job "write a README"
+    "printf \"%s\\n\" \"RESOLVED_AGENT_MODEL='nova-route'\" \"RESOLVED_MAX_TURNS=''\" \"RESOLVED_REASONING_JSON='null'\"" \
+    > "$isolated/scripts/resolve-agent-settings.sh"
+  GENERATOR="$isolated/scripts/agent-generator.sh"
+  generate docs --job "write a README"
+  GENERATOR="$saved_generator"
   expect_rejected_without_mutation "$label" "resolver omitted the max turns value"
 }
 
@@ -285,8 +294,7 @@ default_reasoning_row() {
 legacy_catalog_absent_row() {
   local label="$1" isolated="$TEST_TEMP_DIR/plugin" saved_generator="$GENERATOR" name
   reset_generated_state
-  mkdir -p "$isolated"
-  cp -R "$PROJECT_ROOT/scripts" "$PROJECT_ROOT/templates" "$PROJECT_ROOT/config" "$isolated/"
+  copy_plugin_tree "$isolated"
   GENERATOR="$isolated/scripts/agent-generator.sh"
   generate docs --job "write from saved routing authority"
   GENERATOR="$saved_generator"

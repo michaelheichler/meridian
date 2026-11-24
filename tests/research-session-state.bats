@@ -228,7 +228,7 @@ CASES
 
 @test "research session state preserves creation, migration, selection and completion contracts" {
   run_scenario_cases research_start research_complete research_get research_rejects_bad_input \
-    research_list research_latest research_migrate
+    research_list research_latest research_migrate research_complete_updated_field
 }
 
 research_migrate() {
@@ -290,6 +290,30 @@ backfills-every-template-field|allfields|---\ntitle: Only Title\n---\n\nBody.\n|
 preserves-updated-timestamp|upd-preserve|---\ntitle: Updated Preserve\nstatus: active\nupdated: 2023-06-15 10:30:00\n---\n\nBody.\n|status=complete;updated=2023-06-15 10:30:00
 fills-blank-values|blank-vals|---\ntitle: Blank Values\nconfidence:\nbase_commit:\n---\n\nBody.\n|confidence=medium;base_commit=unknown;title=Blank Values
 ignores-matching-tokens-in-body|bodytoken|---\ntitle: Body Token Test\nconfidence: high\n---\n\nMentions status: active and base_commit: abc123 in prose.\n|status=complete;base_commit=unknown;confidence=high
+CASES
+
+  assert_no_case_failures
+}
+
+research_complete_updated_field() {
+  local stamp='^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}$'
+  local label content id session updated
+  mkdir -p "$MERIDIAN_PLANNING_DIR/research"
+  while IFS='|' read -r label content; do
+    [ -n "$label" ] || continue
+    id="20200101-000000-$label"
+    session="$MERIDIAN_PLANNING_DIR/research/$id.md"
+    printf '%b' "$content" > "$session"
+    run rss complete "$MERIDIAN_PLANNING_DIR" "$id"
+    expect_eq "$label exit" "0" "$status"
+    expect_eq "$label status" "complete" "$(fm_get "$session" status)"
+    updated=$(fm_get "$session" updated)
+    [[ "$updated" =~ $stamp ]] || fail_case "$label" "updated is a timestamp" "$updated"
+    expect_lacks "$label stale" "2020-01-01 00:00:00" "$updated"
+    expect_eq "$label updated lines" "1" "$(grep -c '^updated:' "$session" || true)"
+  done <<'CASES'
+refreshes-existing-updated|---\ntitle: Refresh\nstatus: active\nupdated: 2020-01-01 00:00:00\n---\n\nBody.\n
+injects-missing-updated|---\ntitle: Inject\nstatus: active\n---\n\nBody.\n
 CASES
 
   assert_no_case_failures

@@ -53,6 +53,12 @@ make_session() {
     '---' '' "# Debug Session: ${id:16}" > "$dir/$id.md"
 }
 
+strip_updated_if() {
+  [ "$1" = missing ] || return 0
+  grep -v '^updated:' "$2" > "$2.tmp"
+  mv "$2.tmp" "$2"
+}
+
 build_specs() {
   local spec loc id state verified
   for spec in $1; do
@@ -549,7 +555,7 @@ CASES
 @test "debug session state preserves lifecycle, selection, todo rollback and migration contracts" {
   run_scenario_cases debug_start_and_clear debug_rejects_bad_input debug_start_from_todo \
     debug_get_and_select debug_resume debug_set_status_and_increment \
-    debug_migrate_and_normalize debug_list
+    debug_migrate_and_normalize debug_list debug_updated_field
 }
 
 debug_list() {
@@ -570,4 +576,31 @@ active-and-completed;active:20240101-120000-a:qa_pending completed:20240201-1200
 unresolved-stranded-in-completed-heals-to-active;completed:20240101-120000-s:investigating;1/1;session=20240101-120000-s|investigating|s|active;active/20240101-120000-s.md
 complete-stranded-in-active-is-counted-once;active:20240101-120000-h:complete completed:20240201-120000-d:complete;2/2;session=20240101-120000-h|complete|h|completed,session=20240201-120000-d|complete|d|completed;completed/20240101-120000-h.md,completed/20240201-120000-d.md
 CASES
+}
+
+debug_updated_field() {
+  local id="20240101-120000-updated-case" stamp='^updated: [0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}$'
+  local label command argument fixture expected_stamps field_line session stamps
+  reset_case_failures
+  while IFS='|' read -r label command argument fixture expected_stamps field_line; do
+    [ -n "$label" ] || continue
+    reset_planning
+    make_session active "$id" investigating
+    session="$DBG/active/$id.md"
+    strip_updated_if "$fixture" "$session"
+    point_to "$id.md"
+    run dss "$command" $argument
+    [ "$status" -eq 0 ] || record_case_failure "$label" "status=$status output=$output"
+    grep -qxF -- "$field_line" "$session" || record_case_failure "$label" "missing line [$field_line]"
+    stamps=$(grep -cE -- "$stamp" "$session" || true)
+    [ "$stamps" -eq "$expected_stamps" ] || record_case_failure "$label" "updated lines=$stamps want=$expected_stamps"
+    [ "$(grep -cxF 'updated: 2024-01-01 12:00:00' "$session" || true)" -eq 0 ] \
+      || record_case_failure "$label" "stale updated value kept"
+  done <<'CASES'
+set-status-refreshes-updated|set-status|qa_pending|kept|1|status: qa_pending
+increment-qa-refreshes-updated|increment-qa||kept|1|qa_round: 1
+set-status-without-updated-adds-none|set-status|qa_pending|missing|0|status: qa_pending
+increment-uat-without-updated-adds-none|increment-uat||missing|0|uat_round: 1
+CASES
+  assert_no_case_failures
 }

@@ -1,9 +1,11 @@
 import json
 import tempfile
 import unittest
+import uuid
 from pathlib import Path
 
-from hooks import user_question_guard
+from hooks import question_validation, user_question_guard
+from hooks.decision_common import DecisionStateError
 from hooks.decision_records import record_digest
 
 
@@ -70,17 +72,18 @@ class NativeQuestionContractTest(unittest.TestCase):
                 }
             ]
         }
-        self.assertIn("two to four choices", self.hook(event, "pretool") or "")
+        with self.assertRaises(DecisionStateError) as rejection:
+            question_validation.validate_question(event["tool_input"])
+        self.assertEqual(self.hook(event, "pretool"), str(rejection.exception))
         store = user_question_guard.DecisionStore(self.root / ".meridian")
         self.assertEqual(store.state(self.session_id), "none")
 
     def test_native_other_does_not_require_a_duplicate_visible_option(self) -> None:
         self.assertIsNone(self.hook(self.question_event(), "pretool"))
+        answer = f"freeform-{uuid.uuid4().hex}"
         response = self.question_event()
         response["tool_input"] = {
-            "answers": {
-                "Which review pace should this project use?": "Use a calm but complete review."
-            }
+            "answers": {"Which review pace should this project use?": answer}
         }
 
         self.assertIsNone(self.hook(response, "posttool"))
@@ -88,7 +91,11 @@ class NativeQuestionContractTest(unittest.TestCase):
         record = store.record(self.session_id)
         self.assertEqual(record["status"], "resolved")
         self.assertEqual(record["response"], {"kind": "freeform", "received": True})
-        self.assertNotIn("Use a calm", json.dumps(record))
+        persisted = "".join(
+            path.read_text(encoding="utf-8") for path in (self.root / ".meridian").rglob("*") if path.is_file()
+        )
+        self.assertNotIn(answer, json.dumps(record))
+        self.assertNotIn(answer, persisted)
 
     def test_prompt_hook_drains_a_pre_upgrade_awaiting_freeform_record(self) -> None:
         planning_dir = self.root / ".meridian"
