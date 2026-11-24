@@ -78,9 +78,9 @@ update_field() {
   if grep -q "^${field}:" "$file" 2>/dev/null; then
     rewrite_frontmatter_field "$file" "$field" "$value"
   fi
-  if [ "$field" != "updated" ]; then
+  if [ "$field" != "updated" ] && grep -q "^updated:" "$file" 2>/dev/null; then
     now=$(date '+%Y-%m-%d %H:%M:%S')
-    update_field "$file" "updated" "$now"
+    rewrite_frontmatter_field "$file" "updated" "$now"
   fi
 }
 

@@ -59,7 +59,7 @@ build_resolver_args() {
 
 run_settings_resolver() {
   local role="$1" rc=0 settings_script
-  settings_script="${MERIDIAN_AGENT_SETTINGS_SCRIPT:-$SCRIPT_DIR/resolve-agent-settings.sh}"
+  settings_script="$SCRIPT_DIR/resolve-agent-settings.sh"
   [ -f "$settings_script" ] || fail "agent settings resolver not found"
   TEMPORARY_CONTROL_ROOT=false
   if [ "$(basename "$CONTROL_ROOT")" != ".meridian" ]; then
