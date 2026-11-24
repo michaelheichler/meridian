@@ -6,6 +6,7 @@ import re
 import stat
 import subprocess
 import sys
+import time
 import uuid
 from pathlib import Path
 from typing import NamedTuple
@@ -18,10 +19,18 @@ from qa_command import CLAUDE_QA_AGENT, valid_arguments
 OPEN_STATES = frozenset({"dispatched", "running"})
 SKIPPABLE_PROMOTE_STATUSES = frozenset({"no_state_file", "no_todos_section"})
 CAPABILITY_CATALOG = "claude-capabilities.json"
+DEFAULT_STALE_RUNNING_MINUTES = 60
 
 
 class QaError(RuntimeError):
     pass
+
+
+class OpenContract(NamedTuple):
+    contract_id: str
+    state: str
+    action: str
+    age_minutes: int
 
 
 class Phase(NamedTuple):
@@ -135,32 +144,57 @@ def issue_contract(phase: Phase, job: str) -> str:
 
 
 def reusable_contract(phase: Phase, job: str) -> str | None:
+    contracts = open_contracts(phase)
+    stale_limit = stale_running_minutes()
+    refuse_live_workers(contracts, stale_limit)
     reusable = None
-    for contract_id, contract in open_contracts(phase):
-        if reusable is None and contract.get("state") == "dispatched" and contract.get("action") == job:
-            reusable = contract_id
+    for contract in contracts:
+        if contract.state == "running":
+            retire_contract(phase, contract.contract_id, f"it was stale for {contract.age_minutes} minutes")
+        elif reusable is None and contract.action == job:
+            reusable = contract.contract_id
         else:
-            retire_contract(phase, contract_id, contract.get("state"))
+            retire_contract(phase, contract.contract_id, "a new run started")
     return reusable
 
 
-def retire_contract(phase: Phase, contract_id: str, state: object) -> None:
+def refuse_live_workers(contracts: list[OpenContract], stale_limit: int) -> None:
+    for contract in contracts:
+        if contract.state == "running" and contract.age_minutes < stale_limit:
+            raise QaError(
+                f"QA contract {contract.contract_id} has been running for {contract.age_minutes} minutes. "
+                f"Publish its verdict, or run start again after {stale_limit} minutes to retire it."
+            )
+
+
+def stale_running_minutes() -> int:
+    try:
+        return max(0, int(os.environ.get("MERIDIAN_QA_STALE_MINUTES", DEFAULT_STALE_RUNNING_MINUTES)))
+    except ValueError:
+        return DEFAULT_STALE_RUNNING_MINUTES
+
+
+def retire_contract(phase: Phase, contract_id: str, reason: str) -> None:
+    if read_contract(phase, contract_id).get("state") == "blocked":
+        return
     transition(phase, contract_id, "blocked")
-    sys.stderr.write(
-        f"Meridian QA: moved {state} contract {contract_id} to blocked because no worker can claim it. "
-        "QA continues on a fresh contract.\n"
-    )
+    sys.stderr.write(f"Meridian QA: moved contract {contract_id} to blocked because {reason}.\n")
 
 
-def open_contracts(phase: Phase) -> list[tuple[str, dict]]:
+def read_contract(phase: Phase, contract_id: str) -> dict:
+    return json.loads(helper(phase.root, "task-contract.sh", "read", phase.root, contract_id))
+
+
+def open_contracts(phase: Phase) -> list[OpenContract]:
     registry = phase.root / ".meridian" / ".contracts" / "tasks"
     if not registry.is_dir():
         return []
     found = []
     for path in sorted(registry.glob(f"cmd-qa-qa-{phase.number}-*-phase.json")):
-        contract = json.loads(helper(phase.root, "task-contract.sh", "read", phase.root, path.stem))
+        contract = read_contract(phase, path.stem)
         if contract.get("state") in OPEN_STATES:
-            found.append((path.stem, contract))
+            age_minutes = int((time.time() - path.stat().st_mtime) // 60)
+            found.append(OpenContract(path.stem, contract["state"], contract.get("action", ""), age_minutes))
     return found
 
 
@@ -232,7 +266,7 @@ def publish(phase: Phase, contract_id: str, verdict: dict) -> dict:
 def block_after_failure(phase: Phase, contract_id: str, cause: Exception) -> None:
     try:
         transition(phase, contract_id, "blocked")
-    except QaError as transition_error:
+    except (QaError, OSError, subprocess.SubprocessError) as transition_error:
         raise QaError(
             f"{cause} The contract {contract_id} also failed to move to blocked. {transition_error}"
         ) from cause
