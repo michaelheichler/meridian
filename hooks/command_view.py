@@ -7,6 +7,7 @@ from pathlib import Path, PurePath
 from typing import NamedTuple, Optional
 
 if __package__:
+    from .git_policy import message_free_words
     from .path_identity import GLOB_CHARS, expand_glob
     from .read_only_command import command_segments, is_read_stage
     from .shell_invocation import (
@@ -14,6 +15,7 @@ if __package__:
         expand_known_variables, invocation, segment_stages, stage_texts,
     )
 else:
+    from git_policy import message_free_words
     from path_identity import GLOB_CHARS, expand_glob
     from read_only_command import command_segments, is_read_stage
     from shell_invocation import (
@@ -43,6 +45,7 @@ class SegmentView(NamedTuple):
     runtime_words: tuple[str, ...]
     source_words: tuple[str, ...]
     source_text: str
+    scan_text: str
 
     @property
     def classified(self) -> bool:
@@ -56,7 +59,10 @@ class SegmentView(NamedTuple):
 class CommandView(NamedTuple):
     command: str
     segments: tuple[SegmentView, ...]
-    unclassified_texts: tuple[str, ...]
+
+    @property
+    def unclassified(self) -> tuple[SegmentView, ...]:
+        return tuple(segment for segment in self.segments if not segment.classified)
 
     @property
     def runtime_words(self) -> tuple[str, ...]:
@@ -73,6 +79,10 @@ class CommandView(NamedTuple):
     @property
     def source_text(self) -> str:
         return "\n".join(segment.source_text for segment in self.segments)
+
+    @property
+    def scan_text(self) -> str:
+        return "\n".join(segment.scan_text for segment in self.segments)
 
     @property
     def reads_only(self) -> bool:
@@ -143,15 +153,19 @@ def _stage_words(stage: Stage, kind: StageKind) -> tuple[list[str], list[str]]:
 
 
 def _unclassified(segment: str) -> SegmentView:
-    return SegmentView((None,), (), tuple(command_words(segment)), segment)
+    message_free = message_free_words(segment)
+    words = command_words(segment) if message_free is None else message_free
+    text = segment if message_free is None else " ".join(message_free)
+    return SegmentView((None,), (), tuple(words), text, text)
 
 
 def _segment_view(segment: str, context: Optional[ViewContext]) -> SegmentView:
     stages = segment_stages(segment)
     if stages is None or context is None:
         return _unclassified(segment)
-    kinds = [_stage_kind(stage, context) for stage in stages]
-    if None in kinds:
+    found = [_stage_kind(stage, context) for stage in stages]
+    kinds = [kind for kind in found if kind is not None]
+    if len(kinds) != len(found):
         return _unclassified(segment)
     runtime_words: list[str] = []
     source_words: list[str] = []
@@ -160,16 +174,12 @@ def _segment_view(segment: str, context: Optional[ViewContext]) -> SegmentView:
         runtime_words += relaxed
         source_words += checked
     outputs = " ".join(token.raw for stage in stages for token in stage.outputs)
-    return SegmentView(tuple(kinds), tuple(runtime_words), tuple(source_words), outputs)
+    return SegmentView(tuple(kinds), tuple(runtime_words), tuple(source_words), outputs, segment)
 
 
 def command_view(command: str, context: Optional[ViewContext]) -> CommandView:
-    pieces = command_segments(command)
-    segments = tuple(_segment_view(piece, context) for piece in pieces)
-    unclassified = tuple(
-        piece for piece, segment in zip(pieces, segments, strict=True) if not segment.classified
-    )
-    return CommandView(command, segments, unclassified)
+    segments = tuple(_segment_view(piece, context) for piece in command_segments(command))
+    return CommandView(command, segments)
 
 
 def has_expansion(word: str) -> bool:

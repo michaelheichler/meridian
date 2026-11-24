@@ -12,43 +12,44 @@ if __package__:
     from .brace_expansion import ExpansionTooComplex, expand_braces
     from .command_policy import (
         GUARD_MODULES, PASSIVE_PROGRAMS, PROTECTED_MARKERS, PROTECTED_TREES, RUNTIME_MARKERS,
-        SCRIPT_MARKERS, Access, GitCall, configures_commands, embedded_access, git_call, grant_expansion,
-        has_glob, hidden_gap, marker_hit, mention_access, mutates_tree, protected_targets, reached,
-        runs_deny_set, stage_roots,
+        SCRIPT_MARKERS, Access, embedded_access, grant_expansion, has_glob, hidden_gap, marker_hit,
+        mention_access, protected_targets, reached, runs_deny_set, stage_roots,
+    )
+    from .git_policy import (
+        GitCall, git_calls, mutates_tree, runs_commands, sets_command_environment,
     )
     from .command_view import CommandView, ViewContext, command_locations, command_view
     from .decision_common import INVALID_STATE, DecisionStateError, require
     from .guard_unlock import active_expiry, state_directory
     from .path_identity import (
-        GLOB_CHARS, ProtectedIdentity, TooManyMatches, expand_glob, iter_matches, within,
+        ProtectedIdentity, TooManyMatches, expand_glob, iter_matches, within,
     )
     from .qa_command import permits_qa_command
-    from .read_only_command import command_segments
     from .shell_invocation import (
-        UNRESOLVED_CHARS, command_words, expand_known_variables, segment_stages, stage_texts,
+        UNRESOLVED_CHARS, UNRESOLVED_PATTERN, command_words, expand_known_variables,
     )
 else:
     from brace_expansion import ExpansionTooComplex, expand_braces
     from command_policy import (
         GUARD_MODULES, PASSIVE_PROGRAMS, PROTECTED_MARKERS, PROTECTED_TREES, RUNTIME_MARKERS,
-        SCRIPT_MARKERS, Access, GitCall, configures_commands, embedded_access, git_call, grant_expansion,
-        has_glob, hidden_gap, marker_hit, mention_access, mutates_tree, protected_targets, reached,
-        runs_deny_set, stage_roots,
+        SCRIPT_MARKERS, Access, embedded_access, grant_expansion, has_glob, hidden_gap, marker_hit,
+        mention_access, protected_targets, reached, runs_deny_set, stage_roots,
+    )
+    from git_policy import (
+        GitCall, git_calls, mutates_tree, runs_commands, sets_command_environment,
     )
     from command_view import CommandView, ViewContext, command_locations, command_view
     from decision_common import INVALID_STATE, DecisionStateError, require
     from guard_unlock import active_expiry, state_directory
     from path_identity import (
-        GLOB_CHARS, ProtectedIdentity, TooManyMatches, expand_glob, iter_matches, within,
+        ProtectedIdentity, TooManyMatches, expand_glob, iter_matches, within,
     )
     from qa_command import permits_qa_command
-    from read_only_command import command_segments
     from shell_invocation import (
-        UNRESOLVED_CHARS, command_words, expand_known_variables, segment_stages, stage_texts,
+        UNRESOLVED_CHARS, UNRESOLVED_PATTERN, command_words, expand_known_variables,
     )
 
 OptionalPath = Optional[Path]
-UNRESOLVED_PATTERN = re.compile(f"[{re.escape(UNRESOLVED_CHARS)}]")
 SUFFIX_SPAN = 8
 ANALYSIS_SECONDS = 3.5
 TIMEOUT_REASON = "guard analysis timeout"
@@ -58,7 +59,6 @@ FILES0_PREFIX = "--files0"
 FILES0_COMMANDS = frozenset({"sort", "wc"})
 FILES0_ABBREVIATION_FLOOR = 3
 OPERATOR_SPLIT = re.compile(r"[<>&|;()]")
-LOCATION_COMMANDS = frozenset({"cd", "pushd"})
 
 
 class AnalysisTimeout(Exception):
@@ -115,10 +115,6 @@ def current_directory(cwd: object) -> OptionalPath:
     return Path(cwd).resolve() if isinstance(cwd, str) and cwd else None
 
 
-def has_glob(value: str) -> bool:
-    return any(char in value for char in GLOB_CHARS)
-
-
 def _candidates(word: str) -> set[str]:
     values = {word, *word.split("="), *OPERATOR_SPLIT.split(word)}
     if word.startswith("-"):
@@ -158,10 +154,11 @@ def _unresolved_hit(word: str, cwd: Path, scope: Scope) -> bool:
     if marker_hit((expanded,), scope.guarded_names):
         return True
     prefix = expanded[: found.start()]
-    if "/" not in prefix:
-        return False
     folder = os.path.join(str(cwd), os.path.expanduser(prefix[: prefix.rfind("/") + 1]))
-    return scope.identity.hits(folder) or scope.identity.holds_module_below(folder)
+    if scope.identity.hits(folder):
+        return True
+    unresolved_folder = "/" in expanded[found.start() :]
+    return unresolved_folder and scope.identity.holds_module_below(folder)
 
 
 def _direct_hit(tool_input: dict, cwd: OptionalPath, scope: Scope) -> bool:
@@ -184,36 +181,44 @@ def _files0_hit(words: tuple[str, ...]) -> bool:
     return any(_is_files0_option(word, floor) for word in words)
 
 
+def _guarded_paths(identity: ProtectedIdentity) -> list[Path]:
+    runtime = [] if identity.runtime is None else [identity.runtime]
+    return [path.resolve() for path in (*identity.modules, *runtime)]
+
+
 def _parent_mutation(words: tuple[str, ...], cwd: Path, identity: ProtectedIdentity) -> bool:
     if not any(os.path.basename(word) in {"rm", "mv", "rmdir"} for word in words):
         return False
+    guarded = _guarded_paths(identity)
     for value in _operand_values(words):
         target = _target(value, cwd)
         if target is None:
             continue
         parent = Path(target).resolve()
-        if any(parent in module.resolve().parents for module in identity.modules):
+        if any(parent in path.parents for path in guarded):
             return True
     return False
 
 
-def _probe_hit(probe: Probe, cwd: OptionalPath, scope: Scope) -> bool:
-    if _files0_hit(probe.words):
-        return True
-    if marker_hit((probe.text, " ".join(probe.words)), scope.markers):
-        return True
-    if cwd is None:
-        return False
-    locations, unresolved = command_locations(probe.command, cwd)
+def _location_hit(probe: Probe, locations: list[Path], scope: Scope) -> bool:
     if any(_parent_mutation(probe.words, location, scope.identity) for location in locations):
-        return True
-    if unresolved and marker_hit((probe.text,), SCRIPT_MARKERS):
         return True
     unresolved_words = ((word, location) for location in locations for word in probe.words)
     if any(_unresolved_hit(word, location, scope) for word, location in unresolved_words):
         return True
     pairs = [(value, location) for location in locations for value in _operand_values(probe.words)]
     return any(_value_hit(value, location, scope.identity) for value, location in pairs)
+
+
+def _probe_hit(probe: Probe, cwd: OptionalPath, scope: Scope) -> bool:
+    if _files0_hit(probe.words) or marker_hit((probe.text, " ".join(probe.words)), scope.markers):
+        return True
+    if cwd is None:
+        return False
+    locations, unresolved = command_locations(probe.command, cwd)
+    if unresolved and marker_hit((probe.text,), SCRIPT_MARKERS):
+        return True
+    return _location_hit(probe, locations, scope)
 
 
 def _pattern_hit(pattern: str, root: Path, identity: ProtectedIdentity) -> bool:
@@ -243,7 +248,7 @@ def _search_hit(data: dict, cwd: OptionalPath, identity: ProtectedIdentity) -> b
 
 
 def _every_word_probe(view: CommandView) -> Probe:
-    return Probe(view.command, view.every_word, view.command)
+    return Probe(view.command, view.every_word, view.scan_text)
 
 
 def _whole_probe(view: Optional[CommandView]) -> Optional[Probe]:
@@ -325,33 +330,43 @@ def _tree_markers(installation: Installation) -> tuple[str, ...]:
     return tuple(str(root / tree) for root in installation.roots for tree in PROTECTED_TREES)
 
 
-def _near_installation(location: Path, installation: Installation) -> bool:
-    return any(
-        within(str(location), str(root)) or within(str(root), str(location))
-        for root in installation.roots
-    )
+def _inside_installation(path: Path, installation: Installation) -> bool:
+    return any(within(str(path), str(root)) for root in installation.roots)
 
 
-def _git_calls(command: str) -> list[GitCall]:
-    calls = []
-    for segment in command_segments(command):
-        stages = segment_stages(segment)
-        texts = [stage_texts(stage) for stage in stages] if stages is not None else []
-        words_list = texts or [command_words(segment)]
-        calls.extend(call for call in map(git_call, words_list) if call is not None)
-    return calls
+def _holds_installation(path: Path, installation: Installation) -> bool:
+    return any(within(str(root), str(path)) for root in installation.roots)
+
+
+def _placed(location: Path, names: tuple[str, ...]) -> list[Path]:
+    joined = (os.path.join(str(location), expand_known_variables(name)) for name in names)
+    return [Path(path).resolve() for path in joined]
+
+
+def _mutation_near(call: GitCall, locations: list[Path], installation: Installation) -> bool:
+    for location in locations:
+        trees = [location, *_placed(location, call.work_trees)]
+        if any(_inside_installation(tree, installation) for tree in trees):
+            return True
+        operands = _placed(location, call.operands)
+        named = any(_inside_installation(place, installation) for place in operands)
+        if named and _holds_installation(location, installation):
+            return True
+    return False
 
 
 def _git_access(request: Request) -> bool:
     command = request.data["tool_input"]["command"]
-    calls = _git_calls(command)
-    if any(configures_commands(call) for call in calls):
+    calls = git_calls(command)
+    if not calls:
+        return False
+    if sets_command_environment(command) or any(runs_commands(call) for call in calls):
         return True
     if request.installation.unlocked or request.cwd is None:
         return False
     locations, _unresolved = command_locations(command, request.cwd)
-    near = any(_near_installation(location, request.installation) for location in locations)
-    return near and any(mutates_tree(call) for call in calls)
+    mutations = [call for call in calls if mutates_tree(call)]
+    return any(_mutation_near(call, locations, request.installation) for call in mutations)
 
 
 def _traversal_access(request: Request) -> Optional[Access]:

@@ -24,6 +24,7 @@ SHELL_SPLIT = re.compile(r"[\s;&|<>()]+")
 QUOTE_CHARS = "$'\""
 EXPANSION_CHARS = "$`{"
 UNRESOLVED_CHARS = "$`"
+UNRESOLVED_PATTERN = re.compile(f"[{re.escape(UNRESOLVED_CHARS)}]")
 ASSIGNMENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=.*")
 PYTHON_NAME = re.compile(r"python[0-9.]*")
 WRAPPER_VALUE_FLAGS = {
@@ -56,6 +57,20 @@ INTERPRETER_VALUE_FLAGS = {
     "source": frozenset(),
 }
 STDIN_TARGETS = (None, "-")
+STDIN_PATHS = frozenset({"/dev/stdin", "/dev/fd/0", "/proc/self/fd/0"})
+MODULE_RUNNERS = frozenset({"runpy", "pdb", "trace", "cProfile", "profile"})
+MODULE_RUNNER_VALUES = frozenset({
+    "-o", "-s", "-f", "-C", "--file", "--coverdir", "--ignore-module", "--ignore-dir", "--outfile",
+    "--sort",
+})
+AWK_NAMES = frozenset({"awk", "gawk", "mawk", "nawk"})
+AWK_COMMANDS = re.compile(r"system|getline|[|>]")
+AWK_VALUED = frozenset({"-F", "-v", "-f"})
+HEREDOC_START = re.compile(r"<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1")
+STATEMENT_BREAK = re.compile(r"\$\(|[;&|(){}`\n]")
+SHELL_KEYWORDS = frozenset({
+    "!", "{", "if", "then", "else", "elif", "fi", "do", "done", "while", "until",
+})
 TEST_RUNNER_MODULE = "unittest"
 KNOWN_VARIABLES = ("CLAUDE_PLUGIN_ROOT", "HOME")
 
@@ -94,6 +109,7 @@ class Invocation(NamedTuple):
     target: Optional[str] = None
     inline: bool = False
     module: Optional[str] = None
+    code: Optional[str] = None
 
     @property
     def runs_test_runner(self) -> bool:
@@ -150,10 +166,11 @@ def shell_tokens(command: str) -> Optional[list[Token]]:
     lexer.whitespace_split = True
     lexer.commenters = ""
     try:
-        tokens = [_token(raw) for raw in lexer]
+        found = [_token(raw) for raw in lexer]
     except ValueError:
         return None
-    return None if None in tokens else tokens
+    tokens = [token for token in found if token is not None]
+    return tokens if len(tokens) == len(found) else None
 
 
 def _redirection(tokens: list[Token], index: int) -> Optional[Token]:
@@ -193,8 +210,9 @@ def command_stages(tokens: list[Token]) -> Optional[list[Stage]]:
             groups.append([])
         else:
             groups[-1].append(token)
-    stages = [_stage(group) for group in groups]
-    return None if None in stages else stages
+    found = [_stage(group) for group in groups]
+    stages = [stage for stage in found if stage is not None]
+    return stages if len(stages) == len(found) else None
 
 
 def segment_stages(segment: str) -> Optional[list[Stage]]:
@@ -214,7 +232,7 @@ def _skip_wrappers(words: list[str]) -> int:
     index = 0
     while index < len(words):
         name = os.path.basename(words[index])
-        if ASSIGNMENT.fullmatch(words[index]):
+        if ASSIGNMENT.fullmatch(words[index]) or words[index] in SHELL_KEYWORDS:
             index += 1
             continue
         valued = WRAPPER_VALUE_FLAGS.get(name)
@@ -236,22 +254,58 @@ def _inline_flag(flag: str, family: str) -> bool:
     return any(letter in flag[1:] for letter in INLINE_LETTERS[family])
 
 
+def _runner_target(name: str, args: list[str]) -> Invocation:
+    index = 0
+    while index < len(args) and args[index].startswith("-"):
+        if args[index] == "-m" and index + 1 < len(args):
+            return Invocation(name, "python", module=args[index + 1])
+        index += 2 if args[index] in MODULE_RUNNER_VALUES else 1
+    operand = args[index] if index < len(args) else ""
+    if operand.endswith(".py") or "/" in operand:
+        return Invocation(name, "python", target=operand)
+    return Invocation(name, "python", module=operand)
+
+
+def _module_call(name: str, flag: str, rest: list[str]) -> Invocation:
+    module = flag[2:] or (rest[0] if rest else "")
+    following = rest if flag[2:] else rest[1:]
+    if module in MODULE_RUNNERS:
+        return _runner_target(name, following)
+    return Invocation(name, "python", module=module)
+
+
+def _inline_code(flag: str, family: str, rest: list[str]) -> Optional[str]:
+    attached = flag[2:] if family != "shell" and flag[1:2] in INLINE_LETTERS[family] else ""
+    return attached or (rest[0] if rest else None)
+
+
 def _interpreted(name: str, family: str, args: list[str]) -> Invocation:
     index = 0
     while index < len(args) and args[index][:1] in "-+" and args[index] not in ("-", "--"):
         flag = args[index]
         if family == "python" and flag.startswith("-m"):
-            module = flag[2:] or (args[index + 1] if index + 1 < len(args) else "")
-            return Invocation(name, family, module=module)
+            return _module_call(name, flag, args[index + 1 :])
         if _inline_flag(flag, family):
-            return Invocation(name, family, inline=True)
+            code = _inline_code(flag, family, args[index + 1 :])
+            return Invocation(name, family, inline=True, code=code)
         index += 2 if flag in INTERPRETER_VALUE_FLAGS[family] else 1
     if index < len(args) and args[index] == "--":
         index += 1
     target = args[index] if index < len(args) else None
-    if family != "source" and target in STDIN_TARGETS:
+    reads_stdin = target in STDIN_PATHS or (family != "source" and target in STDIN_TARGETS)
+    if reads_stdin:
         return Invocation(name, family, inline=True)
     return Invocation(name, family, target=target)
+
+
+def _awk_call(name: str, args: list[str]) -> Invocation:
+    index = 0
+    while index < len(args) and args[index].startswith("-") and args[index] != "-":
+        index += 2 if args[index] in AWK_VALUED else 1
+    program = args[index] if index < len(args) else ""
+    if AWK_COMMANDS.search(program):
+        return Invocation(name, "awk", code=program)
+    return Invocation(name, None, target=name)
 
 
 def invocation(words: list[str]) -> Optional[Invocation]:
@@ -261,7 +315,9 @@ def invocation(words: list[str]) -> Optional[Invocation]:
     program = words[index]
     name = os.path.basename(program)
     if name == "eval":
-        return Invocation(name, None, inline=True)
+        return Invocation(name, None, inline=True, code=" ".join(words[index + 1 :]))
+    if name in AWK_NAMES:
+        return _awk_call(name, words[index + 1 :])
     family = _family(name)
     if family is None:
         return Invocation(name, None, target=program)
@@ -288,3 +344,28 @@ def stage_texts(stage: Stage) -> list[str]:
 def stage_calls(segment: str) -> Optional[list[Optional[Invocation]]]:
     stages = segment_stages(segment)
     return None if stages is None else [invocation(stage_texts(stage)) for stage in stages]
+
+
+def strip_heredocs(text: str) -> str:
+    kept: list[str] = []
+    ending: Optional[str] = None
+    for line in text.split("\n"):
+        if ending is not None:
+            if line.strip() == ending:
+                ending = None
+            continue
+        kept.append(line)
+        opened = HEREDOC_START.search(line)
+        ending = opened.group(2) if opened else None
+    return "\n".join(kept)
+
+
+def statement_words(text: str) -> list[list[str]]:
+    statements: list[list[str]] = []
+    for piece in STATEMENT_BREAK.split(strip_heredocs(text)):
+        words = command_words(piece)
+        while words and words[0] in SHELL_KEYWORDS:
+            words = words[1:]
+        if words:
+            statements.append(words)
+    return statements

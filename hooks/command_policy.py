@@ -5,7 +5,7 @@ import os
 import re
 from enum import Enum
 from pathlib import Path
-from typing import Iterable, NamedTuple, Optional
+from typing import Iterable, Optional
 
 if __package__:
     from .brace_expansion import expand_braces
@@ -14,8 +14,9 @@ if __package__:
     from .path_identity import GLOB_CHARS, within
     from .read_only_command import command_segments, traversal_roots
     from .shell_invocation import (
-        ASSIGNMENT, EXPANSION_CHARS, QUOTE_CHARS, command_words, expand_known_variables,
-        fallback_words, invocation, runs_inline_code, segment_stages, stage_calls, stage_texts,
+        EXPANSION_CHARS, QUOTE_CHARS, UNRESOLVED_CHARS, Invocation, command_words,
+        expand_known_variables, invocation, runs_inline_code, segment_stages, stage_calls,
+        stage_texts, statement_words,
     )
 else:
     from brace_expansion import expand_braces
@@ -24,8 +25,9 @@ else:
     from path_identity import GLOB_CHARS, within
     from read_only_command import command_segments, traversal_roots
     from shell_invocation import (
-        ASSIGNMENT, EXPANSION_CHARS, QUOTE_CHARS, command_words, expand_known_variables,
-        fallback_words, invocation, runs_inline_code, segment_stages, stage_calls, stage_texts,
+        EXPANSION_CHARS, QUOTE_CHARS, UNRESOLVED_CHARS, Invocation, command_words,
+        expand_known_variables, invocation, runs_inline_code, segment_stages, stage_calls,
+        stage_texts, statement_words,
     )
 
 GUARD_MODULES = (
@@ -53,6 +55,7 @@ GUARD_MODULES = (
     "shell_invocation.py",
     "command_view.py",
     "command_policy.py",
+    "git_policy.py",
     "brace_expansion.py",
     "path_identity.py",
 )
@@ -68,90 +71,9 @@ PROTECTED_MARKERS = (
 GRANT_NAMES = ("meridian-guard", ".local/state", "grant.json")
 PASSIVE_PROGRAMS = frozenset({"git", "printf", "echo", "tee", "sed"})
 PROTECTED_TREES = ("hooks", "scripts")
-UNRESOLVED_CHARS = "$`"
-UNRESOLVED_PATTERN = re.compile(r"[$`]")
-COMMAND_KEY_PARTS = (
-    "pager", "editor", "ssh", r"alias\.", "external", "textconv", "fsmonitor", "hookspath",
-    "askpass", r"filter\.", "program", "helper", "include",
-)
-COMMAND_KEYS = re.compile("|".join(COMMAND_KEY_PARTS), re.IGNORECASE)
-COMMAND_ENVIRONMENT = re.compile(
-    r"GIT_(?:PAGER|EDITOR|SEQUENCE_EDITOR|SSH|SSH_COMMAND|EXTERNAL_DIFF|ASKPASS|CONFIG\w*)="
-)
-VALUED_GLOBALS = frozenset({"-C", "--git-dir", "--work-tree", "--namespace", "--exec-path"})
-TREE_MUTATIONS = frozenset({
-    "reset", "checkout", "switch", "restore", "stash", "apply", "am", "merge", "pull",
-    "rebase", "clean", "cherry-pick", "revert", "rm", "mv",
-})
-BRANCH_CREATION = frozenset({"-b", "-c"})
-STASH_READS = frozenset({"list", "show"})
-CONFIG_READS = frozenset({
-    "--get", "--get-all", "--get-regexp", "--get-urlmatch", "--list", "-l",
-    "--show-origin", "--show-scope", "get", "list",
-})
-CONFIG_EDITS = frozenset({"-e", "--edit", "edit"})
-
-
-class GitCall(NamedTuple):
-    environment: tuple[str, ...]
-    settings: tuple[str, ...]
-    subcommand: Optional[str]
-    args: tuple[str, ...]
-
-
-def _globals(args: list[str]) -> tuple[list[str], int]:
-    settings: list[str] = []
-    index = 0
-    while index < len(args) and args[index].startswith("-"):
-        flag = args[index]
-        if flag == "-c" or flag == "--config-env":
-            settings.append(args[index + 1] if index + 1 < len(args) else "")
-            index += 2
-        elif flag.startswith("--config-env="):
-            settings.append(flag.split("=", 1)[1])
-            index += 1
-        else:
-            index += 2 if flag in VALUED_GLOBALS else 1
-    return settings, index
-
-
-def git_call(words: list[str]) -> Optional[GitCall]:
-    call = invocation(words)
-    if call is None or call.target is None or os.path.basename(call.target) != "git":
-        return None
-    start = words.index(call.target)
-    environment = tuple(word for word in words[:start] if ASSIGNMENT.fullmatch(word))
-    settings, index = _globals(words[start + 1 :])
-    rest = words[start + 1 + index :]
-    subcommand = rest[0] if rest else None
-    return GitCall(environment, tuple(settings), subcommand, tuple(rest[1:]))
-
-
-def _config_writes_commands(args: tuple[str, ...]) -> bool:
-    if any(arg in CONFIG_READS for arg in args):
-        return False
-    if any(arg in CONFIG_EDITS for arg in args):
-        return True
-    keys = [arg for arg in args if not arg.startswith("-") and arg != "set"]
-    return bool(keys) and bool(COMMAND_KEYS.search(keys[0]))
-
-
-def configures_commands(call: GitCall) -> bool:
-    if any(COMMAND_ENVIRONMENT.match(assignment) for assignment in call.environment):
-        return True
-    if any(COMMAND_KEYS.search(setting.split("=", 1)[0]) for setting in call.settings):
-        return True
-    return call.subcommand == "config" and _config_writes_commands(call.args)
-
-
-def mutates_tree(call: GitCall) -> bool:
-    if call.subcommand not in TREE_MUTATIONS:
-        return False
-    if call.subcommand in ("checkout", "switch") and len(call.args) == 2:
-        return call.args[0] not in BRANCH_CREATION
-    return call.subcommand != "stash" or not call.args or call.args[0] not in STASH_READS
-
-
+PLUGIN_ROOT_VARIABLE = "CLAUDE_PLUGIN_ROOT"
+AWK_RUNNERS = ("system", "|")
+INLINE_QUOTES = str.maketrans("", "", "'\"")
 class Access(Enum):
     SOURCE = "source"
     EXECUTION = "execution"
@@ -168,14 +90,6 @@ def marker_hit(texts: Iterable[str], markers: tuple[str, ...]) -> bool:
 
 def has_glob(value: str) -> bool:
     return any(char in value for char in GLOB_CHARS)
-
-
-def _mentions_deny_set(segment: str) -> bool:
-    words = command_words(segment)
-    if not words or os.path.basename(words[0]) in PASSIVE_PROGRAMS:
-        return False
-    tokens = words + fallback_words(" ".join(words))
-    return any(os.path.basename(word.strip(QUOTE_CHARS)) in DENY_SET for word in tokens)
 
 
 def _deny_name(name: str) -> bool:
@@ -200,25 +114,40 @@ def _guard_module(module: Optional[str]) -> bool:
     return module is not None and module.rsplit(".", 1)[-1] in GUARD_STEMS
 
 
-def _segment_runs_deny_set(segment: str, cwd: Optional[Path]) -> bool:
+def _segment_calls(segment: str) -> list[Invocation]:
     calls = stage_calls(segment)
     if calls is None:
-        return _mentions_deny_set(segment)
-    present = [call for call in calls if call is not None]
-    if any(_guard_module(call.module) for call in present):
+        calls = [invocation(words) for words in statement_words(segment)]
+    return [call for call in calls if call is not None]
+
+
+def _program_names_deny_set(call: Invocation) -> bool:
+    code = call.code or ""
+    runs = call.family == "awk" and any(marker in code for marker in AWK_RUNNERS)
+    return runs and marker_hit((code,), tuple(DENY_SET))
+
+
+def _segment_runs_deny_set(segment: str, cwd: Optional[Path]) -> bool:
+    calls = _segment_calls(segment)
+    if any(_guard_module(call.module) or _program_names_deny_set(call) for call in calls):
         return True
-    return any(call.target is not None and _deny_target(call.target, cwd) for call in present)
+    return any(call.target is not None and _deny_target(call.target, cwd) for call in calls)
 
 
 def runs_deny_set(command: str, cwd: Optional[Path]) -> bool:
     return any(_segment_runs_deny_set(segment, cwd) for segment in command_segments(command))
 
 
+def _reaches_plugin_root(code: str, trees: tuple[str, ...]) -> bool:
+    return bool(trees) and PLUGIN_ROOT_VARIABLE in code and marker_hit((code,), PROTECTED_TREES)
+
+
 def _embedded_segment(segment: str, trees: tuple[str, ...]) -> bool:
     if not runs_inline_code(segment):
         return False
+    code = expand_known_variables(segment).translate(INLINE_QUOTES)
     markers = (*SCRIPT_MARKERS, "meridian-guard.sh", "guard_unlock", str(state_directory()))
-    if marker_hit((segment,), (*markers, *trees)):
+    if marker_hit((segment, code), (*markers, *trees)) or _reaches_plugin_root(code, trees):
         return True
     return "import" in segment and STEM_PATTERN.search(segment) is not None
 
@@ -273,13 +202,11 @@ def _embeds_tree(word: str, markers: tuple[str, ...]) -> bool:
 
 
 def mention_access(view: CommandView, trees: tuple[str, ...]) -> Optional[Access]:
-    for text in view.unclassified_texts:
-        if marker_hit((text,), RUNTIME_MARKERS):
+    for segment in view.unclassified:
+        if marker_hit((segment.source_text,), RUNTIME_MARKERS):
             return Access.RUNTIME
-        if marker_hit((text,), (str(state_directory()),)):
+        if marker_hit((segment.source_text,), (str(state_directory()),)):
             return Access.GRANT
-        if trees and any(_embeds_tree(word, trees) for word in command_words(text)):
+        if trees and any(_embeds_tree(word, trees) for word in segment.source_words):
             return Access.SOURCE
-        if _mentions_deny_set(text):
-            return Access.EXECUTION
     return None
