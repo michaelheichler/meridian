@@ -15,6 +15,8 @@ TASK = re.compile(r"cmd-qa-qa-[0-9]{2,3}-[a-f0-9]{12}-phase", re.ASCII)
 TOKEN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*", re.ASCII)
 CLAUDE_QA_AGENT = "meridian:phase-qa"
 CONTRACT_LINE = re.compile(r"^Meridian-Contract: (\S+)$", re.MULTILINE)
+__all__ = ["CLAUDE_QA_AGENT", "claim_qa_worker", "permits_qa_command", "valid_arguments"]
+
 AGENT_FIELDS = (
     "agent_id", "agentId", "agent_type", "agentType", "subagent_type", "subagentType",
 )

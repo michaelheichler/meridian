@@ -97,7 +97,7 @@ fi`
 
 Use this route for ordinary phase QA with the native backend and no active remediation round. An explicit phase number takes priority. For an implicit phase, use the phase and debug-session selection rules below. Honor explicit QA skips and turbo effort. Resolve the tier as in Step 1. Apply ownership policy with the runner's `route` operation.
 
-Read `.meridian/config.json` when present. Use this route for `in_process`, `tmux`, or the default `ask` with `workflow_execution.enabled` false or absent. Use the workflow capability gate below when the project offers or requests the Workflow backend.
+Read `.meridian/config.json` when present. The execution backend choice in Step 3 runs first. When the mode is `ask` and the project offers the Workflow backend, ask the `QA execution` question there and use this route only after the user picks `Native spawn`. Use this route without asking when the mode resolves to `in_process` or `tmux`, or when the mode is `ask` with `workflow_execution.enabled` false or absent. Use the workflow capability gate below when the project offers or requests the Workflow backend.
 
 Once you choose the native route, follow this numbered procedure through the gate. The runner handles the shell helpers. Use the legacy steps below for other modes.
 
@@ -114,7 +114,9 @@ Once you choose the native route, follow this numbered procedure through the gat
    python3 -I -B {plugin-root}/scripts/qa-phase.py start {NN} {tier} claude
    ```
 
-2. Dispatch the native Agent in the foreground with the returned `subagent_type` and `model`. Use the current workspace so the worker checks the same files that the parent will verify. Put a line containing `Meridian-Contract: {contract_id}` in the agent prompt so the decision guard can claim the dispatched contract. Begin the prompt with the skill outcome block described in Step 3. Give the worker the phase, tier, plans, summaries, roadmap criteria, known issues, verification protocol, and handoff schema. Ask it to run read-only verification commands and return the `qa_verdict` inline with canonical `plans_verified` IDs and a `plan_ref` for each check.
+   When an open QA contract for the same phase, tier, and commit is still `dispatched` or `running`, `start` returns that contract instead of a new one. An open contract for another tier or commit stops `start` with its ID. When the capability refresh fails, `start` warns and uses the saved catalog. It stops only when no saved catalog exists.
+
+2. Dispatch the native Agent in the foreground with the returned `subagent_type` and `model`. Use the current workspace so the worker checks the same files that the parent will verify. Put a line that is exactly `Meridian-Contract: {contract_id}` in the agent prompt so the decision guard can claim the dispatched contract. Begin the prompt with the skill outcome block described in Step 3. Give the worker the phase, tier, plans, summaries, roadmap criteria, known issues, verification protocol, and handoff schema. Ask it to run read-only verification commands and return the `qa_verdict` inline with canonical `plans_verified` IDs and a `plan_ref` for each check.
 3. Publish the worker's verdict as one shell-quoted JSON argument on one line. Use the exact contract ID returned by `start`.
 
    ```text
@@ -131,7 +133,7 @@ Refresh the saved Claude capability catalog before any QA contract or spawn:
 bash "{plugin-root}/scripts/meridian-model" refresh .meridian
 ```
 
-This persists workflow-backend availability as `.workflow` on `.meridian/claude-capabilities.json`, the authority the execution-mode choice in Step 3 reads before offering or resolving `workflow`. A non-zero exit here does not stop QA. It leaves `RESOLVED_BACKEND` at `in_process`, so QA proceeds on whatever catalog already exists. Step 0 of `workflow-spawn-protocol.md` and live re-validation by `workflow-generator.sh` can still block a run that requests or chooses `workflow`. Skip this gate when `.meridian/` is missing. Do not create a planning directory here.
+This persists workflow-backend availability as `.workflow` on `.meridian/claude-capabilities.json`, the authority the execution-mode choice in Step 3 reads before offering or resolving `workflow`. A non-zero exit here does not stop QA while a saved catalog exists. It leaves `RESOLVED_BACKEND` at `in_process`, so QA proceeds on whatever catalog already exists. Step 0 of `workflow-spawn-protocol.md` and live re-validation by `workflow-generator.sh` can still block a run that requests or chooses `workflow`. Skip this gate when `.meridian/` is missing. Do not create a planning directory here.
 
 ## Guard
 
@@ -307,7 +309,7 @@ Hooks handle continuous verification. This command is for deep, on-demand verifi
         - `Native spawn`: Keep the current native QA spawn.
         - `Cancel QA`: Do not verify this phase now.
 
-      This gate applies only to standard phase QA. Debug-session QA in `<debug_session_qa>` always spawns `in_process`.
+      A `Native spawn` answer continues at the Native phase QA route above. This gate applies only to standard phase QA. Debug-session QA in `<debug_session_qa>` always spawns `in_process`.
 
     - Follow `{plugin-root}/references/agent-spawn-protocol.md`. When `RESOLVED_BACKEND` is `in_process`, issue a solo read-only QA contract, generate it with the generic generator, and advance the contract to `dispatched`:
 

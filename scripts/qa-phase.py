@@ -15,6 +15,10 @@ sys.path.insert(0, str(SCRIPTS.parent / "hooks"))
 from qa_command import CLAUDE_QA_AGENT, valid_arguments
 
 
+OPEN_STATES = frozenset({"dispatched", "running"})
+CAPABILITY_CATALOG = "claude-capabilities.json"
+
+
 class QaError(RuntimeError):
     pass
 
@@ -113,25 +117,65 @@ def start(phase: Phase, tier: str, host: str) -> dict:
     if not phase.verification.exists():
         helper(phase.root, "track-known-issues.sh", "sync-summaries", phase.directory)
     agent = claude_agent(phase) if host == "claude" else {"agent_type": "meridian-qa"}
-    task = f"qa-{phase.number}-{uuid.uuid4().hex[:12]}"
     job = f"Verify phase {phase.number} tier {tier} at {git_head(phase)}"
+    contract_id = reusable_contract(phase, job) or issue_contract(phase, job)
+    return {**context(phase), "contract_id": contract_id, "agent": agent}
+
+
+def issue_contract(phase: Phase, job: str) -> str:
+    task = f"qa-{phase.number}-{uuid.uuid4().hex[:12]}"
     contract = Path(helper(
         phase.root, "task-contract.sh", "issue", phase.root, task,
         "--command", "qa", "--role", "qa", "--team", "solo", "--group", "phase", "--job", job,
     ))
     transition(phase, contract.stem, "dispatched")
-    return {**context(phase), "contract_id": contract.stem, "agent": agent}
+    return contract.stem
+
+
+def reusable_contract(phase: Phase, job: str) -> str | None:
+    for contract_id, contract in open_contracts(phase):
+        if contract.get("action") != job:
+            raise QaError(
+                f"QA contract {contract_id} is still {contract.get('state')} for another tier or commit. "
+                "Publish its verdict or close it before you start a new QA run."
+            )
+        return contract_id
+    return None
+
+
+def open_contracts(phase: Phase) -> list[tuple[str, dict]]:
+    registry = phase.root / ".meridian" / ".contracts" / "tasks"
+    if not registry.is_dir():
+        return []
+    found = []
+    for path in sorted(registry.glob(f"cmd-qa-qa-{phase.number}-*-phase.json")):
+        contract = json.loads(helper(phase.root, "task-contract.sh", "read", phase.root, path.stem))
+        if contract.get("state") in OPEN_STATES:
+            found.append((path.stem, contract))
+    return found
 
 
 def claude_agent(phase: Phase) -> dict:
     planning = phase.root / ".meridian"
-    helper(phase.root, "meridian-model", "refresh", planning)
+    refresh_capabilities(phase)
     route = json.loads(helper(phase.root, "meridian-routing.sh", "resolve", planning, "qa"))
-    catalog = json.loads((planning / "claude-capabilities.json").read_text(encoding="utf-8"))
+    catalog = json.loads((planning / CAPABILITY_CATALOG).read_text(encoding="utf-8"))
     model = catalog["agent_model_ids"].get(route["model"])
     if not model:
         raise QaError("Meridian could not map the QA model to a Claude Agent selector.")
     return {"subagent_type": CLAUDE_QA_AGENT, "model": model}
+
+
+def refresh_capabilities(phase: Phase) -> None:
+    planning = phase.root / ".meridian"
+    try:
+        helper(phase.root, "meridian-model", "refresh", planning)
+    except QaError as exc:
+        if not (planning / CAPABILITY_CATALOG).is_file():
+            raise QaError(
+                f"The Claude capability refresh failed and no saved {CAPABILITY_CATALOG} exists. {exc}"
+            ) from exc
+        sys.stderr.write(f"Meridian QA: capability refresh failed, so QA uses the saved catalog. {exc}\n")
 
 
 def publish(phase: Phase, contract_id: str, verdict: dict) -> dict:
