@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 import re
-import shlex
 import sys
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Iterator, NamedTuple
 
 try:
     from .tmux_git_policy import SHELLS, command_segments, expansion_source, unwrap
@@ -14,17 +13,18 @@ except ImportError:
 COMMIT_WRAPPERS = {"env", "command", "exec", "sudo", "time", "nohup", "timeout", "xargs"}
 COMPOUND_KEYWORDS = {"{", "}", "!", "if", "then", "do", "else", "elif", "while", "until"}
 VALUED_GIT_OPTIONS = {"-C", "-c", "--git-dir", "--work-tree", "--namespace"}
+VALUED_COMMIT_OPTIONS = {
+    "--trailer", "--author", "--date", "-C", "-c", "-t", "--template", "--cleanup", "--fixup",
+    "--squash", "--reuse-message", "--reedit-message", "--pathspec-from-file",
+}
 ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 SHELL_COMMAND_FLAG = re.compile(r"^-[a-zA-Z]*c$")
 SUBSTITUTIONS = (re.compile(r"\$\(([^()]*)\)"), re.compile(r"`([^`]*)`"))
 CONVENTIONAL_SUBJECT = re.compile(r"^(feat|fix|test|refactor|perf|docs|style|chore)\(.+\): .+")
-SHORT_MESSAGE = re.compile(r"^-[a-zA-Z]*m(.*)$")
+SHORT_MESSAGE = re.compile(r"^-[asnveSq]*m(.*)$")
+SHORT_FILE = re.compile(r"^-[asnveSq]*F(.*)$")
 HEREDOC_START = re.compile(r"^\$\(cat <<-?\s*['\"]?(\w+)")
-
-
-class CommitCall(NamedTuple):
-    segment: list[str]
-    arguments: list[str]
+HEREDOC_OPERATOR = re.compile(r"<<-?\s*['\"]?(\w+)['\"]?")
 
 
 def command_words(tokens: list[str]) -> list[str]:
@@ -55,43 +55,74 @@ def wrapped_arguments(name: str, args: list[str]) -> list[str]:
     return unwrapped[1:] if name == "timeout" else unwrapped
 
 
-def commit_arguments(tokens: list[str]) -> list[str] | None:
+def commit_arguments(tokens: list[str]) -> Iterator[list[str]]:
     words = command_words(tokens)
     if not words:
-        return None
+        return
     name, args = Path(words[0]).name, words[1:]
     if name == "git":
         subcommand = git_subcommand_arguments(args)
-        return subcommand[1:] if subcommand[:1] == ["commit"] else None
-    if name in COMMIT_WRAPPERS:
-        return commit_arguments(wrapped_arguments(name, args))
-    if name in SHELLS:
+        if subcommand[:1] == ["commit"]:
+            yield subcommand[1:]
+    elif name in COMMIT_WRAPPERS:
+        yield from commit_arguments(wrapped_arguments(name, args))
+    elif name in SHELLS:
         body = shell_body(args)
-        call = None if body is None else find_commit(body)
-        return None if call is None else call.arguments
-    return None
+        if body is not None:
+            yield from commit_calls(body)
+
+
+def heredoc_body_end(command: str, start: int, terminator: str) -> int:
+    position = start
+    while position < len(command):
+        line_end = command.find("\n", position)
+        next_line = len(command) if line_end == -1 else line_end + 1
+        if command[position:next_line].strip() == terminator:
+            return next_line
+        position = next_line
+    return position
+
+
+def without_heredoc_bodies(command: str) -> str:
+    kept: list[str] = []
+    quote, terminators, index = "", [], 0
+    while index < len(command):
+        character = command[index]
+        operator = None if quote else HEREDOC_OPERATOR.match(command, index)
+        if character == "\n" and not quote and terminators:
+            kept.append(character)
+            index = index + 1
+            while terminators:
+                index = heredoc_body_end(command, index, terminators.pop(0))
+            continue
+        if character == "\\" and quote != "'":
+            kept.append(command[index:index + 2])
+            index += 2
+            continue
+        if operator is not None and not command.startswith("<<<", index):
+            terminators.append(operator.group(1))
+            kept.append(operator.group(0))
+            index = operator.end()
+            continue
+        if character in "'\"" and quote in ("", character):
+            quote = "" if quote else character
+        kept.append(character)
+        index += 1
+    return "".join(kept)
 
 
 def candidate_sources(command: str) -> Iterator[str]:
-    joined = command.replace("\\\n", "")
+    joined = without_heredoc_bodies(command.replace("\\\n", ""))
     yield joined
     source = expansion_source(joined)
     for pattern in SUBSTITUTIONS:
         yield from pattern.findall(source)
 
 
-def find_commit(command: str) -> CommitCall | None:
+def commit_calls(command: str) -> Iterator[list[str]]:
     for source in candidate_sources(command):
         for segment in command_segments(source):
-            arguments = commit_arguments(segment)
-            if arguments is not None:
-                return CommitCall(segment, arguments)
-    return None
-
-
-def commit_segment(command: str) -> str | None:
-    call = find_commit(command)
-    return None if call is None else shlex.join(call.segment)
+            yield from commit_arguments(segment)
 
 
 def heredoc_subject(value: str) -> str:
@@ -106,53 +137,64 @@ def heredoc_subject(value: str) -> str:
 def message_subject(value: str) -> str:
     if HEREDOC_START.match(value):
         return heredoc_subject(value)
+    if value.startswith("$") or value == "{}":
+        return ""
     return value.split("\n", 1)[0]
 
 
 def file_subject(name: str, cwd: str) -> str:
-    if name == "-":
+    if name == "-" or name.startswith("$") or name == "{}":
         return ""
     path = Path(cwd) / name if cwd else Path(name)
     if not path.is_file():
         return ""
-    return path.read_text(errors="replace").split("\n", 1)[0]
+    with path.open(errors="replace") as message_file:
+        return message_file.readline().rstrip("\n")
 
 
-def option_value(option: str, remaining: list[str]) -> tuple[str, str] | None:
-    if option in {"--message", "--file", "-F"}:
-        return (option, remaining.pop(0)) if remaining else None
-    for long_name in ("--message", "--file"):
+def separate_value(kind: str, attached: str, remaining: list[str]) -> tuple[str, str] | None:
+    if attached:
+        return kind, attached
+    return (kind, remaining.pop(0)) if remaining else None
+
+
+def message_option(option: str, remaining: list[str]) -> tuple[str, str] | None:
+    for long_name, kind in (("--message", "-m"), ("--file", "-F")):
+        if option == long_name:
+            return separate_value(kind, "", remaining)
         if option.startswith(long_name + "="):
-            return long_name, option.partition("=")[2]
-    if option.startswith("-F") and not option.startswith("--"):
-        return "-F", option[2:]
-    short = SHORT_MESSAGE.match(option)
-    if short is None or option.startswith("--"):
+            return kind, option.partition("=")[2]
+    if option.startswith("--"):
         return None
-    if short.group(1):
-        return "-m", short.group(1)
-    return ("-m", remaining.pop(0)) if remaining else None
+    for pattern, kind in ((SHORT_MESSAGE, "-m"), (SHORT_FILE, "-F")):
+        short = pattern.match(option)
+        if short is not None:
+            return separate_value(kind, short.group(1), remaining)
+    return None
 
 
 def commit_subject(arguments: list[str], cwd: str) -> str:
     remaining = list(arguments)
     while remaining:
-        found = option_value(remaining.pop(0), remaining)
-        if found is None:
+        option = remaining.pop(0)
+        if option == "--":
+            break
+        if option in VALUED_COMMIT_OPTIONS:
+            remaining = remaining[1:]
             continue
-        kind, value = found
-        return file_subject(value, cwd) if kind in {"-F", "--file"} else message_subject(value)
+        found = message_option(option, remaining)
+        if found is not None:
+            kind, value = found
+            return file_subject(value, cwd) if kind == "-F" else message_subject(value)
     return ""
 
 
 def nonconforming_subject(command: str, cwd: str) -> str | None:
-    call = find_commit(command)
-    if call is None:
-        return None
-    subject = commit_subject(call.arguments, cwd)
-    if not subject or CONVENTIONAL_SUBJECT.match(subject):
-        return None
-    return subject
+    for arguments in commit_calls(command):
+        subject = commit_subject(arguments, cwd)
+        if subject and not CONVENTIONAL_SUBJECT.match(subject):
+            return subject
+    return None
 
 
 def main(argv: list[str]) -> int:
