@@ -69,7 +69,7 @@ if [ -f "$CANONICAL_ROOT/scripts/hook-wrapper.sh" ] && \
 fi
 
 persist_shell_environment
-[ -d "$PLANNING_DIR" ] || [ "${MERIDIAN_TMUX_AGENT:-}" = 1 ] || exit 0
+[ -d "$PLANNING_DIR" ] || [ -n "${MERIDIAN_TMUX_AGENT:-}" ] || exit 0
 
 if ! command -v jq >/dev/null 2>&1; then
   echo '{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"meridian: jq not found. Install jq (brew install jq / apt install jq) -- quality gates are degraded until then."}}'
