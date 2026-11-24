@@ -88,21 +88,21 @@ class QaCommandTest(unittest.TestCase):
         ownership = [{"task_id": "01-01", "owners": "docs"}]
         command = qa_shell("route", "01", json.dumps(ownership))
 
-        self.assertEqual(bash_reason(command, space.root), load_guard().RESERVED_RUNTIME)
+        self.assertEqual(bash_reason(command, space.root), load_guard().GUARD_HELPER_EXECUTION)
 
     def test_routing_rejects_shell_syntax_in_owner_names(self) -> None:
         space = build_workspace(self)
         ownership = [{"task_id": "01-01", "owners": ["$(printf docs)"]}]
         command = qa_shell("route", "01", json.dumps(ownership))
 
-        self.assertEqual(bash_reason(command, space.root), load_guard().RESERVED_RUNTIME)
+        self.assertEqual(bash_reason(command, space.root), load_guard().GUARD_HELPER_EXECUTION)
 
     def test_routing_rejects_a_shell_command_after_the_ownership_argument(self) -> None:
         space = build_workspace(self)
         ownership = [{"task_id": "01-01", "owners": ["docs"]}]
         command = qa_shell("route", "01", json.dumps(ownership)) + " && printf injected"
 
-        self.assertEqual(bash_reason(command, space.root), load_guard().RESERVED_RUNTIME)
+        self.assertEqual(bash_reason(command, space.root), load_guard().GUARD_HELPER_EXECUTION)
 
     def test_publish_accepts_literal_apostrophe_encodings_and_rejects_shell_chains(self) -> None:
         space = build_workspace(self)
@@ -111,12 +111,12 @@ class QaCommandTest(unittest.TestCase):
         standard = qa_shell(*arguments, verdict)
         escaped_apostrophe = r"'\''"
         posix = qa_shell(*arguments) + " '" + escaped_apostrophe.join(verdict.split("'")) + "'"
-        reserved = load_guard().RESERVED_RUNTIME
+        helper_run = load_guard().GUARD_HELPER_EXECUTION
 
         self.assertIsNone(bash_reason(standard, space.root))
         self.assertIsNone(bash_reason(posix, space.root))
-        self.assertEqual(bash_reason(standard + " && printf injected", space.root), reserved)
-        self.assertEqual(bash_reason(posix + " && printf injected", space.root), reserved)
+        self.assertEqual(bash_reason(standard + " && printf injected", space.root), helper_run)
+        self.assertEqual(bash_reason(posix + " && printf injected", space.root), helper_run)
 
     def test_qa_start_still_waits_for_an_open_user_decision(self) -> None:
         space = build_project(self)

@@ -30,6 +30,8 @@ PROTECTED_STEMS = (
     "brace_expansion",
     "path_identity",
     "qa_command",
+    "shell_invocation",
+    "command_view",
 )
 
 
@@ -137,14 +139,33 @@ def installed_source_workspace(case: unittest.TestCase) -> Workspace:
     return space
 
 
-def installed_command_result(space: Workspace, command: str) -> tuple:
-    installed = space.root / "installed"
-    source = space.root / "source"
-    environment = {**os.environ, "CLAUDE_PLUGIN_ROOT": str(installed), "PYTHONDONTWRITEBYTECODE": "1"}
+def plugin_pretool(plugin_root: Path, cwd: Path, tool: str, tool_input: dict) -> tuple:
+    environment = {**os.environ, "CLAUDE_PLUGIN_ROOT": str(plugin_root), "PYTHONDONTWRITEBYTECODE": "1"}
     result = subprocess.run(
-        [sys.executable, str(installed / "hooks" / ENTRY_POINT.name), "pretool"],
-        input=json.dumps(tool_event("Bash", {"command": command}, source)),
-        cwd=source, env=environment, capture_output=True, text=True, timeout=30, check=False,
+        [sys.executable, str(plugin_root / "hooks" / ENTRY_POINT.name), "pretool"],
+        input=json.dumps(tool_event(tool, tool_input, cwd)),
+        cwd=cwd, env=environment, capture_output=True, text=True, timeout=30, check=False,
     )
-    decision = json.loads(result.stdout or "{}").get("hookSpecificOutput", {}).get("permissionDecision")
-    return result.returncode, result.stderr, decision
+    output = json.loads(result.stdout or "{}").get("hookSpecificOutput", {})
+    return result.returncode, result.stderr, output
+
+
+def installed_command_result(space: Workspace, command: str) -> tuple:
+    returncode, stderr, output = plugin_pretool(
+        space.root / "installed", space.root / "source", "Bash", {"command": command},
+    )
+    return returncode, stderr, output.get("permissionDecision")
+
+
+def repo_install_workspace(case: unittest.TestCase) -> Workspace:
+    space = build_project(case)
+    skipped = shutil.ignore_patterns("test_*.py", "__pycache__")
+    shutil.copytree(HOOKS_DIR, space.root / "hooks", ignore=skipped)
+    shutil.copytree(HOOKS_DIR.parent / "scripts", space.root / "scripts", symlinks=True, ignore=skipped)
+    subprocess.run(["git", "init", "-q", str(space.root)], check=True, capture_output=True)
+    return space
+
+
+def repo_install_reason(space: Workspace, tool: str, tool_input: dict) -> tuple:
+    returncode, stderr, output = plugin_pretool(space.root, space.root, tool, tool_input)
+    return returncode, stderr, output.get("permissionDecisionReason")

@@ -8,8 +8,10 @@ import tempfile
 import unittest
 from pathlib import Path
 from typing import Any, Callable
+from unittest.mock import patch
 
 from hooks import decision_common, user_question_guard
+from hooks.guard_fixtures import answer_event, build_project, run_mode
 from hooks.question_validation import validate_question
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -41,6 +43,11 @@ class QuestionFixture(unittest.TestCase):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
+        home = tempfile.TemporaryDirectory()
+        self.addCleanup(home.cleanup)
+        environment = patch.dict(os.environ, {"HOME": home.name})
+        environment.start()
+        self.addCleanup(environment.stop)
         self.planning_dir = self.root / ".meridian"
         self.planning_dir.mkdir()
         self.session_id = "session-1"
@@ -343,7 +350,7 @@ class QuestionValidationTest(QuestionFixture):
         self.prepare_project()
         rows = (
             (self.event("Bash", {"command": "mkdir -p .meridian/.runtime/decisions"}), user_question_guard.RESERVED_RUNTIME),
-            (self.event("Bash", {"command": "bash scripts/pending-decision.sh create .meridian session-1"}), user_question_guard.RESERVED_RUNTIME),
+            (self.event("Bash", {"command": "bash scripts/pending-decision.sh create .meridian session-1"}), user_question_guard.GUARD_HELPER_EXECUTION),
             (self.event("Write", {"file_path": ".meridian/.runtime/decisions/forged.json", "content": "{}"}), user_question_guard.RESERVED_RUNTIME),
         )
         for event, expected_reason in rows:
@@ -359,7 +366,7 @@ class QuestionValidationTest(QuestionFixture):
         runtime_alias = self.root / "runtime-alias"
         runtime_alias.symlink_to(runtime, target_is_directory=True)
         rows = (
-            (f"bash {script_alias} create .meridian session-1", user_question_guard.RESERVED_RUNTIME),
+            (f"bash {script_alias} create .meridian session-1", user_question_guard.GUARD_HELPER_EXECUTION),
             (f"mkdir -p {runtime_alias}/decisions", user_question_guard.RESERVED_RUNTIME),
             ("mkdir -p .meridian/cache/../.runtime/decisions", user_question_guard.RESERVED_RUNTIME),
         )
@@ -373,6 +380,28 @@ class QuestionValidationTest(QuestionFixture):
         decisions.mkdir(parents=True)
         (decisions / f"{self.session_id}.json").write_text("{}")
         self.assertEqual(self.hook(self.event("Write", {"file_path": "src/app.py", "content": "x"}), "pretool"), decision_common.INVALID_RECORD)
+
+
+class AnswerOutsidePlanningTest(unittest.TestCase):
+    def test_answer_in_a_project_without_planning_directory_is_silent(self) -> None:
+        space = build_project(self)
+        space.planning.rmdir()
+
+        result = run_mode("posttool", answer_event(space.root, "sess-1", "Careful"))
+
+        self.assertEqual((result.returncode, result.stdout), (0, ""))
+        self.assertEqual(sorted(space.root.rglob(".runtime")), [])
+
+    def test_answer_through_a_symlinked_planning_directory_reports_invalid_state(self) -> None:
+        space = build_project(self)
+        linked_root = space.root / "linked"
+        linked_root.mkdir()
+        (linked_root / ".meridian").symlink_to(space.planning, target_is_directory=True)
+
+        result = run_mode("posttool", answer_event(linked_root, "sess-1", "Careful"))
+
+        context = json.loads(result.stdout or "{}").get("hookSpecificOutput", {}).get("additionalContext")
+        self.assertEqual((result.returncode, context), (0, decision_common.INVALID_STATE))
 
 
 if __name__ == "__main__":

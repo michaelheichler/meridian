@@ -26,6 +26,15 @@ ALLOWED_READS = (
     f"sed -n 1,5p {SOURCE}",
     f"cat {SOURCE} | sort -nr -k2 | uniq -c | cut -d, -f1",
     f"cat {SOURCE} | grep -v foo | wc -l",
+    f"grep -rn x {SOURCE}; true",
+    f"grep -rn x {SOURCE} && true",
+    f"grep -rn x {SOURCE} | wc -l",
+    f"grep -rn x {SOURCE} > out",
+    f"cat {SOURCE} | sed -n 1p",
+    f"cat {SOURCE} > out",
+    f"cat {SOURCE}; true",
+    f"cat {SOURCE} && true",
+    f"awk 1 {SOURCE}",
 )
 
 DENIED_SOURCE_ACCESS = (
@@ -46,26 +55,17 @@ DENIED_SOURCE_ACCESS = (
     "grep x .meridian/.runtime/decisions/*.txt",
     "rg x .meridian/.runtime/decisions/*.txt",
     f"grep x {SOURCE} .meridian/.runtime/decisions/*.txt",
-    f"grep -rn x {SOURCE}; true",
-    f"grep -rn x {SOURCE} && true",
-    f"grep -rn x {SOURCE} | wc -l",
     f"grep -rn x {SOURCE} $(true)",
-    f"grep -rn x {SOURCE} > out",
     f"grep -f patterns {SOURCE}",
     f"grep -d recurse foo {SOURCE}",
     f"grep --include=x foo {SOURCE}",
     f"grep --exclude-dir=x foo {SOURCE}",
     f"sed -i s/a/b/ {SOURCE}",
     f"sed -n w=out {SOURCE}",
-    f"cat {SOURCE} | sed -n 1p",
     f"cat {SOURCE} | sort -o out",
     f"cat {SOURCE} | uniq out",
     f"cat {SOURCE} | tee out",
-    f"cat {SOURCE} > out",
-    f"cat {SOURCE}; true",
-    f"cat {SOURCE} && true",
     f"cp {SOURCE} out",
-    f"awk 1 {SOURCE}",
 )
 
 DROPPED_EXEMPTION_TOKENS = ("$X", "`x`", "*", "?", "[a]", "{a,b}", "~", "é", "$(true)")
