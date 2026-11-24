@@ -60,6 +60,16 @@ copy_plugin_with_stubbed_models() {
   printf '#!/bin/bash\nprintf "%%s\\n" %s\n' "'{\"model\":\"opus\"}'" > "$PLUGIN/scripts/meridian-routing.sh"
 }
 
+copy_plugin_with_malformed_promote_registry() {
+  PLUGIN="$WORLD/plugin"
+  mkdir -p "$PLUGIN"
+  cp -R "$PROJECT_ROOT/scripts" "$PROJECT_ROOT/hooks" "$PROJECT_ROOT/templates" "$PROJECT_ROOT/config" "$PLUGIN/"
+  mv "$PLUGIN/scripts/track-known-issues.sh" "$PLUGIN/scripts/track-known-issues-real.sh"
+  printf '#!/bin/bash\n[ "$1" != promote-todos ] || { printf "%%s\\n" promote_status=malformed_registry; exit 1; }\n' \
+    > "$PLUGIN/scripts/track-known-issues.sh"
+  printf 'exec /bin/bash "$(dirname "$0")/track-known-issues-real.sh" "$@"\n' >> "$PLUGIN/scripts/track-known-issues.sh"
+}
+
 qa_in_repo() {
   (cd "$REPO" && python3 -I -B "$PLUGIN/scripts/qa-phase.py" "$@" 2> "$STDERR_FILE")
 }
@@ -273,6 +283,37 @@ expect_no_file() {
   expect_stderr_has no-catalog-names-catalog claude-capabilities.json
   expect_stderr_has no-catalog-carries-refresh-error refresh-offline-token
   expect_contract_count no-catalog-no-contract 0
+
+  assert_no_case_failures
+}
+
+@test "publish accepts a project without STATE.md and blocks the contract when the verdict writer or the todo promotion fails" {
+  local contract
+  new_project no-state-file
+  rm "$REPO/.meridian/STATE.md"
+  next_commit drop-state
+  contract=$(start_contract 1 standard)
+  run qa_in_repo publish 1 "$contract" "$(verdict standard PASS)"
+  expect_stdout_json no-state-file-routes-to-uat '.routing == "PROCEED_TO_UAT" and .contract_id == $id' --arg id "$contract"
+  expect_state no-state-file-contract-verified "$contract" verified
+
+  new_project rejected-verdict
+  contract=$(start_contract 1 deep)
+  run qa_in_repo publish 1 "$contract" "$(verdict deep FAIL | jq -c 'del(.payload.checks_detail[0].description)')"
+  expect_refused rejected-verdict
+  expect_state rejected-verdict-contract-blocked "$contract" blocked
+  run qa_in_repo start 1 deep codex
+  expect_stdout_json rejected-verdict-next-start-mints-contract \
+    '(.contract_id | test("^cmd-qa-qa-01-[0-9a-f]{12}-phase$")) and .contract_id != $id' --arg id "$contract"
+  expect_contract_count rejected-verdict-two-contracts 2
+
+  copy_plugin_with_malformed_promote_registry
+  new_project malformed-registry
+  contract=$(start_contract 1 standard)
+  run qa_in_repo publish 1 "$contract" "$(verdict standard PASS)"
+  expect_refused malformed-registry
+  expect_stderr_has malformed-registry-reports-status malformed_registry
+  expect_state malformed-registry-contract-blocked "$contract" blocked
 
   assert_no_case_failures
 }
