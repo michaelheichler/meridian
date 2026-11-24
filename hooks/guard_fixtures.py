@@ -35,6 +35,7 @@ PROTECTED_STEMS = (
     "command_view",
     "command_policy",
     "git_policy",
+    "commit_command",
 )
 
 
