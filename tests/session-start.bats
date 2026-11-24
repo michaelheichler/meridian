@@ -378,6 +378,10 @@ plain_session_start_with_recorded_bus() {
     MERIDIAN_PLANNING_DIR="$PLANNING_DIR" bash "$plugin/session-start.sh" </dev/null 2>"$TEST_ROOT/plain-stderr")
 }
 
+invalid_mode_session_start() {
+  (cd "$WORKDIR" && env MERIDIAN_TMUX_AGENT=yes MERIDIAN_PLANNING_DIR="$PLANNING_DIR" bash "$SCRIPT" </dev/null 2>"$TEST_ROOT/invalid-mode-stderr")
+}
+
 expect_bind_only_context() {
   local label="$1" session="$2"
   jq -e --arg session "$session" '.hookSpecificOutput.additionalContext | capture("^meridian tmux bind: (?<bind>.*)[.]$").bind | fromjson | .agent_id == "agent-a" and .session_id == $session' <<<"$output" >/dev/null 2>&1 \
@@ -432,6 +436,13 @@ bind_tmux_session_with_one_shot_credentials() {
   expect_case_silent no-planning-dir-without-tmux-agent 0
   [ ! -e "$TEST_ROOT/tmux-bus.calls" ] \
     || record_case_failure no-planning-dir-without-tmux-agent "bind stubs ran: $(cat "$TEST_ROOT/tmux-bus.calls")"
+
+  rm -rf "$PLANNING_DIR" "$TEST_ROOT/invalid-mode-stderr"
+  run invalid_mode_session_start
+  expect_case_silent invalid-tmux-agent-mode-without-planning-dir 1
+  [ -s "$TEST_ROOT/invalid-mode-stderr" ] \
+    || record_case_failure invalid-tmux-agent-mode-without-planning-dir "stderr is empty"
+  [ ! -e "$PLANNING_DIR" ] || record_case_failure invalid-tmux-agent-mode-without-planning-dir "planning dir was created"
 
   assert_no_case_failures
 }
